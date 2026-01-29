@@ -87,7 +87,7 @@
                 <!-- Texto eliminado por redundancia con el logo -->
             </div>
 
-            <form id="loginForm" class="space-y-5">
+            <form id="loginForm" class="space-y-5" autocomplete="off">
                 <div class="space-y-2">
                     <label class="text-xs font-semibold text-slate-400 ml-1 uppercase">Identificación de Piloto</label>
                     <div
@@ -95,7 +95,7 @@
                         <div class="pl-4 text-slate-500">
                             <i data-lucide="mail" class="w-5 h-5"></i>
                         </div>
-                        <input type="email" id="emailInput" placeholder="correo@empresa.com"
+                        <input type="email" id="emailInput" placeholder="correo@empresa.com" autocomplete="off"
                             class="w-full bg-transparent border-none py-3.5 px-4 focus:ring-0 text-sm placeholder:text-slate-600 outline-none"
                             required>
                     </div>
@@ -114,7 +114,7 @@
                         <div class="pl-4 text-slate-500">
                             <i data-lucide="lock" class="w-5 h-5"></i>
                         </div>
-                        <input type="password" placeholder="••••••••"
+                        <input type="password" placeholder="••••••••" autocomplete="new-password"
                             class="w-full bg-transparent border-none py-3.5 px-4 focus:ring-0 text-sm placeholder:text-slate-600 outline-none"
                             required>
                     </div>
