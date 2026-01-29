@@ -79,13 +79,12 @@
 
             <div class="text-center mb-8">
                 <div class="flex justify-center mb-4">
-                    <!-- LOGOTIPO INTEGRADO -->
+                    <!-- LOGOTIPO INTEGRADO (Agrandado y sin texto redundante abajo) -->
                     <img src="../../public/logo-lamda.jpg" alt="LAMDA Logo"
-                        class="h-20 w-auto drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                        onerror="this.src='https://via.placeholder.com/150/1e293b/3b82f6?text=LAMDA'">
+                        class="h-40 w-auto drop-shadow-[0_0_15px_rgba(59,130,246,0.6)] hover:scale-105 transition-transform duration-500"
+                        onerror="this.src='https://via.placeholder.com/300/1e293b/3b82f6?text=LAMDA'">
                 </div>
-                <h1 class="text-3xl font-bold tracking-tight text-white">LAMDA</h1>
-                <p class="text-slate-400 text-sm mt-1 uppercase tracking-widest">Gestión de Proveedores</p>
+                <!-- Texto eliminado por redundancia con el logo -->
             </div>
 
             <form id="loginForm" class="space-y-5">
@@ -271,8 +270,8 @@
         function appendMessage(text, sender) {
             const div = document.createElement('div');
             div.className = `chat-bubble p-4 rounded-2xl border text-xs leading-relaxed ${sender === 'user'
-                    ? 'bg-blue-600/10 border-blue-500/30 ml-8 rounded-tr-none text-right'
-                    : 'bg-slate-800/50 border-slate-700/50 mr-8 rounded-tl-none'
+                ? 'bg-blue-600/10 border-blue-500/30 ml-8 rounded-tr-none text-right'
+                : 'bg-slate-800/50 border-slate-700/50 mr-8 rounded-tl-none'
                 }`;
             div.innerText = text;
             chatContainer.appendChild(div);
