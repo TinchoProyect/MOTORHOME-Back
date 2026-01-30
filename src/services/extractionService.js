@@ -150,8 +150,17 @@ async function processFile(fileId, providerId, options = {}) {
                 rawRows = rawRows.slice(headerIndex);
             }
 
-            // Headers = Nueva Fila 0
-            const headers = rawRows[0].map(h => String(h || "").trim()).filter(h => h.length > 0);
+            // Headers = Nueva Fila 0 (Preservamos vacíos y agregamos extras)
+            let emptyColCounter = 1;
+            const headers = rawRows[0].map((h) => {
+                const val = String(h || "").trim();
+                return val.length > 0 ? val : `Column ${emptyColCounter++}`;
+            });
+
+            // Agregamos 3 columnas extra al final para permitir mapeo extendido
+            for (let i = 0; i < 3; i++) {
+                headers.push(`Column ${emptyColCounter++}`);
+            }
 
             // Sample = Filas 1-5 (Relativas al nuevo header)
             const sampleData = rawRows.slice(1, 6).map(rowArray => {
