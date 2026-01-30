@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informe de Implementación: Fase 6</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #1e293b;
+            max-width: 950px;
+            margin: 0 auto;
+            padding: 40px;
+            background: #fff;
+        }
+
+        h1 {
+            color: #0f172a;
+            border-bottom: 4px solid #3b82f6;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+
+        h2 {
+            color: #1d4ed8;
+            margin-top: 40px;
+            border-left: 5px solid #3b82f6;
+            padding-left: 15px;
+            background: #eff6ff;
+            padding: 10px;
+        }
+
+        h3 {
+            color: #475569;
+            margin-top: 25px;
+            font-weight: 700;
+            border-bottom: 1px dotted #cbd5e1;
+        }
+
+        .code-path {
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #dc2626;
+            font-weight: bold;
+        }
+
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85em;
+        }
+
+        .prompt-box {
+            background: #fff1f2;
+            border: 1px solid #fecaca;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            color: #881337;
+        }
+
+        .logic-list li {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Informe de Implementación: Fase de Extracción</h1>
+    <p><strong>Referencia:</strong> Plan de Ingeniería Integral v7.0<br>
+        <strong>Objetivo:</strong> Hoja de ruta técnica para desarrolladores.
+    </p>
+
+    <h2>1. Infraestructura de Datos (SQL)</h2>
+    <p>El script completo ha sido generado en: <span
+            class="code-path">scripts/05_create_final_extraction_schema.sql</span>.</p>
+    <p>Este script crea tres tablas clave:</p>
+    <ul>
+        <li><code>proveedor_formatos_guia</code>: Memoria operativa con Fingerprint y link al archivo fuente.</li>
+        <li><code>proveedor_listas_raw</code>: Registro de eventos de procesamiento.</li>
+        <li><code>proveedor_items_extraidos</code>: Datos detallados con campos de incertidumbre JSONB.</li>
+    </ul>
+
+    <h2>2. Lógica de Backend (Servicios)</h2>
+
+    <h3>A. fingerprintService.js</h3>
+    <p>Responsable de generar el "ADN" del archivo.</p>
+    <ul class="logic-list">
+        <li><strong>Función <code>generateHeaderHash(headers)</code>:</strong> Recibe array de encabezados (ej:
+            <code>["Cod", "Precio"]</code>), los normaliza (uppercase, trim) y genera un MD5. Esto permite comparar
+            estructuras ignorando diferencias de capitalización.</li>
+        <li><strong>Función <code>matchFingerprint(fileData)</code>:</strong> Consulta
+            <code>proveedor_formatos_guia</code> buscando un hash coincidente para ese proveedor. Retorna el
+            <code>formato_guia_id</code> si existe.</li>
+    </ul>
+
+    <h3>B. extractionService.js</h3>
+    <p>Cerebro principal que orquesta el flujo.</p>
+    <ul class="logic-list">
+        <li><strong>Función <code>checkLegibility(imageBuffer)</code>:</strong> Envía la imagen a Gemini con el Prompt
+            de Seguridad. Si falla, lanza error y detiene procesos.</li>
+        <li><strong>Función <code>processFile(fileId, providerId)</code>:</strong> Orquestador principal.
+            <ol>
+                <li>Obtiene archivo de Drive.</li>
+                <li>Verifica Fingerprint en DB.</li>
+                <li>Si Match -> <strong>Modo Operario</strong> (Aplica reglas JSON).</li>
+                <li>Si No Match -> <strong>Modo Arqueólogo</strong> (Llama a Gemini para descubrir estructura).</li>
+            </ol>
+        </li>
+    </ul>
+
+    <h2>3. Protocolos y Prompts (Gemini)</h2>
+
+    <h3>Prompt: Diagnóstico de Legibilidad</h3>
+    <div class="prompt-box">
+        <strong>System Instruction:</strong>
+        <pre>
+Eres un Auditor de Calidad Documental. Tu única misión es evaluar si un documento es técnicamente legible para extracción de datos (OCR).
+
+Analiza la imagen provista buscando:
+1. BORROSIDAD (Blur): ¿El texto es nítido?
+2. ILUMINACIÓN: ¿Hay sombras fuertes o reflejos que tapen datos?
+3. RESOLUCIÓN: ¿Se pueden distinguir letras pequeñas (ej: SKU)?
+
+Responde ESTRICTAMENTE en este formato JSON:
+{
+  "status": "ACCEPT" | "REJECT",
+  "reason": "Explica brevemente si rechazas (ej: 'Imagen demasiado borrosa', 'Corte en margen derecho'). Si aceptas, pon null."
+}
+NO intentes extraer datos. SOLO diagnostica.
+        </pre>
+    </div>
+
+    <h3>Prompt: Modo Arqueólogo (Discovery)</h3>
+    <pre>
+Eres un Arquitecto de Datos experto. Analiza la estructura visual de este documento.
+Identifica la tabla principal de productos.
+Tu objetivo es sugerir un MAPEO de columnas.
+
+Salida JSON esperada:
+{
+  "headers_detected": ["Codigo", "Descripcion", "Precio Lista", "Bonif"],
+  "suggested_mapping": {
+    "sku": "Columna_A",
+    "descripcion": "Columna_B",
+    "precio": "Columna_C"
+  },
+  "confidence_notes": "La columna C parece ser el precio neto."
+}
+    </pre>
+
+    <h2>4. Hoja de Ruta Frontend</h2>
+    <p>Modificaciones en <code>dashboard.html</code>:</p>
+    <ol>
+        <li><strong>Card de Archivo:</strong> Agregar botón <button>⚡ Extraer</button> junto al link de Drive.</li>
+        <li><strong>Modal de Proceso:</strong>
+            <ul>
+                <li>Estado: "Verificando Legibilidad..." ➡️ "Buscando en Memoria..." ➡️ "Extrayendo...".</li>
+            </ul>
+        </li>
+        <li><strong>Pantalla de Resultados (Reporte):</strong>
+            <ul>
+                <li>Tabla reactiva mostrando items extraídos.</li>
+                <li>Columnas codificadas por color (Verde/Amarillo/Rojo) según confianza.</li>
+                <li>Botones para confirmar o corregir mapeos.</li>
+            </ul>
+        </li>
+    </ol>
+
+</body>
+
+</html>

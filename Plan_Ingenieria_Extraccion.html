@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan de Ingeniería INTEGRAL: Sistema de Extracción</title>
+    <style>
+        :root {
+            --primary: #0f172a;
+            --accent: #2563eb;
+            --safety: #dc2626;
+            --discovery: #9333ea;
+            --success: #16a34a;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #334155;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px;
+            background: #fff;
+        }
+
+        h1 {
+            color: var(--primary);
+            border-bottom: 5px solid var(--accent);
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            color: var(--primary);
+            margin-top: 50px;
+            border-left: 6px solid var(--accent);
+            padding-left: 20px;
+            background: #f8fafc;
+            padding: 15px 20px;
+            border-radius: 0 10px 10px 0;
+            font-size: 1.8em;
+        }
+
+        h3 {
+            color: #475569;
+            margin-top: 30px;
+            font-weight: 700;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 8px;
+            font-size: 1.3em;
+        }
+
+        .section-tag {
+            font-size: 0.7em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #64748b;
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .concept-box {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 25px 0;
+        }
+
+        .safety-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 25px 0;
+            border-left: 5px solid var(--safety);
+        }
+
+        .memory-box {
+            background: #faf5ff;
+            border: 1px solid #e9d5ff;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 25px 0;
+            border-left: 5px solid var(--discovery);
+        }
+
+        code {
+            background: #f1f5f9;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+            color: #0f172a;
+            font-weight: bold;
+        }
+
+        pre {
+            background: #1e293b;
+            color: #f8fafc;
+            padding: 25px;
+            border-radius: 12px;
+            overflow-x: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85em;
+            border: 1px solid #334155;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75em;
+            font-weight: 800;
+            color: white;
+            margin-right: 5px;
+            text-transform: uppercase;
+            vertical-align: middle;
+        }
+
+        @media print {
+            body {
+                padding: 0;
+            }
+
+            nav {
+                display: none;
+            }
+        }
+    </style>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true });
+    </script>
+</head>
+
+<body>
+
+    <span class="section-tag">Documento Maestro v7.0 (Consolidado)</span>
+    <h1>Ingeniería de Extracción Inteligente</h1>
+    <p><strong>Objetivo Integral:</strong> Transformar archivos no estructurados (PDF, Excel, IMG) en una base de datos
+        operativa, mediante un sistema que valida calidad, identifica patrones, aprende estructuras y automatiza
+        procesos, garantizando trazabilidad absoluta.</p>
+
+    <!-- PILAR 1: SEGURIDAD -->
+    <h2>1. Protocolo de Seguridad (Pre-Check)</h2>
+    <div class="safety-box">
+        <h3>🛡️ Barrera de Calidad Visual</h3>
+        <p>Antes de cualquier intento de lectura, el sistema protege la base de datos de "basura visual".</p>
+        <ul>
+            <li><strong>Mecanismo:</strong> Análisis preliminar con Gemini Vision (Prompt de Diagnóstico).</li>
+            <li><strong>Criterios de Rechazo:</strong> <code>BLURRY</code> (Borroso), <code>LOW_LIGHT</code> (Oscuro),
+                <code>DISTORTED</code> (Distorsionado), <code>NO_TEXT</code>.</li>
+            <li><strong>Acción:</strong> Si el documento no pasa el umbral de legibilidad, se marca como
+                <strong>ERROR_ILEGIBLE</strong> y se notifica al piloto. <em>No se gasta cómputo en extracción.</em>
+            </li>
+        </ul>
+    </div>
+
+    <!-- PILAR 2: ARQUITECTURA -->
+    <h2>2. Arquitectura de Datos (Nomenclatura Final)</h2>
+    <p>La estructura de base de datos está diseñada para separar la "fuente externa" del "dato interno", con
+        trazabilidad total.</p>
+
+    <div class="concept-box">
+        <h3>A. El Cerebro: <code>proveedor_formatos_guia</code> ("Memoria")</h3>
+        <p>Almacena la inteligencia estructural aprendida de cada proveedor.</p>
+        <pre>
+CREATE TABLE proveedor_formatos_guia (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    proveedor_id UUID NOT NULL REFERENCES proveedores(id),
+    
+    nombre_formato VARCHAR(100), -- Ej: "Lista Precios Mayorista 2025"
+    estado VARCHAR(20) DEFAULT 'ACTIVA', -- ACTIVA, OBSOLETA, PENDIENTE
+    
+    -- [RESILIENCIA] Fingerprint Flexible
+    fingerprint JSONB,
+    /* {
+         "header_hash": "a1b2c3...", -- Hash de secuencia de columnas (ignora filas vacías)
+         "file_type": "xlsx",
+         "tolerance": "loose"
+       } */
+
+    -- [TRAZABILIDAD] Fuente de Verdad
+    archivo_origen_id TEXT, -- Link al archivo Drive que "enseñó" este formato
+    
+    -- Reglas de Mapeo
+    reglas_mapeo JSONB, -- { "sku_col": "A", "precio_col": "F", "start_row": 5 }
+    
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);</pre>
+
+        <h3>B. El Evento: <code>proveedor_listas_raw</code> ("Cabecera")</h3>
+        <p>Registra la ingesta del archivo y su estado de procesamiento.</p>
+        <pre>
+CREATE TABLE proveedor_listas_raw (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    proveedor_id UUID NOT NULL REFERENCES proveedores(id),
+    formato_guia_id UUID REFERENCES proveedor_formatos_guia(id), -- Qué memoria se aplicó
+    
+    archivo_id TEXT NOT NULL, -- ID Drive
+    nombre_archivo TEXT,
+    
+    -- Auditoría del Proceso
+    modo_procesamiento VARCHAR(20), -- 'DISCOVERY' (IA) o 'MAPPED' (Memoria)
+    status_global VARCHAR(20) DEFAULT 'ANALYZING',
+    
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);</pre>
+
+        <h3>C. El Detalle: <code>proveedor_items_extraidos</code> ("Datos")</h3>
+        <p>Los ítems procesados con su nivel de incertidumbre.</p>
+        <pre>
+CREATE TABLE proveedor_items_extraidos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    lista_raw_id UUID NOT NULL REFERENCES proveedor_listas_raw(id) ON DELETE CASCADE,
+    
+    -- Datos Normalizados
+    sku_detectado VARCHAR(100),
+    descripcion_detectada TEXT,
+    precio_detectado NUMERIC(12,2),
+    
+    -- Trazabilidad Absoluta
+    raw_data JSONB, -- { "A": "COD-123", "B": "Tornillo 1/4" } (Fila original intacta)
+    identificacion_ia JSONB, -- { "confidence": "HIGH", "flags": [] }
+    nivel_confianza VARCHAR(20), -- CONFIRMED, AMBIGUOUS, UNKNOWN
+    
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);</pre>
+    </div>
+
+    <!-- PILAR 3: INTELIGENCIA -->
+    <h2>3. Motor de Inteligencia Evolutiva</h2>
+    <div class="memory-box">
+        <h3>🧠 Workflow Dual: Arqueólogo vs Operario</h3>
+        <p>El sistema decide automáticamente qué estrategia usar basándose en la "Huella Digital" del archivo.</p>
+
+        <div class="mermaid">
+            graph TD
+            A[Archivo Drive] --> B{Pre-Check Legibilidad}
+            B -- Reject --> Z[Alertar Piloto]
+            B -- Accept --> C{¿Reconozco el Formato?}
+
+            C -- SÍ (Match Fingerprint) --> D[👷 MODO OPERARIO]
+            D --> D1[Carga Reglas Guardadas]
+            D --> D2[Extracción Rápida y Económica]
+
+            C -- NO (Formato Nuevo) --> F[🕵️ MODO ARQUEÓLOGO]
+            F --> F1[Gemini Vision: Análisis Estructural]
+            F --> F2[Detectar Patrones y Columnas]
+            F --> F3[Propuesta de Nuevo Formato]
+
+            D2 --> G[Validación de Resultados]
+            F3 --> G
+
+            G -- Usuario Aprueba --> H[Persistir Datos]
+            G -- Usuario Corrige --> I[Actualizar Memoria (Learning)]
+            I --> H
+        </div>
+    </div>
+
+    <!-- PILAR 4: UX -->
+    <h2>4. Interfaz de Gestión de Conocimiento</h2>
+    <p>El piloto tiene control total sobre lo que LAMDA aprende y procesa.</p>
+
+    <ul>
+        <li><strong>Semáforos de Confianza:</strong>
+            Visualización clara de datos <span
+                style="background:#16a34a; color:white; padding:2px 6px; border-radius:4px;">CONFIRMADOS</span> vs
+            <span style="background:#f59e0b; color:white; padding:2px 6px; border-radius:4px;">AMBIGUOS</span>
+            (Dudosos).
+        </li>
+        <li><strong>Visualización "Side-by-Side":</strong>
+            Ver el PDF a la izquierda y la tabla extraída a la derecha para comparar.
+        </li>
+        <li><strong>Enseñar a LAMDA:</strong>
+            Si la IA identifica mal una columna, el piloto la corrige manualmente y el sistema pregunta: <em>"¿Guardar
+                esta corrección como regla permanente para este proveedor?"</em>.
+        </li>
+        <li><strong>Fuente de Verdad:</strong>
+            En el panel "Mis Formatos", cada plantilla tiene un link directo al archivo original que se usó para
+            crearla, permitiendo auditoría futura.
+        </li>
+    </ul>
+
+    <h2>5. Siguientes Pasos (Implementación)</h2>
+    <ol>
+        <li><strong>Base de Datos:</strong> Ejecutar Script SQL Final (Creación de tablas v6).</li>
+        <li><strong>Backend:</strong> Desarrollar Servicio de Extracción con lógica dual.</li>
+        <li><strong>Frontend:</strong> Implementar UI de "Procesar" y "Reporte de Conocimiento".</li>
+    </ol>
+
+</body>
+
+</html>

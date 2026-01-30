@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LAMDA | Terminal de Control de Distribución</title>
+    <title>LAMDA | Terminal de Control de DistribuciÃ³n</title>
 
     <!-- Scripts de Sistema e Integración -->
     <script src="config.js"></script>
@@ -21,7 +21,7 @@
             height: 100vh;
             color: #e2e8f0;
             overflow: hidden;
-            /* Ocultar contenido hasta verificar sesión */
+            /* Ocultar contenido hasta verificar sesiÃ³n */
             visibility: hidden;
         }
 
@@ -111,7 +111,7 @@
             transform: rotate(180deg);
         }
 
-        /* Ajuste para el menú que abre hacia arriba */
+        /* Ajuste para el menÃº que abre hacia arriba */
         .dropup-content {
             bottom: 100%;
             margin-bottom: 0.5rem;
@@ -149,7 +149,7 @@
 
 <body class="flex h-screen w-screen overflow-hidden">
 
-    <!-- MENÚ LATERAL IZQUIERDO -->
+    <!-- MENÃš LATERAL IZQUIERDO -->
     <aside class="w-64 bg-slate-950/40 border-r border-slate-800 backdrop-blur-xl flex flex-col z-50 shrink-0">
         <div class="p-6 text-slate-400">
             <div class="flex items-center gap-3 mb-10 logo-container">
@@ -204,12 +204,12 @@
                         <button onclick="taskAction('Generar presupuestos')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Generar
                             presupuestos</button>
-                        <button onclick="taskAction('Solicitar información a proveedor')"
+                        <button onclick="taskAction('Solicitar informaciÃ³n a proveedor')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Solicitar
-                            información</button>
-                        <button onclick="taskAction('Orden de devolución')"
+                            informaciÃ³n</button>
+                        <button onclick="taskAction('Orden de devoluciÃ³n')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Orden
-                            de devolución</button>
+                            de devoluciÃ³n</button>
                         <button onclick="taskAction('Orden de pago')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Orden
                             de pago</button>
@@ -236,10 +236,10 @@
                                 <i data-lucide="chevron-down"
                                     class="w-2.5 h-2.5 opacity-50 group-hover:opacity-100 transition-opacity"></i>
                             </button>
-                            <!-- Submenú Dinámico de Proveedores -->
+                            <!-- SubmenÃº DinÃ¡mico de Proveedores -->
                             <div id="suppliersSubmenu"
                                 class="hidden flex flex-col pl-3 mt-1 space-y-1 border-l border-slate-800/50 mb-2">
-                                <!-- Se llena dinámicamente con JS -->
+                                <!-- Se llena dinÃ¡micamente con JS -->
                                 <span class="text-[9px] text-slate-600 px-2 py-1 italic">Cargando...</span>
                             </div>
                         </div>
@@ -264,11 +264,11 @@
                     </button>
                     <div id="chartsDropdown"
                         class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
-                        <button onclick="taskAction('Gráfico de Inversión')"
+                        <button onclick="taskAction('GrÃ¡fico de Inversión')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Inversión</button>
-                        <button onclick="taskAction('Gráfico de Pasivos')"
+                        <button onclick="taskAction('GrÃ¡fico de Pasivos')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Pasivos</button>
-                        <button onclick="taskAction('Gráfico de Activos')"
+                        <button onclick="taskAction('GrÃ¡fico de Activos')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Activos</button>
                     </div>
                 </div>
@@ -278,7 +278,7 @@
         <div class="mt-auto p-6 space-y-4 relative">
             <!-- Desplegable de Configuración (Hacia Arriba) -->
             <div id="settingsMenuContainer" class="relative">
-                <!-- Submenú que abre hacia arriba -->
+                <!-- SubmenÃº que abre hacia arriba -->
                 <div id="settingsDropdown"
                     class="hidden absolute dropup-content w-full flex flex-col pl-11 pr-4 py-2 space-y-1 bg-slate-900/80 backdrop-blur-xl rounded-xl border border-slate-800 overflow-hidden transition-all duration-300 shadow-2xl mb-2">
                     <button onclick="openSupplierModal()"
@@ -302,7 +302,7 @@
         </div>
     </aside>
 
-    <!-- ÁREA DE CONTENIDO PRINCIPAL -->
+    <!-- ÃREA DE CONTENIDO PRINCIPAL -->
     <div class="flex-1 flex flex-col h-screen overflow-hidden relative">
 
         <!-- Header Superior -->
@@ -327,7 +327,7 @@
         <!-- Rejilla Principal -->
         <main class="flex-1 p-6 flex flex-col gap-4 overflow-hidden">
 
-            <!-- Fila de Métricas -->
+            <!-- Fila de MÃ©tricas -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 h-20 shrink-0">
                 <div class="metric-card p-3 rounded-lg flex flex-col justify-center">
                     <div class="flex items-center gap-2 text-slate-500 mb-1">
@@ -358,7 +358,7 @@
                 </div>
             </div>
 
-            <!-- Fila de Análisis -->
+            <!-- Fila de AnÃ¡lisis -->
             <div class="flex-1 flex flex-col min-h-0 relative">
                 <div id="reportDisplay"
                     class="flex-1 terminal-font text-[14px] text-slate-300 overflow-y-auto custom-scrollbar p-6 max-w-4xl mx-auto w-full">
@@ -417,7 +417,7 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- COMPONENTE: MODAL ALTA DE PROVEEDOR ✨ -->
+    <!-- COMPONENTE: MODAL ALTA DE PROVEEDOR âœ¨ -->
     <!-- ========================================== -->
     <div id="supplierModal"
         class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 modal-blur overflow-y-auto">
@@ -460,20 +460,20 @@
                     </div>
                 </div>
 
-                <!-- Fila 2: Clasificación -->
+                <!-- Fila 2: ClasificaciÃ³n -->
                 <div class="space-y-1">
-                    <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Categoría Operativa</label>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">CategorÃ­a Operativa</label>
                     <select name="categoria"
                         class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm appearance-none cursor-pointer">
                         <option value="" class="bg-slate-900">Seleccionar rubro...</option>
                         <option value="Frutos Secos" class="bg-slate-900">Frutos Secos</option>
                         <option value="Enlatados" class="bg-slate-900">Enlatados</option>
                         <option value="Bebidas" class="bg-slate-900">Bebidas</option>
-                        <option value="Logística" class="bg-slate-900">Logística / Transporte</option>
+                        <option value="LogÃ­stica" class="bg-slate-900">LogÃ­stica / Transporte</option>
                     </select>
                 </div>
 
-                <!-- Fila 3: Vinculación Drive -->
+                <!-- Fila 3: VinculaciÃ³n Drive -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Carpeta en Drive</label>
@@ -497,7 +497,7 @@
                                 <span
                                     class="text-xs font-bold text-slate-300 group-hover:text-blue-400 transition-colors">Proveedor
                                     Operativo</span>
-                                <span class="text-[9px] text-slate-500">¿Habilitar compras y gestión?</span>
+                                <span class="text-[9px] text-slate-500">Â¿Habilitar compras y gestiÃ³n?</span>
                             </div>
                         </label>
                     </div>
@@ -516,15 +516,15 @@
                             class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm placeholder:text-slate-700">
                     </div>
                     <div class="space-y-1">
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Teléfono</label>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">TelÃ©fono</label>
                         <input type="tel" name="contacto_telefono" placeholder="+54 9..."
                             class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm placeholder:text-slate-700">
                     </div>
                 </div>
 
-                <!-- Fila 4: Logística -->
+                <!-- Fila 4: LogÃ­stica -->
                 <div class="space-y-1">
-                    <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Dirección de Operaciones</label>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">DirecciÃ³n de Operaciones</label>
                     <div class="relative">
                         <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-slate-600"></i>
                         <input type="text" name="direccion" placeholder="Calle, Altura, Localidad"
@@ -547,7 +547,7 @@
         </div>
     </div>
 
-    <!-- Integración de Lógica y Seguridad -->
+    <!-- Integración de LÃ³gica y Seguridad -->
     <script>
         lucide.createIcons();
 
@@ -560,7 +560,7 @@
         // Renombrado a supabaseClient para evitar conflicto con window.supabase
         let supabaseClient = null;
 
-        // 2. Guardia de Sesión (Protección de Ruta)
+        // 2. Guardia de Sesión (ProtecciÃ³n de Ruta)
         async function initSystem() {
             if (!sbUrl || !sbKey) {
                 console.error("CRITICAL: Faltan credenciales del sistema.");
@@ -575,11 +575,11 @@
             const { data: { session } } = await supabaseClient.auth.getSession();
 
             if (!session) {
-                // Si no hay sesión, REDIRIGIR AL LOGIN
-                console.warn("⚠️ Acceso no autorizado. Redirigiendo a puerta de enlace...");
+                // Si no hay sesiÃ³n, REDIRIGIR AL LOGIN
+                console.warn("⚠️ Acceso no autorizado. Redirigiendo a puerta de enlace...");
                 window.location.href = 'acceso.html';
             } else {
-                // Sesión Válida: Mostrar Interfaz y Cargar Datos
+                // Sesión VÃ¡lida: Mostrar Interfaz y Cargar Datos
                 document.body.style.visibility = 'visible';
                 console.log("✅ Sistema Operativo. Usuario:", session.user.email);
 
@@ -601,7 +601,7 @@
         // Ejecutar Inmediatamente
         initSystem();
 
-        // 3. Lógica del Chasis (Interfaz Original del Chapista)
+        // 3. LÃ³gica del Chasis (Interfaz Original del Chapista)
         const terminalInput = document.getElementById('terminalInput');
         const aiLoader = document.getElementById('aiLoader');
         const historyContent = document.getElementById('historyContent');
@@ -629,7 +629,7 @@
         let editingSupplierId = null;
 
         // --- EXPLORADOR DE ARCHIVOS (DRIVE) ---
-        async function exploreSupplierFiles(folderId) {
+        async function exploreSupplierFiles(folderId, providerId) {
             if (!folderId) return;
 
             // Mostrar estado de carga en el panel central
@@ -655,7 +655,7 @@
 
                 if (!data.success) throw new Error(data.error || "Error desconocido");
 
-                renderFileGrid(data.files, folderId);
+                renderFileGrid(data.files, folderId, providerId);
 
             } catch (error) {
                 console.error("Error explorador:", error);
@@ -671,7 +671,7 @@
             }
         }
 
-        function renderFileGrid(files, folderId) {
+        function renderFileGrid(files, folderId, providerId) {
             // Helpers de Iconos
             const getIcon = (mime) => {
                 if (mime.includes('folder')) return 'folder';
@@ -689,7 +689,7 @@
                 return 'text-slate-400';
             };
 
-            // Header con Navegación
+            // Header con NavegaciÃ³n
             let html = `
                 <div class="h-full flex flex-col animate-in slide-in-from-bottom-4 duration-500 p-2">
                     <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
@@ -716,7 +716,7 @@
                 html += `
                     <div class="flex-grow flex flex-col items-center justify-center text-slate-600">
                         <i data-lucide="folder-open" class="w-16 h-16 mb-4 opacity-20"></i>
-                        <p class="text-sm">Carpeta vacía</p>
+                        <p class="text-sm">Carpeta vacÃ­a</p>
                     </div>
                 `;
             } else {
@@ -727,7 +727,8 @@
                     const colorClass = getColor(file.mimeType);
 
                     html += `
-                        <a href="${file.webViewLink}" target="_blank" class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
+                        <div class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
+                            <a href="${file.webViewLink}" target="_blank" class="flex flex-col items-center gap-3 w-full">
                             <div class="w-12 h-12 bg-slate-950 rounded-lg flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-300">
                                 <i data-lucide="${iconName}" class="w-6 h-6 ${colorClass}"></i>
                             </div>
@@ -736,6 +737,10 @@
                                 <span class="text-[9px] text-slate-600 uppercase mt-1 block group-hover:text-slate-500 transition-colors">Abrir</span>
                             </div>
                         </a>
+                        <button onclick="startExtraction('${file.id}', '${file.name}', '${providerId}', '${file.webViewLink}')" class="w-full mt-2 py-2 bg-blue-600/20 hover:bg-blue-600/80 text-blue-400 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-widest border border-blue-500/30 transition-all flex items-center justify-center gap-2">
+                             <i data-lucide="zap" class="w-3 h-3"></i> Extraer
+                        </button>
+                    </div>
                     `;
                 });
 
@@ -752,14 +757,14 @@
             await loadProveedores();
         }
 
-        // --- LÓGICA DE NAVEGACIÓN DINÁMICA DE PROVEEDORES ---
+        // --- LÃ“GICA DE NAVEGACIÃ“N DINÃMICA DE PROVEEDORES ---
 
         function handleProveedoresClick() {
             const submenu = document.getElementById('suppliersSubmenu');
             // Toggle visibilidad
             submenu.classList.toggle('hidden');
 
-            // Cargar lista si está vacío (lazy load)
+            // Cargar lista si estÃ¡ vacÃ­o (lazy load)
             if (!submenu.classList.contains('hidden')) { // Si se abre
                 loadSuppliersSidebar();
             }
@@ -792,7 +797,7 @@
             data.forEach(p => {
                 const btn = document.createElement('button');
                 btn.onclick = (e) => {
-                    e.stopPropagation(); // Evitar cerrar menú si fuera necesario
+                    e.stopPropagation(); // Evitar cerrar menÃº si fuera necesario
                     showSingleSupplier(p.id);
                 };
                 btn.className = "text-left py-1.5 px-2 text-[10px] text-slate-500 hover:text-blue-400 hover:bg-slate-900/50 rounded transition-colors whitespace-nowrap overflow-hidden text-ellipsis";
@@ -802,11 +807,11 @@
         }
 
         async function showSingleSupplier(id) {
-            // Buscar datos completos (Optimización: buscar en cache local si existe, o fetch)
+            // Buscar datos completos (OptimizaciÃ³n: buscar en cache local si existe, o fetch)
             let supplier = currentSuppliers.find(s => s.id === id);
 
             if (!supplier) {
-                // Fetch on demand si no está en cache
+                // Fetch on demand si no estÃ¡ en cache
                 reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mr-2"></i> Cargando ficha...</div>`;
                 lucide.createIcons();
                 const { data } = await supabaseClient.from('proveedores').select('*').eq('id', id).single();
@@ -818,7 +823,7 @@
                 return;
             }
 
-            // Renderizar Ficha Técnica
+            // Renderizar Ficha TÃ©cnica
             reportDisplay.innerHTML = `
                 <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
                     <!-- Header Ficha -->
@@ -830,7 +835,7 @@
                             </div>
                             <div class="flex items-center gap-4 text-slate-500 text-xs font-mono">
                                 <span>CUIT: <span class="text-slate-400">${supplier.cuit || 'N/A'}</span></span>
-                                <span>•</span>
+                                <span>â€¢</span>
                                 <span>ID: ${supplier.id.substring(0, 8)}</span>
                             </div>
                         </div>
@@ -839,7 +844,7 @@
                         </button>
                     </div>
 
-                    <!-- Grid de Información -->
+                    <!-- Grid de InformaciÃ³n -->
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         
                         <!-- Columna 1: Operativa e Infra -->
@@ -864,7 +869,7 @@
                                     <i data-lucide="hard-drive" class="w-3 h-3"></i> Digital Assets
                                 </h3>
                                 ${supplier.drive_folder_id
-                    ? `<div onclick="exploreSupplierFiles('${supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
+                    ? `<div onclick="exploreSupplierFiles('${supplier.drive_folder_id}', '${supplier.id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
                                         <div class="flex items-center gap-3">
                                             <div class="p-2 bg-slate-900 rounded-md text-blue-500">
                                                 <i data-lucide="folder" class="w-5 h-5"></i>
@@ -884,7 +889,7 @@
                         <!-- Columna 2: Contacto y Datos -->
                         <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 h-full">
                             <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <i data-lucide="user-check" class="w-3 h-3"></i> Contacto y Logística
+                                <i data-lucide="user-check" class="w-3 h-3"></i> Contacto y LogÃ­stica
                             </h3>
                             
                             <div class="space-y-6">
@@ -896,7 +901,7 @@
                                         </span>
                                     </div>
                                     <div>
-                                        <span class="block text-[9px] text-slate-500 uppercase mb-1">Teléfono</span>
+                                        <span class="block text-[9px] text-slate-500 uppercase mb-1">TelÃ©fono</span>
                                         <span class="text-sm text-slate-300 font-mono">${supplier.contacto_telefono || '-'}</span>
                                     </div>
                                 </div>
@@ -910,10 +915,10 @@
                                 </div>
 
                                 <div class="pt-4 border-t border-slate-800/50">
-                                    <span class="block text-[9px] text-slate-500 uppercase mb-1">Dirección Operativa</span>
+                                    <span class="block text-[9px] text-slate-500 uppercase mb-1">DirecciÃ³n Operativa</span>
                                     <div class="flex items-start gap-2 text-slate-400 text-xs">
                                         <i data-lucide="map-pin" class="w-3 h-3 mt-0.5 shrink-0 text-slate-600"></i>
-                                        ${supplier.direccion || 'Sin dirección registrada'}
+                                        ${supplier.direccion || 'Sin direcciÃ³n registrada'}
                                     </div>
                                 </div>
                             </div>
@@ -925,7 +930,7 @@
         }
 
 
-        // Lógica para cargar proveedores (asumiendo que se obtienen de Supabase)
+        // LÃ³gica para cargar proveedores (asumiendo que se obtienen de Supabase)
         async function loadProveedores() {
             reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400">
                                         <i data-lucide="loader-2" class="w-8 h-8 animate-spin mr-2"></i>
@@ -936,7 +941,7 @@
             const { data, error } = await supabaseClient
                 .from('proveedores')
                 .select('*')
-                .order('nombre', { ascending: true }); // Orden alfabético
+                .order('nombre', { ascending: true }); // Orden alfabÃ©tico
 
             if (error) {
                 console.error("Error al cargar proveedores:", error);
@@ -947,7 +952,7 @@
             // Actualizar estado local
             currentSuppliers = data;
 
-            // Actualizar métricas reales
+            // Actualizar mÃ©tricas reales
             realMetrics.proveedoresCount = data.length;
 
             if (data.length === 0) {
@@ -973,7 +978,7 @@
                                 <tr>
                                     <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Empresa</th>
                                     <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">CUIT</th>
-                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoría</th>
+                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">CategorÃ­a</th>
                                     <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">Contacto</th>
                                     <th class="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Acciones</th>
                                 </tr>
@@ -1022,7 +1027,7 @@
             realMetrics.proveedoresCount = data.length;
         }
 
-        // Lógica de Métricas Contextuales Actualizada (ZERO HALLUCINATIONS)
+        // LÃ³gica de MÃ©tricas Contextuales Actualizada (ZERO HALLUCINATIONS)
         const getMetricsContext = () => {
             return {
                 proveedores: `${realMetrics.proveedoresCount} registrados en base de datos.`,
@@ -1031,13 +1036,13 @@
             };
         };
 
-        // LÓGICA DE VINCULACIÓN DRIVE
+        // LÃ“GICA DE VINCULACIÃ“N DRIVE
         let driveFoldersCache = null;
         const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : "";
 
         async function loadDriveFolders() {
             const select = document.getElementById('driveFolderSelect');
-            // Si ya hay opciones (además del placeholder), no recargar agresivamente, salvo que sea la primera vez real
+            // Si ya hay opciones (ademÃ¡s del placeholder), no recargar agresivamente, salvo que sea la primera vez real
             if (driveFoldersCache && select.children.length > 1) return;
 
             try {
@@ -1055,24 +1060,24 @@
                 }
             } catch (e) {
                 console.error("Error loading folders:", e);
-                select.innerHTML = '<option value="">Error de conexión con Drive</option>';
+                select.innerHTML = '<option value="">Error de conexiÃ³n con Drive</option>';
             }
         }
 
         function populateSelect(select, files) {
             const currentVal = select.value;
-            select.innerHTML = '<option value="">Sin vinculación (Seleccionar carpeta)</option>';
+            select.innerHTML = '<option value="">Sin vinculaciÃ³n (Seleccionar carpeta)</option>';
             files.forEach(f => {
                 const opt = document.createElement('option');
                 opt.value = f.id;
                 opt.innerText = f.name;
                 select.appendChild(opt);
             });
-            // Restaurar valor si existía (útil en ediciones rápidas)
+            // Restaurar valor si existÃ­a (Ãºtil en ediciones rÃ¡pidas)
             if (currentVal) select.value = currentVal;
         }
 
-        // LÓGICA MODAL PROVEEDORES + SUPABASE INTEGRATION
+        // LÃ“GICA MODAL PROVEEDORES + SUPABASE INTEGRATION
         const modal = document.getElementById('supplierModal');
         const form = document.getElementById('supplierForm');
 
@@ -1082,7 +1087,7 @@
 
         function openSupplierModal(isEdit = false) {
             modal.classList.remove('hidden');
-            loadDriveFolders(); // Cargar carpetas dinámicamente
+            loadDriveFolders(); // Cargar carpetas dinÃ¡micamente
 
             if (!isEdit) {
                 // Modo Alta
@@ -1095,9 +1100,9 @@
                     modalSubmitBtn.classList.replace('bg-emerald-600', 'bg-blue-600');
                 }
             } else {
-                // Modo Edición
+                // Modo EdiciÃ³n
                 if (modalTitle) modalTitle.innerText = "Editar Proveedor";
-                if (modalSubtitle) modalSubtitle.innerText = "Modificación de Datos Maestros";
+                if (modalSubtitle) modalSubtitle.innerText = "ModificaciÃ³n de Datos Maestros";
                 if (modalSubmitBtn) {
                     modalSubmitBtn.innerText = "Guardar Cambios";
                     modalSubmitBtn.classList.remove('bg-blue-600');
@@ -1116,7 +1121,7 @@
             }
         }
 
-        // Función Editar (Llenar form)
+        // FunciÃ³n Editar (Llenar form)
         function editSupplier(id) {
             const supplier = currentSuppliers.find(s => s.id === id);
             if (!supplier) return;
@@ -1139,9 +1144,9 @@
             openSupplierModal(true);
         }
 
-        // Función Eliminar
+        // FunciÃ³n Eliminar
         async function deleteSupplier(id, nombre) {
-            if (!confirm(`¿Está seguro que desea eliminar a "${nombre}"?`)) return;
+            if (!confirm(`Â¿EstÃ¡ seguro que desea eliminar a "${nombre}"?`)) return;
 
             try {
                 const { error } = await supabaseClient
@@ -1151,7 +1156,7 @@
 
                 if (error) throw error;
 
-                renderChatMessage('LAMDA_AI', `🗑️ Proveedor "${nombre}" eliminado.`);
+                renderChatMessage('LAMDA_AI', `ðŸ—‘ï¸ Proveedor "${nombre}" eliminado.`);
                 loadProveedores(); // Recargar
 
             } catch (error) {
@@ -1169,7 +1174,7 @@
             btn.disabled = true;
             lucide.createIcons();
 
-            // Recolección de datos
+            // RecolecciÃ³n de datos
             const formData = new FormData(form);
             const supplierData = Object.fromEntries(formData.entries());
 
@@ -1196,7 +1201,7 @@
 
                 if (error) throw error;
 
-                // Éxito
+                // Ã‰xito
                 closeSupplierModal();
 
                 const actionVerb = editingSupplierId ? "actualizado" : "registrado";
@@ -1219,7 +1224,7 @@
         }
 
 
-        // Lógica de Voz y Chat Mejorada (Push-to-Talk & Historial Persistente)
+        // LÃ³gica de Voz y Chat Mejorada (Push-to-Talk & Historial Persistente)
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
         let isRecording = false;
@@ -1239,12 +1244,12 @@
             };
 
             recognition.onresult = (event) => {
-                // Solo mostrar texto, NO enviar automáticamente
+                // Solo mostrar texto, NO enviar automÃ¡ticamente
                 let transcript = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     transcript += event.results[i][0].transcript;
                 }
-                // Si es final, lo pone en el input, si es interino, también (simple overwrite para UX fluida)
+                // Si es final, lo pone en el input, si es interino, tambiÃ©n (simple overwrite para UX fluida)
                 terminalInput.value = transcript;
             };
 
@@ -1254,8 +1259,8 @@
                 micBtn.innerHTML = '<i data-lucide="mic" class="w-4 h-4"></i>';
                 lucide.createIcons();
                 terminalInput.placeholder = "Habla o escribe un comando para la IA...";
-                // Opción: Auto-enviar al terminar? El usuario pidió control manual.
-                // Si el usuario paró manual, toggleVoice manejará el envío.
+                // OpciÃ³n: Auto-enviar al terminar? El usuario pidiÃ³ control manual.
+                // Si el usuario parÃ³ manual, toggleVoice manejarÃ¡ el envÃ­o.
             };
         }
 
@@ -1295,7 +1300,7 @@
             container.classList.toggle('menu-open');
         }
 
-        // Función para renderizar mensaje en el chat principal (Persistente)
+        // FunciÃ³n para renderizar mensaje en el chat principal (Persistente)
         function renderChatMessage(role, text) {
             const isUser = role === 'GERENCIA';
             const bgColor = isUser ? 'bg-slate-800/50' : 'bg-blue-600/10 border-blue-500/20';
@@ -1318,7 +1323,7 @@
         }
 
         async function taskAction(taskName) {
-            // INTERCEPCIÓN DE COMANDOS DE UI
+            // INTERCEPCIÃ“N DE COMANDOS DE UI
             if (taskName && taskName.toLowerCase().includes('alta de proveedor')) {
                 openSupplierModal();
                 renderChatMessage('SISTEMA', 'Abriendo formulario de alta...');
@@ -1327,24 +1332,24 @@
 
             aiLoader.classList.remove('hidden');
             const metrics = getMetricsContext();
-            const prompt = `Usuario solicita: "${taskName}". Contexto: Proveedores ${metrics.proveedores}, Inversión ${metrics.inversion}, Deuda ${metrics.deuda}. Genera un informe táctico corto.`;
+            const prompt = `Usuario solicita: "${taskName}". Contexto: Proveedores ${metrics.proveedores}, Inversión ${metrics.inversion}, Deuda ${metrics.deuda}. Genera un informe tÃ¡ctico corto.`;
 
             // Mostrar comando en chat
             renderChatMessage('GERENCIA', `Ejecutar comando: ${taskName}`);
 
             // Usar Prompt Dashboard (Modo Dios)
-            const sysPrompt = (typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres la IA de gestión.";
+            const sysPrompt = (typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres la IA de gestiÃ³n.";
             const response = await callGemini(prompt, sysPrompt);
 
             aiLoader.classList.add('hidden');
-            appendHistory('SISTEMA', `Acción: ${taskName}`);
+            appendHistory('SISTEMA', `AcciÃ³n: ${taskName}`);
 
             // Mostrar respuesta en chat
             renderChatMessage('LAMDA_AI', response);
         }
 
         async function callGemini(prompt, sysInstr = null) {
-            // Si no se pasa instrucción específica, usar la del Dashboard por defecto
+            // Si no se pasa instrucciÃ³n especÃ­fica, usar la del Dashboard por defecto
             const finalSysInstr = sysInstr || ((typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres el analista de LAMDA.");
 
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
@@ -1356,10 +1361,10 @@
                 const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                 if (response.ok) {
                     const data = await response.json();
-                    return data.candidates?.[0]?.content?.parts?.[0]?.text || "Sin respuesta del núcleo IA.";
+                    return data.candidates?.[0]?.content?.parts?.[0]?.text || "Sin respuesta del nÃºcleo IA.";
                 }
-                return "Error en la respuesta del satélite IA.";
-            } catch (e) { return "Error fatal de conexión."; }
+                return "Error en la respuesta del satÃ©lite IA.";
+            } catch (e) { return "Error fatal de conexiÃ³n."; }
         }
 
         async function sendToAI() {
@@ -1406,6 +1411,313 @@
         setInterval(updateTime, 1000);
         updateTime();
         terminalInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendToAI(); });
+
+        // --- LOGICA DE EXTRACCION (Motor v6) ---
+        // Variables Globales de Mapeo
+        let currentMapping = {};
+        let currentHeaders = [];
+        let currentFileCtx = {};
+        let currentHeaderIndex = 0;
+
+        async function startExtraction(fileId, fileName, providerId, webViewLink, headerIndexOverride = null) {
+            if (headerIndexOverride !== null) {
+                currentHeaderIndex = headerIndexOverride;
+            } else {
+                currentHeaderIndex = 0;
+            }
+            const reportDisplay = document.getElementById('reportDisplay');
+            reportDisplay.innerHTML = `
+                <div class="h-full flex flex-col items-center justify-center text-slate-400 gap-4 animate-pulse">
+                    <i data-lucide="brain-circuit" class="w-12 h-12 text-blue-500"></i>
+                    <div class="text-center">
+                        <h3 class="text-lg font-bold text-white">Analizando Estructura...</h3>
+                        <p class="text-sm">El motor de IA estÃ¡ leyendo el archivo directo.</p>
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+
+            try {
+                // LLAMADA AL BACKEND
+                const res = await fetch(`${CONFIG.BACKEND_URL}/api/files/extraction/process`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileId, fileName, providerId, headerIndex: currentHeaderIndex })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || "Error en el proceso de extracciÃ³n");
+                }
+
+                // 3. Renderizar Resultados (Active Mapping Mode)
+                renderExtractionResults(data, fileName, webViewLink, fileId, providerId);
+
+            } catch (error) {
+                console.error("Extraction Error:", error);
+                reportDisplay.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center text-red-400 gap-2 p-8 text-center">
+                        <i data-lucide="alert-triangle" class="w-10 h-10"></i>
+                        <h3 class="text-lg font-bold">Error en ExtracciÃ³n</h3>
+                        <p class="text-xs bg-slate-900/50 p-2 rounded border border-red-500/20 font-mono">${error.message}</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+        }
+
+        function renderExtractionResults(result, fileName, webViewLink, fileId, providerId) {
+            // Guardar Contexto Global
+            currentFileCtx = { fileId, providerId, fileName, webViewLink };
+            currentHeaders = result.data.headers_detected || [];
+            currentMapping = {}; // Reset de mapeo
+
+            const isDiscovery = result.mode === 'DISCOVERY';
+            const headers = currentHeaders;
+            const rows = result.data.data_sample || [];
+
+            // Generar Filas de Tabla
+            let tableRowsHtml = '';
+            rows.forEach(row => {
+                tableRowsHtml += `<tr class="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">`;
+                headers.forEach(h => {
+                    const cellVal = row[h] || '-';
+                    tableRowsHtml += `<td class="px-3 py-2 text-xs text-slate-300 whitespace-nowrap">${cellVal}</td>`;
+                });
+                tableRowsHtml += '</tr>';
+            });
+
+            // Crear HTML Base
+            let html = `
+                <div class="h-full flex flex-col p-4 animate-in slide-in-from-right duration-500 overflow-hidden">
+                    <!-- Header Reporte -->
+                    <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-800 shrink-0">
+                        <div>
+                            <div class="flex items-center gap-3 mb-1">
+                                <h2 class="text-xl font-bold text-white">Informe de Conocimiento</h2>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isDiscovery ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'} uppercase">
+                                    ${isDiscovery ? 'MODO ARQUEÓLOGO' : 'MODO OPERARIO'}
+                                </span>
+                                <!-- EXCAVATION TOOL -->
+                                <div class="flex items-center gap-2 ml-4 bg-slate-900 border border-slate-700 rounded px-2 py-0.5">
+                                    <span class="text-[10px] text-slate-400 uppercase font-bold">Fila Encabezado:</span>
+                                    <input type="number" id="headerIndexInput" value="${currentHeaderIndex}" min="0" class="w-10 bg-slate-800 text-white text-xs text-center rounded border border-slate-700 focus:border-blue-500 outline-none p-0.5">
+                                    <button onclick="refreshWithNewHeader()" class="p-0.5 hover:bg-slate-700 rounded text-blue-400" title="Actualizar Vista">
+                                        <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-xs text-slate-500 font-mono">Archivo: ${fileName}</p>
+                        </div>
+                        <div class="flex gap-2">
+                             <button onclick="confirmFinalMapping()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-widest rounded-lg shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2">
+                                <i data-lucide="save" class="w-4 h-4"></i> Confirmar Inteligencia
+                            </button>
+                             <button onclick="loadProveedores()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition-colors">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Layout Side-by-Side -->
+                    <div class="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden h-full pb-4">
+                        
+                        <!-- Panel Izquierdo: Documento -->
+                        <div class="h-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col">
+                            <div class="bg-slate-950 px-3 py-2 border-b border-slate-800 flex justify-between items-center">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2"><i data-lucide="eye" class="w-3 h-3"></i> Documento Original</span>
+                                <a href="${webViewLink}" target="_blank" class="text-[10px] text-blue-400 hover:underline">Abrir en PestaÃ±a</a>
+                            </div>
+                            <iframe src="${webViewLink ? webViewLink.replace('/view', '/preview') : ''}" class="w-full h-full border-none bg-white opacity-90" title="Document Preview"></iframe>
+                        </div>
+
+                        <!-- Panel Derecho: Mapeo Activo -->
+                        <div class="h-full flex flex-col bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden relative">
+                             <div class="px-3 py-2 bg-purple-900/10 border-b border-purple-500/20 text-[10px] text-purple-300 flex justify-between">
+                                <span><i data-lucide="mouse-pointer-click" class="w-3 h-3 inline mr-1"></i> Haz clic en los encabezados para asignar significado.</span>
+                                <span id="mapping-status">0 campos asignados</span>
+                             </div>
+
+                            <!-- Tabla de Resultados -->
+                            <div class="flex-grow overflow-auto custom-scrollbar bg-slate-950/30">
+                                <table class="min-w-full divide-y divide-slate-800">
+                                    <thead class="bg-slate-900 sticky top-0 z-10">
+                                        <tr>
+                                            ${headers.map((h, idx) => `
+                                                <th onclick="toggleColumnMapping(this, '${h}')" 
+                                                    class="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap text-slate-500 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors group relative select-none header-cell"
+                                                    data-header="${h}">
+                                                    <div class="flex flex-col gap-1">
+                                                        <span>${h}</span>
+                                                        <span class="badge-mapping text-[9px] px-1.5 py-0.5 rounded hidden"></span>
+                                                    </div>
+                                                </th>
+                                            `).join('')}
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800/30">
+                                        ${tableRowsHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal de SelecciÃ³n de Columna (Simple Overlay) -->
+                <div id="col-mapping-modal" class="hidden absolute top-0 left-0 w-full h-full bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                    <div class="bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-2xl w-64">
+                         <h4 class="text-xs font-bold text-slate-400 uppercase mb-3">Asignar Columna: <span id="modal-col-name" class="text-white"></span></h4>
+                         <div class="flex flex-col gap-2">
+                            <button onclick="applyMapping('sku')" class="text-left px-3 py-2 bg-slate-800 hover:bg-purple-600/20 hover:text-purple-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-purple-500/30">ðŸ“¦ SKU / CÃ³digo</button>
+                            <button onclick="applyMapping('descripcion')" class="text-left px-3 py-2 bg-slate-800 hover:bg-blue-600/20 hover:text-blue-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-blue-500/30">ðŸ“ DescripciÃ³n</button>
+                            <button onclick="applyMapping('precio')" class="text-left px-3 py-2 bg-slate-800 hover:bg-emerald-600/20 hover:text-emerald-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-emerald-500/30">ðŸ’² Precio</button>
+                            <button onclick="applyMapping('stock')" class="text-left px-3 py-2 bg-slate-800 hover:bg-orange-600/20 hover:text-orange-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-orange-500/30">ðŸ“Š Stock</button>
+                            <div class="h-px bg-slate-700 my-1"></div>
+                            <button onclick="applyMapping('ignore')" class="text-left px-3 py-2 bg-slate-800 hover:bg-red-900/20 hover:text-red-400 text-slate-500 hover:line-through text-xs rounded transition-colors">ðŸš« Ignorar Columna</button>
+                         </div>
+                         <button onclick="closeMappingModal()" class="mt-3 w-full py-1.5 text-[10px] text-slate-500 hover:text-white uppercase">Cancelar</button>
+                    </div>
+                </div>
+            `;
+            reportDisplay.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        // --- LÃ³gica de Interfaz de Mapeo ---
+        let activeHeader = null;
+
+        function toggleColumnMapping(element, header) {
+            activeHeader = header;
+            document.getElementById('modal-col-name').innerText = header;
+            document.getElementById('col-mapping-modal').classList.remove('hidden');
+        }
+
+        function closeMappingModal() {
+            document.getElementById('col-mapping-modal').classList.add('hidden');
+            activeHeader = null;
+        }
+
+        function applyMapping(type) {
+            if (!activeHeader) return;
+
+            if (type === 'ignore') {
+                delete currentMapping[activeHeader]; // O marcar explicitamente
+                // Visual cleanup handled below
+            } else {
+                // Verificar si ya existe este tipo asignado a otra columna (ej: solo 1 SKU)
+                // Opcional: Permitir override
+                Object.keys(currentMapping).forEach(key => {
+                    if (currentMapping[key] === type) delete currentMapping[key];
+                });
+                currentMapping[activeHeader] = type;
+            }
+
+            updateHeaderVisuals();
+            closeMappingModal();
+        }
+
+        function updateHeaderVisuals() {
+            // Recorrer todos los headers y actualizar badges/colores
+            const headers = document.querySelectorAll('.header-cell');
+            let mappedCount = 0;
+
+            headers.forEach(th => {
+                const hName = th.getAttribute('data-header');
+                const type = currentMapping[hName];
+                const badge = th.querySelector('.badge-mapping');
+
+                if (type) {
+                    mappedCount++;
+                    badge.classList.remove('hidden');
+                    badge.innerText = type.toUpperCase();
+
+                    // Colores por tipo
+                    let colorClass = 'bg-slate-700 text-white';
+                    if (type === 'sku') colorClass = 'bg-purple-600 text-white';
+                    if (type === 'descripcion') colorClass = 'bg-blue-600 text-white';
+                    if (type === 'precio') colorClass = 'bg-emerald-600 text-white';
+
+                    badge.className = `badge-mapping text-[9px] px-1.5 py-0.5 rounded mt-1 inline-block ${colorClass}`;
+                    th.classList.add('text-white');
+                } else {
+                    badge.classList.add('hidden');
+                    th.classList.remove('text-white');
+                }
+            });
+            document.getElementById('mapping-status').innerText = `${mappedCount} campos asignados`;
+            document.getElementById('mapping-status').innerText = `${mappedCount} campos asignados`;
+        }
+
+        async function refreshWithNewHeader() {
+            const input = document.getElementById('headerIndexInput');
+            const newIndex = parseInt(input.value);
+            if (isNaN(newIndex) || newIndex < 0) return alert("Fila inválida");
+
+            const btn = document.querySelector('button[title="Actualizar Vista"]');
+            const originalIcon = btn.innerHTML;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>`;
+
+            try {
+                // Re-iniciamos extracción con el nuevo índice
+                await startExtraction(currentFileCtx.fileId, currentFileCtx.fileName, currentFileCtx.providerId, currentFileCtx.webViewLink, newIndex);
+            } catch (e) {
+                alert("Error refrescando: " + e.message);
+                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-3 h-3"></i>`;
+                lucide.createIcons();
+            }
+        }
+
+        async function confirmFinalMapping() {
+            // Validar mÃ­nimos
+            const values = Object.values(currentMapping);
+            if (!values.includes('sku') || !values.includes('precio')) {
+                alert("⚠️ Debes asignar al menos SKU y PRECIO para confirmar.");
+                return;
+            }
+
+            if (!confirm("Â¿Confirmar esta estructura? El sistema aprenderÃ¡ este formato para futuros archivos.")) return;
+
+            const btn = document.querySelector('button[onclick="confirmFinalMapping()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
+            btn.disabled = true;
+
+            try {
+                // Invertir mapeo para el backend: { "SKU": "Col A", ... }
+                // currentMapping es { "Col A": "sku" }
+                // Backend espera: { "sku": "Col A", "precio": "Col B" }
+                const backendMapping = {};
+                Object.entries(currentMapping).forEach(([col, type]) => {
+                    backendMapping[type] = col;
+                });
+
+                const res = await fetch(`${CONFIG.BACKEND_URL}/api/files/extraction/confirm`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fileId: currentFileCtx.fileId,
+                        providerId: currentFileCtx.providerId,
+                        mapping: backendMapping,
+                        headers: currentHeaders,
+                        headerIndex: currentHeaderIndex // [EXCAVACION] Persistimos el offset
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                alert("✅ Â¡Inteligencia Guardada! El archivo ha sido procesado con Ã©xito.");
+                loadProveedores(); // Volver al inicio
+
+            } catch (error) {
+                console.error(error);
+                alert("Error guardando mapeo: " + error.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
     </script>
 </body>
 

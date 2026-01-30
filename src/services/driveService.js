@@ -84,7 +84,22 @@ async function getFileContent(fileId) {
     }
 }
 
+async function getFileMetadata(fileId) {
+    const drive = await getDriveClient();
+    try {
+        const res = await drive.files.get({
+            fileId: fileId,
+            fields: 'id, name, mimeType'
+        });
+        return res.data;
+    } catch (error) {
+        console.error(`[DriveService] Error getting metadata ${fileId}:`, error.message);
+        throw error;
+    }
+}
+
 module.exports = {
     listFiles,
-    getFileContent
+    getFileContent,
+    getFileMetadata
 };
