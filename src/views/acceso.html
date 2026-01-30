@@ -224,7 +224,8 @@
 
         if (!sbUrl || !sbKey) console.error("Faltan credenciales Supabase en config.js");
 
-        const supabase = window.supabase.createClient(sbUrl, sbKey);
+        // Usamos 'supabaseClient' para evitar conflicto con la variable global 'supabase' del CDN
+        const supabaseClient = window.supabase.createClient(sbUrl, sbKey);
 
         // Elementos DOM
         const chatContainer = document.getElementById('chatContainer');
@@ -246,7 +247,7 @@
             loginBtn.disabled = true;
 
             try {
-                const { data, error } = await supabase.auth.signInWithPassword({
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email: email,
                     password: password
                 });
