@@ -211,19 +211,81 @@
 
     <!-- Cargar Configuración Segura -->
     <script src="config.js"></script>
+    <!-- Cargar Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <script>
         lucide.createIcons();
 
-        // Usar clave desde config.js (Si no existe, mostrar error en consola)
+        // 1. Inicialización de Clientes (Supabase + IA)
+        const sbUrl = (typeof CONFIG !== 'undefined') ? CONFIG.SUPABASE_URL : "";
+        const sbKey = (typeof CONFIG !== 'undefined') ? CONFIG.SUPABASE_ANON_KEY : "";
         const apiKey = (typeof CONFIG !== 'undefined') ? CONFIG.GEMINI_API_KEY : "";
 
-        if (!apiKey) console.error("Falta archivo config.js o API Key");
+        if (!sbUrl || !sbKey) console.error("Faltan credenciales Supabase en config.js");
 
+        const supabase = window.supabase.createClient(sbUrl, sbKey);
+
+        // Elementos DOM
         const chatContainer = document.getElementById('chatContainer');
         const aiInput = document.getElementById('aiInput');
         const aiLoading = document.getElementById('aiLoading');
+        const loginForm = document.getElementById('loginForm');
+        const loginBtn = loginForm.querySelector('button[type="submit"]');
 
+        // 2. Lógica de Autenticación
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('emailInput').value;
+            const password = loginForm.querySelector('input[type="password"]').value; // ID faltante en HTML original, busco por tipo
+
+            // UI Loading State
+            const originalBtnText = loginBtn.innerHTML;
+            loginBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto"></i>';
+            lucide.createIcons();
+            loginBtn.disabled = true;
+
+            try {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+
+                if (error) throw error;
+
+                // ÉXITO: Acceso Concedido
+                // Mostrar feedback visual o redirigir
+                appendMessage("✅ Acceso Autorizado. Iniciando secuencia de despegue...", "ai");
+                alert("🚀 ACCESO CONCEDIDO\nBienvenido al Cockpit LAMDA.");
+                // Aquí iría la redirección a /dashboard.html cuando exista
+
+            } catch (error) {
+                // ERROR: Feedback via Asistente LAMDA
+                console.error("Login Error:", error.message);
+
+                // Abrir chat si está cerrado
+                const sidebar = document.getElementById('iaSidebar');
+                if (sidebar.classList.contains('hidden')) toggleAssistant();
+
+                let aiMessage = "🚫 Credenciales inválidas. ";
+                if (error.message.includes("Invalid login")) aiMessage += "El piloto o la clave no coinciden.";
+                else aiMessage += "Error en el sistema de identificación.";
+
+                aiMessage += " Por favor verifica tus datos.";
+
+                appendMessage(aiMessage, "ai");
+
+                // Vibración visual del form (Shake effect simple via CSS class si existiera, o JS)
+                loginForm.classList.add('animate-pulse');
+                setTimeout(() => loginForm.classList.remove('animate-pulse'), 500);
+            } finally {
+                // Restore UI
+                loginBtn.innerHTML = originalBtnText;
+                loginBtn.disabled = false;
+            }
+        });
+
+        // 3. Funciones IA (Manteniendo lógica anterior)
         // Función para llamar a Gemini API con Reintento Exponencial
         async function callGemini(prompt, systemInstruction = "") {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
@@ -280,8 +342,8 @@
         function appendMessage(text, sender) {
             const div = document.createElement('div');
             div.className = `chat-bubble p-4 rounded-2xl border text-xs leading-relaxed ${sender === 'user'
-                    ? 'bg-blue-600/10 border-blue-500/30 ml-8 rounded-tr-none text-right'
-                    : 'bg-slate-800/50 border-slate-700/50 mr-8 rounded-tl-none'
+                ? 'bg-blue-600/10 border-blue-500/30 ml-8 rounded-tr-none text-right'
+                : 'bg-slate-800/50 border-slate-700/50 mr-8 rounded-tl-none'
                 }`;
             div.innerText = text;
             chatContainer.appendChild(div);
