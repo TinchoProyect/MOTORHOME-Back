@@ -1408,6 +1408,19 @@
             document.getElementById('systemTime').innerText = `${day}_${months[now.getMonth()]}_${year}_${h}:${m}`;
         }
 
+        // Global Logic
+        let dictionary = []; // Cache local
+
+        async function fetchDictionary() {
+            try {
+                const res = await fetch(`${CONFIG.BACKEND_URL}/api/dictionary`);
+                if (res.ok) dictionary = await res.json();
+            } catch (e) { console.error("Error loading dictionary", e); }
+        }
+
+        // Initialize Dictionary
+        fetchDictionary();
+
         setInterval(updateTime, 1000);
         updateTime();
         terminalInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendToAI(); });
@@ -1566,18 +1579,30 @@
                 </div>
 
                 <!-- Modal de SelecciÃ³n de Columna (Simple Overlay) -->
+                <!-- Modal de Selección de Columna (Combobox Avanzado) -->
                 <div id="col-mapping-modal" class="hidden absolute top-0 left-0 w-full h-full bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
-                    <div class="bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-2xl w-64">
-                         <h4 class="text-xs font-bold text-slate-400 uppercase mb-3">Asignar Columna: <span id="modal-col-name" class="text-white"></span></h4>
-                         <div class="flex flex-col gap-2">
-                            <button onclick="applyMapping('sku')" class="text-left px-3 py-2 bg-slate-800 hover:bg-purple-600/20 hover:text-purple-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-purple-500/30">ðŸ“¦ SKU / CÃ³digo</button>
-                            <button onclick="applyMapping('descripcion')" class="text-left px-3 py-2 bg-slate-800 hover:bg-blue-600/20 hover:text-blue-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-blue-500/30">ðŸ“ DescripciÃ³n</button>
-                            <button onclick="applyMapping('precio')" class="text-left px-3 py-2 bg-slate-800 hover:bg-emerald-600/20 hover:text-emerald-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-emerald-500/30">ðŸ’² Precio</button>
-                            <button onclick="applyMapping('stock')" class="text-left px-3 py-2 bg-slate-800 hover:bg-orange-600/20 hover:text-orange-400 text-slate-300 text-xs rounded transition-colors border border-transparent hover:border-orange-500/30">ðŸ“Š Stock</button>
-                            <div class="h-px bg-slate-700 my-1"></div>
-                            <button onclick="applyMapping('ignore')" class="text-left px-3 py-2 bg-slate-800 hover:bg-red-900/20 hover:text-red-400 text-slate-500 hover:line-through text-xs rounded transition-colors">ðŸš« Ignorar Columna</button>
+                    <div class="bg-slate-900 border border-slate-700 p-6 rounded-xl shadow-2xl w-96 flex flex-col max-h-[80vh]">
+                         <h4 class="text-sm font-bold text-slate-400 uppercase mb-4">Etiquetar: <span id="modal-col-name" class="text-white"></span></h4>
+                         
+                         <!-- Buscador -->
+                         <div class="relative mb-3">
+                            <input type="text" id="dict-search" placeholder="Buscar o crear etiqueta..." 
+                                   class="w-full bg-slate-800 text-white p-3 pl-10 rounded-lg text-sm border border-slate-700 focus:border-blue-500 outline-none transition-colors"
+                                   oninput="filterDictionary(this.value)" autocomplete="off">
+                            <i data-lucide="search" class="absolute left-3 top-3.5 w-4 h-4 text-slate-500"></i>
                          </div>
-                         <button onclick="closeMappingModal()" class="mt-3 w-full py-1.5 text-[10px] text-slate-500 hover:text-white uppercase">Cancelar</button>
+
+                         <!-- Lista de Términos -->
+                         <div id="dict-list" class="flex flex-col gap-1 overflow-y-auto custom-scrollbar flex-grow min-h-0 mb-4 pr-1">
+                            <!-- Inyectado por JS -->
+                         </div>
+
+                         <div class="h-px bg-slate-700 mb-3 shrink-0"></div>
+                         
+                         <button onclick="applyMapping('ignore')" class="w-full text-left px-4 py-3 bg-slate-800 hover:bg-red-900/20 hover:text-red-400 text-slate-500 hover:line-through text-sm rounded-lg transition-colors flex items-center gap-2 mb-2 shrink-0">
+                            <i data-lucide="ban" class="w-4 h-4"></i> Ignorar esta columna
+                         </button>
+                         <button onclick="closeMappingModal()" class="w-full py-2 text-xs text-slate-500 hover:text-white uppercase font-bold tracking-widest shrink-0">Cancelar</button>
                     </div>
                 </div>
             `;
@@ -1585,13 +1610,89 @@
             lucide.createIcons();
         }
 
-        // --- LÃ³gica de Interfaz de Mapeo ---
+        // --- Lógica de Interfaz de Mapeo (Combobox) ---
         let activeHeader = null;
 
         function toggleColumnMapping(element, header) {
             activeHeader = header;
             document.getElementById('modal-col-name').innerText = header;
+
+            // Reset y Focus
+            const input = document.getElementById('dict-search');
+            input.value = '';
+            filterDictionary(''); // Mostrar todo
+
             document.getElementById('col-mapping-modal').classList.remove('hidden');
+            input.focus();
+        }
+
+        function filterDictionary(query) {
+            const list = document.getElementById('dict-list');
+            list.innerHTML = '';
+
+            const q = query.toUpperCase();
+            const matches = dictionary.filter(item => item.termino.includes(q));
+            const exactMatch = matches.find(item => item.termino === q);
+
+            // Render Matches
+            if (matches.length === 0 && q.length === 0) {
+                list.innerHTML = `
+                    <div class="p-4 text-center text-slate-500 text-xs italic opacity-50 select-none">
+                        <i data-lucide="book-open" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                        Tu diccionario está vacío.<br>Escribe para crear tu primera etiqueta.
+                    </div>
+                 `;
+            }
+
+            matches.forEach(item => {
+                const btn = document.createElement('button');
+                // Estilo condicional según sistema/custom
+                const isSystem = item.categoria === 'SYSTEM';
+                const colorClass = isSystem ? 'text-blue-300' : 'text-emerald-300';
+
+                btn.className = `w-full text-left px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors text-sm flex justify-between items-center group`;
+                btn.innerHTML = `
+                    <span class="${colorClass} font-bold">${item.termino}</span>
+                    <span class="text-[10px] text-slate-500 uppercase tracking-wider group-hover:text-slate-300">${item.categoria}</span>
+                `;
+                btn.onclick = () => applyMapping(item.termino);
+                list.appendChild(btn);
+            });
+
+            // Opción Crear Si no existe exacto y hay query
+            if (!exactMatch && q.length > 0) {
+                const createBtn = document.createElement('button');
+                createBtn.className = `w-full text-left px-4 py-3 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 rounded-lg transition-colors text-sm text-indigo-300 flex items-center justify-center gap-2 mt-2`;
+                createBtn.innerHTML = `<i data-lucide="plus-circle" class="w-4 h-4"></i> Crear nueva etiqueta: "${q}"`;
+                createBtn.onclick = () => createAndApply(q);
+                list.appendChild(createBtn);
+            }
+
+            lucide.createIcons();
+        }
+
+        async function createAndApply(term) {
+            const btn = event.currentTarget;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
+
+            try {
+                const res = await fetch(`${CONFIG.BACKEND_URL}/api/dictionary`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ termino: term, descripcion: 'Creado por usuario' })
+                });
+                const newItem = await res.json();
+
+                // Actualizar cache local
+                dictionary.push(newItem);
+                dictionary.sort((a, b) => a.termino.localeCompare(b.termino));
+
+                applyMapping(newItem.termino);
+
+            } catch (e) {
+                alert("Error creando término: " + e.message);
+                filterDictionary(term); // Reset UI
+            }
         }
 
         function closeMappingModal() {
@@ -1633,13 +1734,25 @@
                     badge.classList.remove('hidden');
                     badge.innerText = type.toUpperCase();
 
-                    // Colores por tipo
-                    let colorClass = 'bg-slate-700 text-white';
-                    if (type === 'sku') colorClass = 'bg-purple-600 text-white';
-                    if (type === 'descripcion') colorClass = 'bg-blue-600 text-white';
-                    if (type === 'precio') colorClass = 'bg-emerald-600 text-white';
+                    // Colores por tipo (Dinámico)
+                    let colorClass = 'bg-slate-700 text-white'; // Fallback
 
-                    badge.className = `badge-mapping text-[9px] px-1.5 py-0.5 rounded mt-1 inline-block ${colorClass}`;
+                    // Buscar en diccionario para saber categoría
+                    const dictItem = dictionary.find(d => d.termino === type);
+                    const isSystem = dictItem ? dictItem.categoria === 'SYSTEM' : false;
+
+                    if (isSystem) {
+                        if (type === 'SKU') colorClass = 'bg-purple-600 text-white shadow-lg shadow-purple-900/20';
+                        else if (type === 'DESCRIPCION') colorClass = 'bg-blue-600 text-white shadow-lg shadow-blue-900/20';
+                        else if (type === 'PRECIO') colorClass = 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20';
+                        else if (type === 'STOCK') colorClass = 'bg-orange-600 text-white shadow-lg shadow-orange-900/20';
+                        else colorClass = 'bg-slate-600 text-white';
+                    } else {
+                        // Custom Tag - Color Distintivo
+                        colorClass = 'bg-indigo-500 text-white border border-indigo-400 font-bold shadow-lg shadow-indigo-900/30';
+                    }
+
+                    badge.className = `badge-mapping text-[10px] px-2 py-0.5 rounded-md mt-1 inline-block ${colorClass}`;
                     th.classList.add('text-white');
                 } else {
                     badge.classList.add('hidden');

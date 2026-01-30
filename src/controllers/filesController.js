@@ -176,8 +176,59 @@ async function confirmExtraction(req, res) {
     }
 }
 
+// =============================================================================
+// DICTIONARY API
+// =============================================================================
+async function getDictionaryTerms(req, res) {
+    try {
+        const { data, error } = await supabase
+            .from('user_diccionario_nomenclatura')
+            .select('*')
+            .order('termino', { ascending: true });
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        console.error("Error fetching dictionary:", error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
+async function createDictionaryTerm(req, res) {
+    const { termino, descripcion } = req.body;
+    try {
+        // Normalizar a mayúsculas
+        const termUpper = termino.trim().toUpperCase();
+
+        const { data, error } = await supabase
+            .from('user_diccionario_nomenclatura')
+            .insert({ termino: termUpper, descripcion_uso: descripcion })
+            .select()
+            .single();
+
+        if (error) {
+            if (error.code === '23505') { // Unique violation
+                // Si ya existe, lo devolvemos
+                const { data: existing } = await supabase
+                    .from('user_diccionario_nomenclatura')
+                    .select('*')
+                    .eq('termino', termUpper)
+                    .single();
+                return res.json(existing);
+            }
+            throw error;
+        }
+        res.json(data);
+    } catch (error) {
+        console.error("Error creating term:", error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
-    confirmExtraction
+    confirmExtraction,
+    getDictionaryTerms,
+    createDictionaryTerm
 };

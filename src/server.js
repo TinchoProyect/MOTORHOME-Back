@@ -10,6 +10,8 @@ app.use(express.json());
 
 // Routes
 app.use('/api/files', require('./routes/filesRoutes'));
+app.get('/api/dictionary', require('./controllers/filesController').getDictionaryTerms);
+app.post('/api/dictionary', require('./controllers/filesController').createDictionaryTerm);
 
 // Health Check
 app.get('/api/health', (req, res) => {
