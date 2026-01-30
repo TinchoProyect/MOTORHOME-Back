@@ -3,66 +3,900 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Cockpit LAMDA | Acceso Concedido</title>
-    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAMDA | Terminal de Control de Distribución</title>
+
+    <!-- Scripts de Sistema e Integración -->
+    <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-</head>
 
-<body class="bg-slate-900 text-white h-screen flex flex-col items-center justify-center relative overflow-hidden">
-
-    <!-- Fondo Animado -->
-    <div class="absolute inset-0 z-0">
-        <div class="absolute top-0 left-0 w-96 h-96 bg-blue-500/20 rounded-full blur-[100px] animate-pulse"></div>
-        <div
-            class="absolute bottom-0 right-0 w-96 h-96 bg-purple-500/20 rounded-full blur-[100px] animate-pulse delay-1000">
-        </div>
-    </div>
-
-    <div class="z-10 text-center space-y-8 animate-fade-in-up">
-        <div class="flex justify-center">
-            <div
-                class="bg-green-500/10 p-6 rounded-full border border-green-500/30 shadow-[0_0_30px_rgba(34,197,94,0.3)]">
-                <i data-lucide="shield-check" class="w-24 h-24 text-green-400"></i>
-            </div>
-        </div>
-
-        <h1 class="text-5xl font-bold tracking-tighter">
-            ACCESO <span
-                class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-400">CONCEDIDO</span>
-        </h1>
-
-        <p class="text-slate-400 text-xl max-w-lg mx-auto">
-            Bienvenido al Centro de Control de LAMDA. Tus credenciales han sido verificadas.
-        </p>
-
-        <div class="pt-8">
-            <button onclick="window.location.href='acceso.html'"
-                class="px-8 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors flex items-center gap-2 mx-auto">
-                <i data-lucide="log-out" class="w-4 h-4"></i> Cerrar Sesión
-            </button>
-        </div>
-    </div>
-
-    <script>
-        lucide.createIcons();
-    </script>
     <style>
-        .animate-fade-in-up {
-            animation: fadeInUp 0.8s ease-out;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at top left, #1e293b 0%, #020617 100%);
+            height: 100vh;
+            color: #e2e8f0;
+            overflow: hidden;
+            /* Ocultar contenido hasta verificar sesión */
+            visibility: hidden;
         }
 
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .sidebar-item {
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-item:hover,
+        .sidebar-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            border-left-color: #3b82f6;
+            color: white;
+        }
+
+        .submenu-item {
+            transition: all 0.2s ease;
+            border-radius: 8px;
+        }
+
+        .submenu-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: #3b82f6;
+            padding-left: 1.25rem;
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.2) 0%, rgba(15, 23, 42, 0.5) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            height: 100%;
+        }
+
+        .terminal-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.3);
+            border-radius: 10px;
+        }
+
+        .mic-active {
+            animation: pulse-red 1.5s infinite;
+            color: #ef4444 !important;
+        }
+
+        @keyframes pulse-red {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
             }
 
-            to {
-                opacity: 1;
-                transform: translateY(0);
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
             }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .logo-container svg {
+            filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
+        }
+
+        .chevron-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .menu-open .chevron-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Ajuste para el menú que abre hacia arriba */
+        .dropup-content {
+            bottom: 100%;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ESTILOS MODAL PROVEEDORES */
+        .modal-blur {
+            backdrop-filter: blur(12px);
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .form-input {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(59, 130, 246, 0.1);
+            color: #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+
+        .btn-glow {
+            transition: all 0.3s ease;
+        }
+
+        .btn-glow:hover {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px);
         }
     </style>
+</head>
+
+<body class="flex h-screen w-screen overflow-hidden">
+
+    <!-- MENÚ LATERAL IZQUIERDO -->
+    <aside class="w-64 bg-slate-950/40 border-r border-slate-800 backdrop-blur-xl flex flex-col z-50 shrink-0">
+        <div class="p-6 text-slate-400">
+            <div class="flex items-center gap-3 mb-10 logo-container">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
+                    class="text-blue-500">
+                    <path d="M12 22C12 22 20 18 20 12V5L12 2L4 5V12C4 18 12 22 12 22Z" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M9 15V9H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M9 15H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+                <span class="font-bold tracking-tighter text-xl text-white">LAMDA</span>
+            </div>
+
+            <nav class="space-y-1">
+                <p class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-4 ml-4">Panel de Control</p>
+
+                <!-- 1. Gestión de listas -->
+                <div id="listsMenuContainer">
+                    <button onclick="toggleDropdown('listsDropdown', 'listsMenuContainer')"
+                        class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="list-checks" class="w-4 h-4"></i>
+                            <span>Gestión de listas</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-3 h-3 chevron-icon"></i>
+                    </button>
+                    <div id="listsDropdown"
+                        class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
+                        <button onclick="loadProveedores()"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Ver
+                            Proveedores</button>
+                        <button onclick="openSupplierModal()"
+                            class="submenu-item text-left py-2 text-[11px] text-emerald-500 hover:text-emerald-400 text-xs font-semibold">+
+                            Nuevo Proveedor</button>
+                    </div>
+                </div>
+
+                <!-- 2. Tareas -->
+                <div id="tasksMenuContainer">
+                    <button onclick="toggleDropdown('tasksDropdown', 'tasksMenuContainer')"
+                        class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="clipboard-list" class="w-4 h-4"></i>
+                            <span>Tareas</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-3 h-3 chevron-icon"></i>
+                    </button>
+                    <div id="tasksDropdown"
+                        class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
+                        <button onclick="taskAction('Generar pedidos')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Generar
+                            pedidos</button>
+                        <button onclick="taskAction('Generar presupuestos')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Generar
+                            presupuestos</button>
+                        <button onclick="taskAction('Solicitar información a proveedor')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Solicitar
+                            información</button>
+                        <button onclick="taskAction('Orden de devolución')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Orden
+                            de devolución</button>
+                        <button onclick="taskAction('Orden de pago')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Orden
+                            de pago</button>
+                    </div>
+                </div>
+
+                <!-- 3. Info -->
+                <div id="infoMenuContainer">
+                    <button onclick="toggleDropdown('infoDropdown', 'infoMenuContainer')"
+                        class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="file-bar-chart" class="w-4 h-4"></i>
+                            <span>Info</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-3 h-3 chevron-icon"></i>
+                    </button>
+                    <div id="infoDropdown"
+                        class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
+                        <button onclick="taskAction('Mercadería en tránsito')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Mercadería
+                            en tránsito</button>
+                        <button onclick="taskAction('Pedidos activos')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Pedidos
+                            activos</button>
+                    </div>
+                </div>
+
+                <!-- 4. Gráficos -->
+                <div id="chartsMenuContainer">
+                    <button onclick="toggleDropdown('chartsDropdown', 'chartsMenuContainer')"
+                        class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+                            <span>Gráficos</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-3 h-3 chevron-icon"></i>
+                    </button>
+                    <div id="chartsDropdown"
+                        class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
+                        <button onclick="taskAction('Gráfico de Inversión')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Inversión</button>
+                        <button onclick="taskAction('Gráfico de Pasivos')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Pasivos</button>
+                        <button onclick="taskAction('Gráfico de Activos')"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Activos</button>
+                    </div>
+                </div>
+            </nav>
+        </div>
+
+        <div class="mt-auto p-6 space-y-4 relative">
+            <!-- Desplegable de Configuración (Hacia Arriba) -->
+            <div id="settingsMenuContainer" class="relative">
+                <!-- Submenú que abre hacia arriba -->
+                <div id="settingsDropdown"
+                    class="hidden absolute dropup-content w-full flex flex-col pl-11 pr-4 py-2 space-y-1 bg-slate-900/80 backdrop-blur-xl rounded-xl border border-slate-800 overflow-hidden transition-all duration-300 shadow-2xl mb-2">
+                    <button onclick="taskAction('Alta de proveedor')"
+                        class="submenu-item text-left py-2 text-[11px] text-slate-400 hover:text-blue-400 text-xs font-medium">Alta
+                        de proveedor</button>
+                    <button id="logoutBtn"
+                        class="submenu-item text-left py-2 text-[11px] text-red-400 hover:text-red-300 text-xs font-medium w-full flex items-center gap-2">
+                        <i data-lucide="log-out" class="w-3 h-3"></i> Cerrar Sesión
+                    </button>
+                </div>
+
+                <button onclick="toggleDropdown('settingsDropdown', 'settingsMenuContainer')"
+                    class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left transition-all">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="settings" class="w-4 h-4"></i>
+                        <span>Configuración</span>
+                    </div>
+                    <i data-lucide="chevron-up" class="w-3 h-3 chevron-icon"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ÁREA DE CONTENIDO PRINCIPAL -->
+    <div class="flex-1 flex flex-col h-screen overflow-hidden relative">
+
+        <!-- Header Superior -->
+        <header
+            class="h-16 flex items-center justify-between px-8 border-b border-slate-800/50 bg-slate-950/20 backdrop-blur-md shrink-0">
+            <div>
+                <h1 class="text-xs font-mono text-blue-500 tracking-widest uppercase">Sistema Operativo v4.0 // Alta
+                    Gerencia</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="systemTime" class="text-xs font-mono text-slate-500">29_ENE_2026_22:40</div>
+                <div class="h-4 w-[1px] bg-slate-800"></div>
+                <div class="flex items-center gap-2">
+                    <div id="userAvatar"
+                        class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold border border-slate-700 animate-pulse">
+                        ...</div>
+                    <span id="userEmail" class="text-xs text-slate-300">Cargando...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Rejilla Principal -->
+        <main class="flex-1 p-6 flex flex-col gap-4 overflow-hidden">
+
+            <!-- Fila de Métricas -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 h-20 shrink-0">
+                <div class="metric-card p-3 rounded-lg flex flex-col justify-center">
+                    <div class="flex items-center gap-2 text-slate-500 mb-1">
+                        <i data-lucide="users" class="w-3 h-3"></i>
+                        <span class="text-[9px] font-bold uppercase tracking-tighter">Proveedores Activos</span>
+                    </div>
+                    <span class="text-lg font-bold text-slate-200">142</span>
+                </div>
+                <div class="metric-card p-3 rounded-lg flex flex-col justify-center">
+                    <div class="flex items-center gap-2 text-slate-500 mb-1">
+                        <i data-lucide="trending-up" class="w-3 h-3 text-emerald-500"></i>
+                        <span class="text-[9px] font-bold uppercase tracking-tighter">Inversión Mensual</span>
+                    </div>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[10px] text-slate-600 font-mono">$</span>
+                        <span class="text-lg font-bold text-emerald-400">158.420.000</span>
+                    </div>
+                </div>
+                <div class="metric-card p-3 rounded-lg flex flex-col justify-center">
+                    <div class="flex items-center gap-2 text-slate-500 mb-1">
+                        <i data-lucide="alert-circle" class="w-3 h-3 text-amber-500"></i>
+                        <span class="text-[9px] font-bold uppercase tracking-tighter">Deuda Total</span>
+                    </div>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[10px] text-slate-600 font-mono">$</span>
+                        <span class="text-lg font-bold text-amber-500">24.150.800</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fila de Análisis -->
+            <div class="flex-1 flex flex-col min-h-0 relative">
+                <div id="reportDisplay"
+                    class="flex-1 terminal-font text-[14px] text-slate-300 overflow-y-auto custom-scrollbar p-6 max-w-4xl mx-auto w-full">
+                    <!-- Respuestas de la IA -->
+                </div>
+            </div>
+        </main>
+
+        <!-- TERMINAL DE CHAT -->
+        <footer class="p-4 bg-slate-950/80 backdrop-blur-3xl border-t border-blue-500/20 shrink-0">
+            <div class="max-w-5xl mx-auto relative flex items-center gap-3">
+                <button onclick="toggleHistory()"
+                    class="group bg-slate-900 border border-slate-800 p-3 rounded-xl transition-all">
+                    <i data-lucide="history" class="w-4 h-4 text-slate-500 group-hover:text-blue-400"></i>
+                </button>
+                <div class="flex-grow relative flex items-center">
+                    <input type="text" id="terminalInput" placeholder="Habla o escribe un comando para la IA..."
+                        class="w-full bg-slate-900/50 border border-slate-800 focus:border-blue-500/50 rounded-xl py-3 pl-6 pr-20 outline-none terminal-font text-xs text-white placeholder:text-slate-600 transition-all">
+                    <div class="absolute right-2 flex items-center gap-1">
+                        <button id="micBtn" onclick="toggleVoice()"
+                            class="p-2 text-slate-500 hover:text-white transition-all rounded-lg">
+                            <i data-lucide="mic" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="sendToAI()"
+                            class="p-2 text-blue-500 hover:text-blue-400 transition-all rounded-lg">
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </footer>
+
+        <!-- Cargador de IA -->
+        <div id="aiLoader"
+            class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-blue-600/10 border border-blue-500/30 px-6 py-2 rounded-full backdrop-blur-md z-50">
+            <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></span>
+            <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+            <span class="text-[10px] font-mono text-blue-400 uppercase tracking-widest">IA_SINCRO</span>
+        </div>
+
+        <!-- Historial -->
+        <div id="historyOverlay"
+            class="hidden absolute inset-0 z-[60] flex items-center justify-center p-8 bg-black/40 backdrop-blur-2xl">
+            <div
+                class="glass-panel w-full max-w-4xl h-[60vh] rounded-3xl flex flex-col border border-blue-500/20 overflow-hidden">
+                <div
+                    class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/50 text-[10px] font-bold uppercase tracking-widest">
+                    <span class="px-2">Registros del Sistema</span>
+                    <button onclick="toggleHistory()" class="text-slate-500 hover:text-red-400"><i data-lucide="x"
+                            class="w-5 h-5"></i></button>
+                </div>
+                <div id="historyContent"
+                    class="flex-grow overflow-y-auto p-6 space-y-4 custom-scrollbar terminal-font text-[11px]"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- COMPONENTE: MODAL ALTA DE PROVEEDOR ✨ -->
+    <!-- ========================================== -->
+    <div id="supplierModal"
+        class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 modal-blur overflow-y-auto">
+        <div
+            class="glass-panel w-full max-w-2xl rounded-[2.5rem] border border-blue-500/20 shadow-2xl animate-in zoom-in-95 duration-300">
+
+            <!-- Encabezado del Modal -->
+            <div class="p-8 border-b border-slate-800/50 flex justify-between items-center bg-slate-950/20">
+                <div class="flex items-center gap-4">
+                    <div class="bg-blue-600/20 p-3 rounded-2xl">
+                        <i data-lucide="user-plus" class="w-6 h-6 text-blue-400"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold text-white tracking-tight leading-none mb-1">Registro de Proveedor
+                        </h2>
+                        <p class="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Alta de Entidad
+                            Operativa</p>
+                    </div>
+                </div>
+                <button onclick="closeSupplierModal()"
+                    class="text-slate-500 hover:text-white p-2 hover:bg-slate-800 rounded-xl transition-all">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <!-- Cuerpo del Formulario -->
+            <form id="supplierForm" class="p-8 space-y-6">
+                <!-- Fila 1: Identidad -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Empresa / Nombre
+                            Comercial</label>
+                        <input type="text" name="nombre" placeholder="Ej: Distribuidora Central" required
+                            class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm placeholder:text-slate-700">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">CUIT</label>
+                        <input type="text" name="cuit" placeholder="XX-XXXXXXXX-X"
+                            class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm placeholder:text-slate-700">
+                    </div>
+                </div>
+
+                <!-- Fila 2: Clasificación -->
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Categoría Operativa</label>
+                    <select name="categoria"
+                        class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm appearance-none cursor-pointer">
+                        <option value="" class="bg-slate-900">Seleccionar rubro...</option>
+                        <option value="Frutos Secos" class="bg-slate-900">Frutos Secos</option>
+                        <option value="Enlatados" class="bg-slate-900">Enlatados</option>
+                        <option value="Bebidas" class="bg-slate-900">Bebidas</option>
+                        <option value="Logística" class="bg-slate-900">Logística / Transporte</option>
+                    </select>
+                </div>
+
+                <!-- Fila 3: Contacto -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Responsable</label>
+                        <input type="text" name="contacto_nombre" placeholder="Nombre completo"
+                            class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm placeholder:text-slate-700">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Email</label>
+                        <input type="email" name="contacto_email" placeholder="ejemplo@mail.com"
+                            class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm placeholder:text-slate-700">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Teléfono</label>
+                        <input type="tel" name="contacto_telefono" placeholder="+54 9..."
+                            class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm placeholder:text-slate-700">
+                    </div>
+                </div>
+
+                <!-- Fila 4: Logística -->
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Dirección de Operaciones</label>
+                    <div class="relative">
+                        <i data-lucide="map-pin" class="absolute left-4 top-3.5 w-4 h-4 text-slate-600"></i>
+                        <input type="text" name="direccion" placeholder="Calle, Altura, Localidad"
+                            class="w-full form-input bg-slate-900/40 rounded-xl pl-11 pr-4 py-3 text-sm placeholder:text-slate-700">
+                    </div>
+                </div>
+
+                <!-- Acciones -->
+                <div class="pt-6 flex items-center justify-end gap-4">
+                    <button type="button" onclick="closeSupplierModal()"
+                        class="px-6 py-3 text-xs font-bold text-slate-500 hover:text-slate-300 transition-all uppercase tracking-widest">
+                        Cancelar
+                    </button>
+                    <button type="submit"
+                        class="btn-glow px-8 py-3 bg-blue-600 text-white rounded-xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-blue-900/20">
+                        Registrar Proveedor
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Integración de Lógica y Seguridad -->
+    <script>
+        lucide.createIcons();
+
+        // 1. Configuración de Seguridad y Backend
+        const sbUrl = (typeof CONFIG !== 'undefined') ? CONFIG.SUPABASE_URL : "";
+        const sbKey = (typeof CONFIG !== 'undefined') ? CONFIG.SUPABASE_ANON_KEY : "";
+        // Usar API Key real de config.js para la IA
+        const apiKey = (typeof CONFIG !== 'undefined') ? CONFIG.GEMINI_API_KEY : "";
+
+        // Renombrado a supabaseClient para evitar conflicto con window.supabase
+        let supabaseClient = null;
+
+        // 2. Guardia de Sesión (Protección de Ruta)
+        async function initSystem() {
+            if (!sbUrl || !sbKey) {
+                console.error("CRITICAL: Faltan credenciales del sistema.");
+                window.location.href = 'acceso.html'; // Expulsión preventiva
+                return;
+            }
+
+            // Inicializar Cliente Supabase
+            supabaseClient = window.supabase.createClient(sbUrl, sbKey);
+
+            // Verificar Sesión Activa
+            const { data: { session } } = await supabaseClient.auth.getSession();
+
+            if (!session) {
+                // Si no hay sesión, REDIRIGIR AL LOGIN
+                console.warn("⚠️ Acceso no autorizado. Redirigiendo a puerta de enlace...");
+                window.location.href = 'acceso.html';
+            } else {
+                // Sesión Válida: Mostrar Interfaz y Cargar Datos
+                document.body.style.visibility = 'visible';
+                console.log("✅ Sistema Operativo. Usuario:", session.user.email);
+
+                // Actualizar UI con datos de usuario
+                document.getElementById('userEmail').innerText = session.user.email;
+                document.getElementById('userAvatar').innerText = session.user.email.substring(0, 2).toUpperCase();
+                document.getElementById('userAvatar').classList.remove('animate-pulse'); // Stop loading animation
+            }
+
+            // Listener de Auth State Change (para logout global)
+            supabaseClient.auth.onAuthStateChange((event, session) => {
+                if (event === 'SIGNED_OUT') window.location.href = 'acceso.html';
+            });
+        }
+
+        // Ejecutar Inmediatamente
+        initSystem();
+
+        // 3. Lógica del Chasis (Interfaz Original del Chapista)
+        const terminalInput = document.getElementById('terminalInput');
+        const aiLoader = document.getElementById('aiLoader');
+        const historyContent = document.getElementById('historyContent');
+        const micBtn = document.getElementById('micBtn');
+        const reportDisplay = document.getElementById('reportDisplay');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        // Logout
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async () => {
+                await supabaseClient.auth.signOut();
+                window.location.href = 'acceso.html';
+            });
+        }
+
+        // Placeholder for real metrics, assuming it will be fetched or calculated
+        let realMetrics = {
+            proveedoresCount: 142, // Example initial value
+            inversion: "$158.420.000 Pesos",
+            deuda: "$24.150.800 Pesos"
+        };
+
+        // Lógica para cargar proveedores (asumiendo que se obtienen de Supabase)
+        async function loadProveedores() {
+            reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400">
+                                        <i data-lucide="loader-2" class="w-8 h-8 animate-spin mr-2"></i>
+                                        Cargando proveedores...
+                                    </div>`;
+            lucide.createIcons();
+
+            const { data, error } = await supabaseClient
+                .from('proveedores')
+                .select('*');
+
+            if (error) {
+                console.error("Error al cargar proveedores:", error);
+                reportDisplay.innerHTML = `<div class="text-red-500">Error al cargar proveedores: ${error.message}</div>`;
+                return;
+            }
+
+            if (data.length === 0) {
+                reportDisplay.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-slate-500">
+                        <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-50"></i>
+                        <p class="text-sm">No hay proveedores registrados.</p>
+                        <button onclick="openSupplierModal()" class="mt-4 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-xs transition-colors border border-blue-500/30">
+                            + Dar de Alta
+                        </button>
+                    </div>
+                `;
+            } else {
+                // Renderizar la tabla de proveedores
+                let tableHtml = `
+                    <h3 class="text-xl font-bold text-white mb-4">Listado de Proveedores</h3>
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="min-w-full divide-y divide-slate-700">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Empresa</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">CUIT</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Categoría</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Contacto</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Teléfono</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Email</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800">
+                `;
+                data.forEach(supplier => {
+                    tableHtml += `
+                        <tr class="hover:bg-slate-800/50 transition-colors">
+                            <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-white">${supplier.nombre}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.cuit || 'N/A'}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.categoria || 'N/A'}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.contacto_nombre || 'N/A'}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.contacto_telefono || 'N/A'}</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.contacto_email || 'N/A'}</td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                reportDisplay.innerHTML = tableHtml;
+            }
+            lucide.createIcons();
+            // Update realMetrics with actual count
+            realMetrics.proveedoresCount = data.length;
+        }
+
+        // Lógica de Métricas Contextuales Actualizada (ZERO HALLUCINATIONS)
+        const getMetricsContext = () => {
+            return {
+                proveedores: `${realMetrics.proveedoresCount} registrados en base de datos.`,
+                inversion: realMetrics.inversion,
+                deuda: realMetrics.deuda
+            };
+        };
+
+        // LÓGICA MODAL PROVEEDORES + SUPABASE INTEGRATION
+        const modal = document.getElementById('supplierModal');
+        const form = document.getElementById('supplierForm');
+
+        function openSupplierModal() {
+            modal.classList.remove('hidden');
+        }
+
+        function closeSupplierModal() {
+            modal.classList.add('hidden');
+            form.reset();
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = form.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>';
+            btn.disabled = true;
+            lucide.createIcons();
+
+            // Recolección de datos
+            const formData = new FormData(form);
+            const supplierData = Object.fromEntries(formData.entries());
+
+            try {
+                // Insertar en Supabase
+                const { error } = await supabaseClient
+                    .from('proveedores')
+                    .insert([supplierData]);
+
+                if (error) throw error;
+
+                // Éxito
+                closeSupplierModal();
+
+                // Feedback IA
+                renderChatMessage('LAMDA_AI', `✅ Proveedor "${supplierData.nombre}" registrado correctamente en el sistema.`);
+
+                // Recargar Lista (si está en vista) y Métricas
+                loadProveedores();
+
+            } catch (error) {
+                console.error("Error al registrar:", error);
+                alert("Error al registrar: " + error.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        });
+
+        // Cerrar modal al hacer clic fuera
+        window.onclick = function (event) {
+            if (event.target == modal) closeSupplierModal();
+        }
+
+
+        // Lógica de Voz y Chat Mejorada (Push-to-Talk & Historial Persistente)
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        let isRecording = false;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'es-ES';
+            recognition.continuous = true; // Permite hablar sin que se corte al silencio
+            recognition.interimResults = true; // Ver lo que se escribe en tiempo real
+
+            recognition.onstart = () => {
+                isRecording = true;
+                micBtn.classList.add('mic-active');
+                micBtn.innerHTML = '<i data-lucide="square" class="w-4 h-4 fill-current"></i>'; // Icono Stop
+                lucide.createIcons();
+                terminalInput.placeholder = "Escuchando... (Haz clic en el micro para enviar)";
+            };
+
+            recognition.onresult = (event) => {
+                // Solo mostrar texto, NO enviar automáticamente
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                // Si es final, lo pone en el input, si es interino, también (simple overwrite para UX fluida)
+                terminalInput.value = transcript;
+            };
+
+            recognition.onend = () => {
+                isRecording = false;
+                micBtn.classList.remove('mic-active');
+                micBtn.innerHTML = '<i data-lucide="mic" class="w-4 h-4"></i>';
+                lucide.createIcons();
+                terminalInput.placeholder = "Habla o escribe un comando para la IA...";
+                // Opción: Auto-enviar al terminar? El usuario pidió control manual.
+                // Si el usuario paró manual, toggleVoice manejará el envío.
+            };
+        }
+
+        function toggleVoice() {
+            if (!recognition) return alert("Navegador no compatible con voz.");
+
+            if (isRecording) {
+                // STOP MANUAL -> ENVIAR
+                recognition.stop();
+                if (terminalInput.value.trim().length > 0) {
+                    sendToAI();
+                }
+            } else {
+                // START MANUAL
+                terminalInput.value = '';
+                recognition.start();
+            }
+        }
+
+        function toggleDropdown(dropdownId, containerId) {
+            const dropdown = document.getElementById(dropdownId);
+            const container = document.getElementById(containerId);
+
+            const allDropdowns = ['tasksDropdown', 'infoDropdown', 'chartsDropdown', 'listsDropdown', 'settingsDropdown'];
+            const allContainers = ['tasksMenuContainer', 'infoMenuContainer', 'chartsMenuContainer', 'listsMenuContainer', 'settingsMenuContainer'];
+
+            allDropdowns.forEach((id, index) => {
+                if (id !== dropdownId) {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.add('hidden');
+                    const cont = document.getElementById(allContainers[index]);
+                    if (cont) cont.classList.remove('menu-open');
+                }
+            });
+
+            dropdown.classList.toggle('hidden');
+            container.classList.toggle('menu-open');
+        }
+
+        // Función para renderizar mensaje en el chat principal (Persistente)
+        function renderChatMessage(role, text) {
+            const isUser = role === 'GERENCIA';
+            const bgColor = isUser ? 'bg-slate-800/50' : 'bg-blue-600/10 border-blue-500/20';
+            const align = isUser ? 'text-right' : 'text-left';
+            const icon = isUser ? 'user' : 'bot';
+
+            const html = `
+                <div class="mb-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    <div class="flex items-center gap-2 mb-1 ${isUser ? 'justify-end' : 'justify-start'} text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        ${isUser ? `GET /USER/COMMAND` : `RESPONSE /LAMDA/AI`}
+                    </div>
+                    <div class="${bgColor} p-4 rounded-2xl border border-transparent ${isUser ? 'rounded-tr-none' : 'rounded-tl-none'} inline-block max-w-[85%]">
+                        <div class="text-sm leading-relaxed whitespace-pre-wrap text-slate-200">${text}</div>
+                    </div>
+                </div>
+            `;
+
+            reportDisplay.insertAdjacentHTML('beforeend', html);
+            reportDisplay.scrollTop = reportDisplay.scrollHeight;
+        }
+
+        async function taskAction(taskName) {
+            aiLoader.classList.remove('hidden');
+            const metrics = getMetricsContext();
+            const prompt = `Usuario solicita: "${taskName}". Contexto: Proveedores ${metrics.proveedores}, Inversión ${metrics.inversion}, Deuda ${metrics.deuda}. Genera un informe táctico corto.`;
+
+            // Mostrar comando en chat
+            renderChatMessage('GERENCIA', `Ejecutar comando: ${taskName}`);
+
+            // Usar Prompt Dashboard (Modo Dios)
+            const sysPrompt = (typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres la IA de gestión.";
+            const response = await callGemini(prompt, sysPrompt);
+
+            aiLoader.classList.add('hidden');
+            appendHistory('SISTEMA', `Acción: ${taskName}`);
+
+            // Mostrar respuesta en chat
+            renderChatMessage('LAMDA_AI', response);
+        }
+
+        async function callGemini(prompt, sysInstr = null) {
+            // Si no se pasa instrucción específica, usar la del Dashboard por defecto
+            const finalSysInstr = sysInstr || ((typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres el analista de LAMDA.");
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: finalSysInstr }] }
+            };
+            try {
+                const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.candidates?.[0]?.content?.parts?.[0]?.text || "Sin respuesta del núcleo IA.";
+                }
+                return "Error en la respuesta del satélite IA.";
+            } catch (e) { return "Error fatal de conexión."; }
+        }
+
+        async function sendToAI() {
+            const text = terminalInput.value.trim();
+            if (!text) return;
+            terminalInput.value = '';
+
+            aiLoader.classList.remove('hidden');
+            appendHistory('GERENCIA', text);
+
+            // Render User Message
+            renderChatMessage('GERENCIA', text);
+
+            const response = await callGemini(text);
+
+            aiLoader.classList.add('hidden');
+            appendHistory('LAMDA_AI', response);
+
+            // Render AI Response
+            renderChatMessage('LAMDA_AI', response);
+        }
+
+        function appendHistory(role, text) {
+            const div = document.createElement('div');
+            div.className = "mb-4";
+            div.innerHTML = `<div class="text-[9px] font-bold mb-1 ${role === 'GERENCIA' ? 'text-slate-500' : 'text-blue-500'}">[${new Date().toLocaleTimeString()}] ${role}</div>
+                             <div class="p-3 rounded-lg border ${role === 'GERENCIA' ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-blue-600/5 border-blue-500/20 text-blue-100'}">${text}</div>`;
+            historyContent.appendChild(div);
+            historyContent.scrollTop = historyContent.scrollHeight;
+        }
+
+        function toggleHistory() { document.getElementById('historyOverlay').classList.toggle('hidden'); }
+
+        function updateTime() {
+            const now = new Date();
+            const months = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+            const day = now.getDate();
+            const year = now.getFullYear();
+            const h = now.getHours().toString().padStart(2, '0');
+            const m = now.getMinutes().toString().padStart(2, '0');
+            document.getElementById('systemTime').innerText = `${day}_${months[now.getMonth()]}_${year}_${h}:${m}`;
+        }
+
+        setInterval(updateTime, 1000);
+        updateTime();
+        terminalInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendToAI(); });
+    </script>
 </body>
 
 </html>

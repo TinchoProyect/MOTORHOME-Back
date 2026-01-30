@@ -341,8 +341,8 @@
                 contents: [{ parts: [{ text: prompt }] }]
             };
 
-            // Usar Prompt del Sistema desde Config o Default
-            const sysPromptParams = systemInstruction || (typeof CONFIG !== 'undefined' ? CONFIG.SYSTEM_PROMPT : "");
+            // Usar Prompt del Sistema desde Config (Perfil Seguridad)
+            const sysPromptParams = systemInstruction || (typeof CONFIG !== 'undefined' ? CONFIG.PROMPT_LOGIN : "");
 
             if (sysPromptParams) {
                 payload.systemInstruction = { parts: [{ text: sysPromptParams }] };
