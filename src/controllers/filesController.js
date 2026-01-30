@@ -11,8 +11,14 @@ async function listFiles(req, res) {
             return res.status(400).json({ error: "Falta Folder ID (Verificar .env o query param)" });
         }
 
-        console.log(`[FilesController] Listando archivos de: ${folderId}`);
-        const files = await driveService.listFiles(folderId);
+        console.log(`[FilesController] Listando archivos de: ${folderId} (Type: ${req.query.type || 'all'})`);
+
+        let mimeType = null;
+        if (req.query.type === 'folders') {
+            mimeType = 'application/vnd.google-apps.folder';
+        }
+
+        const files = await driveService.listFiles(folderId, mimeType);
 
         res.json({
             success: true,

@@ -180,9 +180,6 @@
                     </button>
                     <div id="listsDropdown"
                         class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
-                        <button onclick="loadProveedores()"
-                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Ver
-                            Proveedores</button>
                         <button onclick="openSupplierModal()"
                             class="submenu-item text-left py-2 text-[11px] text-emerald-500 hover:text-emerald-400 text-xs font-semibold">+
                             Nuevo Proveedor</button>
@@ -231,6 +228,21 @@
                     </button>
                     <div id="infoDropdown"
                         class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
+                        <!-- Proveedores (Desplegable) -->
+                        <div>
+                            <button onclick="handleProveedoresClick()"
+                                class="w-full submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs flex items-center justify-between group">
+                                <span>Proveedores</span>
+                                <i data-lucide="chevron-down"
+                                    class="w-2.5 h-2.5 opacity-50 group-hover:opacity-100 transition-opacity"></i>
+                            </button>
+                            <!-- Submenú Dinámico de Proveedores -->
+                            <div id="suppliersSubmenu"
+                                class="hidden flex flex-col pl-3 mt-1 space-y-1 border-l border-slate-800/50 mb-2">
+                                <!-- Se llena dinámicamente con JS -->
+                                <span class="text-[9px] text-slate-600 px-2 py-1 italic">Cargando...</span>
+                            </div>
+                        </div>
                         <button onclick="taskAction('Mercadería en tránsito')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Mercadería
                             en tránsito</button>
@@ -269,7 +281,7 @@
                 <!-- Submenú que abre hacia arriba -->
                 <div id="settingsDropdown"
                     class="hidden absolute dropup-content w-full flex flex-col pl-11 pr-4 py-2 space-y-1 bg-slate-900/80 backdrop-blur-xl rounded-xl border border-slate-800 overflow-hidden transition-all duration-300 shadow-2xl mb-2">
-                    <button onclick="taskAction('Alta de proveedor')"
+                    <button onclick="openSupplierModal()"
                         class="submenu-item text-left py-2 text-[11px] text-slate-400 hover:text-blue-400 text-xs font-medium">Alta
                         de proveedor</button>
                     <button id="logoutBtn"
@@ -461,7 +473,37 @@
                     </select>
                 </div>
 
-                <!-- Fila 3: Contacto -->
+                <!-- Fila 3: Vinculación Drive -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Carpeta en Drive</label>
+                        <div class="relative">
+                            <i data-lucide="folder" class="absolute left-4 top-3.5 w-4 h-4 text-slate-600"></i>
+                            <select name="drive_folder_id" id="driveFolderSelect"
+                                class="w-full form-input bg-slate-900/40 rounded-xl pl-11 pr-4 py-3 text-sm appearance-none cursor-pointer text-slate-300">
+                                <option value="">Cargando carpetas...</option>
+                            </select>
+                            <i data-lucide="chevron-down"
+                                class="absolute right-4 top-4 w-3 h-3 text-slate-600 pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <div class="space-y-1 flex items-center h-full pt-6">
+                        <label
+                            class="flex items-center gap-3 cursor-pointer group px-4 py-3 rounded-xl hover:bg-slate-900/50 transition-colors w-full border border-transparent hover:border-slate-800">
+                            <input type="checkbox" name="activo"
+                                class="w-5 h-5 rounded-md border-slate-600 bg-slate-900/80 text-blue-600 focus:ring-blue-500/50 focus:ring-offset-0 transition-all"
+                                checked>
+                            <div class="flex flex-col">
+                                <span
+                                    class="text-xs font-bold text-slate-300 group-hover:text-blue-400 transition-colors">Proveedor
+                                    Operativo</span>
+                                <span class="text-[9px] text-slate-500">¿Habilitar compras y gestión?</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Fila 4: Contacto -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Responsable</label>
@@ -545,6 +587,9 @@
                 document.getElementById('userEmail').innerText = session.user.email;
                 document.getElementById('userAvatar').innerText = session.user.email.substring(0, 2).toUpperCase();
                 document.getElementById('userAvatar').classList.remove('animate-pulse'); // Stop loading animation
+
+                // Cargar Sidebar de Proveedores (Lazy Load inicial)
+                loadSuppliersSidebar();
             }
 
             // Listener de Auth State Change (para logout global)
@@ -579,6 +624,307 @@
             deuda: "$24.150.800 Pesos"
         };
 
+        // Estado Global de Proveedores
+        let currentSuppliers = [];
+        let editingSupplierId = null;
+
+        // --- EXPLORADOR DE ARCHIVOS (DRIVE) ---
+        async function exploreSupplierFiles(folderId) {
+            if (!folderId) return;
+
+            // Mostrar estado de carga en el panel central
+            reportDisplay.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full text-blue-400 animate-in fade-in duration-300">
+                    <div class="relative w-16 h-16 mb-4">
+                        <div class="absolute inset-0 border-4 border-slate-800 rounded-full"></div>
+                        <div class="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
+                        <i data-lucide="hard-drive" class="absolute inset-0 m-auto w-6 h-6 text-white animate-pulse"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white mb-1">Conectando con Drive</h3>
+                    <p class="text-xs text-slate-500 font-mono">ID: ${folderId}</p>
+                </div>
+            `;
+            lucide.createIcons();
+
+            try {
+                // Fetch archivos usando la URL base (backendBaseUrl ya definido anteriormente)
+                const url = backendBaseUrl ? `${backendBaseUrl}/api/files/list?folderId=${folderId}` : `/api/files/list?folderId=${folderId}`;
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!data.success) throw new Error(data.error || "Error desconocido");
+
+                renderFileGrid(data.files, folderId);
+
+            } catch (error) {
+                console.error("Error explorador:", error);
+                reportDisplay.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-red-400">
+                        <i data-lucide="alert-triangle" class="w-12 h-12 mb-4 opacity-80"></i>
+                        <p class="text-lg font-bold">Error de Conexión</p>
+                        <p class="text-sm text-slate-500 max-w-md text-center mt-2">${error.message}</p>
+                        <button onclick="showSuppliersList()" class="mt-6 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition-colors">Volver</button>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+        }
+
+        function renderFileGrid(files, folderId) {
+            // Helpers de Iconos
+            const getIcon = (mime) => {
+                if (mime.includes('folder')) return 'folder';
+                if (mime.includes('image')) return 'image';
+                if (mime.includes('pdf')) return 'file-text';
+                if (mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('csv')) return 'table';
+                return 'file';
+            };
+
+            const getColor = (mime) => {
+                if (mime.includes('folder')) return 'text-yellow-500';
+                if (mime.includes('image')) return 'text-purple-400';
+                if (mime.includes('pdf')) return 'text-red-400';
+                if (mime.includes('spreadsheet')) return 'text-emerald-400';
+                return 'text-slate-400';
+            };
+
+            // Header con Navegación
+            let html = `
+                <div class="h-full flex flex-col animate-in slide-in-from-bottom-4 duration-500 p-2">
+                    <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
+                        <div class="flex items-center gap-3">
+                            <button onclick="showSuppliersList()" class="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
+                                <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                            </button>
+                            <div>
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="folder-open" class="w-5 h-5 text-blue-500"></i>
+                                    Archivos del Proveedor
+                                </h2>
+                                <span class="text-[10px] text-slate-500 font-mono tracking-wider">INDEXANDO ${files.length} ELEMENTOS</span>
+                            </div>
+                        </div>
+                        <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" class="px-3 py-1.5 bg-slate-800 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 border border-slate-700 rounded-lg text-xs font-medium transition-all flex items-center gap-2">
+                            Drive Exte&shy;rno <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                    </div>
+            `;
+
+            // Grid de Contenido
+            if (files.length === 0) {
+                html += `
+                    <div class="flex-grow flex flex-col items-center justify-center text-slate-600">
+                        <i data-lucide="folder-open" class="w-16 h-16 mb-4 opacity-20"></i>
+                        <p class="text-sm">Carpeta vacía</p>
+                    </div>
+                `;
+            } else {
+                html += `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto custom-scrollbar pr-2 pb-10">`;
+
+                files.forEach(file => {
+                    const iconName = getIcon(file.mimeType);
+                    const colorClass = getColor(file.mimeType);
+
+                    html += `
+                        <a href="${file.webViewLink}" target="_blank" class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
+                            <div class="w-12 h-12 bg-slate-950 rounded-lg flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-300">
+                                <i data-lucide="${iconName}" class="w-6 h-6 ${colorClass}"></i>
+                            </div>
+                            <div class="text-center w-full">
+                                <h4 class="text-xs font-medium text-slate-300 group-hover:text-blue-200 truncate w-full" title="${file.name}">${file.name}</h4>
+                                <span class="text-[9px] text-slate-600 uppercase mt-1 block group-hover:text-slate-500 transition-colors">Abrir</span>
+                            </div>
+                        </a>
+                    `;
+                });
+
+                html += `</div>`;
+            }
+
+            html += `</div>`;
+            reportDisplay.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        // Alias para compatibilidad con instrucciones de usuario
+        async function showSuppliersList() {
+            await loadProveedores();
+        }
+
+        // --- LÓGICA DE NAVEGACIÓN DINÁMICA DE PROVEEDORES ---
+
+        function handleProveedoresClick() {
+            const submenu = document.getElementById('suppliersSubmenu');
+            // Toggle visibilidad
+            submenu.classList.toggle('hidden');
+
+            // Cargar lista si está vacío (lazy load)
+            if (!submenu.classList.contains('hidden')) { // Si se abre
+                loadSuppliersSidebar();
+            }
+            // Mostrar lista general en el centro
+            showSuppliersList();
+        }
+
+        async function loadSuppliersSidebar() {
+            const container = document.getElementById('suppliersSubmenu');
+
+            const { data, error } = await supabaseClient
+                .from('proveedores')
+                .select('id, nombre')
+                .eq('activo', true) // Solo activos en sidebar? O todos? Usuario dijo "todos los proveedores".
+                .order('nombre', { ascending: true });
+
+            if (error) {
+                console.error("Error sidebar:", error);
+                container.innerHTML = '<span class="text-[9px] text-red-400 px-2">Error</span>';
+                return;
+            }
+
+            container.innerHTML = ''; // Limpiar
+
+            if (data.length === 0) {
+                container.innerHTML = '<span class="text-[9px] text-slate-600 px-2 italic">Sin proveedores</span>';
+                return;
+            }
+
+            data.forEach(p => {
+                const btn = document.createElement('button');
+                btn.onclick = (e) => {
+                    e.stopPropagation(); // Evitar cerrar menú si fuera necesario
+                    showSingleSupplier(p.id);
+                };
+                btn.className = "text-left py-1.5 px-2 text-[10px] text-slate-500 hover:text-blue-400 hover:bg-slate-900/50 rounded transition-colors whitespace-nowrap overflow-hidden text-ellipsis";
+                btn.innerText = p.nombre;
+                container.appendChild(btn);
+            });
+        }
+
+        async function showSingleSupplier(id) {
+            // Buscar datos completos (Optimización: buscar en cache local si existe, o fetch)
+            let supplier = currentSuppliers.find(s => s.id === id);
+
+            if (!supplier) {
+                // Fetch on demand si no está en cache
+                reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mr-2"></i> Cargando ficha...</div>`;
+                lucide.createIcons();
+                const { data } = await supabaseClient.from('proveedores').select('*').eq('id', id).single();
+                supplier = data;
+            }
+
+            if (!supplier) {
+                reportDisplay.innerHTML = '<div class="text-red-500">Proveedor no encontrado</div>';
+                return;
+            }
+
+            // Renderizar Ficha Técnica
+            reportDisplay.innerHTML = `
+                <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
+                    <!-- Header Ficha -->
+                    <div class="flex justify-between items-start mb-8 border-b border-slate-800 pb-6">
+                        <div>
+                            <div class="flex items-center gap-3 mb-2">
+                                <h2 class="text-3xl font-bold text-white tracking-tight">${supplier.nombre}</h2>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-widest">${supplier.categoria || 'GENERAL'}</span>
+                            </div>
+                            <div class="flex items-center gap-4 text-slate-500 text-xs font-mono">
+                                <span>CUIT: <span class="text-slate-400">${supplier.cuit || 'N/A'}</span></span>
+                                <span>•</span>
+                                <span>ID: ${supplier.id.substring(0, 8)}</span>
+                            </div>
+                        </div>
+                        <button onclick="editSupplier('${supplier.id}')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2 group">
+                            <i data-lucide="pencil" class="w-3 h-3 group-hover:text-white transition-colors"></i> EDITAR
+                        </button>
+                    </div>
+
+                    <!-- Grid de Información -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        
+                        <!-- Columna 1: Operativa e Infra -->
+                        <div class="space-y-6">
+                            <!-- Estado -->
+                            <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 relative overflow-hidden group">
+                                <div class="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-colors"></div>
+                                <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <i data-lucide="activity" class="w-3 h-3"></i> Estado Operativo
+                                </h3>
+                                <div class="flex items-center gap-3">
+                                    <div class="w-3 h-3 rounded-full ${supplier.activo ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'}"></div>
+                                    <span class="text-sm font-medium ${supplier.activo ? 'text-emerald-400' : 'text-red-400'}">
+                                        ${supplier.activo ? 'ACTIVO Y VALIDADO' : 'SUSPENDIDO / INACTIVO'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Drive -->
+                            <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50">
+                                <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <i data-lucide="hard-drive" class="w-3 h-3"></i> Digital Assets
+                                </h3>
+                                ${supplier.drive_folder_id
+                    ? `<div onclick="exploreSupplierFiles('${supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
+                                        <div class="flex items-center gap-3">
+                                            <div class="p-2 bg-slate-900 rounded-md text-blue-500">
+                                                <i data-lucide="folder" class="w-5 h-5"></i>
+                                            </div>
+                                            <div class="flex flex-col">
+                                                <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">Carpeta Vinculada</span>
+                                                <span class="text-[9px] text-slate-600 font-mono">${supplier.drive_folder_id}</span>
+                                            </div>
+                                        </div>
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors"></i>
+                                       </div>`
+                    : `<div class="text-xs text-slate-600 italic py-2">Sin carpeta vinculada</div>`
+                }
+                            </div>
+                        </div>
+
+                        <!-- Columna 2: Contacto y Datos -->
+                        <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 h-full">
+                            <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <i data-lucide="user-check" class="w-3 h-3"></i> Contacto y Logística
+                            </h3>
+                            
+                            <div class="space-y-6">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <span class="block text-[9px] text-slate-500 uppercase mb-1">Responsable</span>
+                                        <span class="text-sm text-slate-300 font-medium border-b border-transparent hover:border-blue-500/50 transition-colors inline-block pb-0.5">
+                                            ${supplier.contacto_nombre || '-'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span class="block text-[9px] text-slate-500 uppercase mb-1">Teléfono</span>
+                                        <span class="text-sm text-slate-300 font-mono">${supplier.contacto_telefono || '-'}</span>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <span class="block text-[9px] text-slate-500 uppercase mb-1">Email Corporativo</span>
+                                    <a href="mailto:${supplier.contacto_email}" class="flex items-center gap-2 text-sm text-blue-400/80 hover:text-blue-400 transition-colors">
+                                        <i data-lucide="mail" class="w-3 h-3"></i>
+                                        ${supplier.contacto_email || '-'}
+                                    </a>
+                                </div>
+
+                                <div class="pt-4 border-t border-slate-800/50">
+                                    <span class="block text-[9px] text-slate-500 uppercase mb-1">Dirección Operativa</span>
+                                    <div class="flex items-start gap-2 text-slate-400 text-xs">
+                                        <i data-lucide="map-pin" class="w-3 h-3 mt-0.5 shrink-0 text-slate-600"></i>
+                                        ${supplier.direccion || 'Sin dirección registrada'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+
         // Lógica para cargar proveedores (asumiendo que se obtienen de Supabase)
         async function loadProveedores() {
             reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400">
@@ -589,13 +935,20 @@
 
             const { data, error } = await supabaseClient
                 .from('proveedores')
-                .select('*');
+                .select('*')
+                .order('nombre', { ascending: true }); // Orden alfabético
 
             if (error) {
                 console.error("Error al cargar proveedores:", error);
                 reportDisplay.innerHTML = `<div class="text-red-500">Error al cargar proveedores: ${error.message}</div>`;
                 return;
             }
+
+            // Actualizar estado local
+            currentSuppliers = data;
+
+            // Actualizar métricas reales
+            realMetrics.proveedoresCount = data.length;
 
             if (data.length === 0) {
                 reportDisplay.innerHTML = `
@@ -610,30 +963,50 @@
             } else {
                 // Renderizar la tabla de proveedores
                 let tableHtml = `
-                    <h3 class="text-xl font-bold text-white mb-4">Listado de Proveedores</h3>
-                    <div class="overflow-x-auto custom-scrollbar">
-                        <table class="min-w-full divide-y divide-slate-700">
-                            <thead>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-white">Listado de Proveedores</h3>
+                        <span class="text-xs text-slate-500 font-mono">${data.length} REGISTROS</span>
+                    </div>
+                    <div class="overflow-x-auto custom-scrollbar rounded-xl border border-slate-800">
+                        <table class="min-w-full divide-y divide-slate-800 bg-slate-900/40">
+                            <thead class="bg-slate-950/50">
                                 <tr>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Empresa</th>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">CUIT</th>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Categoría</th>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Contacto</th>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Teléfono</th>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Email</th>
+                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Empresa</th>
+                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">CUIT</th>
+                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoría</th>
+                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">Contacto</th>
+                                    <th class="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-800">
+                            <tbody class="divide-y divide-slate-800/50">
                 `;
                 data.forEach(supplier => {
                     tableHtml += `
-                        <tr class="hover:bg-slate-800/50 transition-colors">
-                            <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-white">${supplier.nombre}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.cuit || 'N/A'}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.categoria || 'N/A'}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.contacto_nombre || 'N/A'}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.contacto_telefono || 'N/A'}</td>
-                            <td class="px-4 py-2 whitespace-nowrap text-sm text-slate-300">${supplier.contacto_email || 'N/A'}</td>
+                        <tr class="hover:bg-blue-600/5 transition-colors group">
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <div class="text-xs font-bold text-white">${supplier.nombre}</div>
+                                <div class="text-[10px] text-slate-500 md:hidden">${supplier.cuit || ''}</div>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap text-xs text-slate-400 font-mono hidden md:table-cell">${supplier.cuit || '-'}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-800 text-slate-300 border border-slate-700 uppercase">
+                                    ${supplier.categoria || 'General'}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap hidden md:table-cell">
+                                <div class="text-xs text-slate-300">${supplier.contacto_nombre || '-'}</div>
+                                <div class="text-[10px] text-slate-500">${supplier.contacto_email || ''}</div>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                <div class="flex items-center justify-end gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                                    <button onclick="editSupplier('${supplier.id}')" class="p-1.5 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors border border-transparent hover:border-blue-500/30" title="Editar">
+                                        <i data-lucide="pencil" class="w-3 h-3"></i>
+                                    </button>
+                                    <button onclick="deleteSupplier('${supplier.id}', '${supplier.nombre}')" class="p-1.5 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors border border-transparent hover:border-red-500/30" title="Eliminar">
+                                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
                     `;
                 });
@@ -658,17 +1031,133 @@
             };
         };
 
+        // LÓGICA DE VINCULACIÓN DRIVE
+        let driveFoldersCache = null;
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : "";
+
+        async function loadDriveFolders() {
+            const select = document.getElementById('driveFolderSelect');
+            // Si ya hay opciones (además del placeholder), no recargar agresivamente, salvo que sea la primera vez real
+            if (driveFoldersCache && select.children.length > 1) return;
+
+            try {
+                // Fetch using absolute path (if config exists) or relative (fallback)
+                const url = backendBaseUrl ? `${backendBaseUrl}/api/files/list?type=folders` : '/api/files/list?type=folders';
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.success) {
+                    driveFoldersCache = data.files;
+                    populateSelect(select, driveFoldersCache);
+                } else {
+                    select.innerHTML = '<option value="">Error cargando carpetas</option>';
+                }
+            } catch (e) {
+                console.error("Error loading folders:", e);
+                select.innerHTML = '<option value="">Error de conexión con Drive</option>';
+            }
+        }
+
+        function populateSelect(select, files) {
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">Sin vinculación (Seleccionar carpeta)</option>';
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.id;
+                opt.innerText = f.name;
+                select.appendChild(opt);
+            });
+            // Restaurar valor si existía (útil en ediciones rápidas)
+            if (currentVal) select.value = currentVal;
+        }
+
         // LÓGICA MODAL PROVEEDORES + SUPABASE INTEGRATION
         const modal = document.getElementById('supplierModal');
         const form = document.getElementById('supplierForm');
 
-        function openSupplierModal() {
+        const modalTitle = modal.querySelector('h2');
+        const modalSubtitle = modal.querySelector('p');
+        const modalSubmitBtn = form.querySelector('button[type="submit"]');
+
+        function openSupplierModal(isEdit = false) {
             modal.classList.remove('hidden');
+            loadDriveFolders(); // Cargar carpetas dinámicamente
+
+            if (!isEdit) {
+                // Modo Alta
+                editingSupplierId = null;
+                form.reset();
+                if (modalTitle) modalTitle.innerText = "Registro de Proveedor";
+                if (modalSubtitle) modalSubtitle.innerText = "Alta de Entidad Operativa";
+                if (modalSubmitBtn) {
+                    modalSubmitBtn.innerText = "Registrar Proveedor";
+                    modalSubmitBtn.classList.replace('bg-emerald-600', 'bg-blue-600');
+                }
+            } else {
+                // Modo Edición
+                if (modalTitle) modalTitle.innerText = "Editar Proveedor";
+                if (modalSubtitle) modalSubtitle.innerText = "Modificación de Datos Maestros";
+                if (modalSubmitBtn) {
+                    modalSubmitBtn.innerText = "Guardar Cambios";
+                    modalSubmitBtn.classList.remove('bg-blue-600');
+                    modalSubmitBtn.classList.add('bg-emerald-600');
+                }
+            }
         }
 
         function closeSupplierModal() {
             modal.classList.add('hidden');
             form.reset();
+            editingSupplierId = null;
+            if (modalSubmitBtn) {
+                modalSubmitBtn.classList.remove('bg-emerald-600');
+                modalSubmitBtn.classList.add('bg-blue-600');
+            }
+        }
+
+        // Función Editar (Llenar form)
+        function editSupplier(id) {
+            const supplier = currentSuppliers.find(s => s.id === id);
+            if (!supplier) return;
+
+            editingSupplierId = id;
+
+            // Rellenar formulario inputs
+            const inputs = form.querySelectorAll('input, select');
+            inputs.forEach(input => {
+                const key = input.name;
+                if (supplier[key] !== undefined) {
+                    if (input.type === 'checkbox') {
+                        input.checked = supplier[key];
+                    } else {
+                        input.value = supplier[key];
+                    }
+                }
+            });
+
+            openSupplierModal(true);
+        }
+
+        // Función Eliminar
+        async function deleteSupplier(id, nombre) {
+            if (!confirm(`¿Está seguro que desea eliminar a "${nombre}"?`)) return;
+
+            try {
+                const { error } = await supabaseClient
+                    .from('proveedores')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
+
+                renderChatMessage('LAMDA_AI', `🗑️ Proveedor "${nombre}" eliminado.`);
+                loadProveedores(); // Recargar
+
+            } catch (error) {
+                console.error("Error delete:", error);
+                alert(error.message);
+            }
         }
 
         form.addEventListener('submit', async (e) => {
@@ -684,26 +1173,40 @@
             const formData = new FormData(form);
             const supplierData = Object.fromEntries(formData.entries());
 
+            // Fix Checkbox
+            supplierData.activo = !!formData.get('activo');
+
             try {
-                // Insertar en Supabase
-                const { error } = await supabaseClient
-                    .from('proveedores')
-                    .insert([supplierData]);
+                let error = null;
+
+                if (editingSupplierId) {
+                    // UPDATE
+                    const response = await supabaseClient
+                        .from('proveedores')
+                        .update(supplierData)
+                        .eq('id', editingSupplierId);
+                    error = response.error;
+                } else {
+                    // INSERT
+                    const response = await supabaseClient
+                        .from('proveedores')
+                        .insert([supplierData]);
+                    error = response.error;
+                }
 
                 if (error) throw error;
 
                 // Éxito
                 closeSupplierModal();
 
-                // Feedback IA
-                renderChatMessage('LAMDA_AI', `✅ Proveedor "${supplierData.nombre}" registrado correctamente en el sistema.`);
+                const actionVerb = editingSupplierId ? "actualizado" : "registrado";
+                renderChatMessage('LAMDA_AI', `✅ Proveedor "${supplierData.nombre}" ${actionVerb} correctamente.`);
 
-                // Recargar Lista (si está en vista) y Métricas
+                // Recargar Lista
                 loadProveedores();
 
             } catch (error) {
-                console.error("Error al registrar:", error);
-                alert("Error al registrar: " + error.message);
+                alert("Error: " + error.message);
             } finally {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
@@ -815,6 +1318,13 @@
         }
 
         async function taskAction(taskName) {
+            // INTERCEPCIÓN DE COMANDOS DE UI
+            if (taskName && taskName.toLowerCase().includes('alta de proveedor')) {
+                openSupplierModal();
+                renderChatMessage('SISTEMA', 'Abriendo formulario de alta...');
+                return;
+            }
+
             aiLoader.classList.remove('hidden');
             const metrics = getMetricsContext();
             const prompt = `Usuario solicita: "${taskName}". Contexto: Proveedores ${metrics.proveedores}, Inversión ${metrics.inversion}, Deuda ${metrics.deuda}. Genera un informe táctico corto.`;

@@ -237,6 +237,27 @@
         const loginForm = document.getElementById('loginForm');
         const loginBtn = loginForm.querySelector('button[type="submit"]');
 
+        // CARGAR CREDENCIALES GUARDADAS
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedEmail = localStorage.getItem('lamda_user_email');
+            const savedLock = localStorage.getItem('lamda_user_lock');
+            const rememberCheckbox = document.getElementById('remember');
+
+            if (savedEmail) {
+                document.getElementById('emailInput').value = savedEmail;
+                rememberCheckbox.checked = true;
+            }
+
+            if (savedLock) {
+                try {
+                    const pwd = atob(savedLock); // Decodificar simple
+                    loginForm.querySelector('input[type="password"]').value = pwd;
+                } catch (e) {
+                    console.error("Error decoding saved password");
+                }
+            }
+        });
+
         // Función para mostrar el Modal del Chapista (Dinámico)
         function showModal(type, title, message, btnText, actionCallback) {
             // Eliminar modal previo si existe
@@ -294,14 +315,28 @@
                 if (error) throw error;
                 if (!data.session) throw new Error("Sesión no iniciada.");
 
-                // 2. ÉXITO (Diseño Chapista)
-                showModal(
-                    'success',
-                    'Acceso Concedido',
-                    'Secuencia de autorización completada. Bienvenido al Cockpit LAMDA.',
-                    'Entrar al Panel',
-                    () => { window.location.href = 'dashboard.html'; }
-                );
+                // 2. ÉXITO
+
+                // GUARDAR CREDENCIALES SI "RECORDAR" ESTÁ ACTIVO
+                const rememberCheckbox = document.getElementById('remember');
+                if (rememberCheckbox.checked) {
+                    localStorage.setItem('lamda_user_email', email);
+                    // Nota: Guardar contraseñas en localStorage no es seguro en producción web pública.
+                    // Se implementa aquí bajo pedido específico para entorno local/controlado.
+                    localStorage.setItem('lamda_user_lock', btoa(password));
+                } else {
+                    localStorage.removeItem('lamda_user_email');
+                    localStorage.removeItem('lamda_user_lock');
+                }
+
+                // REDIRECCIÓN DIRECTA (Sin Modal Intermedio)
+                // Feedback visual mínimo en el botón
+                btn.innerHTML = '<i data-lucide="check" class="w-5 h-5 mx-auto"></i>';
+                lucide.createIcons();
+
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 500); // Pequeña pausa para ver el check verde
 
             } catch (error) {
                 // 3. ERROR (Diseño Chapista Adaptado)

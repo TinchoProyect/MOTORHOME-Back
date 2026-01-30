@@ -20,16 +20,11 @@ async function getDriveClient() {
     // Read Key File
     const keys = JSON.parse(fs.readFileSync(KEY_FILE_PATH, 'utf8'));
 
-    // SAFEGUARD: Sanitize Private Key
-    const privateKey = keys.private_key.includes('\\n')
-        ? keys.private_key.replace(/\\n/g, '\n')
-        : keys.private_key;
-
-    console.log("[DriveService] Inicializando JWT Auth...");
+    console.log("[DriveService] Inicializando JWT Auth (vía KeyFile)...");
 
     const client = new JWT({
         email: keys.client_email,
-        key: privateKey,
+        keyFile: KEY_FILE_PATH, // Delegate parsing to library (fixes \n issues)
         scopes: SCOPES,
     });
 
@@ -44,14 +39,20 @@ async function getDriveClient() {
 /**
  * List files in a specific Google Drive folder
  */
-async function listFiles(folderId) {
+async function listFiles(folderId, mimeType = null) {
     try {
         const drive = await getDriveClient();
+
+        let query = `'${folderId}' in parents and trashed = false`;
+        if (mimeType) {
+            query += ` and mimeType = '${mimeType}'`;
+        }
+
         const res = await drive.files.list({
-            q: `'${folderId}' in parents and trashed = false`,
+            q: query,
             fields: 'files(id, name, mimeType, webViewLink, createdTime, modifiedTime)',
-            orderBy: 'modifiedTime desc',
-            pageSize: 50
+            orderBy: 'name asc', // Sort by name for dropdowns
+            pageSize: 100 // Increased limit
         });
         return res.data.files;
     } catch (error) {
