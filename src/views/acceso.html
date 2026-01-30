@@ -209,10 +209,17 @@
         <i data-lucide="bot" class="w-6 h-6 text-white"></i>
     </button>
 
+    <!-- Cargar Configuración Segura -->
+    <script src="config.js"></script>
+
     <script>
         lucide.createIcons();
 
-        const apiKey = ""; // La clave se proporciona en el entorno de ejecución
+        // Usar clave desde config.js (Si no existe, mostrar error en consola)
+        const apiKey = (typeof CONFIG !== 'undefined') ? CONFIG.GEMINI_API_KEY : "";
+
+        if (!apiKey) console.error("Falta archivo config.js o API Key");
+
         const chatContainer = document.getElementById('chatContainer');
         const aiInput = document.getElementById('aiInput');
         const aiLoading = document.getElementById('aiLoading');
@@ -225,8 +232,11 @@
                 contents: [{ parts: [{ text: prompt }] }]
             };
 
-            if (systemInstruction) {
-                payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+            // Usar Prompt del Sistema desde Config o Default
+            const sysPromptParams = systemInstruction || (typeof CONFIG !== 'undefined' ? CONFIG.SYSTEM_PROMPT : "");
+
+            if (sysPromptParams) {
+                payload.systemInstruction = { parts: [{ text: sysPromptParams }] };
             }
 
             let delay = 1000;
@@ -247,7 +257,7 @@
                 await new Promise(resolve => setTimeout(resolve, delay));
                 delay *= 2;
             }
-            return "Error de conexión. Por favor, intenta de nuevo más tarde.";
+            return "Error de conexión con la IA de LAMDA. Por favor, intenta de nuevo.";
         }
 
         // Lógica del Chat Lateral ✨
@@ -260,8 +270,8 @@
             aiInput.value = '';
             aiLoading.classList.remove('hidden');
 
-            const systemPrompt = "Eres el Asistente de LAMDA, un sistema cockpit de gestión de proveedores. Ayuda al usuario con problemas de inicio de sesión, recuperación de contraseña y dudas sobre la plataforma. Usa un tono profesional, tecnológico y servicial.";
-            const response = await callGemini(text, systemPrompt);
+            // Llamada con System Prompt Global
+            const response = await callGemini(text);
 
             aiLoading.classList.add('hidden');
             appendMessage(response, 'ai');
@@ -270,12 +280,15 @@
         function appendMessage(text, sender) {
             const div = document.createElement('div');
             div.className = `chat-bubble p-4 rounded-2xl border text-xs leading-relaxed ${sender === 'user'
-                ? 'bg-blue-600/10 border-blue-500/30 ml-8 rounded-tr-none text-right'
-                : 'bg-slate-800/50 border-slate-700/50 mr-8 rounded-tl-none'
+                    ? 'bg-blue-600/10 border-blue-500/30 ml-8 rounded-tr-none text-right'
+                    : 'bg-slate-800/50 border-slate-700/50 mr-8 rounded-tl-none'
                 }`;
             div.innerText = text;
             chatContainer.appendChild(div);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            // Auto-scroll suave
+            setTimeout(() => {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }, 100);
         }
 
         // Ayuda Contextual de IA ✨
@@ -284,14 +297,15 @@
             if (sidebar.classList.contains('hidden')) toggleAssistant();
 
             const email = document.getElementById('emailInput').value;
+            // Prompt específico para ayuda de contraseña, pero manteniendo la identidad
             const prompt = email
-                ? `El usuario con email ${email} necesita consejos de seguridad para su contraseña en el portal de proveedores LAMDA. Dame 3 consejos breves.`
-                : "Dame 3 consejos rápidos de seguridad para gestionar accesos en plataformas corporativas de proveedores.";
+                ? `El usuario ${email} tiene problemas de acceso. Dame 3 consejos de seguridad breves.`
+                : "Dame 3 consejos de seguridad para acceso a LAMDA.";
 
-            appendMessage("✨ Generando consejos de seguridad personalizados...", "ai");
+            appendMessage("✨ Consultando a la Base de Conocimiento...", "ai");
             aiLoading.classList.remove('hidden');
 
-            const response = await callGemini(prompt, "Eres un experto en ciberseguridad corporativa.");
+            const response = await callGemini(prompt, "Eres un especialista en seguridad de acceso del sistema LAMDA.");
             aiLoading.classList.add('hidden');
             appendMessage(response, 'ai');
         }

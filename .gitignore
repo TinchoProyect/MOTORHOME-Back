@@ -7,3 +7,4 @@ thumbs.db
 service-account.json
 verify_key.js
 verify_db.js
+src/views/config.js
