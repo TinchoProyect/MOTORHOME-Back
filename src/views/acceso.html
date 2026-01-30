@@ -247,17 +247,26 @@
             loginBtn.disabled = true;
 
             try {
+                console.log(`📡 Intentando login para: ${email}`);
+
                 const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email: email,
                     password: password
                 });
 
+                console.log("🔍 Respuesta Supabase:", { data, error });
+
                 if (error) throw error;
+
+                // Defensa en Profundidad: Verificar Sessión
+                if (!data.session) {
+                    throw new Error("Login incompleto: No se recibió token de sesión.");
+                }
 
                 // ÉXITO: Acceso Concedido
                 // Mostrar feedback visual o redirigir
                 appendMessage("✅ Acceso Autorizado. Iniciando secuencia de despegue...", "ai");
-                alert("🚀 ACCESO CONCEDIDO\nBienvenido al Cockpit LAMDA.");
+                alert(`🚀 ACCESO CONCEDIDO\nUID: ${data.user.id}\nBienvenido al Cockpit LAMDA.`);
                 // Aquí iría la redirección a /dashboard.html cuando exista
 
             } catch (error) {
