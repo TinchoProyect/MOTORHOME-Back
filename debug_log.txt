@@ -1,0 +1,6 @@
+--- DEBUG LOG ---
+Last 10 files processed:
+- File: Lista de precios 02-26.xlsx | Status: CONFIRMED | Created: 2026-01-31T07:26:47.448911+00:00 | ID: 7a74476f-0fb4-4fb8-8ab9-6556ede20859 | TplID: ee88efdd-2ae4-48bb-99be-d3ddd555eddd
+Item Count for 7a74476f-0fb4-4fb8-8ab9-6556ede20859: 0 (Error: null)
+Foreign Key Check: Template ee88efdd-2ae4-48bb-99be-d3ddd555eddd -> FOUND (Formato Actualizado 31/1/2026)
+Providers found: null

@@ -1631,10 +1631,10 @@
                     </div>
 
                     <!-- Layout Side-by-Side -->
-                    <div class="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden h-full pb-4">
+                    <div id="extraction-grid" class="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden h-full pb-4 transition-all duration-300">
                         
                         <!-- Panel Izquierdo: Documento -->
-                        <div class="h-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col">
+                        <div id="panel-iframe" class="h-full bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col transition-all duration-300">
                             <div class="bg-slate-950 px-3 py-2 border-b border-slate-800 flex justify-between items-center">
                                 <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
                                     <i data-lucide="file-text" class="w-4 h-4 text-blue-500"></i> Vista Previa
@@ -1726,26 +1726,40 @@
         let isExtractionExpanded = false;
 
         function toggleFullScreen() {
-            isExtractionExpanded = !isExtractionExpanded;
-            const rd = document.getElementById('reportDisplay');
-            const sb = document.getElementById('mainSidebar');
-            const hd = document.getElementById('mainHeader');
+            try {
+                isExtractionExpanded = !isExtractionExpanded;
+                console.group("🖥️ [ToggleFullScreen]");
+                console.log("State:", isExtractionExpanded);
 
-            if (isExtractionExpanded) {
-                rd.classList.add('fullscreen-extraction');
-                sb.classList.add('opacity-0', 'pointer-events-none');
-                hd.classList.add('opacity-0', 'pointer-events-none');
-            } else {
-                rd.classList.remove('fullscreen-extraction');
-                sb.classList.remove('opacity-0', 'pointer-events-none');
-                hd.classList.remove('opacity-0', 'pointer-events-none');
-            }
-            // Re-render para actualizar icono del botón (si estuviéramos en React, aquí llamamos render. Como es vanilla, manipulamos el DOM directo o re-renderizamos)
-            // Dado que renderExtractionResults es pesado, mejor solo actualizamos el ícono:
-            const btnIcon = document.querySelector('button[title="Alternar Pantalla Completa"] i');
-            if (btnIcon) {
-                btnIcon.setAttribute('data-lucide', isExtractionExpanded ? 'minimize' : 'maximize');
-                lucide.createIcons();
+                const rd = document.getElementById('reportDisplay');
+                const sb = document.getElementById('mainSidebar');
+                const hd = document.getElementById('mainHeader');
+                const frame = document.getElementById('panel-iframe');
+                const grid = document.getElementById('extraction-grid');
+
+                if (isExtractionExpanded) {
+                    if (rd) rd.classList.add('fullscreen-extraction');
+                    if (sb) sb.classList.add('opacity-0', 'pointer-events-none');
+                    if (hd) hd.classList.add('opacity-0', 'pointer-events-none');
+                    if (frame) frame.classList.add('hidden');
+                    if (grid) grid.classList.remove('lg:grid-cols-2');
+                } else {
+                    if (rd) rd.classList.remove('fullscreen-extraction');
+                    if (sb) sb.classList.remove('opacity-0', 'pointer-events-none');
+                    if (hd) hd.classList.remove('opacity-0', 'pointer-events-none');
+                    if (frame) frame.classList.remove('hidden');
+                    if (grid) grid.classList.add('lg:grid-cols-2');
+                }
+
+                const btnIcon = document.querySelector('button[title="Alternar Pantalla Completa"] i');
+                if (btnIcon) {
+                    btnIcon.setAttribute('data-lucide', isExtractionExpanded ? 'minimize' : 'maximize');
+                    lucide.createIcons();
+                }
+                console.groupEnd();
+            } catch (e) {
+                console.error("Critical Toggle Error:", e);
+                console.groupEnd();
             }
         }
 
@@ -2041,101 +2055,132 @@
     </script>
 
     <!-- ========================================== -->
-    <!-- COMPONENTE: MODAL MEMORIA DE GESTIÓN -->
+    <!-- COMPONENTE: MODAL VISOR RAW (MEMORIA) -->
     <!-- ========================================== -->
     <div id="memoryModal"
         class="hidden fixed inset-0 z-[150] flex items-center justify-center p-4 modal-blur animate-in fade-in duration-300">
         <div
-            class="glass-panel w-full max-w-lg rounded-3xl border border-emerald-500/30 shadow-2xl overflow-hidden relative">
-            <div class="absolute top-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-blue-500"></div>
+            class="glass-panel w-full max-w-4xl max-h-[90vh] rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col relative">
 
-            <div class="p-8 pb-4 text-center">
-                <div
-                    class="w-16 h-16 bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
-                    <i data-lucide="check-circle-2" class="w-8 h-8 text-emerald-400"></i>
+            <!-- Header Visor -->
+            <div class="bg-slate-950/80 p-6 border-b border-slate-800 flex justify-between items-center shrink-0">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 bg-slate-900 rounded-xl border border-slate-800 text-slate-400">
+                        <i data-lucide="file-spreadsheet" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-white mb-0.5" id="memModalTitle">Visor de Archivo Crudo</h3>
+                        <p class="text-xs text-slate-500 font-mono uppercase" id="memModalSubtitle">Datos sin procesar
+                        </p>
+                    </div>
                 </div>
-                <h3 class="text-xl font-bold text-white mb-2">Archivo Confirmado</h3>
-                <p class="text-sm text-slate-400 px-4 leading-relaxed">
-                    Este documento ya fue procesado y su contenido está validado en la base de datos.<br>
-                    <span class="text-emerald-400 font-bold text-xs uppercase tracking-wider mt-2 block">¿Cómo
-                        deseas proceder?</span>
-                </p>
+                <button onclick="handleMemoryAction('cancel')"
+                    class="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
             </div>
 
-            <div class="p-6 bg-slate-950/50 flex flex-col gap-3">
+            <!-- Tabla Raw (Scrollable) -->
+            <div id="memoryTableContainer" class="flex-grow overflow-auto custom-scrollbar p-0 bg-slate-900/30">
+                <!-- Se inyecta la tabla aquí -->
+            </div>
 
-                <!-- Opción 1: Ver Datos (Prioridad) -->
-                <button onclick="handleMemoryAction('view')"
-                    class="group w-full p-4 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-500/30 hover:border-emerald-500/50 rounded-xl flex items-center justify-between transition-all">
-                    <div class="flex items-center gap-4">
-                        <div
-                            class="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 group-hover:scale-110 transition-transform">
-                            <i data-lucide="table-2" class="w-5 h-5"></i>
-                        </div>
-                        <div class="text-left">
-                            <span class="block text-sm font-bold text-emerald-100">Ver Datos Procesados</span>
-                            <span class="block text-[10px] text-emerald-400/60">Abrir tabla con información
-                                guardada</span>
-                        </div>
-                    </div>
-                    <i data-lucide="arrow-right"
-                        class="w-4 h-4 text-emerald-700 group-hover:text-emerald-400 transition-colors"></i>
-                </button>
-
-                <!-- Opción 2: Editar (Re-extraer) -->
-                <button onclick="handleMemoryAction('edit')"
-                    class="group w-full p-3 bg-slate-800/40 hover:bg-blue-600/10 border border-slate-700 hover:border-blue-500/30 rounded-xl flex items-center justify-between transition-all">
-                    <div class="flex items-center gap-4">
-                        <div
-                            class="p-2 bg-slate-800 rounded-lg text-blue-400/80 group-hover:text-blue-400 transition-colors">
-                            <i data-lucide="pencil" class="w-4 h-4"></i>
-                        </div>
-                        <div class="text-left">
-                            <span class="block text-xs font-bold text-slate-300 group-hover:text-blue-200">Editar
-                                / Corregir</span>
-                            <span class="block text-[9px] text-slate-500">Re-escanear archivo original</span>
-                        </div>
-                    </div>
-                </button>
-
-                <!-- Opción 3: Cancelar -->
-                <button onclick="handleMemoryAction('cancel')"
-                    class="w-full py-3 text-xs font-bold text-slate-600 hover:text-slate-400 hover:bg-slate-900/50 rounded-lg transition-colors mt-2">
-                    CANCELAR
-                </button>
+            <!-- Footer Acciones -->
+            <div class="p-4 bg-slate-950/80 border-t border-slate-800 shrink-0 flex justify-between items-center">
+                <div class="text-[10px] text-slate-600 font-mono">
+                    MODE: <span class="text-yellow-500 font-bold">RAW / READ-ONLY</span>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="handleMemoryAction('edit')"
+                        class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold uppercase tracking-widest border border-slate-700/50 transition-colors">
+                        Re-Escanear
+                    </button>
+                    <button onclick="handleMemoryAction('cancel')"
+                        class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-blue-900/20 transition-colors">
+                        Cerrar Visor
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Funciones del Modal de Memoria
+        // Funciones del Modal de Memoria (Visor Raw)
         function showMemoryModal() {
-            document.getElementById('memoryModal').classList.remove('hidden');
+            const modal = document.getElementById('memoryModal');
+            const container = document.getElementById('memoryTableContainer');
+
+            if (!tempMemoryResult || !tempMemoryResult.data) {
+                alert("Error: No data in memory.");
+                return;
+            }
+
+            // Datos Crudos
+            const { fileName, data } = tempMemoryResult;
+            const rows = data.data_sample || [];
+            if (rows.length === 0) {
+                container.innerHTML = `<div class="p-8 text-center text-slate-500">Archivo vacío.</div>`;
+                modal.classList.remove('hidden');
+                lucide.createIcons();
+                return;
+            }
+
+            // Detectar Headers dinámicamente de la primera fila si no hay explícitos
+            // En RAW mode, usamos las keys del objeto sample
+            const headers = Object.keys(rows[0]);
+
+            // Generar Tabla HTML
+            let html = `
+                <table class="min-w-full divide-y divide-slate-800/50 text-left">
+                    <thead class="bg-slate-950/50 sticky top-0 z-10">
+                        <tr>
+                            <th class="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-slate-950 border-b border-slate-800 w-12 text-center">#</th>
+                            ${headers.map(h => `
+                                <th class="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-950 border-b border-slate-800 whitespace-nowrap">
+                                    ${h}
+                                </th>
+                            `).join('')}
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/30">
+            `;
+
+            rows.forEach((row, idx) => {
+                html += `<tr class="hover:bg-blue-500/5 transition-colors">
+                            <td class="px-4 py-2 text-[10px] font-mono text-slate-600 text-center border-r border-slate-800/30">${idx + 1}</td>`;
+
+                headers.forEach(h => {
+                    let val = row[h];
+                    if (val === null || val === undefined) val = '';
+                    html += `<td class="px-4 py-2 text-xs text-slate-300 font-mono whitespace-nowrap max-w-xs truncate overflow-hidden" title="${val}">
+                                ${val}
+                              </td>`;
+                });
+                html += `</tr>`;
+            });
+
+            html += `</tbody></table>`;
+
+            container.innerHTML = html;
+            document.getElementById('memModalSubtitle').innerText = `${fileName} • ${rows.length} FILAS PRE-CARGADAS`;
+
+            modal.classList.remove('hidden');
             lucide.createIcons();
         }
 
         function handleMemoryAction(action) {
             const modal = document.getElementById('memoryModal');
-            modal.classList.add('hidden');
 
-            if (!tempMemoryResult) return;
-
-            const { data, fileName, webViewLink, fileId, providerId } = tempMemoryResult;
-
-            if (action === 'view') {
-                // Renderizar y Full Screen
-                renderExtractionResults(data, fileName, webViewLink, fileId, providerId);
-                // Esperar un tick para asegurar render
-                setTimeout(() => {
-                    if (!isExtractionExpanded) toggleFullScreen();
-                }, 100);
-            } else if (action === 'edit') {
+            if (action === 'edit') {
+                modal.classList.add('hidden');
+                const { fileName, webViewLink, fileId, providerId } = tempMemoryResult;
                 // Forzar Re-extracción
                 startExtraction(fileId, fileName, providerId, webViewLink, null, true);
             } else {
-                // Cancelar: Limpiar todo
+                // Cancelar / Cerrar
+                modal.classList.add('hidden');
                 tempMemoryResult = null;
-                document.getElementById('reportDisplay').innerHTML = ''; // Limpiar loader si quedó
+                document.getElementById('reportDisplay').innerHTML = '';
             }
         }
     </script>

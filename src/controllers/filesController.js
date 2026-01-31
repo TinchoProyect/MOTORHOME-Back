@@ -80,51 +80,110 @@ async function processExtraction(req, res) {
                 console.log(`[FilesController] ⚡ BYPASS: Archivo IDENTIFICADO por ID (${fileId}). Status: ${existingRecord.status_global}`);
 
                 // CASO 1: Archivo CONFIRMADO -> Devolvemos datos procesados (Memoria de Gestión)
+                // [IMPUESTOS DE IDENTIDAD] Si está CONFIRMADO por ID, ignoramos diferencias de hash.
+                // CASO 1: Archivo CONFIRMADO
                 if (existingRecord.status_global === 'CONFIRMED') {
-                    console.log(`   - Recuperando datos procesados de DB...`);
+                    console.log(`📦 Recuperando BODEGA (Híbrido) -> ID: ${existingRecord.id}`);
 
-                    const { data: processedItems } = await supabase
-                        .from('proveedor_listas_procesadas')
-                        .select('*')
-                        .eq('raw_id', existingRecord.id)
-                        .limit(50); // Muestra inicial para performance
+                    // [FIX] Sincronización Estricta con Schema DB
+                    const { data: processedItems, error: dbError } = await supabase
+                        .from('proveedor_items_extraidos')
+                        .select('sku_detectado, descripcion_detectada, precio_detectado, unidad_medida_detectada, raw_data')
+                        .eq('lista_raw_id', existingRecord.id)
+                        .order('id', { ascending: true });
 
-                    if (processedItems && processedItems.length > 0) {
-                        const detectedKeys = Object.keys(processedItems[0]);
+                    if (dbError) throw new Error("Error recuperando bodega: " + dbError.message);
 
-                        return res.json({
-                            success: true,
-                            mode: 'MAPPED',
-                            already_managed: true, // FLAG CLAVE
-                            data: {
-                                headers_detected: detectedKeys,
-                                data_sample: processedItems,
-                                suggested_mapping: existingRecord.proveedor_formatos_guia.reglas_mapeo,
-                                confidence_notes: "⚡ RECUPERADO DE MEMORIA (Confirmado)"
-                            },
-                            raw_id: existingRecord.id,
-                            debug_fingerprint: existingRecord.proveedor_formatos_guia.fingerprint,
-                            safety_net: null
-                        });
+                    // [AUTO-HEAL] Si la bodega está vacía, re-extraemos automáticamente
+                    if (!processedItems || processedItems.length === 0) {
+                        console.warn(`⚠️ Bodega vacía para ID ${existingRecord.id}. Iniciando Auto-Reparación...`);
+
+                        // Forzamos la re-extracción usando el template guardado (si existe) o descubrimiento
+                        const healResult = await extractionService.processFile(fileId, providerId, { headerIndex: 0 }); // Asumimos header 0 por defecto en heal
+
+                        // Si la curación funciona, devolvemos eso. El usuario tendrá que confirmar de nuevo (es más seguro).
+                        if (healResult.success) {
+                            return res.json(healResult);
+                        } else {
+                            return res.status(500).json({ error: "Bodega vacía y falló la auto-reparación." });
+                        }
                     }
+
+                    console.log(`   -> Filas recuperadas: ${processedItems.length}. Normalizando...`);
+
+                    // 2. Preparar Mapeo Inverso basado en nombres reales
+                    const mapping = existingRecord.proveedor_formatos_guia.reglas_mapeo || {};
+                    const invertedMap = {};
+
+                    // Map de etiquetas legibles
+                    const labelMap = {
+                        "sku": "CÓDIGO (SKU)",
+                        "descripcion": "DESCRIPCIÓN",
+                        "precio": "PRECIO",
+                        "unidad": "UNIDAD"
+                    };
+
+                    Object.entries(mapping).forEach(([logicalKey, originalHeader]) => {
+                        if (originalHeader) invertedMap[originalHeader] = labelMap[logicalKey] || logicalKey.toUpperCase();
+                    });
+
+                    // 3. Construcción Híbrida
+                    let allHeadersSet = new Set();
+
+                    const dynamicRows = processedItems.map(item => {
+                        const raw = item.raw_data || {};
+                        const newRow = {};
+
+                        // A. Primero las columnas clave normalizadas (Priority)
+                        if (item.sku_detectado) newRow["CÓDIGO (SKU)"] = item.sku_detectado;
+                        if (item.descripcion_detectada) newRow["DESCRIPCIÓN"] = item.descripcion_detectada;
+                        if (item.precio_detectado) newRow["PRECIO"] = item.precio_detectado;
+                        if (item.unidad_medida_detectada) newRow["UNIDAD"] = item.unidad_medida_detectada;
+
+                        allHeadersSet.add("CÓDIGO (SKU)");
+                        allHeadersSet.add("DESCRIPCIÓN");
+                        allHeadersSet.add("PRECIO");
+                        if (item.unidad_medida_detectada) allHeadersSet.add("UNIDAD");
+
+                        // B. Rellenamos con el resto del raw_data (sin pisar las clave)
+                        Object.keys(raw).forEach(key => {
+                            // Si esta columna original YA fue mapeada a una clave (ej: "Col A" -> SKU), la ignoramos aquí porque ya pusimos la versión normalizada
+                            // Si NO fue mapeada, la agregamos tal cual
+                            const isMapped = Object.values(mapping).includes(key);
+                            if (!isMapped) {
+                                newRow[key] = raw[key];
+                                allHeadersSet.add(key);
+                            }
+                        });
+                        return newRow;
+                    });
+
+                    // 4. Ordenar Encabezados
+                    const priorityHeaders = ["CÓDIGO (SKU)", "DESCRIPCIÓN", "PRECIO", "UNIDAD"];
+                    const otherHeaders = Array.from(allHeadersSet).filter(h => !priorityHeaders.includes(h));
+                    const finalHeaders = [...priorityHeaders, ...otherHeaders];
+
+                    console.log('🏁 FLAG ALREADY_MANAGED ENVIADO: true (Bodega Híbrida)');
+                    return res.json({
+                        success: true,
+                        mode: 'MAPPED',
+                        already_managed: true,
+                        data: {
+                            headers_detected: finalHeaders,
+                            data_sample: dynamicRows,
+                            suggested_mapping: {},
+                            confidence_notes: "⚡ DATOS CERTIFICADOS + EXTENDIDOS"
+                        },
+                        raw_id: existingRecord.id,
+                        debug_fingerprint: existingRecord.proveedor_formatos_guia.fingerprint,
+                        safety_net: null
+                    });
                 }
-
-                // CASO 2: Archivo Mapeado pero NO Confirmado -> Devolvemos el Mapping solamenente (Bypass)
-                console.log(`   - Formato recuperado: ${existingRecord.proveedor_formatos_guia.nombre_formato}`);
-
-                return res.json({
-                    success: true,
-                    mode: 'MAPPED',
-                    data: {
-                        headers_detected: [], // No leemos el archivo
-                        data_sample: [],      // No leemos el archivo
-                        suggested_mapping: existingRecord.proveedor_formatos_guia.reglas_mapeo,
-                        confidence_notes: "⚡ RECUPERADO POR ID (Extracción Omitida)"
-                    },
-                    raw_id: existingRecord.id,
-                    debug_fingerprint: existingRecord.proveedor_formatos_guia.fingerprint,
-                    safety_net: null
-                });
+                // CASO 2: Archivo Mapeado pero NO Confirmado.
+                // IMPORTANTE: Antes devolvíamos arrays vacíos y rompíamos el front.
+                // AHORA: Dejamos que siga de largo hacia extractionService.
+                // El servicio extraerá los datos reales y usará el template existente para sugerir el mapeo.
+                console.log(`   - Formato existe (${existingRecord.proveedor_formatos_guia.nombre_formato}) pero NO está CONFIRMADO. Procediendo a extracción real para mostrar datos.`);
             }
         }
 
@@ -143,6 +202,25 @@ async function processExtraction(req, res) {
 
         if (!result.success) {
             console.error("[Controller] Extraction Failed:", result.error);
+
+            // [SAFETY NET] Si falla la extracción pero el archivo TIENE ID de Formato (Huella),
+            // Forzamos éxito para permitir abrir el modal y que el usuario decida (Editar/Link).
+            if (existingRecord && existingRecord.proveedor_formatos_guia && existingRecord.formato_guia_id) {
+                console.log("[Controller] SAFETY NET ACTIVATED: Extracción falló pero existe Huella de ID. Forzando apertura de Modal.");
+                return res.json({
+                    success: true,
+                    mode: 'MAPPED',
+                    already_managed: true, // Forzamos modal
+                    template_id: existingRecord.formato_guia_id,
+                    data: {
+                        headers_detected: [],
+                        data_sample: [],
+                        error_bypass: result.error // Para notificar discreto
+                    },
+                    raw_id: existingRecord.id
+                });
+            }
+
             return res.status(422).json({
                 success: false,
                 error: result.error || "Error en extracción",
@@ -194,9 +272,26 @@ async function processExtraction(req, res) {
             rawRecord = inserted;
         }
 
+        // [MODIFICACIÓN FINAL] Lógica de Huella por ID de Base de Datos.
+        // Si el archivo (rawRecord) tiene un formato_guia_id asignado, es porque YA FUE FORMATEADO.
+        // Esa es la huella. No importa lo que diga el extractor.
+        let isAlreadyManaged = false;
+
+        if (rawRecord && rawRecord.formato_guia_id) {
+            isAlreadyManaged = true;
+            result.mode = 'MAPPED'; // Forzamos el modo para coherencia
+            result.template_id = rawRecord.formato_guia_id;
+            console.log(`[FilesController] CLEAN ID MATCH: ID de Formato encontrado en DB (${rawRecord.formato_guia_id}). Abriendo Modal.`);
+        } else if (result.mode === 'MAPPED') {
+            // Fallback: Si el extractor lo encontró por hash pero la DB aun no lo tenía linkeado (raro, pero posible en transiciíon)
+            isAlreadyManaged = true;
+        }
+
         return res.json({
             success: true,
             mode: result.mode,
+            already_managed: isAlreadyManaged, // Flag vital para el modal
+            template_id: result.template_id, // Para que el modal sepa qué formato es
             data: result.data,
             raw_id: rawRecord.id,
             debug_fingerprint: result.debug_fingerprint,
@@ -270,7 +365,81 @@ async function confirmExtraction(req, res) {
             template = inserted;
         }
 
-        // CORREGIDO: Retornamos 'template' en lugar del 'result' inexistente
+        // [FIX CRITICO] Actualizar el estado del archivo RAW a CONFIRMED
+        // Esto activa la "Memoria de Gestión" para la próxima vez.
+        console.log(`[FilesController] Actualizando status_global='CONFIRMED' para archivo: ${fileId}`);
+        const { error: rawUpdateError } = await supabase
+            .from('proveedor_listas_raw')
+            .update({
+                status_global: 'CONFIRMED',
+                formato_guia_id: template.id
+            })
+            .eq('archivo_id', fileId)
+            .eq('proveedor_id', providerId);
+
+        if (rawUpdateError) {
+            console.error("Error updating raw status:", rawUpdateError);
+        }
+
+        // [FIX FINAL] POBLAR LA TABLA DE ITEMS
+        // Sin esto, el modal no se activa porque busca items > 0.
+        try {
+            // 1. Obtener ID RAW
+            const { data: rawRecord } = await supabase
+                .from('proveedor_listas_raw')
+                .select('id')
+                .eq('archivo_id', fileId)
+                .eq('proveedor_id', providerId)
+                .single();
+
+            if (rawRecord) {
+                // 2. Extraer datos FULL
+                console.log("   [Confirm] Extrayendo datos para persistencia...");
+                const extractionResult = await extractionService.processFile(fileId, providerId, { headerIndex: mapping.headerIndex || 0 });
+
+                if (extractionResult.success) {
+                    // [FIX CRITICO] Usar FULL DATA si existe, sino fallback a sample (por seguridad)
+                    const rows = extractionResult.data.full_data || extractionResult.data.data_sample || [];
+                    console.log(`   [Confirm] Datos a procesar para bodega: ${rows.length} filas.`);
+
+                    // 3. Mapeo ESPEJO (Sin Detección)
+                    const itemsToInsert = rows.map(row => {
+                        // [AMPUTACION] No clasificamos nada. Solo guardamos el JSON crudo.
+                        return {
+                            lista_raw_id: rawRecord.id,
+                            raw_data: row,
+                            // Dejamos las columnas _detectado en NULL (o default)
+                            sku_detectado: null,
+                            descripcion_detectada: null,
+                            precio_detectado: null,
+                            unidad_medida_detectada: null
+                        };
+                    });
+
+                    console.log(`   [Mirror] Preparados ${itemsToInsert.length} items (Raw Mode).`);
+
+                    console.log(`   [Filter] Filas válidas: ${itemsToInsert.length} (de ${rows.length} originales)`);
+
+                    // 4. Limpieza previa por si es re-confirmación
+                    await supabase.from('proveedor_items_extraidos').delete().eq('lista_raw_id', rawRecord.id);
+
+                    // 5. Inserción
+                    if (itemsToInsert.length > 0) {
+                        const { error: insertError } = await supabase
+                            .from('proveedor_items_extraidos')
+                            .insert(itemsToInsert);
+
+                        if (insertError) console.error("Error inserting items:", insertError);
+                        else console.log(`   [Confirm] ${itemsToInsert.length} items guardados correctamente.`);
+                    } else {
+                        console.warn("⚠️ Todas las filas fueron filtradas (posible archivo vacío).");
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error populando items:", e);
+        }
+
         res.json({ success: true, message: "Mapeo guardado y archivo procesado.", template });
 
     } catch (error) {

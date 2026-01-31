@@ -35,16 +35,8 @@ Extrae una MUESTRA REAL de las primeras 3-5 filas de datos.
 Salida JSON esperada:
 {
   "headers_detected": ["Lista COMPLETA de encabezados tal cual se ven"],
-  "data_sample": [
-    {"col1": "valor real fila 1", "col2": "valor real fila 1", ...},
-    {"col1": "valor real fila 2", "col2": "valor real fila 2", ...}
-  ],
-  "suggested_mapping": {
-    "sku": "Nombre columna para SKU/Código (null si no existe)",
-    "descripcion": "Nombre columna para Descripción/Producto",
-    "precio": "Nombre columna para Precio/Unitario (null si no existe)"
-  },
-  "confidence_notes": "Observaciones sobre la detección (ej: 'Moneda parece ser USD')"
+  "suggested_mapping": {},
+  "confidence_notes": "Observaciones sobre la detección"
 }
 `;
 
@@ -103,8 +95,12 @@ async function discoverStructure(imageBuffer, mimeType = "image/jpeg") {
  * Orquestador Principal - CORREGIDO
  */
 async function processFile(fileId, providerId, options = {}) {
-    const { headerIndex = 0 } = options;
-    console.log(`[Extraction] Procesando archivo ${fileId} para proveedor ${providerId} (Fila Header: ${headerIndex})...`);
+    // [MODIFICACIÓN SOLICITADA] Forzar inicio en fila 1 (index 1) para ignorar Títulos en fila 0.
+    // Aunque el frontend pida 0, obligamos a 1.
+    let { headerIndex = 1 } = options;
+    if (headerIndex < 1) headerIndex = 1;
+
+    console.log(`[Extraction] Procesando archivo ${fileId} para proveedor ${providerId} (Fila Header Forzada: ${headerIndex})...`);
 
     try {
         const metadata = await driveService.getFileMetadata(fileId);
@@ -126,14 +122,53 @@ async function processFile(fileId, providerId, options = {}) {
             const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
             const sheetName = workbook.SheetNames[0];
             const sheet = workbook.Sheets[sheetName];
-            let rawRows = xlsx.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
 
-            if (!rawRows || rawRows.length === 0) {
-                return { success: false, error: "Archivo vacío o ilegible" };
+            // [FIX] DETECTOR DE "TODO EN COLUMNA A" (Separador incorrecto)
+            // Si detectamos que las filas tienen longitud 1 y contienen ; o , asumimos CSV mal parseado.
+            if (rawRows.length > 0 && Array.isArray(rawRows[0]) && rawRows[0].length === 1) {
+                const sample = String(rawRows[0][0]);
+                if (sample.includes(';') || sample.includes(',')) {
+                    const separator = sample.includes(';') ? ';' : ',';
+                    console.log(`[Extraction] Detectado CSV comprimido en Col A. Re-separando con '${separator}'...`);
+                    rawRows = rawRows.map(row => {
+                        if (Array.isArray(row) && row.length === 1) {
+                            return String(row[0]).split(separator).map(s => s.trim());
+                        }
+                        return row;
+                    });
+                }
             }
 
-            if (headerIndex > 0 && rawRows.length > headerIndex) {
+            // [SMART HEADER HUNTER]
+            // Buscamos la primera fila que parezca un encabezado real (>= 2 columnas con texto).
+            // Esto "amputa" títulos, subtítulos, fechas y basura superior automáticamente.
+            let validHeaderIndex = -1;
+
+            // Si el usuario forzó un índice alto (ej: 5), respetamos su decisión manual sobre la automática.
+            // Pero si es el default (0 o 1), usamos la inteligencia.
+            if (headerIndex <= 1) {
+                validHeaderIndex = rawRows.findIndex(row => {
+                    if (!Array.isArray(row)) return false;
+                    // Contamos celdas no vacías
+                    const filledCols = row.filter(c => String(c).trim().length > 0).length;
+                    return filledCols >= 2; // Asumimos que una tabla útil tiene al menos 2 columnas
+                });
+            }
+
+            if (validHeaderIndex > -1) {
+                console.log(`[Extraction] Header Inteligente encontrado en Fila ${validHeaderIndex}. Amputando ${validHeaderIndex} filas superiores.`);
+                headerIndex = validHeaderIndex;
+            } else {
+                // Fallback: Si no encontramos nada decente, aplicamos la regla "Amputar Fila 0" estricta
+                if (headerIndex < 1) headerIndex = 1;
+                console.log(`[Extraction] No se detectó estructura tabular clara. Aplicando Amputación Default (Index ${headerIndex}).`);
+            }
+
+            // Aplicar Corte
+            if (rawRows.length > headerIndex) {
                 rawRows = rawRows.slice(headerIndex);
+            } else {
+                return { success: false, error: "Archivo demasiado corto (contenido eliminado por filtros)." };
             }
 
             let emptyColCounter = 1;
@@ -173,6 +208,15 @@ async function processFile(fileId, providerId, options = {}) {
                 guardado_db: existingTemplate ? (existingTemplate.fingerprint ? existingTemplate.fingerprint.header_hash : 'N/A') : 'NONE'
             };
 
+            // FULL DATA EXTRACTION (Warehouse Stock)
+            const fullData = rawRows.slice(1).map(rowArray => {
+                let obj = {};
+                headers.forEach((header, index) => {
+                    obj[header] = rowArray[index] || "";
+                });
+                return obj;
+            });
+
             if (existingTemplate) {
                 return {
                     success: true,
@@ -181,6 +225,7 @@ async function processFile(fileId, providerId, options = {}) {
                     data: {
                         headers_detected: headers,
                         data_sample: sampleData,
+                        full_data: fullData, // [CRITICAL FIX] Send everything
                         suggested_mapping: existingTemplate.reglas_mapeo,
                         confidence_notes: `Formato reconocido: ${existingTemplate.nombre_formato}`
                     },
@@ -211,6 +256,7 @@ async function processFile(fileId, providerId, options = {}) {
                 data: {
                     headers_detected: headers,
                     data_sample: sampleData,
+                    full_data: fullData, // [CRITICAL FIX] Send everything
                     suggested_mapping: {},
                     confidence_notes: `Extracción directa (Offset: ${headerIndex})`
                 },
