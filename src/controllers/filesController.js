@@ -58,6 +58,17 @@ async function processExtraction(req, res) {
         console.log("   [Controller] Calling Extraction Service...");
         const result = await extractionService.processFile(fileId, providerId, { headerIndex: parseInt(headerIndex) || 0 });
 
+        // EXPLICIT HASH LOG (User Request)
+        if (result.debug_fingerprint) {
+            const { calculado_ahora, guardado_db } = result.debug_fingerprint;
+            if (calculado_ahora !== guardado_db) {
+                console.log("\n❌ [HASH MISMATCH DETECTED]");
+                console.log(`   🔸 CALCULADO: ${calculado_ahora}`);
+                console.log(`   🔸 EN DB:     ${guardado_db}`);
+                console.log("   -------------------------------------------------");
+            }
+        }
+
         // 2. Manejo de Errores
         if (!result.success) {
             console.error("[Controller] Extraction Failed:", result.error);
@@ -70,22 +81,52 @@ async function processExtraction(req, res) {
 
         // 3. PERSISTENCIA DE ÉXITO (INSERT ONLY ON SUCCESS)
         // Caso Exito (Ya sea Discovery o MAPPED)
+        // 3. PERSISTENCIA DE ÉXITO (SMART UPDATE)
+        // Caso Exito (Ya sea Discovery o MAPPED)
         const finalStatus = result.mode === 'MAPPED' ? 'CONFIRMED' : 'READY_TO_REVIEW';
 
-        const { data: rawRecord, error: dbError } = await supabase
+        // Check if raw record exists for this file
+        const { data: existingRaw } = await supabase
             .from('proveedor_listas_raw')
-            .insert({
-                proveedor_id: providerId,
-                archivo_id: fileId,
-                nombre_archivo: fileName || 'Unknown File',
-                status_global: finalStatus,
-                modo_procesamiento: result.mode,
-                formato_guia_id: result.template_id || null
-            })
-            .select()
-            .single();
+            .select('id')
+            .eq('archivo_id', fileId)
+            .maybeSingle();
 
-        if (dbError) throw new Error("Error persistiendo resultado: " + dbError.message);
+        let rawRecord;
+        if (existingRaw) {
+            console.log(`[FilesController] Actualizando registro RAW existente: ${existingRaw.id}`);
+            const { data: updated, error: updateError } = await supabase
+                .from('proveedor_listas_raw')
+                .update({
+                    status_global: finalStatus,
+                    modo_procesamiento: result.mode,
+                    formato_guia_id: result.template_id || null, // Link template if found
+                    last_updated: new Date()
+                })
+                .eq('id', existingRaw.id)
+                .select()
+                .single();
+
+            if (updateError) throw updateError;
+            rawRecord = updated;
+        } else {
+            console.log(`[FilesController] Creando NUEVO registro RAW.`);
+            const { data: inserted, error: insertError } = await supabase
+                .from('proveedor_listas_raw')
+                .insert({
+                    proveedor_id: providerId,
+                    archivo_id: fileId,
+                    nombre_archivo: fileName || 'Unknown File',
+                    status_global: finalStatus,
+                    modo_procesamiento: result.mode,
+                    formato_guia_id: result.template_id || null
+                })
+                .select()
+                .single();
+
+            if (insertError) throw insertError;
+            rawRecord = inserted;
+        }
 
         console.log(`[FilesController] Proceso Finalizado. Modo: ${result.mode}. Record ID: ${rawRecord.id}`);
 
@@ -117,20 +158,35 @@ async function confirmExtraction(req, res) {
 
     console.log(`   - Mapping:`, mapping);
 
-    try {
-        // 1. Crear/Actualizar Template en "Memoria"
-        // Generamos el fingerprint basado en los headers originales (esperados)
-        const fingerprintService = require('../services/fingerprintService');
-        const headerHash = fingerprintService.generateHeaderHash(headers);
+    // SMART UPSERT: Evitar duplicados si ya existe un formato activo para este mismo hash
+    // 1. Buscar si ya existe este fingerprint activo para este proveedor
+    const { data: existingTemplate } = await supabase
+        .from('proveedor_formatos_guia')
+        .select('id')
+        .eq('proveedor_id', providerId)
+        .eq('estado', 'ACTIVA')
+        .filter('fingerprint->>header_hash', 'eq', headerHash)
+        .limit(1)
+        .maybeSingle();
 
-        const fingerprint = {
-            header_hash: headerHash,
-            expected_headers: headers,
-            file_extension: 'xlsx', // Asumimos excel por ahora en este flujo
-            tolerance_mode: 'strict'
-        };
+    if (existingTemplate) {
+        console.log(`[FilesController] Actualizando Template existente: ${existingTemplate.id}`);
+        const { data: updated, error: upError } = await supabase
+            .from('proveedor_formatos_guia')
+            .update({
+                reglas_mapeo: mapping,
+                nombre_formato: `Formato Actualizado ${new Date().toLocaleDateString()}`,
+                // No tocamos fingerprint porque el hash es el mismo
+            })
+            .eq('id', existingTemplate.id)
+            .select()
+            .single();
 
-        const { data: template, error: templateError } = await supabase
+        if (upError) throw upError;
+        template = updated;
+    } else {
+        console.log(`[FilesController] Creando NUEVO Template.`);
+        const { data: inserted, error: insError } = await supabase
             .from('proveedor_formatos_guia')
             .insert({
                 proveedor_id: providerId,
@@ -138,27 +194,16 @@ async function confirmExtraction(req, res) {
                 estado: 'ACTIVA',
                 fingerprint: fingerprint,
                 reglas_mapeo: mapping,
-                archivo_origen_id: fileId
             })
             .select()
-            .single();
-
-        if (templateError) throw new Error("Error guardando template: " + templateError.message);
-        console.log(`[FilesController] Template Guardado: ${template.id}`);
-
-        // 2. Re-Procesar el archivo (Ahora usará el template automáticamente)
-        const result = await extractionService.processFile(fileId, providerId);
-
-        if (!result.success) {
-            throw new Error("Error en re-procesamiento: " + result.error);
-        }
-
-        res.json({ success: true, message: "Mapeo guardado y archivo procesado.", result });
-
-    } catch (error) {
-        console.error("[FilesController] Error Confirming:", error);
-        res.status(500).json({ success: false, error: error.message });
     }
+
+    res.json({ success: true, message: "Mapeo guardado y archivo procesado.", result });
+
+} catch (error) {
+    console.error("[FilesController] Error Confirming:", error);
+    res.status(500).json({ success: false, error: error.message });
+}
 }
 
 // =============================================================================

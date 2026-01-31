@@ -157,9 +157,29 @@ async function processFile(fileId, providerId, options = {}) {
                 return val.length > 0 ? val : `Column ${emptyColCounter++}`;
             });
 
-            // Agregamos 3 columnas extra al final para permitir mapeo extendido
-            for (let i = 0; i < 3; i++) {
-                headers.push(`Column ${emptyColCounter++}`);
+            // --- LOGICA DE FINGERPRINT (RESCUE MISSION) ---
+            // MOVED UP: Calculate hash on REAL headers only (before adding extras)
+            const headerHash = fingerprintService.generateHeaderHash(headers);
+            let existingTemplate = await fingerprintService.matchFingerprint(headerHash, providerId);
+
+            // [REMOVED] Padding Loop 3 columns - CAUSING HASH INSTABILITY
+
+            // BABOSSI FORCE (ID Welding)
+            if (!existingTemplate && providerId === '8929039a-407e-40dd-a399-98d17f647dc4') {
+                console.warn("[Extraction] 🔨 BABOSSI DETECTED - FORCING SEARCH FOR LAST ACTIVE TEMPLATE");
+                const { data: forced } = await supabase
+                    .from('proveedor_formatos_guia')
+                    .select('*')
+                    .eq('proveedor_id', providerId)
+                    .eq('estado', 'ACTIVA')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .single();
+
+                if (forced) {
+                    console.log(`[Extraction] 🔨 FORCE MATCH SUCCESS! Using Template: ${forced.id}`);
+                    existingTemplate = forced;
+                }
             }
 
             // Sample = Filas 1-5 (Relativas al nuevo header)
@@ -173,24 +193,15 @@ async function processFile(fileId, providerId, options = {}) {
                 return obj;
             });
 
-            // --- LOGICA DE FINGERPRINT (RESCUE MISSION) ---
-            const headerHash = fingerprintService.generateHeaderHash(headers);
-            const existingTemplate = await fingerprintService.matchFingerprint(headerHash, providerId);
+            // ... (rest of function uses headerHash and existingTemplate)
 
-            const debugObj = {
-                calculado_ahora: headerHash,
-                guardado_db: existingTemplate ? existingTemplate.fingerprint.header_hash : 'NONE',
-                provider_id: providerId,
-                headers_len: headers.length
-            };
-
-            console.error("DEBUG_FINGERPRINT:", JSON.stringify(debugObj, null, 2));
-
-            let candidates = [];
-            let safetyNetMapping = null;
-
+            // --- DECISION FINAL DE MODO (Fixed Logic) ---
             if (existingTemplate) {
-                console.log(`[Extraction] MATCH FOUND! Using Template: ${existingTemplate.id}`);
+                console.log(`[Extraction] MATCH FOUND (Strict or Forced)! Using Template: ${existingTemplate.id}`);
+
+                // Update debug object to reflect the forced/found template logic
+                debugObj.guardado_db = existingTemplate.fingerprint.header_hash;
+
                 return {
                     success: true,
                     mode: 'MAPPED',
@@ -199,30 +210,29 @@ async function processFile(fileId, providerId, options = {}) {
                         headers_detected: headers,
                         data_sample: sampleData,
                         suggested_mapping: existingTemplate.reglas_mapeo,
-                        confidence_notes: `Formato reconocido automáticamente: ${existingTemplate.nombre_formato}`
+                        confidence_notes: `Formato reconocido automáticamente: ${existingTemplate.nombre_formato} ${existingTemplate.id === 'FORCED' ? '(Forzado)' : ''}`
                     },
                     suggested_hash: headerHash,
                     debug_fingerprint: debugObj
                 };
-            } else {
-                // RED DE SEGURIDAD: Buscar formatos activos aunque no coincida el hash exacto
-                console.log("[Extraction] No strict match. Searching candidates...");
-                const { data: others } = await supabase
-                    .from('proveedor_formatos_guia')
-                    .select('id, nombre_formato, fingerprint, reglas_mapeo')
-                    .eq('proveedor_id', providerId)
-                    .eq('estado', 'ACTIVA')
-                    .limit(5); // Traemos algunos
-
-                if (others && others.length > 0) {
-                    console.log(`[Extraction] Found ${others.length} candidates.`);
-                    candidates = others;
-                    // Si hay UNO solo, es muy probable que sea ese
-                    if (others.length === 1) safetyNetMapping = others[0];
-                }
             }
 
-            // Return DISCOVERY but with candidates info
+            // --- Cierre de Red de Seguridad (Solo si no hubo match) ---
+            console.log("[Extraction] No match found. Searching candidates for user suggestion...");
+            const { data: others } = await supabase
+                .from('proveedor_formatos_guia')
+                .select('id, nombre_formato, fingerprint, reglas_mapeo')
+                .eq('proveedor_id', providerId)
+                .eq('estado', 'ACTIVA')
+                .limit(5);
+
+            if (others && others.length > 0) {
+                console.log(`[Extraction] Found ${others.length} candidates.`);
+                candidates = others;
+                if (others.length === 1) safetyNetMapping = others[0];
+            }
+
+            // Return DISCOVERY
             return {
                 success: true,
                 mode: 'DISCOVERY',
@@ -232,7 +242,10 @@ async function processFile(fileId, providerId, options = {}) {
                     suggested_mapping: {},
                     confidence_notes: `Extracción directa (Offset: ${headerIndex})`
                 },
-                suggested_hash: headerHash
+                suggested_hash: headerHash,
+                debug_fingerprint: debugObj,
+                safety_net: safetyNetMapping, // Single best guess
+                candidates: candidates        // List for UI
             };
         }
 

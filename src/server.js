@@ -19,7 +19,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // Start Server
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'OK', entropy: 'Stable', db: process.env.SUPABASE_URL ? 'Connected' : 'Missing' });
+});
+
 app.listen(PORT, () => {
     console.log(`\n🚀 Backend 2.0 corriendo en http://localhost:${PORT}`);
     console.log(`   - Modo: ${process.env.NODE_ENV || 'Development'}`);
+    console.log(`DB Connection: ${process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 20) + '...' : 'UNDEFINED'}`);
 });
