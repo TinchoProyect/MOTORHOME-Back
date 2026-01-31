@@ -13,7 +13,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- VIGÍA: Debugger de Conexión -->
     <script src="debug_connection.js"></script>
-    <script src="debug_viewer.js"></script> <!-- DEBUG VISOR -->
+
     <!-- SheetJS (Community Edition) para Visor de Excel -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
@@ -827,9 +827,69 @@
             openFileViewer(fileId, fileName);
         }
 
-        // --- LÓGICA DEL VISOR OPTIMIZADA (WORKER + VIRTUALIZATION) ---
+        // --- LÓGICA DEL VISOR OPTIMIZADA (ARQUITECTURA ROBUSTA) ---
+
+        // 1. VARIABLES GLOBALES (Scope Global para evitar "cierres" / closures)
         let viewerWorker = null;
-        let currentSheetData = []; // Datos crudos en memoria (Main Thread)
+        let currentSheetData = [];
+        let workbook = null;       // LIBRO EXCEL (Global)
+        let useWorker = true;      // ESTADO DEL WORKER (Global)
+        let processLocally = null; // FUNCIÓN DE RESPALDO (Global)
+        let currentSheetName = ""; // HOJA ACTUAL (Global)
+
+        // 2. CÓDIGO DEL OBRERO (Incrustado para evitar errores 404 de ruta)
+        const WORKER_CODE = `
+            // Importar SheetJS desde CDN para asegurar disponibilidad en Blob
+            importScripts('https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js');
+
+            let currentWorkbook = null;
+
+            onmessage = function (e) {
+                const { type, payload } = e.data;
+
+                switch (type) {
+                    case 'INIT_FILE':
+                        try {
+                            // Payload: ArrayBuffer del archivo
+                            console.log('[Worker] Recibido archivo. Procesando...');
+                            currentWorkbook = XLSX.read(payload, { type: 'array' });
+
+                            // Devolver lista de hojas
+                            postMessage({
+                                type: 'SHEETS_READY',
+                                payload: currentWorkbook.SheetNames
+                            });
+                        } catch (error) {
+                            postMessage({ type: 'ERROR', payload: error.message });
+                        }
+                        break;
+
+                    case 'PARSE_SHEET':
+                        try {
+                            if (!currentWorkbook) throw new Error("No hay libro cargado.");
+
+                            const sheetName = payload;
+                            const worksheet = currentWorkbook.Sheets[sheetName];
+                            if (!worksheet) throw new Error("Hoja " + sheetName + " no encontrada.");
+
+                            // Convertir a JSON (Array de Arrays)
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                            postMessage({
+                                type: 'SHEET_DATA_READY',
+                                payload: { sheetName: sheetName, data: jsonData }
+                            });
+                        } catch (error) {
+                            postMessage({ type: 'ERROR', payload: error.message });
+                        }
+                        break;
+                    
+                    case 'CLEANUP':
+                        currentWorkbook = null;
+                        break;
+                }
+            };
+        `;
 
         async function openFileViewer(fileId, fileName) {
             // UI Elements
@@ -875,90 +935,77 @@
                     if (!response.ok) throw new Error("Error descargando archivo.");
                     const arrayBuffer = await response.arrayBuffer();
 
-                    // Iniciar Worker
-                    window.viewerWorker = new Worker('./worker.js'); // Global Scope
+                    // --- INICIAR WORKER (Desde Blob) ---
+                    // Eliminamos dependencia de archivo externo y rutas relativas
+                    const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
+                    window.viewerWorker = new Worker(URL.createObjectURL(blob));
                     window.viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer });
 
-                    // --- WORKER MANAGEMENT & FALLBACK ---
-                    let useWorker = true;
-
-                    const processLocally = (wb, sName) => {
+                    // --- DEFINIR FALLBACK (Asignar a variable global) ---
+                    processLocally = (wb, sName) => {
                         console.warn("⚠️ Fallback Local activado para: " + sName);
+                        // Asegurar UI correcta
                         const excelContainer = document.getElementById('excelContainer');
-                        const loader = document.getElementById('loader');
+                        const spinner = excelContainer.querySelector('.animate-spin');
+                        if (spinner && spinner.nextElementSibling) {
+                            spinner.nextElementSibling.textContent = "MODO SEGURO (LOCAL)";
+                        }
 
                         try {
                             if (!workbook && typeof wb !== 'undefined') workbook = wb;
-                            if (!workbook && typeof XLSX !== 'undefined' && typeof arrayBuffer !== 'undefined') {
-                                // Intento de rescate final
+                            // Intento de rescate final (lectura síncrona)
+                            if (!workbook && typeof XLSX !== 'undefined') {
                                 try { workbook = XLSX.read(arrayBuffer); } catch (e) { }
                             }
 
-                            if (!workbook) throw new Error("No se pudo recuperar el archivo Excel para procesamiento local.");
+                            if (!workbook) throw new Error("No se pudo leer el archivo Excel (Fallo total).");
 
-                            // Fallback Rescue for empty sheet name (New Logic)
+                            // Fallback Rescue for empty sheet name
                             if ((!sName || sName === "") && workbook.SheetNames.length > 0) {
                                 sName = workbook.SheetNames[0];
+                                currentSheetName = sName; // Sincronizar global
                             }
 
                             const ws = workbook.Sheets[sName];
                             if (!ws) throw new Error("Hoja '" + sName + "' no encontrada.");
 
-                            // Usamos sheet_to_json igual que el worker para consistencia
                             const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
                             currentSheetData = json;
                             renderVirtualTable(json);
                             loader.classList.add('hidden');
 
-                            // Actualizar UI para indicar modo local
-                            const spinner = excelContainer.querySelector('.animate-spin');
-                            if (spinner && spinner.nextElementSibling) {
-                                spinner.nextElementSibling.textContent = "VISTA LOCAL (SAFE MODE)";
-                            }
-
                         } catch (e) {
                             console.error("Local Processing Error:", e);
-                            const errContainer = document.getElementById('errContainer');
-                            errContainer.textContent = "Error en Modo Seguro: " + e.message;
+                            const errContainer = document.getElementById('errorContainer');
+                            errContainer.textContent = "Error Crítico: " + e.message;
                             errContainer.classList.remove('hidden');
                             loader.classList.add('hidden');
                         }
                     };
-
+                    // --- MANEJO DE EVENTOS DEL WORKER ---
                     window.viewerWorker.onerror = (e) => {
-                        console.error("🚨 Worker Crash/Error:", e);
+                        console.error("🚨 Worker Crash:", e);
                         useWorker = false;
                         e.preventDefault();
                         window.viewerWorker.terminate();
 
-                        // Intentar recuperar sesión
-                        if (currentSheetName) {
-                            processLocally(workbook, currentSheetName);
-                        } else if (workbook && workbook.SheetNames.length > 0) {
-                            loadSheet(workbook.SheetNames[0]);
-                        } else {
-                            // Si crasheó antes de tener workbook, intentar leerlo
-                            processLocally(null, ""); // Trigger rescue attempt inside
-                        }
+                        // Activar Protocolo de Emergencia
+                        processLocally(workbook, currentSheetName);
                     };
 
-                    // Escuchar al Obrero
                     window.viewerWorker.onmessage = (e) => {
                         const { type, payload } = e.data;
 
                         if (type === 'SHEETS_READY') {
-                            // Payload = Lista de hojas
                             const sheetNames = payload;
                             if (sheetNames.length === 0) throw new Error("Excel vacío.");
 
-                            // Renderizar Tabs
+                            // Render Tabs
                             sheetNames.forEach((sheetName, index) => {
                                 const btn = document.createElement('button');
                                 btn.innerText = sheetName;
                                 btn.className = `px-3 py-1.5 text-[10px] font-bold uppercase rounded-t-lg transition-colors border-b-2 ${index === 0 ? 'bg-slate-700 text-blue-400 border-blue-500' : 'bg-slate-900 text-slate-500 border-transparent hover:text-slate-300'}`;
-
                                 btn.onclick = () => {
-                                    // UI Tabs Update
                                     Array.from(sheetTabs.children).forEach(c => {
                                         c.classList.remove('bg-slate-700', 'text-blue-400', 'border-blue-500');
                                         c.classList.add('bg-slate-900', 'text-slate-500', 'border-transparent');
@@ -966,7 +1013,6 @@
                                     btn.classList.remove('bg-slate-900', 'text-slate-500', 'border-transparent');
                                     btn.classList.add('bg-slate-700', 'text-blue-400', 'border-blue-500');
 
-                                    // SOLICITAR PROCESAMIENTO AL WORKER
                                     loadSheet(sheetName);
                                 };
                                 sheetTabs.appendChild(btn);
@@ -974,36 +1020,19 @@
 
                             if (sheetNames.length > 1) sheetTabs.classList.remove('hidden');
                             excelContainer.classList.remove('hidden');
-
-                            // Cargar primera hoja
                             loadSheet(sheetNames[0]);
                             loader.classList.add('hidden');
 
                         } else if (type === 'SHEET_DATA_READY') {
-                            // Payload = { sheetName, data }
                             currentSheetData = payload.data;
                             renderVirtualTable(currentSheetData);
 
                         } else if (type === 'ERROR') {
-                            console.error("Worker Error Lógico:", payload);
-                            // Fallback manual si el worker explícitamente falla
+                            console.error("Worker Logical Error:", payload);
                             useWorker = false;
-
-                            // Intentamos leer el workbook localmente si no existe
-                            if (!workbook) {
-                                try { workbook = XLSX.read(arrayBuffer); } catch (e) { }
-                            }
-                            // Trigger fallback
-                            if (currentSheetName) processLocally(workbook, currentSheetName);
-                            else if (workbook) loadSheet(workbook.SheetNames[0]);
-                            else {
-                                errContainer.textContent = payload;
-                                errContainer.classList.remove('hidden');
-                                loader.classList.add('hidden');
-                            }
+                            processLocally(workbook, currentSheetName);
                         }
                     };
-
                 } else if (isPdf) {
                     pdfContainer.src = downloadUrl;
                     pdfContainer.classList.remove('hidden');
@@ -1015,6 +1044,8 @@
                 } else {
                     throw new Error("Formato no soportado.");
                 }
+
+
 
             } catch (error) {
                 console.error(error);
