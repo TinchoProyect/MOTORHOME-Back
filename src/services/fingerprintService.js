@@ -9,9 +9,10 @@ const supabase = require('../config/supabaseClient');
 function generateHeaderHash(headers) {
     if (!headers || !Array.isArray(headers)) return null;
 
-    // 1. Normalización: Trim, Uppercase, Filter Empty
+    // 1. Normalización ULTRA-STRICT: Trim, Lowercase, AlphaNumeric Only
+    // "Codigo Articulo" -> "codigoarticulo"
     const cleanHeaders = headers
-        .map(h => h ? h.toString().trim().toUpperCase() : "")
+        .map(h => h ? h.toString().toLowerCase().replace(/[^a-z0-9]/g, '') : "")
         .filter(h => h.length > 0);
 
     if (cleanHeaders.length === 0) return null;

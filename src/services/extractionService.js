@@ -173,8 +173,56 @@ async function processFile(fileId, providerId, options = {}) {
                 return obj;
             });
 
-            console.log(`[Extraction] Parsed ${headers.length} columns. Sample Rows: ${sampleData.length}`);
+            // --- LOGICA DE FINGERPRINT (RESCUE MISSION) ---
+            const headerHash = fingerprintService.generateHeaderHash(headers);
+            const existingTemplate = await fingerprintService.matchFingerprint(headerHash, providerId);
 
+            const debugObj = {
+                calculado_ahora: headerHash,
+                guardado_db: existingTemplate ? existingTemplate.fingerprint.header_hash : 'NONE',
+                provider_id: providerId,
+                headers_len: headers.length
+            };
+
+            console.error("DEBUG_FINGERPRINT:", JSON.stringify(debugObj, null, 2));
+
+            let candidates = [];
+            let safetyNetMapping = null;
+
+            if (existingTemplate) {
+                console.log(`[Extraction] MATCH FOUND! Using Template: ${existingTemplate.id}`);
+                return {
+                    success: true,
+                    mode: 'MAPPED',
+                    template_id: existingTemplate.id,
+                    data: {
+                        headers_detected: headers,
+                        data_sample: sampleData,
+                        suggested_mapping: existingTemplate.reglas_mapeo,
+                        confidence_notes: `Formato reconocido automáticamente: ${existingTemplate.nombre_formato}`
+                    },
+                    suggested_hash: headerHash,
+                    debug_fingerprint: debugObj
+                };
+            } else {
+                // RED DE SEGURIDAD: Buscar formatos activos aunque no coincida el hash exacto
+                console.log("[Extraction] No strict match. Searching candidates...");
+                const { data: others } = await supabase
+                    .from('proveedor_formatos_guia')
+                    .select('id, nombre_formato, fingerprint, reglas_mapeo')
+                    .eq('proveedor_id', providerId)
+                    .eq('estado', 'ACTIVA')
+                    .limit(5); // Traemos algunos
+
+                if (others && others.length > 0) {
+                    console.log(`[Extraction] Found ${others.length} candidates.`);
+                    candidates = others;
+                    // Si hay UNO solo, es muy probable que sea ese
+                    if (others.length === 1) safetyNetMapping = others[0];
+                }
+            }
+
+            // Return DISCOVERY but with candidates info
             return {
                 success: true,
                 mode: 'DISCOVERY',
@@ -184,7 +232,7 @@ async function processFile(fileId, providerId, options = {}) {
                     suggested_mapping: {},
                     confidence_notes: `Extracción directa (Offset: ${headerIndex})`
                 },
-                suggested_hash: fingerprintService.generateHeaderHash(headers)
+                suggested_hash: headerHash
             };
         }
 

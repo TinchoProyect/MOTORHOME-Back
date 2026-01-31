@@ -42,6 +42,7 @@ async function processExtraction(req, res) {
     const { fileId, providerId, fileName, headerIndex } = req.body;
 
     console.log(`[FilesController] INICIO PROCESO DE EXTRACCION (Index: ${headerIndex})`);
+    console.log(`   - DB Connection: ${process.env.SUPABASE_URL}`); // USER REQUEST: DB VERIFICATION
     console.log(`   - Archivo: ${fileId} (${fileName})`);
     console.log(`   - Proveedor: ${providerId}`);
 
@@ -50,67 +51,51 @@ async function processExtraction(req, res) {
     }
 
     try {
-        // 1. Persistencia Inicial (Estado: ANALYZING)
+        // WAR ROOM MODE: STOP INSERTS
+        // Prohibido crear registros RAW hasta que el archivo haya sido procesado con éxito.
+
+        // 1. Llamada al Servicio de Extracción (Core Logic)
+        console.log("   [Controller] Calling Extraction Service...");
+        const result = await extractionService.processFile(fileId, providerId, { headerIndex: parseInt(headerIndex) || 0 });
+
+        // 2. Manejo de Errores
+        if (!result.success) {
+            console.error("[Controller] Extraction Failed:", result.error);
+            return res.status(422).json({
+                success: false,
+                error: result.error || "Error en extracción",
+                reason: result.reason || "Falló el servicio de extracción"
+            });
+        }
+
+        // 3. PERSISTENCIA DE ÉXITO (INSERT ONLY ON SUCCESS)
+        // Caso Exito (Ya sea Discovery o MAPPED)
+        const finalStatus = result.mode === 'MAPPED' ? 'CONFIRMED' : 'READY_TO_REVIEW';
+
         const { data: rawRecord, error: dbError } = await supabase
             .from('proveedor_listas_raw')
             .insert({
                 proveedor_id: providerId,
                 archivo_id: fileId,
                 nombre_archivo: fileName || 'Unknown File',
-                status_global: 'ANALYZING',
-                modo_procesamiento: 'DISCOVERY' // Default inicial
+                status_global: finalStatus,
+                modo_procesamiento: result.mode,
+                formato_guia_id: result.template_id || null
             })
             .select()
             .single();
 
-        if (dbError) {
-            console.error("[FilesController] Error DB Insert:", dbError);
-            throw new Error("Error iniciando registro en DB: " + dbError.message);
-        }
+        if (dbError) throw new Error("Error persistiendo resultado: " + dbError.message);
 
-        console.log(`   [DB] Registro creado ID: ${rawRecord.id}`);
-
-        // 2. Llamada al Servicio de Extracción (Core Logic)
-        // Nota: Esto puede tardar, el frontend debe manejar timeout o esto ser background job.
-        // Por ahora, await directo (simple).
-        const result = await extractionService.processFile(fileId, providerId, { headerIndex: parseInt(headerIndex) || 0 });
-
-        // 3. Manejo de Resultados
-        if (!result.success) {
-            // Caso Error / Ilegible
-            const newStatus = result.error === 'ILEGIBLE' ? 'ERROR_ILEGIBLE' : 'ERROR_SYSTEM';
-
-            await supabase
-                .from('proveedor_listas_raw')
-                .update({ status_global: newStatus })
-                .eq('id', rawRecord.id);
-
-            return res.status(422).json({
-                success: false,
-                error: result.error,
-                reason: result.reason
-            });
-        }
-
-        // Caso Exito (Ya sea Discovery o MAPPED)
-        const finalStatus = result.mode === 'MAPPED' ? 'CONFIRMED' : 'READY_TO_REVIEW';
-
-        await supabase
-            .from('proveedor_listas_raw')
-            .update({
-                status_global: finalStatus,
-                modo_procesamiento: result.mode
-                // TODO: Guardar fingerprint u otros metadatos si el service los retorna
-            })
-            .eq('id', rawRecord.id);
-
-        console.log(`[FilesController] Proceso Finalizado. Modo: ${result.mode}`);
+        console.log(`[FilesController] Proceso Finalizado. Modo: ${result.mode}. Record ID: ${rawRecord.id}`);
 
         return res.json({
             success: true,
             mode: result.mode,
             data: result.data,
-            raw_id: rawRecord.id // Retornamos ID para que frontend pueda linkear
+            raw_id: rawRecord.id, // Retornamos ID para que frontend pueda linkear
+            debug_fingerprint: result.debug_fingerprint,
+            safety_net: result.safety_net
         });
 
     } catch (error) {
