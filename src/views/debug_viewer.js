@@ -22,10 +22,11 @@
         border: 1px solid #0f0;
         z-index: 9999;
         overflow-y: auto;
-        display: none;
+        overflow-y: auto;
+        display: none; /* OCULTO POR DEFECTO PARA NO MOLESTAR */
         pointer-events: none;
     `;
-    document.body.appendChild(debugConsole);
+    // document.body.appendChild(debugConsole); // MOVED TO LOAD EVENT -> Fixes TypeError
 
     function log(msg, type = 'info') {
         const line = document.createElement('div');
@@ -48,7 +49,7 @@
 
         // Solo monitorear descargas
         if (url.includes('/api/files/download')) {
-            debugConsole.style.display = 'block';
+            // debugConsole.style.display = 'block'; // NO MOSTRAR AUTOMÁTICAMENTE SI NO HAY ERROR
             log(`➡️ INICIANDO DESCARGA: ${url}`);
 
             try {
@@ -85,7 +86,7 @@
         const originalOpen = window.openFileViewer;
         window.openFileViewer = async function (fileId, fileName) {
             debugConsole.innerHTML = ''; // Limpiar previo
-            debugConsole.style.display = 'block';
+            // debugConsole.style.display = 'block'; // NO MOSTRAR AUTOMÁTICAMENTE
             log(`👁️ INTENTO ABRIR: ${fileName} (ID: ${fileId})`);
 
             try {
