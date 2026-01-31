@@ -11,6 +11,11 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- VIGÍA: Debugger de Conexión -->
+    <script src="debug_connection.js"></script>
+    <script src="debug_viewer.js"></script> <!-- DEBUG VISOR -->
+    <!-- SheetJS (Community Edition) para Visor de Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -547,6 +552,65 @@
         </div>
     </div>
 
+    <!-- ========================================== -->
+    <!-- COMPONENTE: MODAL VISOR UNIVERSAL (NUEVO) 👁️ -->
+    <!-- ========================================== -->
+    <div id="viewerModal"
+        class="hidden fixed inset-0 z-[100] flex items-center justify-center p-2 modal-blur overflow-hidden">
+        <div
+            class="glass-panel w-[98vw] h-[98vh] rounded-2xl border border-blue-500/20 shadow-2xl flex flex-col animate-in zoom-in-95 duration-300">
+
+            <!-- Header Visor -->
+            <div
+                class="px-6 py-4 border-b border-slate-800/50 flex justify-between items-center bg-slate-950/40 shrink-0">
+                <div class="flex items-center gap-4">
+                    <div id="viewerIconContainer" class="p-2 rounded-xl bg-slate-800/50">
+                        <i id="viewerIcon" data-lucide="file" class="w-5 h-5 text-slate-400"></i>
+                    </div>
+                    <div>
+                        <h2 id="viewerTitle" class="text-sm font-bold text-white tracking-wide">Documento</h2>
+                        <p class="text-[10px] text-slate-500 font-mono tracking-wider">MODO LECTURA</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="btnExtractFromViewer"
+                        class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
+                        <i data-lucide="cpu" class="w-3 h-3"></i> Procesar con IA
+                    </button>
+                    <div class="h-6 w-[1px] bg-slate-800 mx-2"></div>
+                    <button onclick="closeViewerModal()"
+                        class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cuerpo Visor -->
+            <div id="viewerContent" class="flex-grow bg-slate-100 relative overflow-hidden flex flex-col">
+                <!-- Loader -->
+                <div id="viewerLoader"
+                    class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-50">
+                    <i data-lucide="loader-2" class="w-10 h-10 text-blue-500 animate-spin mb-3"></i>
+                    <p class="text-xs text-blue-400 font-mono animate-pulse">DESCARGANDO STREAM...</p>
+                </div>
+
+                <!-- Contenedores por Tipo -->
+                <div id="excelContainer"
+                    class="hidden w-full h-full overflow-auto bg-slate-900 text-slate-300 text-xs font-mono p-1"></div>
+                <iframe id="pdfContainer" class="hidden w-full h-full border-0"></iframe>
+                <div id="imageContainer"
+                    class="hidden w-full h-full flex items-center justify-center bg-slate-900 overflow-auto">
+                    <img id="viewerImage" class="max-w-full max-h-full object-contain shadow-2xl" />
+                </div>
+                <div id="errorContainer"
+                    class="hidden w-full h-full flex flex-col items-center justify-center bg-slate-900 text-red-400">
+                    <i data-lucide="alert-triangle" class="w-12 h-12 mb-4"></i>
+                    <p id="viewerErrorMessage" class="text-sm font-bold">Error al cargar archivo</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Integración de Lógica y Seguridad -->
     <script>
         lucide.createIcons();
@@ -727,25 +791,131 @@
                     const colorClass = getColor(file.mimeType);
 
                     html += `
-                        <a href="${file.webViewLink}" target="_blank" class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
-                            <div class="w-12 h-12 bg-slate-950 rounded-lg flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-300">
+                        <div onclick="handleFileClick('${file.id}', '${file.name}')" class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
+                            <!-- External Link (Corner) -->
+                            <a href="${file.webViewLink}" target="_blank" onclick="event.stopPropagation()" class="absolute top-2 right-2 p-1 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Abrir en Drive">
+                                <i data-lucide="external-link" class="w-3 h-3"></i>
+                            </a>
+                            
+                            <!-- Icon -->
+                            <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg ${colorClass.replace('text-', 'shadow-').replace('400', '900')}/20">
                                 <i data-lucide="${iconName}" class="w-6 h-6 ${colorClass}"></i>
                             </div>
-                            <div class="text-center w-full">
-                                <h4 class="text-xs font-medium text-slate-300 group-hover:text-blue-200 truncate w-full" title="${file.name}">${file.name}</h4>
-                                <span class="text-[9px] text-slate-600 uppercase mt-1 block group-hover:text-slate-500 transition-colors">Abrir</span>
-                            </div>
-                        </a>
+                            
+                            <!-- Name -->
+                            <p class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors">${file.name}</p>
+                            
+                            <!-- Date -->
+                            <span class="text-[9px] text-slate-600 font-mono mt-auto">${new Date(file.modifiedTime).toLocaleDateString()}</span>
+                        </div>
                     `;
                 });
 
                 html += `</div>`;
             }
 
-            html += `</div>`;
             reportDisplay.innerHTML = html;
             lucide.createIcons();
         }
+
+        async function handleFileClick(fileId, fileName) {
+            console.log("Abriendo visor para:", fileName);
+            openFileViewer(fileId, fileName);
+        }
+
+        // --- LÓGICA DEL VISOR (NUEVO) ---
+        async function openFileViewer(fileId, fileName) {
+            const modal = document.getElementById('viewerModal');
+            const loader = document.getElementById('viewerLoader');
+            const title = document.getElementById('viewerTitle');
+            const excelContainer = document.getElementById('excelContainer');
+            const pdfContainer = document.getElementById('pdfContainer');
+            const imgContainer = document.getElementById('imageContainer');
+            const imgEl = document.getElementById('viewerImage');
+            const errContainer = document.getElementById('errorContainer');
+            const btnExtract = document.getElementById('btnExtractFromViewer');
+
+            // Reset UI
+            modal.classList.remove('hidden');
+            loader.classList.remove('hidden');
+            excelContainer.classList.add('hidden');
+            pdfContainer.classList.add('hidden');
+            imgContainer.classList.add('hidden');
+            errContainer.classList.add('hidden');
+
+            title.textContent = fileName;
+
+            // Configurar botón de extracción (opcional, para después)
+            // btnExtract.onclick = () => startExtraction(fileId, fileName); 
+            // Por ahora lo ocultamos para ser estrictos con la tarea
+            btnExtract.classList.add('hidden');
+
+            try {
+                // Determine Type
+                const isExcel = fileName.match(/\.(xlsx|xls|csv)$/i);
+                const isPdf = fileName.match(/\.pdf$/i);
+                const isImg = fileName.match(/\.(jpg|jpeg|png)$/i);
+
+                const downloadUrl = `${backendBaseUrl || ''}/api/files/download/${fileId}`;
+
+                if (isExcel) {
+                    const response = await fetch(downloadUrl);
+                    if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
+
+                    const arrayBuffer = await response.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer);
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const html = XLSX.utils.sheet_to_html(worksheet, { id: "excelTable", editable: false });
+
+                    excelContainer.innerHTML = html;
+                    // Estilizar tabla fea de SheetJS para Dark Mode
+                    const table = excelContainer.querySelector('table');
+                    if (table) {
+                        table.classList.add('w-full', 'border-collapse', 'text-[11px]', 'font-mono');
+                        // Cabeceras
+                        table.querySelectorAll('tr:first-child td, th').forEach(cell => {
+                            cell.classList.add('bg-slate-800', 'text-blue-400', 'font-bold', 'uppercase', 'tracking-wider', 'border', 'border-slate-700', 'p-2', 'sticky', 'top-0', 'z-10');
+                        });
+                        // Celdas
+                        table.querySelectorAll('td').forEach(cell => {
+                            cell.classList.add('border', 'border-slate-800', 'p-2', 'whitespace-nowrap', 'text-slate-400', 'hover:bg-slate-800/50', 'transition-colors');
+                            // Detectar números para alinear a la derecha
+                            if (!isNaN(cell.innerText.replace(/[$,.]/g, ''))) {
+                                cell.classList.add('text-right');
+                                cell.classList.replace('text-slate-400', 'text-emerald-400'); // Resaltar números
+                            }
+                        });
+                    }
+                    excelContainer.classList.remove('hidden');
+
+                } else if (isPdf) {
+                    pdfContainer.src = downloadUrl; // Browser maneja PDF nativo
+                    pdfContainer.classList.remove('hidden');
+
+                } else if (isImg) {
+                    imgEl.src = downloadUrl;
+                    imgContainer.classList.remove('hidden');
+
+                } else {
+                    throw new Error("Formato no soportado para vista previa.");
+                }
+
+            } catch (error) {
+                console.error("Viewer Error:", error);
+                document.getElementById('viewerErrorMessage').textContent = error.message;
+                errContainer.classList.remove('hidden');
+            } finally {
+                loader.classList.add('hidden');
+            }
+        }
+
+        function closeViewerModal() {
+            document.getElementById('viewerModal').classList.add('hidden');
+            document.getElementById('pdfContainer').src = ""; // Limpiar iframe
+            document.getElementById('viewerImage').src = "";
+            document.getElementById('excelContainer').innerHTML = "";
+        }
+
 
         // Alias para compatibilidad con instrucciones de usuario
         async function showSuppliersList() {
@@ -802,12 +972,15 @@
         }
 
         async function showSingleSupplier(id) {
+            // Set Global Context for File Operations
+            window.currentActiveProviderId = id;
+
             // Buscar datos completos (Optimización: buscar en cache local si existe, o fetch)
             let supplier = currentSuppliers.find(s => s.id === id);
 
             if (!supplier) {
                 // Fetch on demand si no está en cache
-                reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mr-2"></i> Cargando ficha...</div>`;
+                reportDisplay.innerHTML = `< div class="flex items-center justify-center h-full text-blue-400" > <i data-lucide="loader-2" class="w-6 h-6 animate-spin mr-2"></i> Cargando ficha...</div > `;
                 lucide.createIcons();
                 const { data } = await supabaseClient.from('proveedores').select('*').eq('id', id).single();
                 supplier = data;
@@ -820,8 +993,8 @@
 
             // Renderizar Ficha Técnica
             reportDisplay.innerHTML = `
-                <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
-                    <!-- Header Ficha -->
+            < div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2" >
+                    < !--Header Ficha-- >
                     <div class="flex justify-between items-start mb-8 border-b border-slate-800 pb-6">
                         <div>
                             <div class="flex items-center gap-3 mb-2">
@@ -839,31 +1012,31 @@
                         </button>
                     </div>
 
-                    <!-- Grid de Información -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        
-                        <!-- Columna 1: Operativa e Infra -->
-                        <div class="space-y-6">
-                            <!-- Estado -->
-                            <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 relative overflow-hidden group">
-                                <div class="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-colors"></div>
-                                <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <i data-lucide="activity" class="w-3 h-3"></i> Estado Operativo
-                                </h3>
-                                <div class="flex items-center gap-3">
-                                    <div class="w-3 h-3 rounded-full ${supplier.activo ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'}"></div>
-                                    <span class="text-sm font-medium ${supplier.activo ? 'text-emerald-400' : 'text-red-400'}">
-                                        ${supplier.activo ? 'ACTIVO Y VALIDADO' : 'SUSPENDIDO / INACTIVO'}
-                                    </span>
-                                </div>
-                            </div>
+                    <!--Grid de Información-- >
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                            <!-- Drive -->
-                            <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50">
-                                <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <i data-lucide="hard-drive" class="w-3 h-3"></i> Digital Assets
-                                </h3>
-                                ${supplier.drive_folder_id
+                <!-- Columna 1: Operativa e Infra -->
+                <div class="space-y-6">
+                    <!-- Estado -->
+                    <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 relative overflow-hidden group">
+                        <div class="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-colors"></div>
+                        <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <i data-lucide="activity" class="w-3 h-3"></i> Estado Operativo
+                        </h3>
+                        <div class="flex items-center gap-3">
+                            <div class="w-3 h-3 rounded-full ${supplier.activo ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'}"></div>
+                            <span class="text-sm font-medium ${supplier.activo ? 'text-emerald-400' : 'text-red-400'}">
+                                ${supplier.activo ? 'ACTIVO Y VALIDADO' : 'SUSPENDIDO / INACTIVO'}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Drive -->
+                    <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50">
+                        <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <i data-lucide="hard-drive" class="w-3 h-3"></i> Digital Assets
+                        </h3>
+                        ${supplier.drive_folder_id
                     ? `<div onclick="exploreSupplierFiles('${supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
                                         <div class="flex items-center gap-3">
                                             <div class="p-2 bg-slate-900 rounded-md text-blue-500">
@@ -878,48 +1051,48 @@
                                        </div>`
                     : `<div class="text-xs text-slate-600 italic py-2">Sin carpeta vinculada</div>`
                 }
+                    </div>
+                </div>
+
+                <!-- Columna 2: Contacto y Datos -->
+                <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 h-full">
+                    <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <i data-lucide="user-check" class="w-3 h-3"></i> Contacto y Logística
+                    </h3>
+
+                    <div class="space-y-6">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <span class="block text-[9px] text-slate-500 uppercase mb-1">Responsable</span>
+                                <span class="text-sm text-slate-300 font-medium border-b border-transparent hover:border-blue-500/50 transition-colors inline-block pb-0.5">
+                                    ${supplier.contacto_nombre || '-'}
+                                </span>
+                            </div>
+                            <div>
+                                <span class="block text-[9px] text-slate-500 uppercase mb-1">Teléfono</span>
+                                <span class="text-sm text-slate-300 font-mono">${supplier.contacto_telefono || '-'}</span>
                             </div>
                         </div>
 
-                        <!-- Columna 2: Contacto y Datos -->
-                        <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 h-full">
-                            <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <i data-lucide="user-check" class="w-3 h-3"></i> Contacto y Logística
-                            </h3>
-                            
-                            <div class="space-y-6">
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <span class="block text-[9px] text-slate-500 uppercase mb-1">Responsable</span>
-                                        <span class="text-sm text-slate-300 font-medium border-b border-transparent hover:border-blue-500/50 transition-colors inline-block pb-0.5">
-                                            ${supplier.contacto_nombre || '-'}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span class="block text-[9px] text-slate-500 uppercase mb-1">Teléfono</span>
-                                        <span class="text-sm text-slate-300 font-mono">${supplier.contacto_telefono || '-'}</span>
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <span class="block text-[9px] text-slate-500 uppercase mb-1">Email Corporativo</span>
-                                    <a href="mailto:${supplier.contacto_email}" class="flex items-center gap-2 text-sm text-blue-400/80 hover:text-blue-400 transition-colors">
-                                        <i data-lucide="mail" class="w-3 h-3"></i>
-                                        ${supplier.contacto_email || '-'}
-                                    </a>
-                                </div>
+                        <div>
+                            <span class="block text-[9px] text-slate-500 uppercase mb-1">Email Corporativo</span>
+                            <a href="mailto:${supplier.contacto_email}" class="flex items-center gap-2 text-sm text-blue-400/80 hover:text-blue-400 transition-colors">
+                                <i data-lucide="mail" class="w-3 h-3"></i>
+                                ${supplier.contacto_email || '-'}
+                            </a>
+                        </div>
 
-                                <div class="pt-4 border-t border-slate-800/50">
-                                    <span class="block text-[9px] text-slate-500 uppercase mb-1">Dirección Operativa</span>
-                                    <div class="flex items-start gap-2 text-slate-400 text-xs">
-                                        <i data-lucide="map-pin" class="w-3 h-3 mt-0.5 shrink-0 text-slate-600"></i>
-                                        ${supplier.direccion || 'Sin dirección registrada'}
-                                    </div>
-                                </div>
+                        <div class="pt-4 border-t border-slate-800/50">
+                            <span class="block text-[9px] text-slate-500 uppercase mb-1">Dirección Operativa</span>
+                            <div class="flex items-start gap-2 text-slate-400 text-xs">
+                                <i data-lucide="map-pin" class="w-3 h-3 mt-0.5 shrink-0 text-slate-600"></i>
+                                ${supplier.direccion || 'Sin dirección registrada'}
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+                </div >
             `;
             lucide.createIcons();
         }
@@ -927,10 +1100,10 @@
 
         // Lógica para cargar proveedores (asumiendo que se obtienen de Supabase)
         async function loadProveedores() {
-            reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400">
-                                        <i data-lucide="loader-2" class="w-8 h-8 animate-spin mr-2"></i>
+            reportDisplay.innerHTML = `< div class="flex items-center justify-center h-full text-blue-400" >
+            <i data-lucide="loader-2" class="w-8 h-8 animate-spin mr-2"></i>
                                         Cargando proveedores...
-                                    </div>`;
+                                    </div > `;
             lucide.createIcons();
 
             const { data, error } = await supabaseClient
@@ -940,7 +1113,7 @@
 
             if (error) {
                 console.error("Error al cargar proveedores:", error);
-                reportDisplay.innerHTML = `<div class="text-red-500">Error al cargar proveedores: ${error.message}</div>`;
+                reportDisplay.innerHTML = `< div class="text-red-500" > Error al cargar proveedores: ${error.message}</div > `;
                 return;
             }
 
@@ -952,34 +1125,34 @@
 
             if (data.length === 0) {
                 reportDisplay.innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-full text-slate-500">
+            < div class="flex flex-col items-center justify-center h-full text-slate-500" >
                         <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-50"></i>
                         <p class="text-sm">No hay proveedores registrados.</p>
                         <button onclick="openSupplierModal()" class="mt-4 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-xs transition-colors border border-blue-500/30">
                             + Dar de Alta
                         </button>
-                    </div>
-                `;
+                    </div >
+            `;
             } else {
                 // Renderizar la tabla de proveedores
                 let tableHtml = `
-                    <div class="flex justify-between items-center mb-4">
+            < div class="flex justify-between items-center mb-4" >
                         <h3 class="text-xl font-bold text-white">Listado de Proveedores</h3>
                         <span class="text-xs text-slate-500 font-mono">${data.length} REGISTROS</span>
-                    </div>
-                    <div class="overflow-x-auto custom-scrollbar rounded-xl border border-slate-800">
-                        <table class="min-w-full divide-y divide-slate-800 bg-slate-900/40">
-                            <thead class="bg-slate-950/50">
-                                <tr>
-                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Empresa</th>
-                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">CUIT</th>
-                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoría</th>
-                                    <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">Contacto</th>
-                                    <th class="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-800/50">
-                `;
+                    </div >
+            <div class="overflow-x-auto custom-scrollbar rounded-xl border border-slate-800">
+                <table class="min-w-full divide-y divide-slate-800 bg-slate-900/40">
+                    <thead class="bg-slate-950/50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Empresa</th>
+                            <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">CUIT</th>
+                            <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoría</th>
+                            <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:table-cell">Contacto</th>
+                            <th class="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/50">
+                        `;
                 data.forEach(supplier => {
                     tableHtml += `
                         <tr class="hover:bg-blue-600/5 transition-colors group">
@@ -1011,10 +1184,10 @@
                     `;
                 });
                 tableHtml += `
-                            </tbody>
-                        </table>
-                    </div>
-                `;
+                    </tbody>
+                </table>
+            </div>
+        `;
                 reportDisplay.innerHTML = tableHtml;
             }
             lucide.createIcons();
@@ -1042,7 +1215,7 @@
 
             try {
                 // Fetch using absolute path (if config exists) or relative (fallback)
-                const url = backendBaseUrl ? `${backendBaseUrl}/api/files/list?type=folders` : '/api/files/list?type=folders';
+                const url = backendBaseUrl ? `${backendBaseUrl} /api/files / list ? type = folders` : '/api/files/list?type=folders';
 
                 const res = await fetch(url);
                 const data = await res.json();
@@ -1141,7 +1314,7 @@
 
         // Función Eliminar
         async function deleteSupplier(id, nombre) {
-            if (!confirm(`¿Está seguro que desea eliminar a "${nombre}"?`)) return;
+            if (!confirm(`¿Está seguro que desea eliminar a "${nombre}" ? `)) return;
 
             try {
                 const { error } = await supabaseClient
@@ -1303,14 +1476,14 @@
             const icon = isUser ? 'user' : 'bot';
 
             const html = `
-                <div class="mb-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            < div class="mb-6 animate-in fade-in slide-in-from-bottom-2 duration-500" >
                     <div class="flex items-center gap-2 mb-1 ${isUser ? 'justify-end' : 'justify-start'} text-[10px] font-bold uppercase tracking-widest text-slate-500">
                         ${isUser ? `GET /USER/COMMAND` : `RESPONSE /LAMDA/AI`}
                     </div>
                     <div class="${bgColor} p-4 rounded-2xl border border-transparent ${isUser ? 'rounded-tr-none' : 'rounded-tl-none'} inline-block max-w-[85%]">
                         <div class="text-sm leading-relaxed whitespace-pre-wrap text-slate-200">${text}</div>
                     </div>
-                </div>
+                </div >
             `;
 
             reportDisplay.insertAdjacentHTML('beforeend', html);
@@ -1327,17 +1500,17 @@
 
             aiLoader.classList.remove('hidden');
             const metrics = getMetricsContext();
-            const prompt = `Usuario solicita: "${taskName}". Contexto: Proveedores ${metrics.proveedores}, Inversión ${metrics.inversion}, Deuda ${metrics.deuda}. Genera un informe táctico corto.`;
+            const prompt = `Usuario solicita: "${taskName}".Contexto: Proveedores ${metrics.proveedores}, Inversión ${metrics.inversion}, Deuda ${metrics.deuda}. Genera un informe táctico corto.`;
 
             // Mostrar comando en chat
-            renderChatMessage('GERENCIA', `Ejecutar comando: ${taskName}`);
+            renderChatMessage('GERENCIA', `Ejecutar comando: ${taskName} `);
 
             // Usar Prompt Dashboard (Modo Dios)
             const sysPrompt = (typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres la IA de gestión.";
             const response = await callGemini(prompt, sysPrompt);
 
             aiLoader.classList.add('hidden');
-            appendHistory('SISTEMA', `Acción: ${taskName}`);
+            appendHistory('SISTEMA', `Acción: ${taskName} `);
 
             // Mostrar respuesta en chat
             renderChatMessage('LAMDA_AI', response);
@@ -1406,6 +1579,8 @@
         setInterval(updateTime, 1000);
         updateTime();
         terminalInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendToAI(); });
+        // LÓGICA DE VISTA PREVIA DE ARCHIVOS (MODAL) - ELIMINADA (Reemplazada por viewerModal)
+        // Se mantiene la llamada a 'openFileViewer' definida arriba.
     </script>
 </body>
 

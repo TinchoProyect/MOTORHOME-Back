@@ -8,6 +8,12 @@ const PORT = process.env.PORT || 5655;
 app.use(cors());
 app.use(express.json());
 
+// DEBUG MIDDLEWARE
+app.use((req, res, next) => {
+    console.log(`[SERVER] Request received: ${req.method} ${req.url}`);
+    next();
+});
+
 // Routes
 app.use('/api/files', require('./routes/filesRoutes'));
 
