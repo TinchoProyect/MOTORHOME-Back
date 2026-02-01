@@ -2448,45 +2448,50 @@
                     saveBtn.className = "px-3 py-1 bg-emerald-600 text-white text-[10px] rounded hover:bg-emerald-500 flex items-center shadow-lg shadow-emerald-900/20";
                     saveBtn.onclick = async (e) => {
                         e.stopPropagation();
+                        if (!inputTerm.value.trim()) return;
+
+                        // UI Loading state
+                        const originalContent = saveBtn.innerHTML;
+                        saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>';
                         saveBtn.disabled = true;
-                        saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin inline mr-1"></i>';
+                        lucide.createIcons();
 
-                        if (inputTerm.value.trim()) {
-                            const success = await updateNomenclatureTerm(term.id, inputTerm.value.trim(), inputDesc.value.trim());
-                            if (success) {
-                                // [BUGFIX] Actualizar TODAS las columnas que usaban este término
-                                const newName = inputTerm.value.trim();
-                                const oldName = term.termino;
+                        // 1. Update Backend
+                        const success = await updateNomenclatureTerm(term.id, inputTerm.value.trim(), inputDesc.value.trim());
 
-                                Object.keys(columnMapping).forEach(key => {
-                                    // [ROBUST COMPARISON] Normalize strings to avoid mismatch
-                                    const mapVal = (columnMapping[key] || '').toString().trim().toLowerCase();
-                                    const oldVal = (oldName || '').toString().trim().toLowerCase();
+                        if (success) {
+                            // 2. Logic Fix: Robust Comparison
+                            const newName = inputTerm.value.trim();
+                            const oldNameRaw = term.termino;
+                            const normalize = (s) => s ? s.toString().trim().toLowerCase() : '';
+                            const target = normalize(oldNameRaw);
 
-                                    if (mapVal === oldVal) {
-                                        console.log(`[UI FIX] MATCH FOUND: Columna ${key} cambiada de "${oldName}" a "${newName}"`);
-                                        columnMapping[key] = newName;
-                                    }
-                                });
+                            console.log(`[UI FIX] Buscando coincidencias para: "${oldNameRaw}"`);
 
-                                console.log("Forzando re-renderizado de tabla...");
+                            Object.keys(columnMapping).forEach(key => {
+                                if (normalize(columnMapping[key]) === target) {
+                                    console.log(`✅ MATCH: Columna ${key} actualizada.`);
+                                    columnMapping[key] = newName;
+                                }
+                            });
 
-                                // Forzar re-renderizado de la tabla y headers
+                            // 3. Force Re-render
+                            if (typeof renderVirtualTable === 'function' && currentSheetData) {
+                                console.log("🔄 Redibujando tabla...");
                                 renderVirtualTable(currentSheetData);
-                                menu.remove();
-
-                                // Feedback visual extra
-                                renderChatMessage('SISTEMA', `Término renombrado globalmente: ${oldName} -> ${newName}`);
-                            } else {
-                                saveBtn.disabled = false;
-                                saveBtn.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i>Guardar';
                             }
+
+                            renderChatMessage('SISTEMA', `Término actualizado: "${newName}"`);
+                            menu.remove();
+                        } else {
+                            saveBtn.innerHTML = originalContent;
+                            saveBtn.disabled = false;
+                            lucide.createIcons();
                         }
                     };
 
                     actions.appendChild(cancelBtn);
                     actions.appendChild(saveBtn);
-
                     itemContainer.appendChild(labelTerm);
                     itemContainer.appendChild(inputTerm);
                     itemContainer.appendChild(labelDesc);
