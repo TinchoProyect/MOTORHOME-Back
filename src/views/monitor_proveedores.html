@@ -1218,22 +1218,9 @@
                             if (sheetNames.length === 0) throw new Error("Excel vacío.");
 
                             // Render Tabs
-                            sheetNames.forEach((sheetName, index) => {
-                                const btn = document.createElement('button');
-                                btn.innerText = sheetName;
-                                btn.className = `px-3 py-1.5 text-[10px] font-bold uppercase rounded-t-lg transition-colors border-b-2 ${index === 0 ? 'bg-slate-700 text-blue-400 border-blue-500' : 'bg-slate-900 text-slate-500 border-transparent hover:text-slate-300'}`;
-                                btn.onclick = () => {
-                                    Array.from(sheetTabs.children).forEach(c => {
-                                        c.classList.remove('bg-slate-700', 'text-blue-400', 'border-blue-500');
-                                        c.classList.add('bg-slate-900', 'text-slate-500', 'border-transparent');
-                                    });
-                                    btn.classList.remove('bg-slate-900', 'text-slate-500', 'border-transparent');
-                                    btn.classList.add('bg-slate-700', 'text-blue-400', 'border-blue-500');
-
-                                    loadSheet(sheetName);
-                                };
-                                sheetTabs.appendChild(btn);
-                            });
+                            // Render Tabs with Traffic Light
+                            window.currentSheetList = sheetNames;
+                            renderSheetTabs(sheetNames);
 
                             if (sheetNames.length > 1) sheetTabs.classList.remove('hidden');
                             excelContainer.classList.remove('hidden');
@@ -1277,6 +1264,18 @@
             // Global scope helper for tabs
             window.loadSheet = loadSheet; // Ensure it's available globally
 
+            // 1. SAVE STATE OF PREVIOUS SHEET
+            if (currentSheetName && currentSheetName !== sheetName) {
+                saveSheetState(currentSheetName);
+            }
+
+            // UPDATE POINTER BEFORE RENDER
+            currentSheetName = sheetName;
+
+            // 2. LOAD STATE FOR NEW SHEET
+            loadSheetState(sheetName);
+            renderSheetTabs(); // Update active tab style
+
             const excelContainer = document.getElementById('excelContainer');
 
             // Limpieza de Memoria VISUAL
@@ -1286,7 +1285,6 @@
             </div>`;
 
             currentSheetData = null; // Liberar ref anterior
-            currentSheetName = sheetName;
 
             if (typeof useWorker !== 'undefined' && useWorker) {
                 // GUARDIA DE SEGURIDAD: Evitar llamada a null
@@ -1311,6 +1309,86 @@
                     if (typeof processLocally === 'function') processLocally(workbook, sheetName);
                 }, 50);
             }
+        }
+
+        // --- MULTI-SHEET STORE & TRAFFIC LIGHT ---
+        let sheetConfigStore = {}; // { "Sheet1": { offset: {}, mapping: {} } }
+        window.currentSheetList = [];
+
+        function saveSheetState(sheetName) {
+            if (!sheetName) return;
+            sheetConfigStore[sheetName] = {
+                offset: currentOffset,
+                mapping: columnMapping || {}
+            };
+        }
+
+        function loadSheetState(sheetName) {
+            // 1. Reset
+            currentOffset = null;
+            columnMapping = {};
+            offsetSelectionMode = false;
+
+            // 2. Hydrate
+            const config = sheetConfigStore[sheetName];
+            if (config) {
+                currentOffset = config.offset;
+                columnMapping = config.mapping || {};
+            }
+        }
+
+        function getSheetStatus(sheetName) {
+            const config = sheetConfigStore[sheetName];
+            const hasOffset = config && config.offset;
+            const hasMapping = config && config.mapping && Object.keys(config.mapping).length > 0;
+
+            if (hasOffset && hasMapping) return 'STATUS_READY';
+            if (hasOffset) return 'STATUS_PARTIAL';
+            return 'STATUS_EMPTY';
+        }
+
+        function renderSheetTabs(sheetNames) {
+            if (sheetNames) window.currentSheetList = sheetNames;
+            const list = window.currentSheetList || [];
+
+            const container = document.getElementById('sheetTabs');
+            if (!container) return;
+            container.innerHTML = '';
+
+            list.forEach((sheetName) => {
+                const btn = document.createElement('button');
+                const isActive = (sheetName === currentSheetName);
+                const status = getSheetStatus(sheetName);
+
+                let baseClass = "px-3 py-1.5 text-[10px] font-bold uppercase rounded-t-lg transition-all border-b-2 flex items-center gap-2 ";
+
+                // Active State Logic
+                if (isActive) {
+                    baseClass += "bg-slate-800 text-white border-blue-500 shadow-md relative z-10 ";
+                } else {
+                    baseClass += "bg-slate-900 border-transparent hover:bg-slate-800 opacity-60 hover:opacity-100 ";
+                }
+
+                // Traffic Light Colors
+                if (status === 'STATUS_READY') baseClass += isActive ? "text-emerald-400" : "text-emerald-600";
+                else if (status === 'STATUS_PARTIAL') baseClass += isActive ? "text-amber-400" : "text-amber-600";
+                else baseClass += isActive ? "text-blue-400" : "text-slate-500";
+
+                // Indicator Dot
+                let dotData = "";
+                if (status === 'STATUS_READY') dotData = `<div class="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>`;
+                else if (status === 'STATUS_PARTIAL') dotData = `<div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div>`;
+
+                btn.innerHTML = `<span>${sheetName}</span>${dotData}`;
+                btn.className = baseClass;
+
+                btn.onclick = () => {
+                    if (currentSheetName === sheetName) return;
+                    // UI Update first for responsiveness
+                    loadSheet(sheetName);
+                };
+                container.appendChild(btn);
+            });
         }
 
         // --- OFFSET TOOL LOGIC ---
@@ -1343,6 +1421,10 @@
 
             // Turn off mode automatically (UX: One-shot select)
             toggleOffsetMode();
+
+            // Update UI (Traffic Light)
+            saveSheetState(currentSheetName);
+            renderSheetTabs();
         }
 
         // --- VIRTUAL SCROLLER (Estabilizar Renderizado) ---
@@ -2596,6 +2678,9 @@
                 selectBtn.onclick = () => {
                     columnMapping[colIndex] = term.termino;
                     renderVirtualTable(currentSheetData);
+                    // Update Traffic Light
+                    saveSheetState(currentSheetName);
+                    renderSheetTabs();
                     menu.remove();
                 };
 
@@ -2832,6 +2917,9 @@
             ignoreBtn.onclick = () => {
                 columnMapping[colIndex] = 'Ignorar Columna';
                 renderVirtualTable(currentSheetData);
+                // Update Traffic Light
+                saveSheetState(currentSheetName);
+                renderSheetTabs();
                 menu.remove();
             };
             scrollArea.appendChild(ignoreBtn);
@@ -2871,6 +2959,9 @@
                         if (success) {
                             columnMapping[colIndex] = val;
                             renderVirtualTable(currentSheetData);
+                            // Update Traffic Light
+                            saveSheetState(currentSheetName);
+                            renderSheetTabs();
                             menu.remove();
                         } else {
                             submitBtn.disabled = false;
@@ -2899,6 +2990,9 @@
                 clearBtn.onclick = () => {
                     delete columnMapping[colIndex];
                     renderVirtualTable(currentSheetData);
+                    // Update Traffic Light
+                    saveSheetState(currentSheetName);
+                    renderSheetTabs();
                     menu.remove();
                 };
                 menu.appendChild(clearBtn);
