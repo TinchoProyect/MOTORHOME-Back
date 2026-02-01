@@ -618,6 +618,7 @@
     <!-- Integración de Lógica y Seguridad -->
     <script>
         lucide.createIcons();
+        console.log("%c 🚀 SYSTEM REBOOT: v2.5 - BLOB WORKER ACTIVE ", "background: #22c55e; color: #000; font-weight: bold; padding: 4px;");
 
         // 1. Configuración de Seguridad y Backend
         const sbUrl = (typeof CONFIG !== 'undefined') ? CONFIG.SUPABASE_URL : "";
@@ -833,14 +834,66 @@
         let viewerWorker = null;
         let currentSheetData = [];
         let workbook = null;       // LIBRO EXCEL (Global)
+        let currentFileBuffer = null; // BUFFER RAW (Global - para rescate)
         let useWorker = true;      // ESTADO DEL WORKER (Global)
-        let processLocally = null; // FUNCIÓN DE RESPALDO (Global)
         let currentSheetName = ""; // HOJA ACTUAL (Global)
 
-        // 2. CÓDIGO DEL OBRERO (Incrustado para evitar errores 404 de ruta)
+        // 3. FUNCIÓN DE RESPALDO (Global y Autónoma)
+        const processLocally = (wb, sName) => {
+            console.warn("⚠️ Fallback Local activado para: " + sName);
+
+            // UI Update
+            const excelContainer = document.getElementById('excelContainer');
+            const spinner = excelContainer.querySelector('.animate-spin');
+            if (spinner && spinner.nextElementSibling) {
+                spinner.nextElementSibling.textContent = "MODO SEGURO (LOCAL)";
+            }
+
+            try {
+                // Estrategia de recuperación de Libro
+                if (!workbook && wb) workbook = wb;
+
+                // Intento de rescate final usando el Buffer Global
+                if (!workbook && typeof XLSX !== 'undefined' && currentFileBuffer) {
+                    try {
+                        console.log("Intentando leer desde Buffer Global...");
+                        workbook = XLSX.read(currentFileBuffer);
+                    } catch (e) { console.error("Fallo lectura buffer:", e); }
+                }
+
+                if (!workbook) throw new Error("No se pudo leer el archivo Excel (Fallo total).");
+
+                // Estrategia de recuperación de Hoja
+                if ((!sName || sName === "") && workbook.SheetNames.length > 0) {
+                    sName = workbook.SheetNames[0];
+                    currentSheetName = sName;
+                }
+
+                const ws = workbook.Sheets[sName];
+                if (!ws) throw new Error("Hoja '" + sName + "' no encontrada.");
+
+                const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                currentSheetData = json;
+                renderVirtualTable(json);
+                const loader = document.getElementById('viewerLoader'); // Asegurar ref fresca
+                if (loader) loader.classList.add('hidden');
+
+            } catch (e) {
+                console.error("Local Processing Error:", e);
+                const errContainer = document.getElementById('errorContainer');
+                if (errContainer) {
+                    errContainer.textContent = "Error Crítico: " + e.message;
+                    errContainer.classList.remove('hidden');
+                }
+                const loader = document.getElementById('viewerLoader');
+                if (loader) loader.classList.add('hidden');
+            }
+        };
+
+        // 2. CÓDIGO DEL OBRERO (Incrustado)
         const WORKER_CODE = `
-            // Importar SheetJS desde CDN para asegurar disponibilidad en Blob
-            importScripts('https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js');
+            // Importar SheetJS (Local o CDN dinámico)
+            importScripts('__XLSX_LIB_URL__');
 
             let currentWorkbook = null;
 
@@ -905,9 +958,9 @@
             const btnExtract = document.getElementById('btnExtractFromViewer');
 
             // 1. LIMPIEZA TOTAL (Memory Management)
-            if (window.viewerWorker) {
-                window.viewerWorker.terminate();
-                window.viewerWorker = null;
+            if (viewerWorker) {
+                viewerWorker.terminate();
+                viewerWorker = null;
             }
             // Worker se inicia solo si es Excel ahora
 
@@ -934,66 +987,48 @@
                     const response = await fetch(downloadUrl);
                     if (!response.ok) throw new Error("Error descargando archivo.");
                     const arrayBuffer = await response.arrayBuffer();
+                    currentFileBuffer = arrayBuffer; // Persistencia Global para Rescate
 
-                    // --- INICIAR WORKER (Desde Blob) ---
-                    // Eliminamos dependencia de archivo externo y rutas relativas
-                    const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
-                    window.viewerWorker = new Worker(URL.createObjectURL(blob));
-                    window.viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer });
+                    // --- INICIAR WORKER (Desde Blob con Librería Local) ---
+                    // 1. Construir URL absoluta para la librería local (evitar CDN)
+                    const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+                    const libUrl = baseUrl + '/xlsx.full.min.js';
 
-                    // --- DEFINIR FALLBACK (Asignar a variable global) ---
-                    processLocally = (wb, sName) => {
-                        console.warn("⚠️ Fallback Local activado para: " + sName);
-                        // Asegurar UI correcta
-                        const excelContainer = document.getElementById('excelContainer');
-                        const spinner = excelContainer.querySelector('.animate-spin');
-                        if (spinner && spinner.nextElementSibling) {
-                            spinner.nextElementSibling.textContent = "MODO SEGURO (LOCAL)";
+                    // 2. Inyectar URL en el código del Worker
+                    const workerScript = WORKER_CODE.replace('__XLSX_LIB_URL__', libUrl);
+
+                    const blob = new Blob([workerScript], { type: 'application/javascript' });
+                    viewerWorker = new Worker(URL.createObjectURL(blob));
+
+                    // 3. WATCHDOG DE INICIALIZACIÓN (7 segundos)
+                    // Si el worker no responde el saludo inicial, asumimos muerte silenciosa por memoria
+                    const initWatchdog = setTimeout(() => {
+                        if (useWorker && !currentWorkbook) { // Si todavía estamos esperando
+                            console.error("🚨 Worker INIT Timeout (7s). Archivo muy pesado o Worker muerto.");
+                            useWorker = false;
+                            viewerWorker.terminate();
+                            processLocally(workbook, "Hoja1"); // Intentar rescate ciego
                         }
+                    }, 7000);
 
-                        try {
-                            if (!workbook && typeof wb !== 'undefined') workbook = wb;
-                            // Intento de rescate final (lectura síncrona)
-                            if (!workbook && typeof XLSX !== 'undefined') {
-                                try { workbook = XLSX.read(arrayBuffer); } catch (e) { }
-                            }
+                    // 4. Enviar datos (Usando Transferable Objects para ahorrar RAM)
+                    // El segundo argumento [arrayBuffer] transfiere la propiedad de la memoria al worker
+                    viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer }, [arrayBuffer]);
 
-                            if (!workbook) throw new Error("No se pudo leer el archivo Excel (Fallo total).");
-
-                            // Fallback Rescue for empty sheet name
-                            if ((!sName || sName === "") && workbook.SheetNames.length > 0) {
-                                sName = workbook.SheetNames[0];
-                                currentSheetName = sName; // Sincronizar global
-                            }
-
-                            const ws = workbook.Sheets[sName];
-                            if (!ws) throw new Error("Hoja '" + sName + "' no encontrada.");
-
-                            const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                            currentSheetData = json;
-                            renderVirtualTable(json);
-                            loader.classList.add('hidden');
-
-                        } catch (e) {
-                            console.error("Local Processing Error:", e);
-                            const errContainer = document.getElementById('errorContainer');
-                            errContainer.textContent = "Error Crítico: " + e.message;
-                            errContainer.classList.remove('hidden');
-                            loader.classList.add('hidden');
-                        }
-                    };
                     // --- MANEJO DE EVENTOS DEL WORKER ---
-                    window.viewerWorker.onerror = (e) => {
+                    viewerWorker.onerror = (e) => {
+                        clearTimeout(initWatchdog); // Cancelar perro guardián
                         console.error("🚨 Worker Crash:", e);
                         useWorker = false;
                         e.preventDefault();
-                        window.viewerWorker.terminate();
+                        viewerWorker.terminate();
 
                         // Activar Protocolo de Emergencia
                         processLocally(workbook, currentSheetName);
                     };
 
-                    window.viewerWorker.onmessage = (e) => {
+                    viewerWorker.onmessage = (e) => {
+                        clearTimeout(initWatchdog); // El worker está vivo
                         const { type, payload } = e.data;
 
                         if (type === 'SHEETS_READY') {
@@ -1072,6 +1107,13 @@
             currentSheetName = sheetName;
 
             if (typeof useWorker !== 'undefined' && useWorker) {
+                // GUARDIA DE SEGURIDAD: Evitar llamada a null
+                if (!viewerWorker) {
+                    console.error("⛔ Intento de llamar a viewerWorker nulo. Activando Protocolo de Emergencia.");
+                    useWorker = false;
+                    processLocally(workbook, sheetName);
+                    return;
+                }
                 viewerWorker.postMessage({ type: 'PARSE_SHEET', payload: sheetName });
 
                 // Watchdog para detectar hangs
@@ -1089,7 +1131,7 @@
             }
         }
 
-        // --- VIRTUAL SCROLLER (Establizar Renderizado) ---
+        // --- VIRTUAL SCROLLER (Estabilizar Renderizado) ---
         function renderVirtualTable(data) {
             const container = document.getElementById('excelContainer');
             if (!data || data.length === 0) {
@@ -1097,20 +1139,32 @@
                 return;
             }
 
+            // 1. CÁLCULO DE DIMENSIONES REALES (Muestreo Inteligente)
+            // No confiar solo en la fila 0. Escanear primeras 50 filas para encontrar el ancho mÃ¡ximo.
+            let maxCols = 0;
+            const scanLimit = Math.min(data.length, 50);
+            for (let i = 0; i < scanLimit; i++) {
+                if (data[i] && data[i].length > maxCols) {
+                    maxCols = data[i].length;
+                }
+            }
+            // Fallback si sigue siendo 0 (hoja totalmente vacÃ­a o con objetos extraÃ±os)
+            if (maxCols === 0) maxCols = 1;
+
             // Configuración Virtual
             const ROW_HEIGHT = 35; // px aprox por fila
             const HEADER_HEIGHT = 40; // px
             const totalRows = data.length;
             const totalHeight = (totalRows * ROW_HEIGHT) + HEADER_HEIGHT;
 
-            // 1. Crear Scroller Dummy (El fantasma que da altura)
+            // 2. Crear Scroller Dummy (El fantasma que da altura)
             container.innerHTML = '';
             const scrollerContent = document.createElement('div');
             scrollerContent.style.height = `${totalHeight}px`;
             scrollerContent.style.position = 'relative';
             container.appendChild(scrollerContent);
 
-            // 2. Tabla Visible (Posición absoluta que se mueve)
+            // 3. Tabla Visible (Posición absoluta que se mueve)
             const table = document.createElement('table');
             table.className = 'w-full border-collapse text-[11px] font-mono absolute top-0 left-0';
             table.style.tableLayout = 'fixed'; // Importante para rendimiento
@@ -1121,12 +1175,15 @@
             const tbody = document.createElement('tbody');
             table.appendChild(tbody);
 
-            // Render Header Una sola vez
-            const headerRow = data[0];
+            // 4. HEADER INTELIGENTE
+            // Usar la fila 0 como base, pero rellenar hasta maxCols si falta
+            const headerRow = data[0] || [];
             let headerHtml = `<tr style="height: ${HEADER_HEIGHT}px">`;
-            headerRow.forEach(cell => {
-                headerHtml += `<th class="bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap" style="height: ${HEADER_HEIGHT}px">${cell || ''}</th>`;
-            });
+
+            for (let j = 0; j < maxCols; j++) {
+                const val = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`); // Default headers si estÃ¡ vacÃ­o
+                headerHtml += `<th class="bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap" style="height: ${HEADER_HEIGHT}px">${val}</th>`;
+            }
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
 
@@ -1143,18 +1200,25 @@
                 table.style.transform = `translateY(${offsetY}px)`;
 
                 let rowsHtml = '';
-                // Empezamos de 1 si index < 1 (Data[0] es header)
-                const startDataIndex = Math.max(1, startIndex);
+                // Empezamos de 1 si index < 1 (Data[0] es header visualmente, aunque aquÃ­ lo repetimos si startIndex=0 lo incluye, ajustado a continuaciÃ³n)
+                // CorrecciÃ³n: El header ya estÃ¡ en thead. El body debe renderizar desde row 1 si data[0] fue header.
+                // PERO: Si el usuario quiere ver data[0] editable o raw, deberÃ­amos renderizarlo.
+                // EstÃ¡ndar actual: Data[0] es header fijo. El body empieza en Data[1].
+
+                let startDataIndex = Math.max(1, startIndex); // Saltar fila 0 (header)
+                if (startIndex > 0) startDataIndex = startIndex; // Si scrollea, respetar indice
+
+                // Ajuste fino: Si estamos arriba de todo, startDataIndex debe ser 1.
+                if (startDataIndex === 0) startDataIndex = 1;
 
                 for (let i = startDataIndex; i < endIndex; i++) {
-                    const row = data[i];
-                    if (!row) continue;
+                    const row = data[i] || []; // Manejar filas vacÃ­as/undefined
 
                     rowsHtml += `<tr style="height: ${ROW_HEIGHT}px;" class="hover:bg-slate-800/50">`;
-                    for (let j = 0; j < headerRow.length; j++) {
+                    for (let j = 0; j < maxCols; j++) {
                         const cellVal = row[j] !== undefined ? row[j] : '';
                         let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis';
-                        if (typeof cellVal === 'number' || (!isNaN(Number(cellVal)) && cellVal !== '')) {
+                        if (typeof cellVal === 'number' || (!isNaN(Number(cellVal)) && cellVal !== '' && String(cellVal).trim() !== '')) {
                             cellClass += ' text-emerald-400 text-right';
                         }
                         rowsHtml += `<td class="${cellClass}">${cellVal}</td>`;
