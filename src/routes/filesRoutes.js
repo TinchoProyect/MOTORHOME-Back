@@ -27,4 +27,7 @@ router.post('/dictionary/update', filesController.updateDictionaryTerm);
 // DELETE /api/files/dictionary/:id (Admin)
 router.delete('/dictionary/:id', filesController.deleteDictionaryTerm);
 
+// POST /api/files/drive/provision-vendor
+router.post('/drive/provision-vendor', filesController.provisionVendorFolders);
+
 module.exports = router;

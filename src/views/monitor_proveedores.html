@@ -598,16 +598,25 @@
                 <!-- Fila 3: Vinculación Drive -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="space-y-1">
-                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Carpeta en Drive</label>
-                        <div class="relative">
-                            <i data-lucide="folder" class="absolute left-4 top-3.5 w-4 h-4 text-slate-600"></i>
-                            <select name="drive_folder_id" id="driveFolderSelect"
-                                class="w-full form-input bg-slate-900/40 rounded-xl pl-11 pr-4 py-3 text-sm appearance-none cursor-pointer text-slate-300">
-                                <option value="">Cargando carpetas...</option>
-                            </select>
-                            <i data-lucide="chevron-down"
-                                class="absolute right-4 top-4 w-3 h-3 text-slate-600 pointer-events-none"></i>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Infraestructura Drive</label>
+                        <div class="relative group">
+                            <i data-lucide="hard-drive"
+                                class="absolute left-4 top-3.5 w-4 h-4 text-slate-600 group-focus-within:text-blue-500 transition-colors"></i>
+                            <input type="text" id="driveFolderDisplay" readonly placeholder="Esperando nombre..."
+                                class="w-full form-input bg-slate-900/40 rounded-xl pl-11 pr-12 py-3 text-sm text-slate-400 border border-slate-800 focus:border-blue-500/50 cursor-not-allowed transition-all font-mono">
+
+                            <!-- Status Indicator -->
+                            <div id="driveStatusContainer" class="absolute right-4 top-3.5 flex items-center gap-2">
+                                <i data-lucide="circle-dashed" class="w-4 h-4 text-slate-700"></i>
+                            </div>
+
+                            <!-- Hidden Fields for DB -->
+                            <input type="hidden" name="drive_folder_id" id="h_rootId">
+                            <input type="hidden" name="drive_folder_prices_id" id="h_pricesId">
+                            <input type="hidden" name="drive_folder_extracted_id" id="h_extractedId">
                         </div>
+                        <p id="driveHelpText" class="text-[9px] text-slate-600 ml-1 mt-1">Validación automática al
+                            ingresar nombre.</p>
                     </div>
                     <div class="space-y-1 flex items-center h-full pt-6">
                         <label
@@ -1540,17 +1549,24 @@
                             <i data-lucide="hard-drive" class="w-3 h-3"></i> Digital Assets
                         </h3>
                         ${supplier.drive_folder_id
-                    ? `<div onclick="exploreSupplierFiles('${supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
+                    ? `<div onclick="exploreSupplierFiles('${supplier.drive_folder_prices_id || supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
                                         <div class="flex items-center gap-3">
                                             <div class="p-2 bg-slate-900 rounded-md text-blue-500">
-                                                <i data-lucide="folder" class="w-5 h-5"></i>
+                                                <i data-lucide="${supplier.drive_folder_prices_id ? 'layers' : 'folder'}" class="w-5 h-5"></i>
                                             </div>
                                             <div class="flex flex-col">
-                                                <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">Carpeta Vinculada</span>
-                                                <span class="text-[9px] text-slate-600 font-mono">${supplier.drive_folder_id}</span>
+                                                <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">
+                                                    ${supplier.drive_folder_prices_id ? 'Listas de Precios' : 'Carpeta Vinculada'}
+                                                </span>
+                                                <span class="text-[9px] text-slate-600 font-mono">
+                                                    ID: ${(supplier.drive_folder_prices_id || supplier.drive_folder_id).substring(0, 8)}...
+                                                </span>
                                             </div>
                                         </div>
-                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors"></i>
+                                        <div class="flex items-center gap-2">
+                                            ${supplier.drive_folder_extracted_id ? '<span title="Extracciones Activas" class="w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50"></span>' : ''}
+                                            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors"></i>
+                                        </div>
                                        </div>`
                     : `<div class="text-xs text-slate-600 italic py-2">Sin carpeta vinculada</div>`
                 }
@@ -1707,46 +1723,7 @@
             };
         };
 
-        // LÓGICA DE VINCULACIÓN DRIVE
-        let driveFoldersCache = null;
-        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : "";
 
-        async function loadDriveFolders() {
-            const select = document.getElementById('driveFolderSelect');
-            // Si ya hay opciones (además del placeholder), no recargar agresivamente, salvo que sea la primera vez real
-            if (driveFoldersCache && select.children.length > 1) return;
-
-            try {
-                // Fetch using absolute path (if config exists) or relative (fallback)
-                const url = backendBaseUrl ? `${backendBaseUrl} /api/files / list ? type = folders` : '/api/files/list?type=folders';
-
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (data.success) {
-                    driveFoldersCache = data.files;
-                    populateSelect(select, driveFoldersCache);
-                } else {
-                    select.innerHTML = '<option value="">Error cargando carpetas</option>';
-                }
-            } catch (e) {
-                console.error("Error loading folders:", e);
-                select.innerHTML = '<option value="">Error de conexión con Drive</option>';
-            }
-        }
-
-        function populateSelect(select, files) {
-            const currentVal = select.value;
-            select.innerHTML = '<option value="">Sin vinculación (Seleccionar carpeta)</option>';
-            files.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f.id;
-                opt.innerText = f.name;
-                select.appendChild(opt);
-            });
-            // Restaurar valor si existía (útil en ediciones rápidas)
-            if (currentVal) select.value = currentVal;
-        }
 
         // LÓGICA MODAL PROVEEDORES + SUPABASE INTEGRATION
         const modal = document.getElementById('supplierModal');
@@ -1758,7 +1735,7 @@
 
         function openSupplierModal(isEdit = false) {
             modal.classList.remove('hidden');
-            loadDriveFolders(); // Cargar carpetas dinámicamente
+            // loadDriveFolders deprecated in favor of auto-provisioning
 
             if (!isEdit) {
                 // Modo Alta
@@ -1814,6 +1791,115 @@
 
             openSupplierModal(true);
         }
+
+        // --- SISTEMA DE APROVISIONAMIENTO DRIVE (AUTO-PILOT) ---
+        const nameInput = form.querySelector('input[name="nombre"]');
+        const driveDisplay = document.getElementById('driveFolderDisplay');
+        const statusContainer = document.getElementById('driveStatusContainer');
+        const helpText = document.getElementById('driveHelpText');
+
+        // Reset UI Helper
+        function resetProvisioningUI() {
+            if (!driveDisplay) return;
+            driveDisplay.value = "";
+            driveDisplay.classList.remove('text-green-400', 'font-bold', 'text-red-400');
+            driveDisplay.classList.add('text-slate-400');
+            statusContainer.innerHTML = '<i data-lucide="circle-dashed" class="w-4 h-4 text-slate-700"></i>';
+            helpText.innerText = "Validación automática al ingresar nombre.";
+            helpText.className = "text-[9px] text-slate-600 ml-1 mt-1";
+
+            document.getElementById('h_rootId').value = "";
+            document.getElementById('h_pricesId').value = "";
+            document.getElementById('h_extractedId').value = "";
+            lucide.createIcons();
+        }
+
+        async function triggerProvisioning() {
+            const name = nameInput.value.trim();
+
+            // Si estamos editando y ya tiene ID, no re-provisionamos salvo que se pida (Futuro)
+            // Si es Alta nueva:
+            if (!editingSupplierId) {
+                if (name.length < 3) return;
+                if (document.getElementById('h_rootId').value) return; // Ya aprovisionado
+
+                // UI Loading
+                driveDisplay.value = "Conectando con Drive...";
+                driveDisplay.classList.add('animate-pulse');
+                statusContainer.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin text-blue-500"></i>';
+                helpText.innerText = "Creando carpetas seguras...";
+                lucide.createIcons();
+
+                try {
+                    // Usar backendBaseUrl si existe, sino path relativo
+                    // Usar backendBaseUrl si existe, sino path absoluto hardcodeado para evitar 405 (Frontend Port)
+                    const baseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                    const response = await fetch(`${baseUrl}/api/files/drive/provision-vendor`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ vendorName: name })
+                    });
+
+                    const result = await response.json();
+                    if (!result.success) throw new Error(result.error);
+
+                    // Success Bindings
+                    document.getElementById('h_rootId').value = result.data.rootId;
+                    document.getElementById('h_pricesId').value = result.data.pricesId;
+                    document.getElementById('h_extractedId').value = result.data.extractedId;
+
+                    // UI Success
+                    driveDisplay.value = `Vinculado: ${result.data.rootId.substring(0, 8)}...`;
+                    driveDisplay.classList.remove('animate-pulse', 'text-slate-400');
+                    driveDisplay.classList.add('text-green-400', 'font-bold');
+
+                    statusContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>';
+                    helpText.innerText = "Infraestructura certificada: Raíz + Precios + Extracción.";
+                    helpText.className = "text-[9px] text-green-500/80 ml-1 mt-1 font-bold";
+                    lucide.createIcons();
+
+                } catch (e) {
+                    console.error("Provisioning Error:", e);
+                    driveDisplay.value = "Error de Conexión";
+                    statusContainer.innerHTML = '<i data-lucide="alert-circle" class="w-4 h-4 text-red-500"></i>';
+                    helpText.innerText = "Error: " + e.message;
+                    helpText.className = "text-[9px] text-red-500 ml-1 mt-1";
+                    lucide.createIcons();
+                }
+            } else {
+                // Modo Edición: Solo mostrar estado
+                if (document.getElementById('h_rootId').value) {
+                    driveDisplay.value = "Infraestructura Vinculada";
+                    statusContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>';
+                }
+            }
+        }
+
+        if (nameInput) {
+            nameInput.addEventListener('blur', triggerProvisioning);
+            // Reset al abrir modal si es alta nueva? handled in openSupplierModal
+        }
+
+        // Modificar openSupplierModal para limpiar UI en alta nueva
+        // (Esto es un hook simple, idealmente modificaríamos la función original, 
+        // pero podemos resetear aquí si detectamos cambio de estado)
+        const originalOpen = openSupplierModal;
+        openSupplierModal = function (isEdit = false) {
+            originalOpen(isEdit);
+            if (!isEdit) {
+                resetProvisioningUI();
+            } else {
+                // En edición, los hidden inputs se llenan solos por el loop anterior.
+                // Solo actualizamos el display visual.
+                setTimeout(() => {
+                    if (document.getElementById('h_rootId').value) {
+                        driveDisplay.value = "Infraestructura Vinculada";
+                        statusContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>';
+                        lucide.createIcons();
+                    }
+                }, 100);
+            }
+        };
 
         // Función Eliminar
         async function deleteSupplier(id, nombre) {

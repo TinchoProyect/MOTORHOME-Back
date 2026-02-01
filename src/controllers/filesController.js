@@ -540,6 +540,53 @@ async function deleteDictionaryTerm(req, res) {
     }
 }
 
+// =============================================================================
+// PROVISION VENDOR FOLDERS (INFRASTRUCTURE)
+// =============================================================================
+async function provisionVendorFolders(req, res) {
+    const { vendorName } = req.body;
+    const parentId = process.env.DRIVE_FOLDER_ID; // Root "Madre"
+
+    if (!vendorName) return res.status(400).json({ error: "Missing vendorName" });
+    if (!parentId) {
+        console.error("❌ CRITICAL: DRIVE_FOLDER_ID not set in .env");
+        return res.status(500).json({ error: "Server Misconfiguration: Missing DRIVE_FOLDER_ID" });
+    }
+
+    try {
+        console.log(`[Provisioning] Starting infrastructure for: "${vendorName}"`);
+
+        // 1. Create Root Folder: "PROV_[NAME]"
+        // Sanitize name for Folder
+        const safeName = vendorName.trim().toUpperCase().replace(/[^A-Z0-9 ÁÉÍÓÚÑ]/g, '').substring(0, 40);
+        const rootFolderName = `PROV_${safeName}`;
+
+        const rootFolder = await driveService.createFolder(rootFolderName, parentId);
+        console.log(`   - Root Created: ${rootFolder.id}`);
+
+        // 2. Create Subfolders (Parallel)
+        const [pricesFolder, extractedFolder] = await Promise.all([
+            driveService.createFolder('Listas de Precios', rootFolder.id),
+            driveService.createFolder('Listas Extraídas', rootFolder.id)
+        ]);
+        console.log(`   - Subfolders Created. Prices: ${pricesFolder.id}, Extracted: ${extractedFolder.id}`);
+
+        res.json({
+            success: true,
+            data: {
+                rootId: rootFolder.id,
+                pricesId: pricesFolder.id,
+                extractedId: extractedFolder.id,
+                rootLink: rootFolder.webViewLink
+            }
+        });
+
+    } catch (error) {
+        console.error("[Provisioning] Error:", error);
+        res.status(500).json({ error: "Provisioning Failed: " + error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
@@ -547,6 +594,7 @@ module.exports = {
     getDictionaryTerms,
     createDictionaryTerm,
     updateDictionaryTerm,
-    deleteDictionaryTerm, // Exported
-    downloadFile
+    deleteDictionaryTerm,
+    downloadFile,
+    provisionVendorFolders // Exported
 };

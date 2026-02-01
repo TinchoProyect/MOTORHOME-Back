@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Config
-const SCOPES = ['https://www.googleapis.com/auth/drive.readonly'];
+const SCOPES = ['https://www.googleapis.com/auth/drive'];
 const KEY_FILE_PATH = path.join(__dirname, '../../service-account.json');
 
 // State
@@ -146,10 +146,33 @@ async function getFileStream(fileId) {
         throw error; // Propagate to controller
     }
 }
+/**
+ * Create a new folder
+ */
+async function createFolder(folderName, parentId) {
+    const drive = await getDriveClient();
+    try {
+        const fileMetadata = {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [parentId]
+        };
+        const file = await drive.files.create({
+            resource: fileMetadata,
+            fields: 'id, name, webViewLink, parents'
+        });
+        console.log(`[DriveService] Created Folder: ${folderName} (ID: ${file.data.id})`);
+        return file.data;
+    } catch (error) {
+        console.error(`[DriveService] Error creating folder ${folderName}:`, error.message);
+        throw error;
+    }
+}
 
 module.exports = {
     listFiles,
     getFileContent,
     getFileMetadata,
-    getFileStream
+    getFileStream,
+    createFolder
 };
