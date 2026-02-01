@@ -149,6 +149,111 @@
             box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
             transform: translateY(-1px);
         }
+
+        /* --- EL INDIVIDUAL (Placemat) DEL CHAT --- */
+        #reportDisplay {
+            background: rgba(15, 23, 42, 0.3);
+            backdrop-filter: blur(12px);
+            border-left: 1px solid rgba(59, 130, 246, 0.05);
+            border-right: 1px solid rgba(59, 130, 246, 0.05);
+            box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.3);
+            scroll-behavior: smooth;
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Efecto de "Correr el velo" o Despeje */
+        .workspace-sweep {
+            opacity: 0 !important;
+            transform: translateY(-20px) scale(0.98);
+            pointer-events: none;
+        }
+
+        /* --- MODO ENFOQUE --- */
+        #chatFocusOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.85);
+            backdrop-filter: blur(20px);
+            z-index: 40;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body.focus-active #chatFocusOverlay {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Terminal Adaptativa */
+        footer {
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 50;
+            position: relative;
+        }
+
+        .terminal-container {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            backdrop-filter: blur(20px);
+        }
+
+        body.focus-active footer {
+            transform: translateY(-15px);
+        }
+
+        #terminalInput {
+            resize: none;
+            max-height: 200px;
+            min-height: 48px;
+            scrollbar-width: none;
+            transition: all 0.2s ease;
+        }
+
+        #terminalInput::-webkit-scrollbar {
+            display: none;
+        }
+
+        .mic-active {
+            animation: pulse-red 1.5s infinite;
+            color: #ef4444 !important;
+            background: rgba(239, 68, 68, 0.1) !important;
+        }
+
+        @keyframes pulse-red {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        .terminal-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .message-entrance {
+            animation: messageAppear 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        @keyframes messageAppear {
+            from {
+                opacity: 0;
+                transform: translateY(10px) scale(0.98);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
     </style>
 </head>
 
@@ -373,25 +478,37 @@
         </main>
 
         <!-- TERMINAL DE CHAT -->
-        <footer class="p-4 bg-slate-950/80 backdrop-blur-3xl border-t border-blue-500/20 shrink-0">
-            <div class="max-w-5xl mx-auto relative flex items-center gap-3">
-                <button onclick="toggleHistory()"
-                    class="group bg-slate-900 border border-slate-800 p-3 rounded-xl transition-all">
-                    <i data-lucide="history" class="w-4 h-4 text-slate-500 group-hover:text-blue-400"></i>
-                </button>
-                <div class="flex-grow relative flex items-center">
-                    <input type="text" id="terminalInput" placeholder="Habla o escribe un comando para la IA..."
-                        class="w-full bg-slate-900/50 border border-slate-800 focus:border-blue-500/50 rounded-xl py-3 pl-6 pr-20 outline-none terminal-font text-xs text-white placeholder:text-slate-600 transition-all">
-                    <div class="absolute right-2 flex items-center gap-1">
-                        <button id="micBtn" onclick="toggleVoice()"
-                            class="p-2 text-slate-500 hover:text-white transition-all rounded-lg">
-                            <i data-lucide="mic" class="w-4 h-4"></i>
+        <footer class="p-6 shrink-0 z-[50]">
+            <div class="max-w-5xl mx-auto terminal-container rounded-[2rem] p-3 shadow-2xl">
+                <div class="flex items-end gap-2">
+                    <!-- HERRAMIENTAS DE DESPEJE (CONCEPTO: LIMPIAR SUPERFICIE) -->
+                    <div class="flex items-center gap-1 mb-1">
+                        <button onclick="sweepWorkspace()" title="Despejar Mesa de Trabajo"
+                            class="p-3 text-slate-600 hover:text-blue-400 transition-all rounded-xl hover:bg-blue-400/5">
+                            <i data-lucide="eraser" class="w-5 h-5"></i>
                         </button>
-                        <button onclick="sendToAI()"
-                            class="p-2 text-blue-500 hover:text-blue-400 transition-all rounded-lg">
-                            <i data-lucide="send" class="w-4 h-4"></i>
+                        <button onclick="toggleHistory()"
+                            class="p-3 text-slate-600 hover:text-blue-400 transition-all rounded-xl hover:bg-slate-800/50">
+                            <i data-lucide="history" class="w-5 h-5"></i>
                         </button>
                     </div>
+
+                    <div class="flex-grow relative flex items-end">
+                        <textarea id="terminalInput" rows="1" placeholder="Habla o escribe aquí..."
+                            class="w-full bg-slate-800/40 rounded-2xl py-4 pl-5 pr-14 outline-none terminal-font text-sm text-white placeholder:text-slate-600 border border-transparent focus:border-blue-500/20 transition-all"></textarea>
+
+                        <div class="absolute right-3 bottom-3 flex items-center gap-1">
+                            <button id="micBtn" onclick="toggleVoice()"
+                                class="p-2.5 text-slate-500 hover:text-white transition-all rounded-xl hover:bg-slate-700/50">
+                                <i data-lucide="mic" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button id="sendBtn" onclick="sendToAI()"
+                        class="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/30 mb-1">
+                        <i data-lucide="send" class="w-5 h-5"></i>
+                    </button>
                 </div>
             </div>
         </footer>
@@ -1309,7 +1426,7 @@
 
             if (!supplier) {
                 // Fetch on demand si no está en cache
-                reportDisplay.innerHTML = `< div class="flex items-center justify-center h-full text-blue-400" > <i data-lucide="loader-2" class="w-6 h-6 animate-spin mr-2"></i> Cargando ficha...</div > `;
+                reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mr-2"></i> Cargando ficha...</div>`;
                 lucide.createIcons();
                 const { data } = await supabaseClient.from('proveedores').select('*').eq('id', id).single();
                 supplier = data;
@@ -1322,18 +1439,19 @@
 
             // Renderizar Ficha Técnica
             reportDisplay.innerHTML = `
-            < div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2" >
-                    < !--Header Ficha-- >
+                <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
+                    <!--Header Ficha-->
                     <div class="flex justify-between items-start mb-8 border-b border-slate-800 pb-6">
                         <div>
                             <div class="flex items-center gap-3 mb-2">
+                                <!-- Status Dot (Relocated) -->
+                                <div class="w-3 h-3 rounded-full ${supplier.activo ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'}"></div>
+                                
                                 <h2 class="text-3xl font-bold text-white tracking-tight">${supplier.nombre}</h2>
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-widest">${supplier.categoria || 'GENERAL'}</span>
                             </div>
-                            <div class="flex items-center gap-4 text-slate-500 text-xs font-mono">
+                            <div class="flex items-center gap-4 text-slate-500 text-xs font-mono pl-6">
                                 <span>CUIT: <span class="text-slate-400">${supplier.cuit || 'N/A'}</span></span>
-                                <span>•</span>
-                                <span>ID: ${supplier.id.substring(0, 8)}</span>
                             </div>
                         </div>
                         <button onclick="editSupplier('${supplier.id}')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2 group">
@@ -1341,24 +1459,14 @@
                         </button>
                     </div>
 
-                    <!--Grid de Información-- >
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!--Grid de Información-->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                <!-- Columna 1: Operativa e Infra -->
-                <div class="space-y-6">
-                    <!-- Estado -->
-                    <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50 relative overflow-hidden group">
-                        <div class="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-colors"></div>
-                        <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <i data-lucide="activity" class="w-3 h-3"></i> Estado Operativo
-                        </h3>
-                        <div class="flex items-center gap-3">
-                            <div class="w-3 h-3 rounded-full ${supplier.activo ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'}"></div>
-                            <span class="text-sm font-medium ${supplier.activo ? 'text-emerald-400' : 'text-red-400'}">
-                                ${supplier.activo ? 'ACTIVO Y VALIDADO' : 'SUSPENDIDO / INACTIVO'}
-                            </span>
-                        </div>
-                    </div>
+                        <!-- Columna 1: Operativa e Infra -->
+                        <div class="space-y-6">
+                            
+                            <!-- Drive (Ahora sube al tope de col 1) -->
+
 
                     <!-- Drive -->
                     <div class="p-6 bg-slate-900/30 rounded-xl border border-slate-800/50">
@@ -1465,7 +1573,7 @@
             } else {
                 // Renderizar la tabla de proveedores
                 let tableHtml = `
-            < div class="flex justify-between items-center mb-4" >
+            <div class="flex justify-between items-center mb-4" >
                         <h3 class="text-xl font-bold text-white">Listado de Proveedores</h3>
                         <span class="text-xs text-slate-500 font-mono">${data.length} REGISTROS</span>
                     </div >
@@ -1721,61 +1829,173 @@
         }
 
 
-        // Lógica de Voz y Chat Mejorada (Push-to-Talk & Historial Persistente)
+        // --- LÓGICA DE INTERACCIÓN DE CHAT MEJORADA (Sweep, Focus, Voice) ---
+
+        // Función de Despeje (Concepto: Quitar el mantel)
+        function sweepWorkspace() {
+            if (reportDisplay.innerHTML.trim() === "") return;
+
+            // Animación de "barrido" o "correr el velo"
+            reportDisplay.classList.add('workspace-sweep');
+
+            setTimeout(() => {
+                reportDisplay.innerHTML = '';
+                reportDisplay.classList.remove('workspace-sweep');
+            }, 600);
+        }
+
+        // Auto-crecimiento del textarea
+        terminalInput.addEventListener('input', function () {
+            this.style.height = 'auto'; // Reset para calcular
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+        // Modo Enfoque
+        function toggleFocusMode(active) {
+            document.body.classList.toggle('focus-active', active);
+            // Solo si desactivamos explícitamente y no estamos grabando
+            if (!active && !isRecording) terminalInput.blur();
+        }
+
+        terminalInput.addEventListener('focus', () => toggleFocusMode(true));
+
+        // 2. MOTOR DE VOZ
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let recognition = null;
         let isRecording = false;
+        let recognition = null;
+        // Referencia local a micBtn (ya definido arriba pero reaseguramos scope)
+        // const micBtn = document.getElementById('micBtn'); // Ya es global
 
         if (SpeechRecognition) {
             recognition = new SpeechRecognition();
             recognition.lang = 'es-ES';
-            recognition.continuous = true; // Permite hablar sin que se corte al silencio
-            recognition.interimResults = true; // Ver lo que se escribe en tiempo real
+            recognition.continuous = true;
+            recognition.interimResults = true;
 
             recognition.onstart = () => {
                 isRecording = true;
+                toggleFocusMode(true);
                 micBtn.classList.add('mic-active');
-                micBtn.innerHTML = '<i data-lucide="square" class="w-4 h-4 fill-current"></i>'; // Icono Stop
+                micBtn.innerHTML = '<i data-lucide="square" class="w-5 h-5 fill-current"></i>';
                 lucide.createIcons();
-                terminalInput.placeholder = "Escuchando... (Haz clic en el micro para enviar)";
+                // Bloquear envío mientras graba para evitar conflictos
+                const sendBtn = document.getElementById('sendBtn');
+                if (sendBtn) sendBtn.disabled = true;
             };
 
             recognition.onresult = (event) => {
-                // Solo mostrar texto, NO enviar automáticamente
-                let transcript = '';
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    transcript += event.results[i][0].transcript;
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
                 }
-                // Si es final, lo pone en el input, si es interino, también (simple overwrite para UX fluida)
-                terminalInput.value = transcript;
+
+                if (finalTranscript) {
+                    const separator = terminalInput.value.length > 0 ? " " : "";
+                    terminalInput.value += separator + finalTranscript;
+                    // Disparar evento input para que el textarea crezca
+                    terminalInput.dispatchEvent(new Event('input'));
+                }
             };
 
             recognition.onend = () => {
-                isRecording = false;
-                micBtn.classList.remove('mic-active');
-                micBtn.innerHTML = '<i data-lucide="mic" class="w-4 h-4"></i>';
-                lucide.createIcons();
-                terminalInput.placeholder = "Habla o escribe un comando para la IA...";
-                // Opción: Auto-enviar al terminar? El usuario pidió control manual.
-                // Si el usuario paró manual, toggleVoice manejará el envío.
+                // Si sigue "grabando" lógicamente pero se cortó el servicio, reiniciar
+                if (isRecording) {
+                    try { recognition.start(); } catch (e) { }
+                } else {
+                    micBtn.classList.remove('mic-active');
+                    micBtn.innerHTML = '<i data-lucide="mic" class="w-5 h-5"></i>';
+                    lucide.createIcons();
+                    const sendBtn = document.getElementById('sendBtn');
+                    if (sendBtn) sendBtn.disabled = false;
+                }
             };
         }
 
         function toggleVoice() {
-            if (!recognition) return alert("Navegador no compatible con voz.");
-
+            if (!recognition) return alert("Navegador no soporta voz.");
             if (isRecording) {
-                // STOP MANUAL -> ENVIAR
+                isRecording = false;
                 recognition.stop();
-                if (terminalInput.value.trim().length > 0) {
-                    sendToAI();
-                }
             } else {
-                // START MANUAL
-                terminalInput.value = '';
                 recognition.start();
             }
         }
+
+        // 3. ENVÍO
+        async function sendToAI() {
+            const text = terminalInput.value.trim();
+            if (!text) return;
+
+            // Reset UI
+            terminalInput.value = '';
+            terminalInput.style.height = 'auto'; // Reset altura
+            terminalInput.style.height = '52px'; // Altura base aprox
+
+            // Desactivar foco visual momentáneamente para ver respuesta
+            toggleFocusMode(false);
+
+            renderChatMessage('GERENCIA', text); // Rol Usuario
+
+            // Loader
+            aiLoader.classList.remove('hidden');
+
+            // Historial (Legacy support)
+            appendHistory('GERENCIA', text);
+
+            try {
+                // Llamada a Gemini
+                const metrics = getMetricsContext();
+                // Inyectamos contexto si es necesario, pero el usuario usa prompt simple en su ejemplo.
+                // Usaremos la función callGemini existente pero adaptada o la nueva si es mejor.
+                // El usuario proveyó una funcion callGemini simple. La usaremos.
+
+                const response = await callGemini(text);
+                renderChatMessage('LAMDA_AI', response);
+
+                // Historial
+                appendHistory('LAMDA_AI', response);
+
+            } catch (e) {
+                console.error("Gemini Error:", e);
+                renderChatMessage('SISTEMA', '⚠️ DATA_LINK_FAILURE: ' + e.message);
+            } finally {
+                aiLoader.classList.add('hidden');
+            }
+        }
+
+        // Renderizado Visual de Mensajes (Estilo Burbuja Nuevo)
+        function renderChatMessage(role, text) {
+            const isUser = role === 'GERENCIA'; // O 'USER'
+
+            // Animación y Estilos
+            const html = `
+                <div class="message-entrance ${isUser ? 'flex flex-col items-end' : ''} mb-6">
+                    <div class="flex items-center gap-3 mb-2 opacity-30">
+                        <div class="h-[1px] w-8 bg-blue-500"></div>
+                        <span class="text-[7px] font-mono tracking-[0.4em] uppercase text-blue-400">${role}</span>
+                    </div>
+                    <div class="p-7 rounded-[2.5rem] max-w-[88%] md:max-w-[80%] shadow-2xl relative overflow-hidden transition-all duration-500 ${isUser ? 'bg-blue-600/10 border border-blue-500/20 text-white rounded-tr-none' : 'bg-slate-950/60 border border-slate-800 text-blue-50 rounded-tl-none'}">
+                        <div class="absolute inset-0 bg-gradient-to-br ${isUser ? 'from-blue-500/10' : 'from-slate-800/20'} to-transparent"></div>
+                        <div class="text-[16px] leading-[1.7] whitespace-pre-wrap relative z-10 font-medium tracking-tight font-sans">${text}</div>
+                    </div>
+                </div>
+            `;
+
+            reportDisplay.insertAdjacentHTML('beforeend', html);
+
+            // Scroll suave al final
+            requestAnimationFrame(() => {
+                reportDisplay.scrollTop = reportDisplay.scrollHeight;
+            });
+        }
+
+        // Manejo de Enter en Textarea
+        terminalInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendToAI();
+            }
+        });
 
         function toggleDropdown(dropdownId, containerId) {
             const dropdown = document.getElementById(dropdownId);
@@ -1797,30 +2017,20 @@
             container.classList.toggle('menu-open');
         }
 
-        // Función para renderizar mensaje en el chat principal (Persistente)
-        function renderChatMessage(role, text) {
-            const isUser = role === 'GERENCIA';
-            const bgColor = isUser ? 'bg-slate-800/50' : 'bg-blue-600/10 border-blue-500/20';
-            const align = isUser ? 'text-right' : 'text-left';
-            const icon = isUser ? 'user' : 'bot';
+        // ... (Mantener taskAction, appendHistory, toggleHistory, updateTime, etc si se usan) ...
+        // Como reemplazamos el bloque final, asegurémonos de no borrar funciones auxiliares necesarias
+        // El bloque original tenía: toggleDropdown, renderChatMessage (viejo), taskAction, callGemini, sendToAI, appendHistory, toggleHistory, updateTime.
+        // Hemos reescrito: renderChatMessage, sendToAI, toggleFocusMode.
+        // Necesitamos asegurar que taskAction y callGemini sigan existiendo.
 
-            const html = `
-            < div class="mb-6 animate-in fade-in slide-in-from-bottom-2 duration-500" >
-                    <div class="flex items-center gap-2 mb-1 ${isUser ? 'justify-end' : 'justify-start'} text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                        ${isUser ? `GET /USER/COMMAND` : `RESPONSE /LAMDA/AI`}
-                    </div>
-                    <div class="${bgColor} p-4 rounded-2xl border border-transparent ${isUser ? 'rounded-tr-none' : 'rounded-tl-none'} inline-block max-w-[85%]">
-                        <div class="text-sm leading-relaxed whitespace-pre-wrap text-slate-200">${text}</div>
-                    </div>
-                </div >
-            `;
+        // Re-implementamos callGemini simple o usamos la compleja anterior? 
+        // El usuario pasó una simple. Usaremos esa o la adaptamos para usar métricas si taskAction la llama.
+        // La callGemini original usaba metrics. Mantengamos la robustez pero con la API key.
 
-            reportDisplay.insertAdjacentHTML('beforeend', html);
-            reportDisplay.scrollTop = reportDisplay.scrollHeight;
-        }
+        // ... (Resto de funciones auxiliares que no tocamos se deben preservar si estaban antes de la línea 1836) ...
+        // ESPERA: El replace va hasta el final (2008). Debo incluir taskAction, appendHistory, etc.
 
         async function taskAction(taskName) {
-            // INTERCEPCIÓN DE COMANDOS DE UI
             if (taskName && taskName.toLowerCase().includes('alta de proveedor')) {
                 openSupplierModal();
                 renderChatMessage('SISTEMA', 'Abriendo formulario de alta...');
@@ -1828,27 +2038,28 @@
             }
 
             aiLoader.classList.remove('hidden');
-            const metrics = getMetricsContext();
+            const metrics = getMetricsContext(); // Asegurarse que esta función exista arriba
             const prompt = `Usuario solicita: "${taskName}".Contexto: Proveedores ${metrics.proveedores}, Inversión ${metrics.inversion}, Deuda ${metrics.deuda}. Genera un informe táctico corto.`;
 
-            // Mostrar comando en chat
             renderChatMessage('GERENCIA', `Ejecutar comando: ${taskName} `);
 
-            // Usar Prompt Dashboard (Modo Dios)
+            // Usar Prompt Dashboard (Modo Dios) si existe config
             const sysPrompt = (typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres la IA de gestión.";
-            const response = await callGemini(prompt, sysPrompt);
 
-            aiLoader.classList.add('hidden');
-            appendHistory('SISTEMA', `Acción: ${taskName} `);
-
-            // Mostrar respuesta en chat
-            renderChatMessage('LAMDA_AI', response);
+            try {
+                const response = await callGemini(prompt, sysPrompt); // Usamos la version robusta que acepta sysPrompt
+                renderChatMessage('LAMDA_AI', response);
+                appendHistory('SISTEMA', `Acción: ${taskName}`);
+            } catch (e) {
+                renderChatMessage('SISTEMA', 'Error ejecutando acción.');
+            } finally {
+                aiLoader.classList.add('hidden');
+            }
         }
 
+        // Call Gemini Robusta (Manteniendo compatibilidad con taskAction)
         async function callGemini(prompt, sysInstr = null) {
-            // Si no se pasa instrucción específica, usar la del Dashboard por defecto
             const finalSysInstr = sysInstr || ((typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres el analista de LAMDA.");
-
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{ parts: [{ text: prompt }] }],
@@ -1864,27 +2075,8 @@
             } catch (e) { return "Error fatal de conexión."; }
         }
 
-        async function sendToAI() {
-            const text = terminalInput.value.trim();
-            if (!text) return;
-            terminalInput.value = '';
-
-            aiLoader.classList.remove('hidden');
-            appendHistory('GERENCIA', text);
-
-            // Render User Message
-            renderChatMessage('GERENCIA', text);
-
-            const response = await callGemini(text);
-
-            aiLoader.classList.add('hidden');
-            appendHistory('LAMDA_AI', response);
-
-            // Render AI Response
-            renderChatMessage('LAMDA_AI', response);
-        }
-
         function appendHistory(role, text) {
+            if (!historyContent) return;
             const div = document.createElement('div');
             div.className = "mb-4";
             div.innerHTML = `<div class="text-[9px] font-bold mb-1 ${role === 'GERENCIA' ? 'text-slate-500' : 'text-blue-500'}">[${new Date().toLocaleTimeString()}] ${role}</div>
@@ -1893,7 +2085,10 @@
             historyContent.scrollTop = historyContent.scrollHeight;
         }
 
-        function toggleHistory() { document.getElementById('historyOverlay').classList.toggle('hidden'); }
+        function toggleHistory() {
+            const h = document.getElementById('historyOverlay');
+            if (h) h.classList.toggle('hidden');
+        }
 
         function updateTime() {
             const now = new Date();
@@ -1902,14 +2097,15 @@
             const year = now.getFullYear();
             const h = now.getHours().toString().padStart(2, '0');
             const m = now.getMinutes().toString().padStart(2, '0');
-            document.getElementById('systemTime').innerText = `${day}_${months[now.getMonth()]}_${year}_${h}:${m}`;
+            const el = document.getElementById('systemTime');
+            if (el) el.innerText = `${day}_${months[now.getMonth()]}_${year}_${h}:${m}`;
         }
 
         setInterval(updateTime, 1000);
         updateTime();
-        terminalInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendToAI(); });
-        // LÓGICA DE VISTA PREVIA DE ARCHIVOS (MODAL) - ELIMINADA (Reemplazada por viewerModal)
-        // Se mantiene la llamada a 'openFileViewer' definida arriba.
+
+        // LÓGICA DE VISTA PREVIA DE ARCHIVOS (MODAL)
+        // Se mantiene openFileViewer definido arriba
     </script>
 </body>
 
