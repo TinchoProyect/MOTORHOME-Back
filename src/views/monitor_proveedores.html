@@ -879,18 +879,31 @@
                 return 'text-slate-400';
             };
 
-            // Header con Navegación
+            // Get Provider Context
+            const provider = currentSuppliers.find(s => s.id === window.currentActiveProviderId) || { nombre: 'Proveedor', id: null };
+
+            // Header con Navegación Dual
             let html = `
                 <div class="h-full flex flex-col animate-in slide-in-from-bottom-4 duration-500 p-2">
                     <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
-                        <div class="flex items-center gap-3">
-                            <button onclick="showSuppliersList()" class="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
-                                <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                            </button>
+                        <div class="flex items-center gap-4">
+                            <!-- Nav Controls -->
+                            <div class="flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg border border-slate-800">
+                                <button onclick="showSuppliersList()" class="p-2 hover:bg-slate-800 rounded-md text-slate-500 hover:text-white transition-colors flex items-center gap-2" title="Ir a Lista de Proveedores">
+                                    <i data-lucide="list" class="w-4 h-4"></i>
+                                    <span class="text-[10px] uppercase font-bold hidden md:inline">Lista</span>
+                                </button>
+                                <div class="w-[1px] h-4 bg-slate-700"></div>
+                                <button onclick="showSingleSupplier('${provider.id}')" class="p-2 hover:bg-slate-800 rounded-md text-slate-500 hover:text-white transition-colors flex items-center gap-2" title="Volver a Ficha">
+                                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                                    <span class="text-[10px] uppercase font-bold hidden md:inline">Ficha</span>
+                                </button>
+                            </div>
+
                             <div>
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                     <i data-lucide="folder-open" class="w-5 h-5 text-blue-500"></i>
-                                    Archivos del Proveedor
+                                    Archivos de ${provider.nombre}
                                 </h2>
                                 <span class="text-[10px] text-slate-500 font-mono tracking-wider">INDEXANDO ${files.length} ELEMENTOS</span>
                             </div>
@@ -1492,6 +1505,11 @@
                     <div class="flex justify-between items-start mb-8 border-b border-slate-800 pb-6">
                         <div>
                             <div class="flex items-center gap-3 mb-2">
+                                <!-- Back Button -->
+                                <button onclick="showSuppliersList()" class="mr-2 text-slate-500 hover:text-white hover:bg-slate-800/50 p-1 rounded-full transition-colors" title="Volver al Listado">
+                                    <i data-lucide="arrow-left" class="w-6 h-6"></i>
+                                </button>
+
                                 <!-- Status Dot (Relocated) -->
                                 <div class="w-3 h-3 rounded-full ${supplier.activo ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'}"></div>
                                 
@@ -1641,8 +1659,8 @@
                 data.forEach(supplier => {
                     tableHtml += `
                         <tr class="hover:bg-blue-600/5 transition-colors group">
-                            <td class="px-4 py-3 whitespace-nowrap">
-                                <div class="text-xs font-bold text-white">${supplier.nombre}</div>
+                            <td class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-800/50 transition-colors" onclick="showSingleSupplier('${supplier.id}')" title="Click para ver ficha">
+                                <div class="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">${supplier.nombre}</div>
                                 <div class="text-[10px] text-slate-500 md:hidden">${supplier.cuit || ''}</div>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap text-xs text-slate-400 font-mono hidden md:table-cell">${supplier.cuit || '-'}</td>

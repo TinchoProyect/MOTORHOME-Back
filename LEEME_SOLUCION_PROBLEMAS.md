@@ -62,3 +62,28 @@ if (normalize(columnMapping[key]) === normalize(oldName)) {
 }
 ```
 Además, fuerce explícitamente el re-renderizado (`renderVirtualTable()`) después de actualizar el modelo de datos local y agregue logs (`console.log`) para confirmar que el flujo entró en el bloque de actualización.
+
+---
+
+## 4. UX y Consistencia Backend: Menús y Persistencia (Feb 2026)
+
+### El Problema 1: Menú "Toggle" Fallido (Race Condition de Eventos)
+El usuario reportó que al hacer click en el encabezado de columna para cerrar el menú, este se cerraba y se volvía a abrir inmediatamente ("parpadeo"), impidiendo el cierre.
+**Diagnóstico:** El evento `click` en el botón se propagaba ("bubbling") hasta el `document`. Allí, el `closeHandler` global detectaba un click fuera del menú (porque el menú aún no se había marcado como cerrado o el target era el botón) y lo cerraba. Inmediatamente después, el handler del botón se ejecutaba y, al no encontrar menú, lo abría de nuevo.
+**Solución Protocolar:**
+Siempre que implemente un botón "Toggle" con un handler de cierre global (`document.onClick`), debe detener la propagación en el botón:
+```javascript
+function openMenu(e) {
+    if (e) e.stopPropagation(); // CRÍTICO: Evita que llegue al document y dispare closeHandler
+    // ... lógica de toggle ...
+}
+```
+
+### El Problema 2: Datos no guardados (Mismatch de Parámetros)
+La descripción de los términos no se guardaba al editar.
+**Diagnóstico:** Frontend enviaba el objeto `{ descripcion_uso: "..." }` (coincidiendo con la BD), pero el Controlador Backend destructuraba `{ descripcion }` (nombre variable incorrecto).
+**Lección:** Verificar siempre la alineación triple: **Schema BD == Payload Fetch == Controller Destructuring**.
+
+### El Problema 3: UX Destructiva (Alerts Nativos)
+El uso de `confirm()` (alerta nativa del navegador) rompe la estética de aplicaciones reactivas modernas.
+**Solución:** Se implementó `renderConfirmDialog` (Modal Glassmorphism) que inyecta HTML directo en el DOM y usa promesas (`async/await`) para esperar la confirmación del usuario antes de proceder, manteniendo la fluidez visual sin bloquear el hilo principal del navegador.
