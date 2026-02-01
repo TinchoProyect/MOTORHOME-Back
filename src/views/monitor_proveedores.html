@@ -1460,18 +1460,33 @@
                         const cellVal = row[j] !== undefined ? row[j] : '';
                         let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
 
-                        // OFFSET VISUAL LOGIC
+                        // OFFSET ROBUST VISUAL LOGIC
                         const minRow = currentOffset ? currentOffset.row : 0;
                         const minCol = currentOffset ? currentOffset.col : 0;
                         const isIgnored = (i < minRow) || (j < minCol);
                         const isAnchor = (i === minRow && j === minCol);
 
-                        if (isIgnored) cellClass += " opacity-25 grayscale bg-slate-950/50 pointer-events-none";
-                        if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
-                        if (offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
+                        // 1. Estado LOCKED (Base Ignorada)
+                        if (isIgnored) {
+                            cellClass += " opacity-25 grayscale bg-slate-950/50";
+                            // Solo bloqueamos si NO estamos seleccionando
+                            if (!offsetSelectionMode) cellClass += " pointer-events-none select-none";
+                        }
 
-                        // Normal Logic (si no está ignorado/offset mode overrides?)
-                        if (!isIgnored && (typeof cellVal === 'number' || (!isNaN(Number(cellVal)) && cellVal !== '' && String(cellVal).trim() !== ''))) {
+                        // 2. Estado ANCHOR (Siempre visible)
+                        if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
+
+                        // 3. Estado SELECTING (Prioridad Suprema)
+                        if (offsetSelectionMode) {
+                            // En modo selección, TODO es clickeable. 
+                            // Y si estaba ignorado, le damos feedback de "Resurrección" al Hover
+                            cellClass += " cursor-crosshair";
+                            if (isIgnored) cellClass += " hover:opacity-100 hover:grayscale-0 hover:bg-slate-800 transition-all duration-200";
+                            else cellClass += " hover:bg-amber-500/30";
+                        }
+
+                        // Normal Logic (Content Rendering)
+                        if ((!isIgnored || offsetSelectionMode) && (typeof cellVal === 'number' || (!isNaN(Number(cellVal)) && cellVal !== '' && String(cellVal).trim() !== ''))) {
                             if (!isAnchor) cellClass += ' text-emerald-400 text-right';
                         }
 
