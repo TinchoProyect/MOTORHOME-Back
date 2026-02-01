@@ -1329,7 +1329,7 @@
                         : 'w-full h-full text-left px-3 flex items-center justify-between bg-slate-800/50 border border-transparent hover:border-blue-500/50 hover:bg-slate-800 hover:text-blue-400 text-slate-500 transition-all rounded';
 
                     headerHtml += `<th class="bg-slate-950 p-1 sticky top-0 z-20" style="height: ${HEADER_HEIGHT}px">
-                        <button onclick="openColumnMenu_v2(${j}, this)" class="${btnClass}">
+                        <button onclick="openColumnMenu_v2(${j}, this, event)" class="${btnClass}">
                             <span class="truncate font-bold text-[10px] uppercase tracking-wider">${mappedType || originalVal}</span>
                             <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                         </button>
@@ -2348,13 +2348,21 @@
 
         // --- HERRAMIENTA DE MAPEO V2 (Conectada a DB / Schema Correcto) ---
         function openColumnMenu_v2(colIndex, buttonElement) {
-            // event.stopPropagation(); // Ya no es necesario si pasamos el elemento
 
+            // 1. TOGGLE LOGIC
             const existing = document.getElementById('colMenuDropdown');
-            if (existing) existing.remove();
+            if (existing) {
+                // Si hacemos click en la misma columna, cerramos (Toggle)
+                if (existing.dataset.colIndex === String(colIndex)) {
+                    existing.remove();
+                    return;
+                }
+                existing.remove();
+            }
 
             const menu = document.createElement('div');
             menu.id = 'colMenuDropdown';
+            menu.dataset.colIndex = colIndex; // Mark for toggle check
             menu.className = 'fixed z-[150] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col min-w-[280px] animate-in slide-in-from-top-2 duration-200 overflow-hidden';
 
             const rect = buttonElement.getBoundingClientRect();
@@ -2370,11 +2378,12 @@
             scrollArea.className = "max-h-[350px] overflow-y-auto custom-scrollbar";
             menu.appendChild(scrollArea);
 
-            // 1. Renderizar Opciones de Cache
-            nomenclatureCache.forEach(term => {
-                const itemContainer = document.createElement('div');
-                itemContainer.className = 'flex items-center border-l-2 border-transparent hover:bg-slate-800 transition-colors group relative';
+            // Helper para renderizar un item individual (Permite cancelar edición y restaurar solo el item)
+            const renderTermItem = (container, term) => {
+                container.innerHTML = '';
+                container.className = 'flex items-center border-l-2 border-transparent hover:bg-slate-800 transition-colors group relative';
 
+                // --- MODO VISTA ---
                 const selectBtn = document.createElement('button');
                 selectBtn.className = 'flex-grow px-4 py-2 text-left flex flex-col justify-center';
 
@@ -2392,7 +2401,7 @@
                 selectBtn.appendChild(subText);
 
                 if (columnMapping[colIndex] === term.termino) {
-                    itemContainer.classList.add('bg-blue-900/10', 'border-blue-500');
+                    container.classList.add('bg-blue-900/10', 'border-blue-500');
                     mainText.classList.add('text-blue-400');
                     mainText.innerHTML += ' <i data-lucide="check" class="w-3 h-3 text-blue-500 inline ml-2"></i>';
                 }
@@ -2407,109 +2416,232 @@
                 editBtn.className = 'p-2 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all absolute right-2 top-1/2 -translate-y-1/2 bg-slate-900/80 rounded-md backdrop-blur-sm z-10';
                 editBtn.innerHTML = '<i data-lucide="pencil" class="w-3 h-3"></i>';
                 editBtn.title = "Editar término";
+
                 editBtn.onclick = (e) => {
                     e.stopPropagation();
-                    // Modal de Edición Rápida (In-Place)
-                    itemContainer.innerHTML = '';
-                    itemContainer.className = "p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-2 relative z-20 shadow-inner";
+                    renderEditMode(container, term);
+                };
 
-                    const labelTerm = document.createElement('label');
-                    labelTerm.className = "text-[9px] text-slate-500 font-bold uppercase";
-                    labelTerm.innerText = "NOMBRE DEL TÉRMINO";
+                container.appendChild(selectBtn);
+                container.appendChild(editBtn);
+                lucide.createIcons();
+            };
 
-                    const inputTerm = document.createElement('input');
-                    inputTerm.value = term.termino;
-                    inputTerm.className = "w-full bg-slate-800 border border-slate-700 rounded text-xs px-2 py-1.5 text-white focus:border-blue-500 outline-none mb-1";
+            // Helper para AlertDialog Personalizado
+            const renderConfirmDialog = (title, message, onConfirm) => {
+                const dialogOverlay = document.createElement('div');
+                dialogOverlay.className = "fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-200";
 
-                    const labelDesc = document.createElement('label');
-                    labelDesc.className = "text-[9px] text-slate-500 font-bold uppercase";
-                    labelDesc.innerText = "DESCRIPCIÓN DE USO";
+                const dialogBox = document.createElement('div');
+                dialogBox.className = "bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-6 max-w-sm w-full transform transition-all scale-100 animate-in zoom-in-95 duration-200";
 
-                    const inputDesc = document.createElement('input');
-                    inputDesc.value = term.descripcion_uso || "";
-                    inputDesc.className = "w-full bg-slate-800 border border-slate-700 rounded text-xs px-2 py-1.5 text-slate-300 focus:border-blue-500 outline-none";
-                    inputDesc.placeholder = "Ej: SKU del proveedor";
+                dialogBox.innerHTML = `
+                    <div class="flex flex-col gap-4">
+                        <div class="flex items-start gap-4">
+                            <div class="p-3 bg-red-900/20 rounded-full text-red-500 shrink-0">
+                                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-bold text-white mb-1">${title}</h3>
+                                <p class="text-sm text-slate-400 leading-relaxed">${message}</p>
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-3 mt-2">
+                            <button id="dialogCancel" class="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors">Cancelar</button>
+                            <button id="dialogConfirm" class="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-500 rounded-lg shadow-lg shadow-red-900/20 transition-all flex items-center gap-2">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i> Eliminar
+                            </button>
+                        </div>
+                    </div>
+                `;
 
-                    const actions = document.createElement('div');
-                    actions.className = "flex justify-end gap-2 mt-2 pt-2 border-t border-slate-800";
+                dialogOverlay.appendChild(dialogBox);
+                document.body.appendChild(dialogOverlay);
+                lucide.createIcons();
 
-                    const cancelBtn = document.createElement('button');
-                    cancelBtn.textContent = "Cancelar";
-                    cancelBtn.className = "px-3 py-1 text-[10px] text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors";
-                    cancelBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        menu.remove();
-                        // Re-abrir menú para resetear vista (simple hack)
-                        openColumnMenu_v2(colIndex, event);
-                    };
+                const closeDialog = () => {
+                    dialogOverlay.classList.add('opacity-0');
+                    setTimeout(() => dialogOverlay.remove(), 200);
+                };
 
-                    const saveBtn = document.createElement('button');
-                    saveBtn.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i>Guardar';
-                    saveBtn.className = "px-3 py-1 bg-emerald-600 text-white text-[10px] rounded hover:bg-emerald-500 flex items-center shadow-lg shadow-emerald-900/20";
-                    saveBtn.onclick = async (e) => {
-                        e.stopPropagation();
-                        if (!inputTerm.value.trim()) return;
+                dialogBox.querySelector('#dialogCancel').onclick = closeDialog;
 
-                        // UI Loading state
-                        const originalContent = saveBtn.innerHTML;
+                dialogBox.querySelector('#dialogConfirm').onclick = async () => {
+                    const btn = dialogBox.querySelector('#dialogConfirm');
+                    btn.disabled = true;
+                    btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Procesando...';
+
+                    try {
+                        await onConfirm();
+                        closeDialog();
+                    } catch (e) {
+                        console.error("Dialog Action Failed:", e);
+                        alert("Error: " + e.message); // Fallback alert for critical failure
+                        btn.disabled = false;
+                        btn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i> Eliminar';
+                    }
+                };
+
+                // Click outside to close? No, force choice for safety.
+            };
+
+            // Helper para renderizar MODO EDICIÓN
+            const renderEditMode = (container, term) => {
+                container.innerHTML = '';
+                container.className = "p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-2 relative z-20 shadow-inner my-1 mx-1 rounded border border-slate-700/50";
+
+                const labelTerm = document.createElement('label');
+                labelTerm.className = "text-[9px] text-slate-500 font-bold uppercase tracking-wider";
+                labelTerm.innerText = "NOMBRE ENCABEZADO"; // [UX] Solicitado por usuario
+
+                const inputTerm = document.createElement('input');
+                inputTerm.value = term.termino;
+                inputTerm.className = "w-full bg-slate-800 border border-slate-700 rounded text-xs px-2 py-1.5 text-white focus:border-blue-500 outline-none mb-1";
+
+                const labelDesc = document.createElement('label');
+                labelDesc.className = "text-[9px] text-slate-500 font-bold uppercase tracking-wider";
+                labelDesc.innerText = "DESCRIPCIÓN DE USO";
+
+                // [UX] TEXTAREA AUTO-EXPANDIBLE
+                const inputDesc = document.createElement('textarea');
+                inputDesc.value = term.descripcion_uso || "";
+                inputDesc.className = "w-full bg-slate-800 border border-slate-700 rounded text-xs px-2 py-2 text-slate-300 focus:border-blue-500 outline-none resize-none leading-relaxed custom-scrollbar";
+                inputDesc.placeholder = "Ej: SKU del proveedor...";
+                inputDesc.rows = 2;
+
+                // Auto-resize logic
+                const autoResize = () => {
+                    inputDesc.style.height = 'auto';
+                    inputDesc.style.height = inputDesc.scrollHeight + 'px';
+                };
+                inputDesc.addEventListener('input', autoResize);
+                // Trigger once (need timeout for DOM insertion)
+                setTimeout(autoResize, 0);
+
+                const actions = document.createElement('div');
+                actions.className = "flex justify-between items-center mt-2 pt-2 border-t border-slate-800";
+
+                // DELETE BUTTON
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3 mb-[1px]"></i>';
+                deleteBtn.className = "p-1.5 text-red-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors";
+                deleteBtn.title = "Eliminar Término";
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    renderConfirmDialog(
+                        'Confirmar Eliminación',
+                        `¿Estás seguro de eliminar permanentemente <strong>"${term.termino}"</strong>?`,
+                        async () => {
+                            const response = await fetch(`${CONFIG.BACKEND_URL}/api/files/dictionary/${term.id}`, { method: 'DELETE' });
+                            const resData = await response.json();
+                            if (resData.success) {
+                                await loadNomenclature();
+                                openColumnMenu_v2(colIndex, buttonElement, event); // Refresh list
+                                renderChatMessage('SISTEMA', `Término "${term.termino}" eliminado.`);
+                            } else {
+                                throw new Error(resData.error || "Error eliminando");
+                            }
+                        }
+                    );
+                };
+
+                const rightActions = document.createElement('div');
+                rightActions.className = "flex gap-2";
+
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = "Cancelar";
+                cancelBtn.className = "px-3 py-1 text-[10px] text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors";
+                cancelBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    renderTermItem(container, term); // Restore View
+                };
+
+                const saveBtn = document.createElement('button');
+                saveBtn.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i>Guardar';
+                saveBtn.className = "px-3 py-1 bg-emerald-600 text-white text-[10px] rounded hover:bg-emerald-500 flex items-center shadow-lg shadow-emerald-900/20";
+
+                saveBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (!inputTerm.value.trim()) return;
+
+                    const originalContent = saveBtn.innerHTML;
+
+                    try {
                         saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>';
                         saveBtn.disabled = true;
                         lucide.createIcons();
 
-                        // 1. Update Backend
                         const success = await updateNomenclatureTerm(term.id, inputTerm.value.trim(), inputDesc.value.trim());
 
                         if (success) {
-                            // 2. Logic Fix: Robust Comparison
                             const newName = inputTerm.value.trim();
+                            const newDesc = inputDesc.value.trim();
+
+                            // Logic Fix: Global Update
                             const oldNameRaw = term.termino;
                             const normalize = (s) => s ? s.toString().trim().toLowerCase() : '';
                             const target = normalize(oldNameRaw);
 
-                            console.log(`[UI FIX] Buscando coincidencias para: "${oldNameRaw}"`);
-
                             Object.keys(columnMapping).forEach(key => {
                                 if (normalize(columnMapping[key]) === target) {
-                                    console.log(`✅ MATCH: Columna ${key} actualizada.`);
                                     columnMapping[key] = newName;
                                 }
                             });
 
-                            // 3. Force Re-render
                             if (typeof renderVirtualTable === 'function' && currentSheetData) {
-                                console.log("🔄 Redibujando tabla...");
                                 renderVirtualTable(currentSheetData);
                             }
 
                             renderChatMessage('SISTEMA', `Término actualizado: "${newName}"`);
-                            // menu.remove(); // [UX FIX] Mantener abierto para verificar cambio
-                        } else {
-                            saveBtn.innerHTML = originalContent;
-                            saveBtn.disabled = false;
-                            lucide.createIcons();
-                        }
-                    };
 
-                    actions.appendChild(cancelBtn);
-                    actions.appendChild(saveBtn);
-                    itemContainer.appendChild(labelTerm);
-                    itemContainer.appendChild(inputTerm);
-                    itemContainer.appendChild(labelDesc);
-                    itemContainer.appendChild(inputDesc);
-                    itemContainer.appendChild(actions);
-                    inputTerm.focus();
-                    lucide.createIcons();
+                            // Visual success
+                            saveBtn.innerHTML = '<i data-lucide="check" class="w-3 h-3 text-white"></i>';
+                            await new Promise(r => setTimeout(r, 800));
+
+                            // RESTORE VIEW (Using updated data manually since cache might not be passed back by updateNomenclatureTerm)
+                            // Actually updateNomenclatureTerm reloads caching.
+                            // We need to fetch it from cache.
+                            const updatedTerm = nomenclatureCache.find(t => t.id === term.id) || { ...term, termino: newName, descripcion_uso: newDesc };
+                            renderTermItem(container, updatedTerm);
+
+                        } else {
+                            throw new Error("La operación de guardado falló en el servidor.");
+                        }
+                    } catch (err) {
+                        console.error("Save Handler Error:", err);
+                        alert("Error: " + err.message);
+                        saveBtn.innerHTML = originalContent;
+                        saveBtn.disabled = false;
+                        lucide.createIcons();
+                    }
                 };
 
-                itemContainer.appendChild(selectBtn);
-                itemContainer.appendChild(editBtn);
-                scrollArea.appendChild(itemContainer);
+                rightActions.appendChild(cancelBtn);
+                rightActions.appendChild(saveBtn);
+
+                actions.appendChild(deleteBtn);
+                actions.appendChild(rightActions);
+
+                container.appendChild(labelTerm);
+                container.appendChild(inputTerm);
+                container.appendChild(labelDesc);
+                container.appendChild(inputDesc);
+                container.appendChild(actions);
+                inputTerm.focus();
+                lucide.createIcons();
+            };
+
+            // 1. Renderizar Opciones de Cache usando Helper
+            nomenclatureCache.forEach(term => {
+                const itemContainer = document.createElement('div');
+                scrollArea.appendChild(itemContainer); // Append container first
+                renderTermItem(itemContainer, term);   // Render content
             });
 
-            // 2. Ignorar Columna
+            // 2. Ignorar Columna (Extra Option)
             const ignoreBtn = document.createElement('button');
-            ignoreBtn.className = 'w-full px-4 py-2 text-left text-[11px] text-slate-500 hover:text-slate-300 transition-colors border-t border-slate-800/50 flex items-center gap-2 hover:bg-slate-800';
-            ignoreBtn.innerHTML = '<i data-lucide="eye-off" class="w-3 h-3"></i> Ignorar Columna';
+            ignoreBtn.className = 'w-full px-4 py-3 text-left border-t border-slate-800 text-[10px] text-slate-500 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-2';
+            ignoreBtn.innerHTML = '<i data-lucide="eye-off" class="w-3 h-3"></i> Ignorar esta columna';
             ignoreBtn.onclick = () => {
                 columnMapping[colIndex] = 'Ignorar Columna';
                 renderVirtualTable(currentSheetData);

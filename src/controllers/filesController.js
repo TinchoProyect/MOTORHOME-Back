@@ -441,7 +441,7 @@ async function createDictionaryTerm(req, res) {
 }
 
 async function updateDictionaryTerm(req, res) {
-    const { id, termino, descripcion } = req.body;
+    const { id, termino, descripcion_uso } = req.body;
     console.log(`[FilesController] UPDATE Term Request: ID=${id}, Term=${termino}`);
 
     if (!id || !termino) {
@@ -452,8 +452,8 @@ async function updateDictionaryTerm(req, res) {
         const updatePayload = {
             termino: termino.trim().toUpperCase()
         };
-        if (descripcion !== undefined) {
-            updatePayload.descripcion_uso = descripcion ? descripcion.trim() : null;
+        if (descripcion_uso !== undefined) {
+            updatePayload.descripcion_uso = descripcion_uso ? descripcion_uso.trim() : null;
         }
 
         const { data, error } = await supabase
@@ -514,6 +514,32 @@ async function downloadFile(req, res) {
     }
 }
 
+// =============================================================================
+// DELETE DICTIONARY TERM
+// =============================================================================
+async function deleteDictionaryTerm(req, res) {
+    const { id } = req.params;
+    console.log(`[FilesController] Requesting DELETE for Term ID: ${id}`);
+
+    if (!id) return res.status(400).json({ error: "Missing Term ID" });
+
+    try {
+        const { error } = await supabase
+            .from('user_diccionario_nomenclatura')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        console.log(`[FilesController] ✅ Term ID ${id} deleted successfully.`);
+        res.json({ success: true, message: "Término eliminado" });
+
+    } catch (error) {
+        console.error("Error deleting term:", error);
+        res.status(500).json({ error: "Error eliminando término: " + error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
@@ -521,5 +547,6 @@ module.exports = {
     getDictionaryTerms,
     createDictionaryTerm,
     updateDictionaryTerm,
+    deleteDictionaryTerm, // Exported
     downloadFile
 };
