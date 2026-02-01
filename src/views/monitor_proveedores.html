@@ -755,6 +755,8 @@
         const sbKey = (typeof CONFIG !== 'undefined') ? CONFIG.SUPABASE_ANON_KEY : "";
         // Usar API Key real de config.js para la IA
         const apiKey = (typeof CONFIG !== 'undefined') ? CONFIG.GEMINI_API_KEY : "";
+        // Restaurar variable global para API Backend (Fix 405/RefError)
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
 
         // Renombrado a supabaseClient para evitar conflicto con window.supabase
         let supabaseClient = null;
@@ -1832,8 +1834,8 @@
 
                 try {
                     // Usar backendBaseUrl si existe, sino path relativo
-                    // Usar backendBaseUrl si existe, sino path absoluto hardcodeado para evitar 405 (Frontend Port)
-                    const baseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                    // Usar backendBaseUrl global (restaurada)
+                    const baseUrl = backendBaseUrl;
                     const response = await fetch(`${baseUrl}/api/files/drive/provision-vendor`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
