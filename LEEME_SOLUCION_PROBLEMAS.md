@@ -87,3 +87,29 @@ La descripción de los términos no se guardaba al editar.
 ### El Problema 3: UX Destructiva (Alerts Nativos)
 El uso de `confirm()` (alerta nativa del navegador) rompe la estética de aplicaciones reactivas modernas.
 **Solución:** Se implementó `renderConfirmDialog` (Modal Glassmorphism) que inyecta HTML directo en el DOM y usa promesas (`async/await`) para esperar la confirmación del usuario antes de proceder, manteniendo la fluidez visual sin bloquear el hilo principal del navegador.
+
+---
+
+## 5. Infraestructura Drive & Automatización (Nuevo Core v2.5)
+
+### Hito Crítico: Permisos de Service Account
+Si obtiene el error `Insufficient permissions for the specified parent` al crear carpetas:
+*   **Causa:** La Service Account (`service-account.json`) tiene acceso "Viewer" pero no "Editor" en la carpeta raíz.
+*   **Solución:** Compartir la carpeta padre en Drive con el email de la SA (`client_email`) asignando rol de **EDITOR**.
+
+### Error 405 (Method Not Allowed) en Fetch
+*   **Causa:** El frontend intenta llamar a `/api/...` (ruta relativa) sin definir `backendBaseUrl`. Si el frontend corre en puerto 2573 y backend en 5655, la ruta relativa golpea al frontend (2573) que no tiene ese endpoint.
+*   **Solución:** Definir globalmente en `monitor_proveedores.html`:
+    ```javascript
+    const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+    ```
+    Y usar `${backendBaseUrl}/api/...` en todos los fetch.
+
+### ReferenceError: backendBaseUrl is not defined
+*   **Contexto:** Ocurre al limpiar código "obsoleto" (ej: borrar funciones de carga antigua) y accidentalmente borrar variables de configuración global que estaban en el mismo bloque.
+*   **Protocolo:** Antes de borrar un bloque de código, verificar si declara constantes (`const`, `let`) que se usan en funciones subsiguientes.
+
+### Script de Migración
+Se creó `scripts/migrate_folders.js` para retro-activar proveedores antiguos.
+*   **Uso:** `node scripts/migrate_folders.js`
+*   **Función:** Detecta proveedores sin subcarpetas (Precios/Extraídas) y las crea automáticamente bajo la misma raíz existente.
