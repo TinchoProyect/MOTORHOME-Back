@@ -690,6 +690,10 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
+                    <button id="btnMappingMode" onclick="toggleMappingMode()"
+                        class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-blue-500/50">
+                        <i data-lucide="layers" class="w-3 h-3"></i> Mapear Columnas
+                    </button>
                     <button id="btnExtractFromViewer"
                         class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
                         <i data-lucide="cpu" class="w-3 h-3"></i> Procesar con IA
@@ -955,6 +959,10 @@
         let useWorker = true;      // ESTADO DEL WORKER (Global)
         let currentSheetName = ""; // HOJA ACTUAL (Global)
 
+        // --- HERRAMIENTA DE MAPEO (EXCEL) ---
+        let mappingMode = false;
+        let columnMapping = {}; // { colIndex: "Etiqueta" }
+
         // 3. FUNCIÓN DE RESPALDO (Global y Autónoma)
         const processLocally = (wb, sName) => {
             console.warn("⚠️ Fallback Local activado para: " + sName);
@@ -1093,6 +1101,17 @@
             title.textContent = fileName;
             btnExtract.classList.add('hidden');
 
+            // Reset Mapping Tools
+            mappingMode = false;
+            columnMapping = {};
+            const btnMap = document.getElementById('btnMappingMode');
+            if (btnMap) {
+                btnMap.classList.add('hidden');
+                // Reset visual style
+                btnMap.classList.remove('bg-blue-600', 'text-white', 'border-blue-500');
+                btnMap.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700');
+            }
+
             try {
                 const downloadUrl = `${backendBaseUrl || ''}/api/files/download/${fileId}`;
                 const isExcel = fileName.match(/\.(xlsx|xls|csv)$/i);
@@ -1100,6 +1119,7 @@
                 const isImg = fileName.match(/\.(jpg|jpeg|png)$/i);
 
                 if (isExcel) {
+                    if (btnMap) btnMap.classList.remove('hidden');
                     // Descargar ArrayBuffer
                     const response = await fetch(downloadUrl);
                     if (!response.ok) throw new Error("Error descargando archivo.");
@@ -1292,14 +1312,41 @@
             const tbody = document.createElement('tbody');
             table.appendChild(tbody);
 
-            // 4. HEADER INTELIGENTE
-            // Usar la fila 0 como base, pero rellenar hasta maxCols si falta
+            // 4. HEADER INTELIGENTE - MODO MAPEO INTEGRADO
             const headerRow = data[0] || [];
             let headerHtml = `<tr style="height: ${HEADER_HEIGHT}px">`;
 
             for (let j = 0; j < maxCols; j++) {
-                const val = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`); // Default headers si estÃ¡ vacÃ­o
-                headerHtml += `<th class="bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap" style="height: ${HEADER_HEIGHT}px">${val}</th>`;
+                let originalVal = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`);
+                let mappedType = columnMapping[j];
+
+                if (mappingMode) {
+                    // MODO MAPEO: Botones Interactivos
+                    const isMapped = !!mappedType;
+                    const btnClass = isMapped
+                        ? 'w-full h-full text-left px-3 flex items-center justify-between bg-blue-600/10 border border-blue-500/50 text-blue-300 hover:bg-blue-600/20 transition-all rounded'
+                        : 'w-full h-full text-left px-3 flex items-center justify-between bg-slate-800/50 border border-transparent hover:border-blue-500/50 hover:bg-slate-800 hover:text-blue-400 text-slate-500 transition-all rounded';
+
+                    headerHtml += `<th class="bg-slate-950 p-1 sticky top-0 z-20" style="height: ${HEADER_HEIGHT}px">
+                        <button onclick="openColumnMenu(${j}, event)" class="${btnClass}">
+                            <span class="truncate font-bold text-[10px] uppercase tracking-wider">${mappedType || originalVal}</span>
+                            <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                        </button>
+                    </th>`;
+                } else {
+                    // MODO NORMAL: Texto Estático (Pero mostrando el mapeo si existe)
+                    let displayVal = originalVal;
+                    let thClass = "bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap";
+
+                    if (mappedType && mappedType !== 'Ignorar Columna') {
+                        displayVal = `<span class="text-emerald-400">${mappedType}</span> <span class="text-slate-600 text-[9px] ml-1">(${originalVal})</span>`;
+                        thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap";
+                    } else if (mappedType === 'Ignorar Columna') {
+                        thClass += " opacity-40 grayscale decoration-slate-500 decoration-line-through";
+                    }
+
+                    headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px">${displayVal}</th>`;
+                }
             }
             headerHtml += '</tr>';
             thead.innerHTML = headerHtml;
@@ -2106,6 +2153,108 @@
 
         // LÓGICA DE VISTA PREVIA DE ARCHIVOS (MODAL)
         // Se mantiene openFileViewer definido arriba
+        // --- HERRAMIENTA DE MAPEO: FUNCIONES AUXILIARES ---
+        function toggleMappingMode() {
+            mappingMode = !mappingMode;
+            const btn = document.getElementById('btnMappingMode');
+            if (!btn) return;
+
+            if (mappingMode) {
+                // Estado Activo
+                btn.classList.remove('bg-slate-800', 'text-slate-300', 'border-slate-700', 'hover:border-blue-500/50');
+                btn.classList.add('bg-blue-600', 'text-white', 'border-blue-500', 'shadow-[0_0_15px_rgba(37,99,235,0.3)]');
+            } else {
+                // Estado Inactivo
+                btn.classList.remove('bg-blue-600', 'text-white', 'border-blue-500', 'shadow-[0_0_15px_rgba(37,99,235,0.3)]');
+                btn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700', 'hover:border-blue-500/50');
+            }
+            // Re-renderizar tabla con nuevos estilos de header
+            if (currentSheetData) renderVirtualTable(currentSheetData);
+        }
+
+        function openColumnMenu(colIndex, event) {
+            event.stopPropagation(); // Evitar propagación al header
+
+            // Cerrar menú existente si hay
+            const existing = document.getElementById('colMenuDropdown');
+            if (existing) existing.remove();
+
+            const options = ["Código de Artículo", "Descripción", "Precio de Lista", "Stock", "Categoría", "Ignorar Columna"];
+
+            // Crear Menú Flotante
+            const menu = document.createElement('div');
+            menu.id = 'colMenuDropdown';
+            menu.className = 'fixed z-[150] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col min-w-[180px] animate-in slide-in-from-top-2 duration-200 overflow-hidden';
+
+            // Posicionamiento Inteligente
+            const rect = event.currentTarget.getBoundingClientRect();
+            menu.style.top = (rect.bottom + 6) + 'px';
+            menu.style.left = rect.left + 'px';
+
+            // Header del Menú
+            const header = document.createElement('div');
+            header.className = "px-4 py-2 bg-slate-950/50 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800";
+            header.textContent = "Asignar Tipo de Dato";
+            menu.appendChild(header);
+
+            // Opciones
+            options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = 'px-4 py-2.5 text-left text-[11px] font-mono transition-colors border-l-2 border-transparent hover:bg-slate-800 flex items-center justify-between group';
+
+                // Texto
+                const span = document.createElement('span');
+                span.innerText = opt;
+                btn.appendChild(span);
+
+                // Estado Activo
+                if (columnMapping[colIndex] === opt) {
+                    btn.classList.add('text-blue-400', 'bg-blue-900/10', 'border-blue-500');
+                    span.classList.add('font-bold');
+                    btn.innerHTML += '<i data-lucide="check" class="w-3 h-3 text-blue-500"></i>';
+                } else {
+                    btn.classList.add('text-slate-400', 'hover:text-white', 'hover:border-slate-600');
+                }
+
+                // Click Handler
+                btn.onclick = () => {
+                    columnMapping[colIndex] = opt;
+                    renderVirtualTable(currentSheetData); // Refresh visual
+                    menu.remove();
+                };
+                menu.appendChild(btn);
+            });
+
+            // Opción Limpiar
+            if (columnMapping[colIndex]) {
+                const clearBtn = document.createElement('button');
+                clearBtn.className = 'px-4 py-2 text-left text-[10px] text-red-400 hover:bg-red-900/10 hover:text-red-300 transition-colors border-t border-slate-800 mt-1';
+                clearBtn.innerHTML = '<i data-lucide="trash" class="w-3 h-3 inline mr-2"></i>Desvincular';
+                clearBtn.onclick = () => {
+                    delete columnMapping[colIndex];
+                    renderVirtualTable(currentSheetData);
+                    menu.remove();
+                };
+                menu.appendChild(clearBtn);
+            }
+
+            // Click Outside Handler
+            const closeHandler = (e) => {
+                if (!menu.contains(e.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeHandler);
+                }
+            };
+
+            // Fix: Usar setTimeout para evitar que el click actual dispare el cierre inmediato
+            setTimeout(() => {
+                document.addEventListener('click', closeHandler);
+                lucide.createIcons();
+            }, 50);
+
+            document.body.appendChild(menu);
+        }
+
     </script>
 </body>
 
