@@ -21,4 +21,7 @@ router.get('/dictionary', filesController.getDictionaryTerms);
 // POST /api/files/dictionary
 router.post('/dictionary', filesController.createDictionaryTerm);
 
+// POST /api/files/dictionary/update (Admin)
+router.post('/dictionary/update', filesController.updateDictionaryTerm);
+
 module.exports = router;

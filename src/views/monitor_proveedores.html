@@ -962,6 +962,7 @@
         // --- HERRAMIENTA DE MAPEO (EXCEL) ---
         let mappingMode = false;
         let columnMapping = {}; // { colIndex: "Etiqueta" }
+        let nomenclatureCache = []; // Cache de términos: [{id, termino, categoria}]
 
         // 3. FUNCIÓN DE RESPALDO (Global y Autónoma)
         const processLocally = (wb, sName) => {
@@ -1328,7 +1329,7 @@
                         : 'w-full h-full text-left px-3 flex items-center justify-between bg-slate-800/50 border border-transparent hover:border-blue-500/50 hover:bg-slate-800 hover:text-blue-400 text-slate-500 transition-all rounded';
 
                     headerHtml += `<th class="bg-slate-950 p-1 sticky top-0 z-20" style="height: ${HEADER_HEIGHT}px">
-                        <button onclick="openColumnMenu(${j}, event)" class="${btnClass}">
+                        <button onclick="openColumnMenu_v2(${j}, this)" class="${btnClass}">
                             <span class="truncate font-bold text-[10px] uppercase tracking-wider">${mappedType || originalVal}</span>
                             <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                         </button>
@@ -2153,13 +2154,103 @@
 
         // LÓGICA DE VISTA PREVIA DE ARCHIVOS (MODAL)
         // Se mantiene openFileViewer definido arriba
-        // --- HERRAMIENTA DE MAPEO: FUNCIONES AUXILIARES ---
-        function toggleMappingMode() {
+        // --- HERRAMIENTA DE MAPEO V2 (Conectada a DB / Schema Correcto) ---
+        async function loadNomenclature() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('user_diccionario_nomenclatura')
+                    .select('*')
+                    .order('termino', { ascending: true });
+
+                if (error) throw error;
+                nomenclatureCache = data;
+                return data;
+            } catch (e) {
+                console.error("Error loading nomenclature:", e);
+                // Fallback si falla la DB
+                if (nomenclatureCache.length === 0) {
+                    nomenclatureCache = [
+                        { id: 'temp1', termino: 'Código de Artículo', descripcion_uso: 'SKU o Código interno' },
+                        { id: 'temp2', termino: 'Descripción', descripcion_uso: 'Nombre del producto' }
+                    ];
+                }
+            }
+        }
+
+        async function addNomenclatureTerm(term, desc = "") {
+            try {
+                const { error } = await supabaseClient
+                    .from('user_diccionario_nomenclatura')
+                    .insert([{ termino: term, descripcion_uso: desc, "Descripcion": 'CUSTOM' }]);
+
+                if (error) throw error;
+                await loadNomenclature();
+                return true;
+            } catch (e) {
+                console.error("Error adding term:", e);
+                alert("Error guardando término: " + e.message);
+                return false;
+            }
+        }
+
+        async function updateNomenclatureTerm(id, newTerm, newDesc) {
+            console.group("🔍 WATCHDOG: updateNomenclatureTerm");
+            console.log("1. Target ID:", id);
+            console.log("2. New Term:", newTerm);
+            console.log("3. New Desc:", newDesc);
+
+            try {
+                const updatePayload = { id: id, termino: newTerm };
+                if (newDesc !== undefined) updatePayload.descripcion_uso = newDesc;
+
+                console.log("4. Payload ready:", updatePayload);
+                console.log("5. Sending request to Supabase...");
+
+                // BACKEND PROXY (Secure Update with Service Role)
+                const response = await fetch(`${CONFIG.BACKEND_URL}/api/files/dictionary/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatePayload)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    console.error("❌ BACKEND ERROR:", result);
+                    throw new Error(result.error || "Error al actualizar en backend");
+                }
+
+                console.log("✅ Update SUCCESS (Backend Proxy). Response Data:", result.data);
+
+                console.log("6. Reloading cache...");
+                await loadNomenclature();
+
+                console.log("7. Rendering feedback...");
+                renderChatMessage('SISTEMA', `Término actualizado: "${newTerm}"`);
+
+                console.groupEnd();
+                return true;
+            } catch (e) {
+                console.error("🔥 EXCEPTION in updateNomenclatureTerm:", e);
+                alert("Error detallado: " + (e.message || JSON.stringify(e)));
+                console.groupEnd();
+                return false;
+            }
+        }
+
+        async function toggleMappingMode() {
             mappingMode = !mappingMode;
             const btn = document.getElementById('btnMappingMode');
             if (!btn) return;
 
             if (mappingMode) {
+                // Cargar datos si está vacío
+                if (nomenclatureCache.length === 0) {
+                    btn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Cargando...';
+                    await loadNomenclature();
+                    btn.innerHTML = '<i data-lucide="layers" class="w-3 h-3"></i> Mapear Columnas';
+                    lucide.createIcons();
+                }
                 // Estado Activo
                 btn.classList.remove('bg-slate-800', 'text-slate-300', 'border-slate-700', 'hover:border-blue-500/50');
                 btn.classList.add('bg-blue-600', 'text-white', 'border-blue-500', 'shadow-[0_0_15px_rgba(37,99,235,0.3)]');
@@ -2247,6 +2338,255 @@
             };
 
             // Fix: Usar setTimeout para evitar que el click actual dispare el cierre inmediato
+            setTimeout(() => {
+                document.addEventListener('click', closeHandler);
+                lucide.createIcons();
+            }, 50);
+
+            document.body.appendChild(menu);
+        }
+
+        // --- HERRAMIENTA DE MAPEO V2 (Conectada a DB / Schema Correcto) ---
+        function openColumnMenu_v2(colIndex, buttonElement) {
+            // event.stopPropagation(); // Ya no es necesario si pasamos el elemento
+
+            const existing = document.getElementById('colMenuDropdown');
+            if (existing) existing.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'colMenuDropdown';
+            menu.className = 'fixed z-[150] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col min-w-[280px] animate-in slide-in-from-top-2 duration-200 overflow-hidden';
+
+            const rect = buttonElement.getBoundingClientRect();
+            menu.style.top = (rect.bottom + 6) + 'px';
+            menu.style.left = rect.left + 'px';
+
+            const header = document.createElement('div');
+            header.className = "px-4 py-2 bg-slate-950/50 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800";
+            header.textContent = "Asignar Tipo de Dato";
+            menu.appendChild(header);
+
+            const scrollArea = document.createElement('div');
+            scrollArea.className = "max-h-[350px] overflow-y-auto custom-scrollbar";
+            menu.appendChild(scrollArea);
+
+            // 1. Renderizar Opciones de Cache
+            nomenclatureCache.forEach(term => {
+                const itemContainer = document.createElement('div');
+                itemContainer.className = 'flex items-center border-l-2 border-transparent hover:bg-slate-800 transition-colors group relative';
+
+                const selectBtn = document.createElement('button');
+                selectBtn.className = 'flex-grow px-4 py-2 text-left flex flex-col justify-center';
+
+                // Termino Principal
+                const mainText = document.createElement('span');
+                mainText.className = 'text-[11px] font-mono text-slate-300 group-hover:text-white font-bold';
+                mainText.innerText = term.termino;
+
+                // Descripción Secundaria
+                const subText = document.createElement('span');
+                subText.className = 'text-[9px] text-slate-500 group-hover:text-slate-400 truncate max-w-[180px]';
+                subText.innerText = term.descripcion_uso || 'Sin descripción';
+
+                selectBtn.appendChild(mainText);
+                selectBtn.appendChild(subText);
+
+                if (columnMapping[colIndex] === term.termino) {
+                    itemContainer.classList.add('bg-blue-900/10', 'border-blue-500');
+                    mainText.classList.add('text-blue-400');
+                    mainText.innerHTML += ' <i data-lucide="check" class="w-3 h-3 text-blue-500 inline ml-2"></i>';
+                }
+
+                selectBtn.onclick = () => {
+                    columnMapping[colIndex] = term.termino;
+                    renderVirtualTable(currentSheetData);
+                    menu.remove();
+                };
+
+                const editBtn = document.createElement('button');
+                editBtn.className = 'p-2 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all absolute right-2 top-1/2 -translate-y-1/2 bg-slate-900/80 rounded-md backdrop-blur-sm z-10';
+                editBtn.innerHTML = '<i data-lucide="pencil" class="w-3 h-3"></i>';
+                editBtn.title = "Editar término";
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    // Modal de Edición Rápida (In-Place)
+                    itemContainer.innerHTML = '';
+                    itemContainer.className = "p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-2 relative z-20 shadow-inner";
+
+                    const labelTerm = document.createElement('label');
+                    labelTerm.className = "text-[9px] text-slate-500 font-bold uppercase";
+                    labelTerm.innerText = "NOMBRE DEL TÉRMINO";
+
+                    const inputTerm = document.createElement('input');
+                    inputTerm.value = term.termino;
+                    inputTerm.className = "w-full bg-slate-800 border border-slate-700 rounded text-xs px-2 py-1.5 text-white focus:border-blue-500 outline-none mb-1";
+
+                    const labelDesc = document.createElement('label');
+                    labelDesc.className = "text-[9px] text-slate-500 font-bold uppercase";
+                    labelDesc.innerText = "DESCRIPCIÓN DE USO";
+
+                    const inputDesc = document.createElement('input');
+                    inputDesc.value = term.descripcion_uso || "";
+                    inputDesc.className = "w-full bg-slate-800 border border-slate-700 rounded text-xs px-2 py-1.5 text-slate-300 focus:border-blue-500 outline-none";
+                    inputDesc.placeholder = "Ej: SKU del proveedor";
+
+                    const actions = document.createElement('div');
+                    actions.className = "flex justify-end gap-2 mt-2 pt-2 border-t border-slate-800";
+
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = "Cancelar";
+                    cancelBtn.className = "px-3 py-1 text-[10px] text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors";
+                    cancelBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        menu.remove();
+                        // Re-abrir menú para resetear vista (simple hack)
+                        openColumnMenu_v2(colIndex, event);
+                    };
+
+                    const saveBtn = document.createElement('button');
+                    saveBtn.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i>Guardar';
+                    saveBtn.className = "px-3 py-1 bg-emerald-600 text-white text-[10px] rounded hover:bg-emerald-500 flex items-center shadow-lg shadow-emerald-900/20";
+                    saveBtn.onclick = async (e) => {
+                        e.stopPropagation();
+                        saveBtn.disabled = true;
+                        saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin inline mr-1"></i>';
+
+                        if (inputTerm.value.trim()) {
+                            const success = await updateNomenclatureTerm(term.id, inputTerm.value.trim(), inputDesc.value.trim());
+                            if (success) {
+                                // [BUGFIX] Actualizar TODAS las columnas que usaban este término
+                                const newName = inputTerm.value.trim();
+                                const oldName = term.termino;
+
+                                Object.keys(columnMapping).forEach(key => {
+                                    // [ROBUST COMPARISON] Normalize strings to avoid mismatch
+                                    const mapVal = (columnMapping[key] || '').toString().trim().toLowerCase();
+                                    const oldVal = (oldName || '').toString().trim().toLowerCase();
+
+                                    if (mapVal === oldVal) {
+                                        console.log(`[UI FIX] MATCH FOUND: Columna ${key} cambiada de "${oldName}" a "${newName}"`);
+                                        columnMapping[key] = newName;
+                                    }
+                                });
+
+                                console.log("Forzando re-renderizado de tabla...");
+
+                                // Forzar re-renderizado de la tabla y headers
+                                renderVirtualTable(currentSheetData);
+                                menu.remove();
+
+                                // Feedback visual extra
+                                renderChatMessage('SISTEMA', `Término renombrado globalmente: ${oldName} -> ${newName}`);
+                            } else {
+                                saveBtn.disabled = false;
+                                saveBtn.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i>Guardar';
+                            }
+                        }
+                    };
+
+                    actions.appendChild(cancelBtn);
+                    actions.appendChild(saveBtn);
+
+                    itemContainer.appendChild(labelTerm);
+                    itemContainer.appendChild(inputTerm);
+                    itemContainer.appendChild(labelDesc);
+                    itemContainer.appendChild(inputDesc);
+                    itemContainer.appendChild(actions);
+                    inputTerm.focus();
+                    lucide.createIcons();
+                };
+
+                itemContainer.appendChild(selectBtn);
+                itemContainer.appendChild(editBtn);
+                scrollArea.appendChild(itemContainer);
+            });
+
+            // 2. Ignorar Columna
+            const ignoreBtn = document.createElement('button');
+            ignoreBtn.className = 'w-full px-4 py-2 text-left text-[11px] text-slate-500 hover:text-slate-300 transition-colors border-t border-slate-800/50 flex items-center gap-2 hover:bg-slate-800';
+            ignoreBtn.innerHTML = '<i data-lucide="eye-off" class="w-3 h-3"></i> Ignorar Columna';
+            ignoreBtn.onclick = () => {
+                columnMapping[colIndex] = 'Ignorar Columna';
+                renderVirtualTable(currentSheetData);
+                menu.remove();
+            };
+            scrollArea.appendChild(ignoreBtn);
+
+            // 3. Agregar Nuevo
+            const addContainer = document.createElement('div');
+            addContainer.className = "border-t border-slate-700 p-2 bg-slate-950/30";
+
+            const addBtn = document.createElement('button');
+            addBtn.className = "w-full text-center py-1.5 text-[10px] text-emerald-500 hover:text-emerald-400 font-bold uppercase tracking-wider border border-emerald-500/20 hover:border-emerald-500/50 rounded-lg transition-all hover:bg-emerald-500/10";
+            addBtn.innerText = "+ Agregar Nuevo Término";
+
+            addBtn.onclick = () => {
+                addContainer.innerHTML = '';
+                addContainer.className = "border-t border-slate-700 p-3 bg-slate-900 flex flex-col gap-2";
+
+                const inputTerm = document.createElement('input');
+                inputTerm.className = "w-full bg-slate-800 border border-slate-600 rounded text-xs px-2 py-1 text-white focus:border-blue-500 outline-none";
+                inputTerm.placeholder = "Nombre del Término...";
+                inputTerm.autoFocus = true;
+
+                const inputDesc = document.createElement('input');
+                inputDesc.className = "w-full bg-slate-800 border border-slate-600 rounded text-xs px-2 py-1 text-slate-300 focus:border-blue-500 outline-none";
+                inputDesc.placeholder = "Descripción (opcional)...";
+
+                const submitBtn = document.createElement('button');
+                submitBtn.className = "w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold uppercase";
+                submitBtn.textContent = "Crear";
+
+                submitBtn.onclick = async () => {
+                    const val = inputTerm.value.trim();
+                    const desc = inputDesc.value.trim();
+                    if (val) {
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin inline"></i>';
+                        const success = await addNomenclatureTerm(val, desc);
+                        if (success) {
+                            columnMapping[colIndex] = val;
+                            renderVirtualTable(currentSheetData);
+                            menu.remove();
+                        } else {
+                            submitBtn.disabled = false;
+                            submitBtn.innerText = "Error - Reintentar";
+                        }
+                    }
+                };
+
+                inputTerm.onkeydown = (e) => { if (e.key === 'Enter') inputDesc.focus(); };
+                inputDesc.onkeydown = (e) => { if (e.key === 'Enter') submitBtn.click(); };
+
+                addContainer.appendChild(inputTerm);
+                addContainer.appendChild(inputDesc);
+                addContainer.appendChild(submitBtn);
+                lucide.createIcons();
+            };
+
+            addContainer.appendChild(addBtn);
+            menu.appendChild(addContainer);
+
+            // Desvincular
+            if (columnMapping[colIndex]) {
+                const clearBtn = document.createElement('button');
+                clearBtn.className = 'w-full px-4 py-2 text-left text-[10px] text-red-400 hover:bg-red-900/10 hover:text-red-300 transition-colors border-t border-slate-800';
+                clearBtn.innerHTML = '<i data-lucide="trash" class="w-3 h-3 inline mr-2"></i>Desvincular';
+                clearBtn.onclick = () => {
+                    delete columnMapping[colIndex];
+                    renderVirtualTable(currentSheetData);
+                    menu.remove();
+                };
+                menu.appendChild(clearBtn);
+            }
+
+            const closeHandler = (e) => {
+                if (!menu.contains(e.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeHandler);
+                }
+            };
+
             setTimeout(() => {
                 document.addEventListener('click', closeHandler);
                 lucide.createIcons();

@@ -81,7 +81,6 @@ async function processExtraction(req, res) {
 
                 // CASO 1: Archivo CONFIRMADO -> Devolvemos datos procesados (Memoria de Gestión)
                 // [IMPUESTOS DE IDENTIDAD] Si está CONFIRMADO por ID, ignoramos diferencias de hash.
-                // CASO 1: Archivo CONFIRMADO
                 if (existingRecord.status_global === 'CONFIRMED') {
                     console.log(`📦 Recuperando BODEGA (Híbrido) -> ID: ${existingRecord.id}`);
 
@@ -108,8 +107,6 @@ async function processExtraction(req, res) {
 
                     // 2. Preparar Mapeo Inverso basado en nombres reales
                     const mapping = existingRecord.proveedor_formatos_guia.reglas_mapeo || {};
-                    const invertedMap = {};
-
                     // Map de etiquetas legibles
                     const labelMap = {
                         "sku": "CÓDIGO (SKU)",
@@ -117,10 +114,6 @@ async function processExtraction(req, res) {
                         "precio": "PRECIO",
                         "unidad": "UNIDAD"
                     };
-
-                    Object.entries(mapping).forEach(([logicalKey, originalHeader]) => {
-                        if (originalHeader) invertedMap[originalHeader] = labelMap[logicalKey] || logicalKey.toUpperCase();
-                    });
 
                     // 3. Construcción Híbrida
                     let allHeadersSet = new Set();
@@ -130,7 +123,6 @@ async function processExtraction(req, res) {
                         const newRow = {};
 
                         // A. Primero las columnas clave normalizadas (Priority)
-                        // NOTA: Ajustado nombres de columna según esquema real (sku, descripcion, precio, unidad)
                         if (item.sku) newRow["CÓDIGO (SKU)"] = item.sku;
                         if (item.descripcion) newRow["DESCRIPCIÓN"] = item.descripcion;
                         if (item.precio) newRow["PRECIO"] = item.precio;
@@ -144,7 +136,6 @@ async function processExtraction(req, res) {
                         // B. Rellenamos con el resto del raw_data (sin pisar las clave)
                         Object.keys(raw).forEach(key => {
                             // Si esta columna original YA fue mapeada a una clave (ej: "Col A" -> SKU), la ignoramos aquí porque ya pusimos la versión normalizada
-                            // Si NO fue mapeada, la agregamos tal cual
                             const isMapped = Object.values(mapping).includes(key);
                             if (!isMapped) {
                                 newRow[key] = raw[key];
@@ -176,9 +167,6 @@ async function processExtraction(req, res) {
                     });
                 }
                 // CASO 2: Archivo Mapeado pero NO Confirmado.
-                // IMPORTANTE: Antes devolvíamos arrays vacíos y rompíamos el front.
-                // AHORA: Dejamos que siga de largo hacia extractionService.
-                // El servicio extraerá los datos reales y usará el template existente para sugerir el mapeo.
                 console.log(`   - Formato existe (${existingRecord.proveedor_formatos_guia.nombre_formato}) pero NO está CONFIRMADO. Procediendo a extracción real para mostrar datos.`);
             }
         }
@@ -223,7 +211,6 @@ async function processExtraction(req, res) {
                     status_global: finalStatus,
                     modo_procesamiento: result.mode,
                     formato_guia_id: result.template_id || null
-                    // SOLUCIONADO: Se eliminó 'last_updated' para evitar el error PGRST204
                 })
                 .eq('id', existingRaw.id)
                 .select()
@@ -250,9 +237,6 @@ async function processExtraction(req, res) {
             rawRecord = inserted;
         }
 
-        // [MODIFICACIÓN FINAL] Lógica de Huella por ID de Base de Datos.
-        // Si el archivo (rawRecord) tiene un formato_guia_id asignado, es porque YA FUE FORMATEADO.
-        // Esa es la huella. No importa lo que diga el extractor.
         let isAlreadyManaged = false;
 
         if (rawRecord && rawRecord.formato_guia_id) {
@@ -261,15 +245,14 @@ async function processExtraction(req, res) {
             result.template_id = rawRecord.formato_guia_id;
             console.log(`[FilesController] CLEAN ID MATCH: ID de Formato encontrado en DB (${rawRecord.formato_guia_id}). Abriendo Modal.`);
         } else if (result.mode === 'MAPPED') {
-            // Fallback: Si el extractor lo encontró por hash pero la DB aun no lo tenía linkeado (raro, pero posible en transiciíon)
             isAlreadyManaged = true;
         }
 
         return res.json({
             success: true,
             mode: result.mode,
-            already_managed: isAlreadyManaged, // Flag vital para el modal
-            template_id: result.template_id, // Para que el modal sepa qué formato es
+            already_managed: isAlreadyManaged,
+            template_id: result.template_id,
             data: result.data,
             raw_id: rawRecord.id,
             debug_fingerprint: result.debug_fingerprint,
@@ -343,8 +326,6 @@ async function confirmExtraction(req, res) {
             template = inserted;
         }
 
-        // [FIX CRITICO] Actualizar el estado del archivo RAW a CONFIRMED
-        // Esto activa la "Memoria de Gestión" para la próxima vez.
         console.log(`[FilesController] Actualizando status_global='CONFIRMED' para archivo: ${fileId}`);
         const { error: rawUpdateError } = await supabase
             .from('proveedor_listas_raw')
@@ -359,10 +340,7 @@ async function confirmExtraction(req, res) {
             console.error("Error updating raw status:", rawUpdateError);
         }
 
-        // [FIX FINAL] POBLAR LA TABLA DE ITEMS
-        // Sin esto, el modal no se activa porque busca items > 0.
         try {
-            // 1. Obtener ID RAW
             const { data: rawRecord } = await supabase
                 .from('proveedor_listas_raw')
                 .select('id')
@@ -371,22 +349,17 @@ async function confirmExtraction(req, res) {
                 .single();
 
             if (rawRecord) {
-                // 2. Extraer datos FULL
                 console.log("   [Confirm] Extrayendo datos para persistencia...");
                 const extractionResult = await extractionService.processFile(fileId, providerId, { headerIndex: mapping.headerIndex || 0 });
 
                 if (extractionResult.success) {
-                    // [FIX CRITICO] Usar FULL DATA si existe, sino fallback a sample (por seguridad)
                     const rows = extractionResult.data.full_data || extractionResult.data.data_sample || [];
                     console.log(`   [Confirm] Datos a procesar para bodega: ${rows.length} filas.`);
 
-                    // 3. Mapeo ESPEJO (Sin Detección)
                     const itemsToInsert = rows.map(row => {
-                        // [AMPUTACION] No clasificamos nada. Solo guardamos el JSON crudo.
                         return {
                             lista_raw_id: rawRecord.id,
                             raw_data: row,
-                            // Dejamos las columnas _detectado en NULL (o default)
                             sku_detectado: null,
                             descripcion_detectada: null,
                             precio_detectado: null,
@@ -395,13 +368,8 @@ async function confirmExtraction(req, res) {
                     });
 
                     console.log(`   [Mirror] Preparados ${itemsToInsert.length} items (Raw Mode).`);
-
-                    console.log(`   [Filter] Filas válidas: ${itemsToInsert.length} (de ${rows.length} originales)`);
-
-                    // 4. Limpieza previa por si es re-confirmación
                     await supabase.from('proveedor_items_extraidos').delete().eq('lista_raw_id', rawRecord.id);
 
-                    // 5. Inserción
                     if (itemsToInsert.length > 0) {
                         const { error: insertError } = await supabase
                             .from('proveedor_items_extraidos')
@@ -472,6 +440,45 @@ async function createDictionaryTerm(req, res) {
     }
 }
 
+async function updateDictionaryTerm(req, res) {
+    const { id, termino, descripcion } = req.body;
+    console.log(`[FilesController] UPDATE Term Request: ID=${id}, Term=${termino}`);
+
+    if (!id || !termino) {
+        return res.status(400).json({ error: "Faltan datos requeridos (id, termino)" });
+    }
+
+    try {
+        const updatePayload = {
+            termino: termino.trim().toUpperCase()
+        };
+        if (descripcion !== undefined) {
+            updatePayload.descripcion_uso = descripcion ? descripcion.trim() : null;
+        }
+
+        const { data, error } = await supabase
+            .from('user_diccionario_nomenclatura')
+            .update(updatePayload)
+            .eq('id', id)
+            .select();
+
+        if (error) throw error;
+
+        // Validar si realmente se actualizó algo
+        if (!data || data.length === 0) {
+            console.warn(`[FilesController] ⚠️ Update exitoso pero SIN DATOS retornados para ID ${id}. Verificar existencia.`);
+        } else {
+            console.log(`[FilesController] ✅ Term updated successfully: ${termino}`);
+        }
+
+        res.json({ success: true, data });
+
+    } catch (error) {
+        console.error("Error updating term:", error);
+        res.status(500).json({ error: "Error actualizando término: " + error.message });
+    }
+}
+
 // =============================================================================
 // DOWNLOAD FILE STREAM (Viewer)
 // =============================================================================
@@ -499,7 +506,6 @@ async function downloadFile(req, res) {
 
     } catch (error) {
         console.error("[Download Error]", error);
-        // Expose real error to client for debugging
         const status = error.message.includes('not found') ? 404 : 500;
         res.status(status).json({
             error: error.message || "File download error",
@@ -514,5 +520,6 @@ module.exports = {
     confirmExtraction,
     getDictionaryTerms,
     createDictionaryTerm,
+    updateDictionaryTerm,
     downloadFile
 };
