@@ -2482,7 +2482,7 @@
                             }
 
                             renderChatMessage('SISTEMA', `Término actualizado: "${newName}"`);
-                            menu.remove();
+                            // menu.remove(); // [UX FIX] Mantener abierto para verificar cambio
                         } else {
                             saveBtn.innerHTML = originalContent;
                             saveBtn.disabled = false;
@@ -2588,12 +2588,12 @@
             const closeHandler = (e) => {
                 if (!menu.contains(e.target)) {
                     menu.remove();
-                    document.removeEventListener('click', closeHandler);
+                    document.removeEventListener('mousedown', closeHandler);
                 }
             };
 
             setTimeout(() => {
-                document.addEventListener('click', closeHandler);
+                document.addEventListener('mousedown', closeHandler);
                 lucide.createIcons();
             }, 50);
 
