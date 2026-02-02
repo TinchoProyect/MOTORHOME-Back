@@ -694,7 +694,10 @@
                         <i id="viewerIcon" data-lucide="file" class="w-5 h-5 text-slate-400"></i>
                     </div>
                     <div>
-                        <h2 id="viewerTitle" class="text-sm font-bold text-white tracking-wide">Documento</h2>
+                        <div class="flex items-center gap-3">
+                            <h2 id="viewerTitle" class="text-sm font-bold text-white tracking-wide">Documento</h2>
+                            <div id="viewerBadges" class="flex items-center gap-2"></div>
+                        </div>
                         <p class="text-[10px] text-slate-500 font-mono tracking-wider">MODO LECTURA</p>
                     </div>
                 </div>
@@ -1237,25 +1240,37 @@
             // Note: provider info is already set by exploreSupplierFiles
 
             // UI Elements
+            // UI Elements
             const modal = document.getElementById('viewerModal');
             const loader = document.getElementById('viewerLoader');
             const title = document.getElementById('viewerTitle');
+            const badgeContainer = document.getElementById('viewerBadges');
 
-            // --- IDENTITY BADGE FOR VIEWER ---
-            // Clear previous badge if any
-            const existingBadge = title.querySelector('.identity-badge');
-            if (existingBadge) existingBadge.remove();
+            // --- TITLE UPDATE (Clean) ---
+            title.textContent = fileName;
+            title.className = "text-sm font-bold text-white tracking-wide opacity-70";
 
-            // Append Badge
-            const badgeColor = globalContext.fileType === "LISTA_PRECIOS" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20";
-            const badgeIcon = globalContext.fileType === "LISTA_PRECIOS" ? "layers" : "folder";
+            // --- IDENTITY BADGE INJECTION (Safe Container) ---
+            if (badgeContainer) {
+                // Prepare Data
+                const type = globalContext.fileType || "GENERAL";
+                const pName = globalContext.providerName || "DESCONOCIDO"; // Fallback data
 
-            const badgeHtml = `
-                <span class="identity-badge ml-3 px-2 py-0.5 text-[10px] rounded-full border ${badgeColor} uppercase tracking-wider font-mono flex items-center gap-1 inline-flex transform translate-y-[-2px]">
-                    <i data-lucide="${badgeIcon}" class="w-3 h-3"></i> ${globalContext.fileType.replace('_', ' ')}
-                </span>
-            `;
-            title.innerHTML = fileName + badgeHtml;
+                const badgeColor = type === "LISTA_PRECIOS" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20";
+                const badgeIcon = type === "LISTA_PRECIOS" ? "layers" : "folder";
+
+                // Inject Badges
+                badgeContainer.innerHTML = `
+                   <span class="px-2 py-0.5 text-[10px] rounded-full border bg-slate-800 text-slate-300 border-slate-700 uppercase tracking-wider font-mono flex items-center gap-1">
+                        <i data-lucide="building-2" class="w-3 h-3"></i> ${pName}
+                   </span>
+                   <span class="px-2 py-0.5 text-[10px] rounded-full border ${badgeColor} uppercase tracking-wider font-mono flex items-center gap-1">
+                        <i data-lucide="${badgeIcon}" class="w-3 h-3"></i> ${type.replace('_', ' ')}
+                   </span>
+                `;
+            } else {
+                console.warn("⚠️ #viewerBadges container not found!");
+            }
             lucide.createIcons();
 
             const excelContainer = document.getElementById('excelContainer');
@@ -3479,6 +3494,59 @@
             if (modal) modal.classList.add('hidden');
         }
 
+    </script>
+
+    <!-- 🕵️‍♂️ SCRIPT VIGÍA DE DEPURACIÓN (DEBUG WATCHDOG) -->
+    <script>
+        (function () {
+            console.group("🐶 Debug Watchdog Iniciado");
+
+            // 1. Vigilante del Global Context
+            const originalOpenFileViewer = window.openFileViewer;
+            window.openFileViewer = async function (fileId, fileName) {
+                console.group(`📂 Abriendo Archivo: ${fileName}`);
+                console.log("1. Parametros Recibidos:", { fileId, fileName });
+                console.log("2. Estado Global Context (PRE-UPDATE):", JSON.parse(JSON.stringify(window.globalContext || "NO DEFINIDO")));
+
+                // Ejecutar función original
+                await originalOpenFileViewer(fileId, fileName);
+
+                console.log("3. Estado Global Context (POST-UPDATE):", JSON.parse(JSON.stringify(window.globalContext)));
+
+                // Verificar DOM inmediatamente
+                const titleEl = document.getElementById('viewerTitle');
+                if (titleEl) {
+                    console.log("4. HTML Resultante en #viewerTitle:", titleEl.innerHTML);
+                    const badges = titleEl.querySelectorAll('.identity-badge');
+                    console.log(`5. Badges Detectados en DOM: ${badges.length}`);
+                    badges.forEach((b, i) => console.log(`   Badge ${i + 1}:`, b.innerText));
+                } else {
+                    console.error("❌ CRTITICAL: #viewerTitle no encontrado en el DOM");
+                }
+                console.groupEnd();
+            };
+
+            // 2. Vigilante de Mutaciones (DOM Spy)
+            const titleTarget = document.getElementById('viewerTitle');
+            if (titleTarget) {
+                const observer = new MutationObserver((mutations) => {
+                    mutations.forEach((mutation) => {
+                        console.log("⚡ DOM MUTATION en #viewerTitledetectada!");
+                        console.log("   Nuevo Contenido:", mutation.target.innerHTML);
+                        if (!mutation.target.innerHTML.includes("identity-badge")) {
+                            console.warn("⚠️ ALERTA: El título fue modificado y NO contiene los badges de identidad.");
+                        } else {
+                            console.log("✅ Verificación Visual: Badges presentes.");
+                        }
+                    });
+                });
+                observer.observe(titleTarget, { childList: true, subtree: true });
+                console.log("👀 Vigilante de DOM adjunto a #viewerTitle");
+            }
+
+            console.log("✅ Watchdog activo. Abra un archivo para ver logs.");
+            console.groupEnd();
+        })();
     </script>
 </body>
 
