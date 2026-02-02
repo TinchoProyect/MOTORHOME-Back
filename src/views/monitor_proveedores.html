@@ -707,9 +707,10 @@
                         class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-amber-500/50">
                         <i data-lucide="scan-line" class="w-3 h-3"></i> Definir Inicio
                     </button>
-                    <button id="btnExtractFromViewer"
-                        class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
-                        <i data-lucide="cpu" class="w-3 h-3"></i> Procesar con IA
+                    <div class="h-6 w-[1px] bg-slate-800 mx-4"></div>
+                    <button onclick="generatePreview()" title="Simular Extracción"
+                        class="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-lg hover:shadow-emerald-500/20 transition-all hover:scale-105">
+                        <i data-lucide="play" class="w-4 h-4 fill-current"></i>
                     </button>
                     <div class="h-6 w-[1px] bg-slate-800 mx-2"></div>
                     <button onclick="closeViewerModal()"
@@ -745,6 +746,44 @@
                     <i data-lucide="alert-triangle" class="w-12 h-12 mb-4"></i>
                     <p id="viewerErrorMessage" class="text-sm font-bold">Error al cargar archivo</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- COMPONENTE: MODAL SIMULACION JSON 🧪 -->
+    <!-- ========================================== -->
+    <div id="simulationModal" class="hidden fixed inset-0 z-[200] flex items-center justify-center p-4 modal-blur">
+        <div
+            class="glass-panel w-full max-w-4xl max-h-[90vh] rounded-2xl border border-emerald-500/30 flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <!-- Header -->
+            <div class="p-4 border-b border-slate-700 bg-slate-950/50 flex justify-between items-center rounded-t-2xl">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+                        <i data-lucide="code-2" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-white font-bold text-sm">Previsualización de Datos</h3>
+                        <p class="text-[10px] text-slate-400 font-mono" id="simMeta">ESPERANDO DATOS...</p>
+                    </div>
+                </div>
+                <button onclick="closeSimulationModal()"
+                    class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <!-- Body (Table) -->
+            <div id="simulationTableContainer" class="flex-1 overflow-auto bg-slate-900 p-0 custom-scrollbar">
+                <!-- Table injected via JS -->
+                <div class="flex flex-col items-center justify-center h-full text-slate-600">
+                    <i data-lucide="table" class="w-12 h-12 opacity-20 mb-2"></i>
+                    <p class="text-[10px] font-mono">EJECUTA LA SIMULACIÓN PARA VER DATOS</p>
+                </div>
+            </div>
+            <!-- Footer -->
+            <div class="p-4 border-t border-slate-700 bg-slate-950/30 flex justify-end">
+                <button onclick="closeSimulationModal()"
+                    class="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors">Cerrar</button>
             </div>
         </div>
     </div>
@@ -1113,7 +1152,7 @@
             const pdfContainer = document.getElementById('pdfContainer');
             const imgContainer = document.getElementById('imageContainer');
             const imgEl = document.getElementById('viewerImage');
-            const btnExtract = document.getElementById('btnExtractFromViewer');
+            const btnExtract = null; // Deprecated
 
             // 1. LIMPIEZA TOTAL (Memory Management)
             if (viewerWorker) {
@@ -1132,7 +1171,7 @@
             modal.classList.remove('hidden');
             loader.classList.remove('hidden');
             title.textContent = fileName;
-            btnExtract.classList.add('hidden');
+            // btnExtract removed
 
             // Reset Mapping Tools
             mappingMode = false;
@@ -3011,6 +3050,125 @@
             }, 50);
 
             document.body.appendChild(menu);
+        }
+
+        // --- SIMULATION ENGINE (JIT EXTRACTOR) ---
+        function generatePreview() {
+            console.log("Simulando extracción...");
+
+            // 1. Validaciones
+            if (!currentSheetData || currentSheetData.length === 0) {
+                alert("No hay datos cargados.");
+                return;
+            }
+            if (!currentOffset) {
+                alert("⚠️ Debes definir el INICIO (Offset) antes de simular.");
+                return;
+            }
+            if (!columnMapping || Object.keys(columnMapping).length === 0) {
+                alert("⚠️ Debes MAPEAR al menos una columna.");
+                return;
+            }
+
+            // 2. Slicing (Aplicar Offset)
+            const startRow = currentOffset.row;
+            // Validar bounds
+            if (startRow >= currentSheetData.length) {
+                alert("El Offset está fuera de rango.");
+                return;
+            }
+            const validData = currentSheetData.slice(startRow);
+            const result = [];
+
+            // 3. Projection (Mapeo)
+            validData.forEach((row, index) => {
+                const obj = {};
+                let hasContent = false;
+
+                Object.keys(columnMapping).forEach(colIdx => {
+                    const key = columnMapping[colIdx];
+                    if (key === 'Ignorar Columna') return;
+
+                    // Excel row might be shorter than mapping index
+                    const val = row[colIdx];
+
+                    // Basic Cleaning (Trim, Null check)
+                    if (val !== undefined && val !== null && String(val).trim() !== '') {
+                        obj[key] = val;
+                        hasContent = true;
+                    }
+                });
+
+                // Solo agregar si capturó algo (Filtrado de filas vacías post-mapeo)
+                if (hasContent) {
+                    result.push(obj);
+                }
+            });
+
+            // 4. Render (Table Grid)
+            const container = document.getElementById('simulationTableContainer');
+            const metaEl = document.getElementById('simMeta');
+
+            if (metaEl) metaEl.innerText = `${result.length} REGISTROS ESTRUCTURADOS`;
+
+            if (container) {
+                container.innerHTML = ''; // Clear
+
+                if (result.length === 0) {
+                    container.innerHTML = '<div class="text-slate-500 text-center p-8 font-mono text-xs">No se encontraron datos para mostrar.</div>';
+                } else {
+                    const table = document.createElement('table');
+                    table.className = 'w-full text-left border-collapse text-xs font-mono';
+
+                    // Headers
+                    const thead = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    const keys = Object.keys(result[0]);
+
+                    keys.forEach(k => {
+                        const th = document.createElement('th');
+                        th.className = 'bg-slate-950 text-emerald-400 font-bold p-3 border-b border-slate-800 sticky top-0 z-10 uppercase tracking-wider text-[10px]';
+                        th.textContent = k;
+                        headerRow.appendChild(th);
+                    });
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+
+                    // Body
+                    const tbody = document.createElement('tbody');
+                    result.forEach((item, idx) => {
+                        const tr = document.createElement('tr');
+                        tr.className = 'hover:bg-slate-800/50 transition-colors border-b border-slate-800/30 group';
+                        keys.forEach(k => {
+                            const td = document.createElement('td');
+                            td.className = 'p-3 text-slate-300 border-r border-slate-800/20 last:border-r-0 truncate max-w-[200px] group-hover:text-white transition-colors';
+
+                            // Value Formatting
+                            let val = item[k];
+                            // Highlight null/undefined/empty
+                            if (val === undefined || val === null || val === '') {
+                                val = '-';
+                                td.classList.add('opacity-30');
+                            }
+                            td.textContent = val;
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    container.appendChild(table);
+                }
+            }
+
+            // Show Modal
+            const modal = document.getElementById('simulationModal');
+            if (modal) modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeSimulationModal() {
+            const modal = document.getElementById('simulationModal');
+            if (modal) modal.classList.add('hidden');
         }
 
     </script>
