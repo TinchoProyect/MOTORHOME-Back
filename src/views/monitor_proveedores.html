@@ -876,6 +876,14 @@
         async function exploreSupplierFiles(folderId) {
             if (!folderId) return;
 
+            // Context Inference Logic
+            const provider = currentSuppliers.find(s => s.id === window.currentActiveProviderId);
+            if (provider && provider.drive_folder_prices_id === folderId) {
+                currentBrowserContext = "Lista de Precios";
+            } else {
+                currentBrowserContext = "Documentación General";
+            }
+
             // Mostrar estado de carga en el panel central
             reportDisplay.innerHTML = `
                 <div class="flex flex-col items-center justify-center h-full text-blue-400 animate-in fade-in duration-300">
@@ -1025,6 +1033,7 @@
         let currentFileBuffer = null; // BUFFER RAW (Global - para rescate)
         let useWorker = true;      // ESTADO DEL WORKER (Global)
         let currentSheetName = ""; // HOJA ACTUAL (Global)
+        let currentBrowserContext = "General"; // CONTEXTO DE NAVEGACIÓN (Global)
 
         // --- HERRAMIENTA DE MAPEO (EXCEL) ---
         // MODO MAPEO
@@ -2584,15 +2593,17 @@
             }
         }
 
-        async function updateNomenclatureTerm(id, newTerm, newDesc) {
+        async function updateNomenclatureTerm(id, newTerm, newDesc, newRules) {
             console.group("🔍 WATCHDOG: updateNomenclatureTerm");
             console.log("1. Target ID:", id);
             console.log("2. New Term:", newTerm);
             console.log("3. New Desc:", newDesc);
+            if (newRules) console.log("3b. New Rules:", newRules);
 
             try {
                 const updatePayload = { id: id, termino: newTerm };
                 if (newDesc !== undefined) updatePayload.descripcion_uso = newDesc;
+                if (newRules !== undefined) updatePayload.reglas_procesamiento = newRules;
 
                 console.log("4. Payload ready:", updatePayload);
                 console.log("5. Sending request to Supabase...");
@@ -2939,8 +2950,69 @@
                     inputDesc.style.height = inputDesc.scrollHeight + 'px';
                 };
                 inputDesc.addEventListener('input', autoResize);
-                // Trigger once (need timeout for DOM insertion)
                 setTimeout(autoResize, 0);
+
+                // --- VINCULACIÓN DINÁMICA (REGEX SPLIT LINKING) ---
+                // Solo si el término tiene una regla regex_split
+                if (term.reglas_procesamiento && term.reglas_procesamiento.type === 'regex_split') {
+
+                    const linkingContainer = document.createElement('div');
+                    linkingContainer.className = "mt-2 p-2 bg-blue-900/10 border border-blue-500/30 rounded flex flex-col gap-2";
+                    linkingContainer.innerHTML = `<span class="text-[9px] font-bold text-blue-400 uppercase tracking-wider mb-1 block">
+                        <i data-lucide="link" class="w-3 h-3 inline mr-1"></i> Vincular Encabezados
+                    </span>`;
+
+                    const createSelector = (label, currentId) => {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = "flex flex-col gap-1";
+
+                        const lbl = document.createElement('span');
+                        lbl.className = "text-[9px] text-slate-500 uppercase";
+                        lbl.innerText = label;
+
+                        const sel = document.createElement('select');
+                        sel.className = "w-full bg-slate-950 border border-slate-700 rounded text-[10px] px-2 py-1 text-slate-300 outline-none focus:border-blue-500";
+
+                        // Option Default
+                        const defOpt = document.createElement('option');
+                        defOpt.value = "";
+                        defOpt.innerText = "-- Seleccionar Término --";
+                        sel.appendChild(defOpt);
+
+                        // Populate
+                        nomenclatureCache
+                            .filter(t => t.id !== term.id) // Avoid self-reference
+                            .forEach(t => {
+                                const opt = document.createElement('option');
+                                opt.value = t.id;
+                                opt.innerText = t.termino;
+                                if (t.id === currentId) opt.selected = true;
+                                sel.appendChild(opt);
+                            });
+
+                        wrapper.appendChild(lbl);
+                        wrapper.appendChild(sel);
+                        return { wrapper, select: sel };
+                    };
+
+                    const currentLinks = term.reglas_procesamiento.linked_ids || [null, null];
+
+                    const selA = createSelector("Parte A (Descripción)", currentLinks[0]);
+                    const selB = createSelector("Parte B (Presentación)", currentLinks[1]);
+
+                    linkingContainer.appendChild(selA.wrapper);
+                    linkingContainer.appendChild(selB.wrapper);
+                    container.appendChild(linkingContainer);
+
+                    // Attach to DOM for easy retrieval on Save
+                    container.dataset.linkA = ""; // Init
+                    selA.select.onchange = () => container.dataset.linkA = selA.select.value;
+                    selB.select.onchange = () => container.dataset.linkB = selB.select.value;
+
+                    // Set initial values in dataset
+                    if (currentLinks[0]) container.dataset.linkA = currentLinks[0];
+                    if (currentLinks[1]) container.dataset.linkB = currentLinks[1];
+                }
 
                 const actions = document.createElement('div');
                 actions.className = "flex justify-between items-center mt-2 pt-2 border-t border-slate-800";
@@ -2995,11 +3067,27 @@
                         saveBtn.disabled = true;
                         lucide.createIcons();
 
-                        const success = await updateNomenclatureTerm(term.id, inputTerm.value.trim(), inputDesc.value.trim());
+                        const newName = inputTerm.value.trim();
+                        const newDesc = inputDesc.value.trim();
+
+                        // Capture Linked IDs if they exist
+                        let newRules = undefined;
+                        if (term.reglas_procesamiento) {
+                            // Deep copy existing rules
+                            newRules = JSON.parse(JSON.stringify(term.reglas_procesamiento));
+
+                            // Check if linking UI was active
+                            const linkA = container.dataset.linkA;
+                            const linkB = container.dataset.linkB;
+
+                            if (linkA || linkB) {
+                                newRules.linked_ids = [linkA || null, linkB || null];
+                            }
+                        }
+
+                        const success = await updateNomenclatureTerm(term.id, newName, newDesc, newRules);
 
                         if (success) {
-                            const newName = inputTerm.value.trim();
-                            const newDesc = inputDesc.value.trim();
 
                             // Logic Fix: Global Update
                             const oldNameRaw = term.termino;
@@ -3247,8 +3335,18 @@
                         // BETTER: Logic says Part A is descriptions, Part B is Presentation.
                         // We map them to specific labels defined in the rule.
 
-                        const labelA = rule.target_labels ? rule.target_labels[0] : key + " (A)";
-                        const labelB = rule.target_labels ? rule.target_labels[1] : key + " (B)";
+                        let labelA = rule.target_labels ? rule.target_labels[0] : key + " (A)";
+                        let labelB = rule.target_labels ? rule.target_labels[1] : key + " (B)";
+
+                        // DYNAMIC LINKING RESOLUTION (V7)
+                        // Si existen IDs vinculados, usarlos para obtener el nombre canónico
+                        if (rule.linked_ids && Array.isArray(rule.linked_ids) && nomenclatureCache.length > 0) {
+                            const termA = nomenclatureCache.find(t => t.id === rule.linked_ids[0]);
+                            const termB = nomenclatureCache.find(t => t.id === rule.linked_ids[1]);
+
+                            if (termA) labelA = termA.termino;
+                            if (termB) labelB = termB.termino;
+                        }
 
                         // Part A (Modified in place)
                         const valA = row[idx];
@@ -3301,7 +3399,31 @@
             const container = document.getElementById('simulationTableContainer');
             const metaEl = document.getElementById('simMeta');
 
-            if (metaEl) metaEl.innerText = `${result.length} REGISTROS ESTRUCTURADOS`;
+            // --- METADATA RICH UI ---
+            if (metaEl) {
+                const provider = currentSuppliers.find(s => s.id === window.currentActiveProviderId);
+                const providerName = provider ? provider.nombre : "Proveedor Desconocido";
+
+                let iconType = "file";
+                if (currentBrowserContext === "Lista de Precios") iconType = "layers";
+                else if (currentBrowserContext === "Documentación General") iconType = "folder";
+
+                // Inject Rich HTML
+                metaEl.innerHTML = `
+                    <div class="flex items-center gap-2 mt-1 animate-in fade-in slide-in-from-left-2">
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase truncate max-w-[120px]">
+                            ${providerName}
+                        </span>
+                        <span class="text-[9px] text-slate-500 font-mono flex items-center gap-1">
+                            <i data-lucide="${iconType}" class="w-3 h-3"></i> ${currentBrowserContext}
+                        </span>
+                        <span class="text-[9px] text-slate-600 font-mono border-l border-slate-700 pl-2">
+                            ${result.length} REGISTROS
+                        </span>
+                    </div>
+                `;
+                // Remove the text property setting from original code (it was just "X Registros")
+            }
 
             if (container) {
                 container.innerHTML = ''; // Clear
