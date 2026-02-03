@@ -731,6 +731,11 @@ function applyProcessingRules(originalData) {
 
                 if (shouldReplace) {
                     row[colIdx] = fallback;
+                } else {
+                    // Si es un número válido pero tiene punto, lo pasamos a coma
+                    if (strVal && strVal.includes('.')) {
+                        row[colIdx] = strVal.replace(/\./g, ',');
+                    }
                 }
             }
 
@@ -1163,7 +1168,8 @@ function generatePreview() {
                                     if (new RegExp(p, 'i').test(strVal)) return fallback;
                                 } catch (e) { }
                             }
-                            return val;
+                            // Si tiene punto, visualmente mostralo con coma
+                            return val && String(val).includes('.') ? String(val).replace(/\./g, ',') : val;
                         },
                         hasSwitch: true,
                         switchState: rule.isSimActive !== false,
