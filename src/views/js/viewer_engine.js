@@ -2,10 +2,10 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v2.5 (Computed Columns Integration)
+ * v2.6 (Regex Logic Restored + Computed Columns + Preview Fix)
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v2.5 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v2.6 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 let viewerWorker = null;
@@ -708,7 +708,7 @@ function applyProcessingRules(originalData) {
             const cellVal = row[colIdx];
             const strVal = String(cellVal || "").trim();
 
-            // --- A. SANITIZE LOGIC (Fix Regex) ---
+            // --- A. SANITIZE LOGIC (REGEX FIX v2.6) ---
             if (rule.type === 'sanitize') {
                 const fallback = rule.config?.replace_with || "0,00";
                 let shouldReplace = false;
@@ -722,7 +722,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.match_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4
+                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (DOBLE ESCAPE RESTAURADO)
                         if (new RegExp(p, 'i').test(strVal)) {
                             shouldReplace = true;
                         }
@@ -734,7 +734,7 @@ function applyProcessingRules(originalData) {
                 }
             }
 
-            // --- B. FILTER LOGIC (Fix Regex) ---
+            // --- B. FILTER LOGIC (REGEX FIX v2.6) ---
             if (rule.type === 'filter' || rule.type === 'row_filter') {
                 if (rule.config?.exclude_empty && strVal === "") {
                     keepRow = false;
@@ -745,7 +745,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.exclude_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4
+                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (DOBLE ESCAPE RESTAURADO)
                         if (new RegExp(p, 'i').test(strVal)) {
                             keepRow = false;
                             break;
@@ -764,7 +764,7 @@ function applyProcessingRules(originalData) {
                 }
             }
 
-            // --- C. TRANSFORM LOGIC (Fix Regex) ---
+            // --- C. TRANSFORM LOGIC (REGEX FIX v2.6) ---
             if (keepRow && (rule.type === 'split' || rule.type === 'regex_split')) {
                 let pDesc = strVal;
                 let pPres = "";
@@ -773,7 +773,7 @@ function applyProcessingRules(originalData) {
                     try {
                         let patternStr = rule.pattern;
                         if (patternStr) {
-                            patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4
+                            patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (DOBLE ESCAPE RESTAURADO)
 
                             if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                             if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
@@ -1112,7 +1112,7 @@ function generatePreview() {
 
                     let patternStr = rule.pattern;
                     if (patternStr) {
-                        patternStr = patternStr.replace(/\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                        patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (Double backslash restored)
                         if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                         if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
                         else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
@@ -1144,7 +1144,7 @@ function generatePreview() {
                         });
                     }
                 }
-                // --- D. SANITIZE PREVIEW LOGIC ---
+                // --- D. SANITIZE PREVIEW LOGIC (REGEX FIX v2.6) ---
                 else if (rule && isSimActive && rule.type === 'sanitize') {
                     displayConfig.push({
                         label: termName,
@@ -1159,7 +1159,7 @@ function generatePreview() {
                                     let p = rule.config.match_regex;
                                     if (p.startsWith('/')) p = p.slice(1);
                                     if (p.endsWith('/')) p = p.slice(0, -1);
-                                    p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                                    p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6
                                     if (new RegExp(p, 'i').test(strVal)) return fallback;
                                 } catch (e) { }
                             }
@@ -1265,7 +1265,7 @@ function generatePreview() {
             });
         });
 
-        // 🔥 FILTRADO REAL + ANTI-DUPLICADOS
+        // 🔥 FILTRADO REAL + ANTI-DUPLICADOS (REGEX FIX v2.6)
         const seenValues = new Set();
 
         sanitizedData = sanitizedData.filter(row => {
@@ -1284,7 +1284,7 @@ function generatePreview() {
                             let p = rule.config.exclude_regex;
                             if (p.startsWith('/')) p = p.slice(1);
                             if (p.endsWith('/')) p = p.slice(0, -1);
-                            p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                            p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6
                             if (new RegExp(p, 'i').test(String(cellValue))) keepRow = false;
                         } catch (e) { console.error("Filter Regex Error", e); }
                     }
