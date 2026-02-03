@@ -896,7 +896,7 @@ function toggleSimulationRule(colIndex) {
     }
 }
 
-function generatePreview() {
+function _deprecated_generatePreview() {
     if (!currentSheetData || currentSheetData.length === 0) return;
 
     // 1. Context Injection
@@ -1100,6 +1100,274 @@ function closeViewerModal() {
     document.getElementById('viewerModal').classList.add('hidden');
 }
 
+// --- NEW PREVIEW ENGINE (VIGIA + SEARCH) ---
+// Global state for Simulation Filter
+let currentSimData = [];
+let currentDisplayConfig = [];
+
+function generatePreview() {
+    console.log("👁️ [VIGÍA] INICIO generatePreview()");
+    try {
+        if (!currentSheetData || currentSheetData.length === 0) {
+            console.warn("👁️ [VIGÍA] Abort: No hay datos en currentSheetData");
+            return;
+        }
+
+        // 1. Context Injection
+        const pName = window.globalContext.providerName || "DESCONOCIDO";
+        const fType = window.globalContext.fileType || "GENERAL";
+        const modalTitle = document.getElementById('simModalTitle');
+
+        if (modalTitle) {
+            modalTitle.innerHTML = `
+                <span class="text-slate-400 font-normal">Vista Previa de Extracción:</span> 
+                <span class="text-white font-bold ml-2">${pName}</span>
+                <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-blue-900 text-blue-300 border border-blue-800 uppercase tracking-wider">${fType}</span>
+            `;
+        }
+
+        // 2. Strict Offset Logic
+        const startRow = currentOffset ? currentOffset.row : 0;
+        const rawSlice = currentSheetData.slice(startRow);
+        console.log(`👁️ [VIGÍA] Offset Row: ${startRow}. Slice Length: ${rawSlice.length}`);
+
+        // 3. Config Extraction & Virtual Column Building
+        const displayConfig = [];
+        const sourceConfig = []; // For sanitization filter
+
+        Object.keys(columnMapping).forEach(key => {
+            const colIdx = parseInt(key);
+            const termId = columnMapping[key];
+
+            if (termId && termId !== 'Ignorar Columna') {
+                sourceConfig.push({ index: colIdx }); // Keep track for filter
+
+                // Resolve Name from Cache (ID -> Name)
+                const termObj = nomenclatureCache.find(t => t.id === termId);
+                const termName = termObj ? termObj.termino : termId;
+
+                const rule = processingRules[colIdx];
+                const isSimActive = rule ? (rule.isSimActive !== undefined ? rule.isSimActive : true) : false;
+
+                // SCENARIO A: Rule Active (Virtual Columns)
+                if (rule && isSimActive && rule.type === 'split') {
+                    console.log(`👁️ [VIGÍA] Regla SPLIT en Col ${colIdx}. Delim: "${rule.delimiter}"`);
+                    rule.fields.forEach((fieldId, subIdx) => {
+                        const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
+                        const fieldName = fieldObj ? fieldObj.termino : fieldId;
+
+                        displayConfig.push({
+                            label: fieldName,
+                            isVirtual: true,
+                            sourceIndex: colIdx,
+                            transform: (val) => {
+                                if (!val) return '';
+                                const valStr = String(val);
+                                const parts = valStr.split(rule.delimiter);
+                                return parts[subIdx] ? parts[subIdx].trim() : '';
+                            },
+                            hasSwitch: subIdx === 0,
+                            switchState: true,
+                            switchColIdx: colIdx
+                        });
+                    });
+                }
+                // SCENARIO A.2: Smart Regex Split
+                else if (rule && isSimActive && rule.type === 'regex_split') {
+                    console.log(`👁️ [VIGÍA] Regla REGEX en Col ${colIdx}. Pattern: "${rule.pattern}"`);
+                    let patternStr = rule.pattern;
+                    if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
+                    if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
+                    else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
+
+                    const regex = new RegExp(patternStr, 'i');
+
+                    rule.target_labels.forEach((label, subIdx) => {
+                        displayConfig.push({
+                            label: label,
+                            isVirtual: true,
+                            sourceIndex: colIdx,
+                            transform: (val) => {
+                                if (!val) return '';
+                                const valStr = String(val).trim();
+                                const match = valStr.match(regex);
+                                if (match) {
+                                    const fullMatch = match[0];
+                                    const presentation = fullMatch.trim();
+                                    const description = valStr.replace(fullMatch, "").trim();
+                                    return subIdx === 0 ? description : presentation;
+                                } else {
+                                    return subIdx === 0 ? valStr : "";
+                                }
+                            },
+                            hasSwitch: subIdx === 0,
+                            switchState: true,
+                            switchColIdx: colIdx
+                        });
+                    });
+                }
+                // SCENARIO B: Identity
+                else {
+                    displayConfig.push({
+                        label: termName,
+                        isVirtual: false,
+                        sourceIndex: colIdx,
+                        transform: (val) => val,
+                        hasSwitch: !!rule,
+                        switchState: false,
+                        switchColIdx: colIdx
+                    });
+                }
+            }
+        });
+
+        if (displayConfig.length === 0) {
+            console.warn("👁️ [VIGÍA] Abort: Sin columnas mapeadas.");
+            alert("Primero debes mapear al menos una columna.");
+            return;
+        }
+
+        // 4. Strict Sanitization
+        const sanitizedData = rawSlice.filter(row => {
+            return sourceConfig.some(cfg => {
+                const val = row[cfg.index];
+                return val !== undefined && val !== null && String(val).trim() !== '';
+            });
+        });
+        console.log(`👁️ [VIGÍA] Sanitization Complete. Rows Passing: ${sanitizedData.length}`);
+
+        // STORE GLOBAL STATE FOR FILTERING
+        currentSimData = sanitizedData;
+        currentDisplayConfig = displayConfig;
+
+        // 5. Render Full UI (Toolbar + Table)
+        const container = document.getElementById('simulationTableContainer');
+        if (!container) return;
+
+        // Toolbar HTML
+        let optionsHtml = '<option value="ALL">Todos los Campos</option>';
+        displayConfig.forEach((cfg, idx) => {
+            optionsHtml += `<option value="${idx}">${cfg.label}</option>`;
+        });
+
+        const toolbar = `
+            <div class="flex items-center gap-3 mb-2 p-2 bg-slate-900 border-b border-slate-700 sticky top-0 z-10">
+                <div class="relative flex-grow">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"></i>
+                    <input type="text" id="simSearchInput" placeholder="Filtrar datos..." oninput="filterSimulationData()" 
+                        class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none">
+                </div>
+                <select id="simSearchField" onchange="filterSimulationData()" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 outline-none focus:border-emerald-500 max-w-[150px]">
+                    ${optionsHtml}
+                </select>
+                <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700">
+                    <span id="simFilteredCount">${sanitizedData.length}</span> / ${sanitizedData.length}
+                </div>
+            </div>
+            <div id="simTableScrollArea" class="overflow-auto max-h-[60vh]">
+                <!-- Table injected here -->
+            </div>
+        `;
+
+        container.innerHTML = toolbar;
+        renderSimulationTable(sanitizedData); // Initial Render
+
+        document.getElementById('simulationModal').classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons({ root: container });
+
+        // Meta Update
+        document.getElementById('simMeta').innerHTML = `
+            <span class="text-slate-400">Total Filas Útiles:</span> <span class="text-white font-bold">${sanitizedData.length}</span> 
+            <span class="text-slate-600 mx-2">|</span> 
+            <span class="text-slate-400">Columnas:</span> <span class="text-white font-bold">${displayConfig.length}</span>
+        `;
+        console.log("👁️ [VIGÍA] Render Complete.");
+
+    } catch (error) {
+        console.error("🔥 [VIGÍA] CRITICAL ERROR IN PREVIEW:", error);
+        alert("Error Crítico en Previsualizador: " + error.message);
+    }
+}
+
+function filterSimulationData() {
+    const rawQuery = document.getElementById('simSearchInput').value.toLowerCase().trim();
+    const fieldIdx = document.getElementById('simSearchField').value;
+    const countEl = document.getElementById('simFilteredCount');
+
+    if (!rawQuery) {
+        renderSimulationTable(currentSimData);
+        if (countEl) countEl.innerText = currentSimData.length;
+        return;
+    }
+
+    // SPLIT QUERY INTO TERMS (Space separated)
+    const terms = rawQuery.split(/\s+/).filter(t => t.length > 0);
+
+    const filtered = currentSimData.filter(row => {
+        // ROW MUST MATCH ALL TERMS
+        return terms.every(term => {
+            // CHECK TERM AGAINST FIELD(S)
+            if (fieldIdx === "ALL") {
+                return currentDisplayConfig.some(cfg => {
+                    const val = cfg.transform(row[cfg.sourceIndex]);
+                    return String(val).toLowerCase().includes(term);
+                });
+            } else {
+                const cfg = currentDisplayConfig[parseInt(fieldIdx)];
+                if (!cfg) return false;
+                const val = cfg.transform(row[cfg.sourceIndex]);
+                return String(val).toLowerCase().includes(term);
+            }
+        });
+    });
+
+    renderSimulationTable(filtered);
+    if (countEl) countEl.innerText = filtered.length;
+}
+
+function renderSimulationTable(data) {
+    const scrollArea = document.getElementById('simTableScrollArea');
+    if (!scrollArea) return;
+
+    let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
+
+    // Header Renderer
+    currentDisplayConfig.forEach(cfg => {
+        let content = cfg.label;
+        if (cfg.hasSwitch) {
+            const checked = cfg.switchState ? 'checked' : '';
+            content = `
+                <div class="flex items-center gap-2 justify-between">
+                    <span>${cfg.label}</span>
+                    <label class="relative inline-flex items-center cursor-pointer group">
+                        <input type="checkbox" onclick="toggleSimulationRule(${cfg.switchColIdx})" ${checked} class="sr-only peer">
+                        <div class="w-7 h-3.5 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-emerald-500 hover:bg-slate-600"></div>
+                    </label>
+                </div>
+            `;
+        }
+
+        let thClass = "p-2 border border-slate-700 text-left align-middle ";
+        thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
+        html += `<th class="${thClass}">${content}</th>`;
+    });
+    html += "</tr></thead><tbody>";
+
+    // Body Renderer
+    data.forEach((row) => {
+        html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
+        currentDisplayConfig.forEach(cfg => {
+            const rawVal = row[cfg.sourceIndex];
+            const finalVal = cfg.transform(rawVal);
+            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${finalVal}</td>`;
+        });
+        html += "</tr>";
+    });
+    html += "</tbody></table>";
+
+    scrollArea.innerHTML = html;
+}
+
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
 // IMPORTANTISIMO: Esto debe estar al final, fuera de cualquier función
 window.openFileViewer = openFileViewer;
@@ -1114,5 +1382,6 @@ window.toggleSimulationMode = toggleSimulationMode;
 window.closeSimulationModal = closeSimulationModal;
 window.toggleProcessingRule = toggleProcessingRule;
 window.toggleSimulationRule = toggleSimulationRule; // EXPOSED
+window.filterSimulationData = filterSimulationData; // EXPOSED
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
