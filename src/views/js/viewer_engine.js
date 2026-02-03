@@ -2,10 +2,10 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v1.5 (Cleaned & Patched)
+ * v1.8 (Dynamic Headers & Anti-Dupe Fixed)
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v1.5 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v1.8 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 let viewerWorker = null;
@@ -674,6 +674,8 @@ function applyProcessingRules(originalData) {
     if (activeRules.length === 0) return originalData;
 
     const processedData = [];
+    // 🔥 SET PARA DEDUPLICAR (Memoria de Elefante)
+    const seenValues = new Set();
 
     for (let i = 0; i < originalData.length; i++) {
         let row = [...originalData[i]];
@@ -701,6 +703,16 @@ function applyProcessingRules(originalData) {
                             break;
                         }
                     } catch (e) { }
+                }
+                // LOGICA DE DEDUPLICACION (MODO UNICO)
+                if (rule.config?.unique) {
+                    const uniqueKey = strVal.toUpperCase();
+                    if (seenValues.has(uniqueKey)) {
+                        keepRow = false;
+                        break;
+                    } else {
+                        seenValues.add(uniqueKey);
+                    }
                 }
             }
 
@@ -805,9 +817,10 @@ function renderVirtualTable(originalData) {
         let toggleHtml = '';
         const hasRule = processingRules[j];
         if (mappingMode && hasRule) {
+            const isOff = hasRule.disabled;
             toggleHtml = `
-                 <button onclick="event.stopPropagation(); toggleProcessingRule(${j})" class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold ${hasRule.disabled ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'} hover:opacity-80 transition-all border border-transparent hover:border-white/20">
-                    ${hasRule.disabled ? 'OFF' : 'ON'}
+                 <button onclick="event.stopPropagation(); toggleProcessingRule(${j})" class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold ${isOff ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'} hover:opacity-80 transition-all border border-transparent hover:border-white/20">
+                    ${isOff ? 'OFF' : 'ON'}
                  </button>`;
         }
 
@@ -1020,6 +1033,19 @@ function generatePreview() {
                     });
                 }
                 else if (rule && isSimActive && rule.type === 'regex_split') {
+                    // 🔥 HEADERS DINÁMICOS (FIX DE LA VERSIÓN 1.7)
+                    // En lugar de leer solo 'target_labels' (estático), intentamos resolver los nombres reales usando 'fields'
+                    const targets = [];
+                    if (rule.fields && rule.fields.length > 0) {
+                        rule.fields.forEach(fid => {
+                            const t = nomenclatureCache.find(x => x.id === fid);
+                            targets.push(t ? t.termino : "Campo Dinámico");
+                        });
+                    }
+                    if (targets.length === 0 && rule.target_labels) {
+                        targets.push(...rule.target_labels);
+                    }
+
                     let patternStr = rule.pattern;
                     if (patternStr) {
                         patternStr = patternStr.replace(/\\\\/g, '\\');
@@ -1028,7 +1054,9 @@ function generatePreview() {
                         else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
 
                         const regex = new RegExp(patternStr, 'i');
-                        rule.target_labels.forEach((label, subIdx) => {
+
+                        // Usamos targets dinámicos en lugar de los estáticos
+                        targets.forEach((label, subIdx) => {
                             displayConfig.push({
                                 label: label,
                                 isVirtual: true,
@@ -1079,7 +1107,9 @@ function generatePreview() {
             });
         });
 
-        // 🔥 FILTRADO REAL (Row Filter)
+        // 🔥 FILTRADO REAL + ANTI-DUPLICADOS (El Anti-Tarados)
+        const seenValues = new Set(); // Memoria de Elefante
+
         sanitizedData = sanitizedData.filter(row => {
             let keepRow = true;
             Object.keys(columnMapping).forEach(key => {
@@ -1088,9 +1118,11 @@ function generatePreview() {
 
                 if (rule && (rule.type === 'filter' || rule.type === 'row_filter') && rule.isSimActive !== false) {
                     const cellValue = row[colIdx];
+                    // 1. Vacíos
                     if (rule.config?.exclude_empty) {
                         if (!cellValue || String(cellValue).trim() === '') keepRow = false;
                     }
+                    // 2. Regex (Rubros)
                     if (keepRow && rule.config?.exclude_regex) {
                         try {
                             let p = rule.config.exclude_regex;
@@ -1099,6 +1131,15 @@ function generatePreview() {
                             p = p.replace(/\\\\/g, '\\');
                             if (new RegExp(p, 'i').test(String(cellValue))) keepRow = false;
                         } catch (e) { console.error("Filter Regex Error", e); }
+                    }
+                    // 3. Duplicados (Unique)
+                    if (keepRow && rule.config?.unique) {
+                        const uniqueKey = String(cellValue || "").toUpperCase().trim();
+                        if (seenValues.has(uniqueKey)) {
+                            keepRow = false; // ¡Ya te vi antes! Chau.
+                        } else {
+                            seenValues.add(uniqueKey); // Agendado.
+                        }
                     }
                 }
             });
