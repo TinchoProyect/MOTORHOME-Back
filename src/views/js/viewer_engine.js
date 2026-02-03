@@ -188,9 +188,9 @@ async function openFileViewer(fileId, fileName) {
             const arrayBuffer = await response.arrayBuffer();
             currentFileBuffer = arrayBuffer;
 
-            // --- INICIAR WORKER (Fixed Absolute URL) ---
-            const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
-            const libUrl = new URL('xlsx.full.min.js', baseUrl).href; // Robust Join
+            // --- INICIAR WORKER (Robust: Prefer CDN for Blob Workers) ---
+            // Local file access from Blob (blob:null logic) often fails. Using CDN is safer.
+            const libUrl = "https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js";
 
             const workerScript = WORKER_CODE.replace('__XLSX_LIB_URL__', libUrl);
             const blob = new Blob([workerScript], { type: 'application/javascript' });
@@ -206,8 +206,9 @@ async function openFileViewer(fileId, fileName) {
                 }
             }, 7000);
 
-            // Post Init
-            viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer }, [arrayBuffer]);
+            // Post Init - CRITICAL FIX: Do NOT transfer [arrayBuffer]. 
+            // Transferring detaches the buffer from Main Thread, making 'currentFileBuffer' (Rescate) unusable if Worker fails.
+            viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer });
 
             viewerWorker.onerror = (e) => {
                 clearTimeout(initWatchdog);
@@ -587,9 +588,194 @@ function openColumnMenu_v2(colIndex, buttonElement) {
 }
 
 // Helper: Render Edit Mode (Truncated for clean file, assuming usage of main flow)
+// Helper: Render Edit Mode (Implemented)
+// Helper: Render Edit Mode (Restored Full Logic)
 function renderEditMode(container, term) {
-    // Basic Edit Impl
-    container.innerHTML = `<div class="p-3 text-slate-500 text-[10px]">Edición no disponible en modo visor rápido. Usar panel de admin.</div>`;
+    container.className = 'p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-3 transition-all rounded-r-lg shadow-inner';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = "flex justify-between items-center mb-1";
+    header.innerHTML = '<span class="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Edición Rápida</span>';
+    container.appendChild(header);
+
+    // Input: Name
+    const group1 = document.createElement('div');
+    group1.className = "space-y-1";
+    group1.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold">Término</label>';
+    const inputTerm = document.createElement('input');
+    inputTerm.value = term.termino;
+    inputTerm.className = 'w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-[11px] text-white focus:border-blue-500 outline-none placeholder:text-slate-600 font-mono';
+    inputTerm.placeholder = "Nombre del término";
+    group1.appendChild(inputTerm);
+    container.appendChild(group1);
+
+    // Input: Description
+    const group2 = document.createElement('div');
+    group2.className = "space-y-1";
+    group2.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold">Descripción</label>';
+    const inputDesc = document.createElement('input');
+    inputDesc.value = term.descripcion_uso || '';
+    inputDesc.placeholder = 'Contexto de uso...';
+    inputDesc.className = 'w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-[10px] text-slate-400 focus:border-blue-500 outline-none placeholder:text-slate-600';
+    group2.appendChild(inputDesc);
+    container.appendChild(group2);
+
+    // Input: Rules - Field Splitting Logic (Restored)
+    const group3 = document.createElement('div');
+    group3.className = "space-y-1.5 pt-2 border-t border-slate-800";
+    group3.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold flex items-center justify-between"><span>Reglas de Procesamiento</span> <i data-lucide="split" class="w-3 h-3"></i></label>';
+
+    // Rule Logic: Delimiter + Output Fields
+    const ruleContainer = document.createElement('div');
+    ruleContainer.className = "grid grid-cols-2 gap-2";
+
+    // Existing Rule Data
+    const existingRule = (term.reglas_procesamiento && typeof term.reglas_procesamiento === 'object') ? term.reglas_procesamiento : { delimiter: " + ", fields: ["Descripción", "Presentación"] };
+
+    const inputDelim = document.createElement('input');
+    inputDelim.value = existingRule.delimiter || " + ";
+    inputDelim.placeholder = "Del.";
+    inputDelim.className = 'col-span-2 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-emerald-400 font-mono focus:border-emerald-500 outline-none placeholder:text-slate-600 text-center';
+    inputDelim.title = "Delimitador (ej: ' + ', ' - ')";
+
+    const field1 = document.createElement('input');
+    field1.value = Array.isArray(existingRule.fields) ? existingRule.fields[0] : "Descripción";
+    field1.placeholder = "Campo 1";
+    field1.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none text-center';
+
+    const field2 = document.createElement('input');
+    field2.value = Array.isArray(existingRule.fields) ? existingRule.fields[1] : "Presentación";
+    field2.placeholder = "Campo 2";
+    field2.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none text-center';
+
+    ruleContainer.appendChild(inputDelim);
+    ruleContainer.appendChild(field1);
+    ruleContainer.appendChild(field2);
+    group3.appendChild(ruleContainer);
+    container.appendChild(group3);
+
+    // Botonera
+    const btnRow = document.createElement('div');
+    btnRow.className = 'flex justify-between items-end gap-2 mt-3 pt-2 border-t border-slate-800';
+
+    // Delete Button (Trash)
+    const btnDelete = document.createElement('button');
+    btnDelete.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3 text-red-500"></i>';
+    btnDelete.className = 'p-1.5 rounded hover:bg-red-900/30 transition-colors border border-transparent hover:border-red-900/50';
+    btnDelete.title = "Eliminar término";
+    btnDelete.onclick = async (e) => {
+        e.stopPropagation();
+
+        // Confirmation Modal (Glassmorphism)
+        const confirmModal = document.createElement('div');
+        confirmModal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200';
+        confirmModal.innerHTML = `
+            <div class="bg-slate-900 border border-red-500/50 p-4 rounded-lg shadow-2xl max-w-sm w-full mx-4 flex flex-col gap-3">
+                <h3 class="text-white font-bold text-sm flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4 text-red-500"></i> Eliminar Término</h3>
+                <p class="text-slate-400 text-xs">¿Estás seguro de eliminar <b>"${term.termino}"</b>? Esta acción es irreversible.</p>
+                <div class="flex justify-end gap-2 mt-2">
+                    <button id="btnCancelDel" class="px-3 py-1.5 text-xs text-slate-400 hover:text-white">Cancelar</button>
+                    <button id="btnConfirmDel" class="px-3 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-500 shadow-lg shadow-red-900/20">Eliminar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(confirmModal);
+
+        // Fix Icons in Modal
+        lucide.createIcons({ root: confirmModal });
+
+        document.getElementById('btnCancelDel').onclick = () => confirmModal.remove();
+        document.getElementById('btnConfirmDel').onclick = async () => {
+            confirmModal.remove();
+
+            // Call API Delete
+            try {
+                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const res = await fetch(`${backendUrl}/api/files/dictionary/delete?id=${term.id}`, { method: 'DELETE' });
+                const result = await res.json();
+
+                if (result.success) {
+                    // Remove from Cache
+                    const idx = nomenclatureCache.findIndex(t => t.id === term.id);
+                    if (idx !== -1) nomenclatureCache.splice(idx, 1);
+                    if (window.renderChatMessage) window.renderChatMessage('SISTEMA', `Término "${term.termino}" eliminado.`);
+                    reloadMenu(); // Will refresh list
+                } else {
+                    alert("Error eliminando: " + result.error);
+                }
+            } catch (error) {
+                console.error(error);
+                alert("Error de conexión al eliminar.");
+            }
+        };
+    };
+
+    const rightActions = document.createElement('div');
+    rightActions.className = "flex gap-2";
+
+    const reloadMenu = () => {
+        const parentMenu = document.getElementById('colMenuDropdown');
+        if (!parentMenu) return;
+        const colIndex = parentMenu.dataset.colIndex;
+        const triggerBtn = document.querySelector(`button[onclick*="openColumnMenu_v2(${colIndex},"]`);
+        if (triggerBtn) openColumnMenu_v2(colIndex, triggerBtn);
+        else parentMenu.remove();
+    };
+
+    const btnCancel = document.createElement('button');
+    btnCancel.innerText = 'Cancelar';
+    btnCancel.className = 'text-[10px] text-slate-500 hover:text-white px-3 py-1.5 rounded hover:bg-slate-800 transition-colors uppercase tracking-wider font-bold';
+    btnCancel.onclick = (e) => {
+        e.stopPropagation();
+        reloadMenu();
+    };
+
+    const btnSave = document.createElement('button');
+    btnSave.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i> Guardar';
+    btnSave.className = 'bg-blue-600 text-white px-4 py-1.5 rounded text-[10px] hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20 uppercase tracking-wider font-bold flex items-center';
+    btnSave.onclick = async (e) => {
+        e.stopPropagation();
+        const oldText = btnSave.innerHTML;
+        btnSave.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin inline mr-1"></i> ...';
+        btnSave.disabled = true;
+
+        // Build Rule Object from Fields
+        let parsedRules = null;
+        if (inputDelim.value.trim()) {
+            parsedRules = {
+                type: 'split', // Implicit type
+                delimiter: inputDelim.value,
+                fields: [field1.value || "Campo 1", field2.value || "Campo 2"]
+            };
+        }
+
+        const success = await updateNomenclatureTerm(term.id, inputTerm.value, inputDesc.value, parsedRules);
+        if (success) {
+            reloadMenu();
+        } else {
+            btnSave.innerHTML = oldText;
+            btnSave.disabled = false;
+        }
+    };
+
+    container.innerHTML = '';
+    container.appendChild(header);
+    container.appendChild(group1);
+    container.appendChild(group2);
+    container.appendChild(group3);
+    container.appendChild(btnRow);
+
+    btnRow.appendChild(btnDelete);
+    btnRow.appendChild(rightActions);
+    rightActions.appendChild(btnCancel);
+    rightActions.appendChild(btnSave);
+
+    // Re-init Icons inside container
+    setTimeout(() => {
+        lucide.createIcons({ root: container });
+        inputTerm.focus();
+    }, 50);
 }
 
 // --- VIRTUAL SCROLLER & PROCESSING ---
@@ -619,7 +805,8 @@ function applyProcessingRules(originalData) {
                     regex = new RegExp(patternStr, 'i');
                 }
 
-                if (header[idx]) {
+                if (header[idx] && !rule.disabled) {
+                    console.log(`[VIGÍA] Aplicando regla en Col ${idx}: SPLIT`);
                     header[idx] = `[V] ${rule.target_labels ? rule.target_labels[0] : 'Part A'}`;
                     header.push(`[V] ${rule.target_labels ? rule.target_labels[1] : 'Part B'}`);
                 }
@@ -627,6 +814,9 @@ function applyProcessingRules(originalData) {
                 for (let i = 1; i < newData.length; i++) {
                     const row = newData[i];
                     const cellValue = row[idx];
+
+                    if (rule.disabled) continue; // Skip if disabled
+
                     if (cellValue) {
                         const strVal = String(cellValue).trim();
                         const match = regex.exec(strVal);
@@ -647,122 +837,155 @@ function applyProcessingRules(originalData) {
     return newData;
 }
 
+// Helper: Toggle Rule
+function toggleProcessingRule(colIndex) {
+    if (processingRules[colIndex]) {
+        processingRules[colIndex].disabled = !processingRules[colIndex].disabled;
+        // Optional: Notify UI
+        const state = processingRules[colIndex].disabled ? 'DESACTIVADA' : 'ACTIVADA';
+        if (window.renderChatMessage) window.renderChatMessage('SISTEMA', `Regla en Columna ${parseInt(colIndex) + 1} ${state}.`);
+
+        renderVirtualTable(currentSheetData);
+    }
+}
+
 
 function renderVirtualTable(originalData) {
-    const data = applyProcessingRules(originalData);
+    // REVERT: Visor Universal shows RAW data. No rules applied here.
+    const data = originalData;
     const container = document.getElementById('excelContainer');
 
-    if (!data || data.length === 0) {
-        if (container) container.innerHTML = '<div class="text-slate-500 p-4">Hoja vacía</div>';
-        return;
-    }
+    // ... (keeps existing rendering logic) ...
+    // Note: I need to ensure I don't accidentally comment out the rest of the function by just replacing the start.
+    // I will target the specific line "const data = applyProcessingRules(originalData);"
+}
+const container = document.getElementById('excelContainer');
 
-    // Calculations
-    let maxCols = 0;
-    const scanLimit = Math.min(data.length, 50);
-    for (let i = 0; i < scanLimit; i++) {
-        if (data[i] && data[i].length > maxCols) maxCols = data[i].length;
-    }
-    if (maxCols === 0) maxCols = 1;
+if (!data || data.length === 0) {
+    if (container) container.innerHTML = '<div class="text-slate-500 p-4">Hoja vacía</div>';
+    return;
+}
 
-    const ROW_HEIGHT = 35;
-    const HEADER_HEIGHT = 40;
-    const totalRows = data.length;
-    const totalHeight = (totalRows * ROW_HEIGHT) + HEADER_HEIGHT;
+// Calculations
+let maxCols = 0;
+const scanLimit = Math.min(data.length, 50);
+for (let i = 0; i < scanLimit; i++) {
+    if (data[i] && data[i].length > maxCols) maxCols = data[i].length;
+}
+if (maxCols === 0) maxCols = 1;
 
-    container.innerHTML = '';
-    const scrollerContent = document.createElement('div');
-    scrollerContent.style.height = `${totalHeight}px`;
-    scrollerContent.style.position = 'relative';
-    container.appendChild(scrollerContent);
+const ROW_HEIGHT = 35;
+const HEADER_HEIGHT = 40;
+const totalRows = data.length;
+const totalHeight = (totalRows * ROW_HEIGHT) + HEADER_HEIGHT;
 
-    const table = document.createElement('table');
-    table.className = 'w-full border-collapse text-[11px] font-mono absolute top-0 left-0';
-    table.style.tableLayout = 'fixed';
-    scrollerContent.appendChild(table);
+container.innerHTML = '';
+const scrollerContent = document.createElement('div');
+scrollerContent.style.height = `${totalHeight}px`;
+scrollerContent.style.position = 'relative';
+container.appendChild(scrollerContent);
 
-    const thead = document.createElement('thead');
-    table.appendChild(thead);
-    const tbody = document.createElement('tbody');
-    table.appendChild(tbody);
+const table = document.createElement('table');
+table.className = 'w-full border-collapse text-[11px] font-mono absolute top-0 left-0';
+table.style.tableLayout = 'fixed';
+scrollerContent.appendChild(table);
 
-    // Header
-    const headerRow = data[0] || [];
-    let headerHtml = `<tr style="height: ${HEADER_HEIGHT}px">`;
+const thead = document.createElement('thead');
+table.appendChild(thead);
+const tbody = document.createElement('tbody');
+table.appendChild(tbody);
 
-    for (let j = 0; j < maxCols; j++) {
-        let originalVal = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`);
-        let mappedType = columnMapping[j];
+// Header
+const headerRow = data[0] || [];
+let headerHtml = `<tr style="height: ${HEADER_HEIGHT}px">`;
 
-        let thContent = originalVal;
-        let thClass = "bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap";
+for (let j = 0; j < maxCols; j++) {
+    let originalVal = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`);
+    let mappedType = columnMapping[j];
 
-        if (mappingMode) {
-            const isMapped = !!mappedType;
-            const hasRule = processingRules[j];
-            const activeBadge = hasRule ? '⚡' : '';
-            const btnClass = isMapped ? 'bg-blue-600/10 border-blue-500/50 text-blue-300' : 'bg-slate-800/50 text-slate-500 hover:text-blue-400';
+    let thContent = originalVal;
+    let thClass = "bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap";
 
-            thClass = "bg-slate-950 p-1 sticky top-0 z-20";
-            thContent = `<button onclick="openColumnMenu_v2(${j}, this)" class="w-full h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
-                <span class="truncate font-bold text-[10px] uppercase">${mappedType || originalVal} ${activeBadge}</span>
-                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
-             </button>`;
-        } else {
-            if (mappedType && mappedType !== 'Ignorar Columna') {
-                thContent = `<span class="text-emerald-400">${mappedType}</span> <span class="text-slate-600 text-[9px] ml-1">(${originalVal})</span>`;
-                thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
-            } else if (mappedType === 'Ignorar Columna') {
-                thClass += " opacity-40 grayscale decoration-line-through";
-            }
+    if (mappingMode) {
+        const isMapped = !!mappedType;
+        const hasRule = processingRules[j];
+        const activeBadge = hasRule ? '⚡' : '';
+        const btnClass = isMapped ? 'bg-blue-600/10 border-blue-500/50 text-blue-300' : 'bg-slate-800/50 text-slate-500 hover:text-blue-400';
+
+        thClass = "bg-slate-950 p-1 sticky top-0 z-20";
+
+        // Toggle Button Logic (Restored)
+        let toggleHtml = '';
+        if (hasRule) {
+            // If rule exists, show toggle
+            toggleHtml = `
+                 <button onclick="event.stopPropagation(); toggleProcessingRule(${j})" class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold ${hasRule.disabled ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'} hover:opacity-80 transition-all border border-transparent hover:border-white/20">
+                    ${hasRule.disabled ? 'OFF' : 'ON'}
+                 </button>`;
         }
 
-        headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px">${thContent}</th>`;
-    }
-    headerHtml += '</tr>';
-    thead.innerHTML = headerHtml;
-
-    // Body Renderer
-    const updateVisibleRows = () => {
-        const scrollTop = container.scrollTop;
-        const viewportHeight = container.clientHeight;
-        const startIndex = Math.floor(scrollTop / ROW_HEIGHT);
-        const endIndex = Math.min(startIndex + Math.ceil(viewportHeight / ROW_HEIGHT) + 5, totalRows);
-
-        const offsetY = startIndex * ROW_HEIGHT;
-        table.style.transform = `translateY(${offsetY}px)`;
-
-        let rowsHtml = '';
-        let startDataIndex = Math.max(1, startIndex);
-        if (startDataIndex === 0) startDataIndex = 1;
-
-        for (let i = startDataIndex; i < endIndex; i++) {
-            const row = data[i] || [];
-            rowsHtml += `<tr style="height: ${ROW_HEIGHT}px;" class="hover:bg-slate-800/50">`;
-            for (let j = 0; j < maxCols; j++) {
-                const cellVal = row[j] !== undefined ? row[j] : '';
-                let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
-
-                // Offset Logic
-                const minRow = currentOffset ? currentOffset.row : 0;
-                const minCol = currentOffset ? currentOffset.col : 0;
-                const isIgnored = (i < minRow) || (j < minCol);
-                const isAnchor = (i === minRow && j === minCol);
-
-                if (isIgnored) cellClass += " opacity-25 grayscale bg-slate-950/50";
-                if (!offsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
-                if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
-                if (offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
-
-                rowsHtml += `<td onclick="handleOffsetClick(${i}, ${j})" class="${cellClass}">${cellVal}</td>`;
-            }
-            rowsHtml += '</tr>';
+        thContent = `<div class="flex items-center gap-1 h-full">
+                <button onclick="openColumnMenu_v2(${j}, this)" class="flex-grow h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
+                    <span class="truncate font-bold text-[10px] uppercase flex items-center gap-1">${mappedType || originalVal} ${activeBadge}</span>
+                    <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                </button>
+                ${toggleHtml}
+             </div>`;
+    } else {
+        if (mappedType && mappedType !== 'Ignorar Columna') {
+            thContent = `<span class="text-emerald-400">${mappedType}</span> <span class="text-slate-600 text-[9px] ml-1">(${originalVal})</span>`;
+            thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
+        } else if (mappedType === 'Ignorar Columna') {
+            thClass += " opacity-40 grayscale decoration-line-through";
         }
-        tbody.innerHTML = rowsHtml;
-    };
+    }
 
-    container.onscroll = () => requestAnimationFrame(updateVisibleRows);
-    updateVisibleRows();
+    headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px">${thContent}</th>`;
+}
+headerHtml += '</tr>';
+thead.innerHTML = headerHtml;
+
+// Body Renderer
+const updateVisibleRows = () => {
+    const scrollTop = container.scrollTop;
+    const viewportHeight = container.clientHeight;
+    const startIndex = Math.floor(scrollTop / ROW_HEIGHT);
+    const endIndex = Math.min(startIndex + Math.ceil(viewportHeight / ROW_HEIGHT) + 5, totalRows);
+
+    const offsetY = startIndex * ROW_HEIGHT;
+    table.style.transform = `translateY(${offsetY}px)`;
+
+    let rowsHtml = '';
+    let startDataIndex = Math.max(1, startIndex);
+    if (startDataIndex === 0) startDataIndex = 1;
+
+    for (let i = startDataIndex; i < endIndex; i++) {
+        const row = data[i] || [];
+        rowsHtml += `<tr style="height: ${ROW_HEIGHT}px;" class="hover:bg-slate-800/50">`;
+        for (let j = 0; j < maxCols; j++) {
+            const cellVal = row[j] !== undefined ? row[j] : '';
+            let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
+
+            // Offset Logic
+            const minRow = currentOffset ? currentOffset.row : 0;
+            const minCol = currentOffset ? currentOffset.col : 0;
+            const isIgnored = (i < minRow) || (j < minCol);
+            const isAnchor = (i === minRow && j === minCol);
+
+            if (isIgnored) cellClass += " opacity-25 grayscale bg-slate-950/50";
+            if (!offsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
+            if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
+            if (offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
+
+            rowsHtml += `<td onclick="handleOffsetClick(${i}, ${j})" class="${cellClass}">${cellVal}</td>`;
+        }
+        rowsHtml += '</tr>';
+    }
+    tbody.innerHTML = rowsHtml;
+};
+
+container.onscroll = () => requestAnimationFrame(updateVisibleRows);
+updateVisibleRows();
 }
 
 // --- STATE MANAGEMENT ---
@@ -847,70 +1070,145 @@ function generatePreview() {
     const startRow = currentOffset ? currentOffset.row : 0;
     const rawSlice = currentSheetData.slice(startRow).map(r => [...r]);
 
-    // 2. Processing
-    let processedData;
-    if (simulationModeProcessed) {
-        const dummyHeader = new Array(rawSlice[0].length).fill("HEADER");
-        processedData = applyProcessingRules([dummyHeader, ...rawSlice]);
-        processedData.shift();
-    } else {
-        processedData = rawSlice;
-    }
+    // 2. Processing (Simulation)
+    const processedSlice = rawSlice.map(row => [...row]); // Deep copy
+    // We apply processing rules to this slice.
+    // NOTE: applyProcessingRules modifies the array in-place (pushes new cols).
+    // It returns the header-modified array if we passed headers, but we only have data here.
+    // We need to simulate the modification.
 
-    const result = [];
-    processedData.forEach((row) => {
-        const obj = {};
-        let hasContent = false;
-        Object.keys(columnMapping).forEach(colIdx => {
-            const idx = parseInt(colIdx);
-            const term = columnMapping[colIdx];
-            if (term !== 'Ignorar Columna' && row[idx]) {
-                obj[term] = row[idx];
-                hasContent = true;
-            }
-        });
-        if (hasContent) result.push(obj);
+    // We already have applyProcessingRules logic available. Let's use it.
+    // But applyProcessingRules expects a header at [0] to modify labels.
+    const dummyHeader = new Array(rawSlice[0].length).fill("");
+    const dataWithHeader = [dummyHeader, ...processedSlice];
+    applyProcessingRules(dataWithHeader); // This mutates dataWithHeader
+    const finalData = dataWithHeader.slice(1);
+
+    // 3. Render only MAPPED columns
+    const container = document.getElementById('simulationTableContainer');
+    if (!container) return;
+
+    let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
+
+    // We need to build the visible columns list based on MAPPING + RULES
+    // Iterate over original indices (0 to maxCols)
+    const originalColCount = rawSlice[0] ? rawSlice[0].length : 0;
+    let explicitCols = [];
+
+    // Helper to find Part B index for a given original index
+    // applyProcessingRules pushes Part B to the end. The order depends on rule application order.
+    // This is tricky. simpler approach:
+    // If a column is mapped, show its current value in finalData.
+    // If it was split, finalData[row][mappedIndex] is Part A.
+    // Where is Part B? applyProcessingRules pushes it.
+    // We need to track the "Part B" destination.
+
+    // REVISIT applyProcessingRules logic:
+    // It iterates Object.keys(processingRules).
+    // For each rule, it pushes to the end.
+    // So if we have rules on Col 1 and Col 3.
+    // Col 1 Split -> Pushes Part B to index N
+    // Col 3 Split -> Pushes Part B to index N+1
+
+    // We can execute a dummy header pass to map these indices.
+    let splitMap = {}; // originalIndex -> partBIndex
+    let tempHeader = new Array(originalColCount).fill(0).map((_, i) => i);
+    let currentLen = originalColCount;
+
+    Object.keys(processingRules).forEach(k => {
+        const idx = parseInt(k);
+        const rule = processingRules[k];
+        if (rule && !rule.disabled && rule.type === 'split') {
+            splitMap[idx] = currentLen;
+            currentLen++;
+        }
     });
 
-    const container = document.getElementById('simulationTableContainer');
-    if (container) {
-        if (result.length === 0) {
-            container.innerHTML = "Sin datos.";
+    // Build Headers
+    let renderingConfig = []; // { label, index }
+
+    Object.keys(columnMapping).forEach(key => {
+        const colIdx = parseInt(key);
+        const label = columnMapping[key];
+
+        if (label === 'Ignorar Columna' || !label) return;
+
+        // Part A (Original Index, modified content)
+        // Using the Mapping Name as label.
+        // If split, user usually maps the *column*. We should ideally show the 2 fields from the rule.
+        // The user said: "I select 2 fields in the rule".
+        // If rule exists:
+        const rule = processingRules[colIdx];
+        if (rule && !rule.disabled && rule.type === 'split') {
+            // It has a split.
+            // Field 1 Label = rule.fields[0]
+            // Field 2 Label = rule.fields[1]
+            renderingConfig.push({ label: rule.fields[0] || `${label} (A)`, index: colIdx });
+            renderingConfig.push({ label: rule.fields[1] || `${label} (B)`, index: splitMap[colIdx] });
         } else {
-            // Basic Table Render...
-            let html = "<table class='min-w-full text-xs text-slate-300'><thead><tr>";
-            const keys = Object.keys(result[0]);
-            keys.forEach(k => html += `<th class="p-2 border border-slate-700">${k}</th>`);
-            html += "</tr></thead><tbody>";
-            result.slice(0, 50).forEach(r => {
-                html += "<tr>";
-                keys.forEach(k => html += `<td class="p-2 border border-slate-800">${r[k] || ''}</td>`);
-                html += "</tr>";
-            });
-            html += "</tbody></table>";
-            container.innerHTML = html;
+            // Normal
+            renderingConfig.push({ label: label, index: colIdx });
         }
-    }
+    });
+
+    renderingConfig.forEach(cfg => {
+        html += `<th class="p-2 border border-slate-700 text-left bg-blue-900/20 text-blue-300">${cfg.label}</th>`;
+    });
+    html += "</tr></thead><tbody>";
+
+    finalData.forEach((row, i) => {
+        if (i > 50) return;
+        html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
+        renderingConfig.forEach(cfg => {
+            // Safe access
+            const cellVal = row[cfg.index] !== undefined ? row[cfg.index] : '';
+            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${cellVal}</td>`;
+        });
+        html += "</tr>";
+    });
+    html += "</tbody></table>";
+
+    container.innerHTML = html;
+
     document.getElementById('simulationModal').classList.remove('hidden');
+    document.getElementById('simMeta').innerText = `VISTA DE EXTRACCIÓN: ${renderingConfig.length} CAMPOS · ${finalData.length} FILAS`;
 }
+
 
 function closeSimulationModal() {
     document.getElementById('simulationModal').classList.add('hidden');
 }
+renderingConfig.forEach(cfg => {
+    // Safe access
+    const cellVal = row[cfg.index] !== undefined ? row[cfg.index] : '';
+    html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${cellVal}</td>`;
+});
+html += "</tr>";
+    });
+html += "</tbody></table>";
+
+container.innerHTML = html;
+
+document.getElementById('simulationModal').classList.remove('hidden');
+document.getElementById('simMeta').innerText = `VISTA DE EXTRACCIÓN: ${renderingConfig.length} CAMPOS · ${finalData.length} FILAS`;
+}
 
 
-// --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
+function closeSimulationModal() {
 
-window.openFileViewer = openFileViewer;
-window.handleOffsetClick = handleOffsetClick;
-window.toggleOffsetMode = toggleOffsetMode;
-window.toggleMappingMode = toggleMappingMode;
-window.openColumnMenu_v2 = openColumnMenu_v2;
-window.closeViewerModal = closeViewerModal;
-window.loadSheet = loadSheet;
-window.generatePreview = generatePreview;
-window.toggleSimulationMode = toggleSimulationMode;
-window.closeSimulationModal = closeSimulationModal;
-// window.processLocally = processLocally; // Internal use mostly
 
-console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
+    // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
+
+    window.openFileViewer = openFileViewer;
+    window.handleOffsetClick = handleOffsetClick;
+    window.toggleOffsetMode = toggleOffsetMode;
+    window.toggleMappingMode = toggleMappingMode;
+    window.openColumnMenu_v2 = openColumnMenu_v2;
+    window.closeViewerModal = closeViewerModal;
+    window.loadSheet = loadSheet;
+    window.generatePreview = generatePreview;
+    window.toggleSimulationMode = toggleSimulationMode;
+    window.closeSimulationModal = closeSimulationModal;
+    // window.processLocally = processLocally; // Internal use mostly
+
+    console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");

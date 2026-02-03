@@ -113,3 +113,33 @@ Si obtiene el error `Insufficient permissions for the specified parent` al crear
 Se creó `scripts/migrate_folders.js` para retro-activar proveedores antiguos.
 *   **Uso:** `node scripts/migrate_folders.js`
 *   **Función:** Detecta proveedores sin subcarpetas (Precios/Extraídas) y las crea automáticamente bajo la misma raíz existente.
+
+---
+
+## 6. Incidente Crítico: Bloqueo de Worker y Buffer Desconectado (03 Feb 2026)
+
+### El Problema
+Al refactorizar el motor de visualización de Excel (`viewer_engine.js`), el sistema se colgaba y arrojaba dos errores fatales:
+1.  `Uncaught NetworkError: Failed to execute 'importScripts'`: El navegador bloqueaba la carga de la librería `xlsx.full.min.js` desde una ruta local dentro del Blob Worker.
+2.  `TypeError: Cannot perform Construct on a detached ArrayBuffer`: Al fallar el Worker, el modo de rescate fallaba porque el buffer del archivo había sido "transferido" (vaciado) al Worker muerto.
+
+### Diagnóstico Técnico
+*   **Seguridad de Blob Workers:** Los Workers creados dinámicamente (`URL.createObjectURL(blob)`) tienen restricciones severas para cargar scripts locales (`file://` o rutas relativas complejas).
+*   **Transferencia de Memoria:** Al usar `postMessage(..., [buffer])`, el hilo principal pierde el acceso al archivo. Si el Worker muere, el archivo se pierde y no hay posibilidad de recuperación (fallback).
+
+### Solución Protocolar (Implementada en `viewer_engine.js`)
+1.  **Carga remota (CDN):** Usar siempre una URL absoluta de CDN confiable para las dependencias dentro de un Blob Worker dinámico.
+    ```javascript
+    // ✅ CORRECTO
+    const libUrl = "https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js";
+    // ❌ EVITAR en Blob Workers
+    // const libUrl = "./js/xlsx.full.min.js";
+    ```
+2.  **Clonado de Buffer:** **NUNCA** transferir la propiedad del ArrayBuffer si existe una posibilidad de fallo y necesidad de fallback local.
+    ```javascript
+    // ✅ CORRECTO (Clona, mantiene original en Main Thread)
+    viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer });
+    
+    // ❌ EVITAR (Transfiere y vacía el original)
+    // viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer }, [arrayBuffer]);
+    ```
