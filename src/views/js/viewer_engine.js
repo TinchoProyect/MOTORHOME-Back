@@ -936,6 +936,8 @@ function generatePreview() {
 
             // SCENARIO A: Rule Active (Virtual Columns)
             if (rule && isSimActive && rule.type === 'split') {
+                console.log(`[Preview] Aplicando Regla Split en Col ${colIdx}. Delimitador: "${rule.delimiter}"`);
+
                 rule.fields.forEach((fieldId, subIdx) => {
                     // Resolve Sub-Field ID -> Name
                     const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
@@ -947,10 +949,61 @@ function generatePreview() {
                         sourceIndex: colIdx,
                         transform: (val) => {
                             if (!val) return '';
-                            const parts = String(val).split(rule.delimiter);
+                            const valStr = String(val);
+                            const parts = valStr.split(rule.delimiter);
+                            // DEBUG LOGGING (Only for first few rows)
+                            if (Math.random() < 0.01) console.log(`[Split Debug] Val: "${valStr}" | Delim: "${rule.delimiter}" | Result:`, parts);
+
                             return parts[subIdx] ? parts[subIdx].trim() : '';
                         },
                         hasSwitch: subIdx === 0, // Switch on first virtual col
+                        switchState: true,
+                        switchColIdx: colIdx
+                    });
+                });
+            }
+            // SCENARIO A.2: Smart Regex Split (The Solution)
+            else if (rule && isSimActive && rule.type === 'regex_split') {
+                // Pre-compile regex for performance
+                // Remove leading/trailing slashes if present in string (migration stores string)
+                let patternStr = rule.pattern;
+                if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
+                if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
+                else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
+
+                const regex = new RegExp(patternStr, 'i');
+
+                rule.target_labels.forEach((label, subIdx) => {
+                    displayConfig.push({
+                        label: label,
+                        isVirtual: true,
+                        sourceIndex: colIdx,
+                        transform: (val) => {
+                            if (!val) return '';
+                            const valStr = String(val).trim();
+                            const match = valStr.match(regex);
+
+                            // LOGIC: If match, match[0] is the Presentation (because the regex targets the quantity part at the end)
+                            // The rest is Description.
+                            // The user provided regex captures the QUANTITY PART.
+                            // Regla: ^(.*?)(REGEX_PART)$ ??
+                            // Wait, the user regex provided is:
+                            // /(?:(?:(?:x|por... (captures quantity)
+
+                            // IF match found: that match is the Presentation. The rest of the string is Description.
+                            if (match) {
+                                const fullMatch = match[0];
+                                const presentation = fullMatch.trim();
+                                const description = valStr.replace(fullMatch, "").trim();
+
+                                // subIdx 0 = Description, subIdx 1 = Presentation (based on migration targets)
+                                return subIdx === 0 ? description : presentation;
+                            } else {
+                                // If no match, everything is description
+                                return subIdx === 0 ? valStr : "";
+                            }
+                        },
+                        hasSwitch: subIdx === 0,
                         switchState: true,
                         switchColIdx: colIdx
                     });
