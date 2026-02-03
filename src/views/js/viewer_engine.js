@@ -591,10 +591,8 @@ function renderEditMode(container, term) {
     const existingRule = (term.reglas_procesamiento && typeof term.reglas_procesamiento === 'object') ? term.reglas_procesamiento : { delimiter: " + ", fields: [] };
 
     const inputDelim = document.createElement('input');
+    inputDelim.type = 'hidden'; // HIDDEN as requested
     inputDelim.value = existingRule.delimiter || " + ";
-    inputDelim.placeholder = "Del.";
-    inputDelim.className = 'col-span-2 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-emerald-400 font-mono focus:border-emerald-500 outline-none placeholder:text-slate-600 text-center';
-    inputDelim.title = "Delimitador (ej: ' + ', ' - ')";
 
     // REPLACED INPUTS WITH SELECTS (ID BINDING)
     const val1 = (existingRule.fields && existingRule.fields[0]) ? existingRule.fields[0] : "";
@@ -891,12 +889,26 @@ function toggleSimulationMode() {
 function generatePreview() {
     if (!currentSheetData || currentSheetData.length === 0) return;
 
-    // USAR LÓGICA ESTRICTA: IGNORAR ORIGINAL, USAR OFFSET Y MAPEO
+    // 1. Context Injection
+    const pName = window.globalContext.providerName || "DESCONOCIDO";
+    const fType = window.globalContext.fileType || "GENERAL";
+    const modalTitle = document.getElementById('simModalTitle');
+
+    // Inject if exists (Title + Badges in Header)
+    if (modalTitle) {
+        modalTitle.innerHTML = `
+            <span class="text-slate-400 font-normal">Vista Previa de Extracción:</span> 
+            <span class="text-white font-bold ml-2">${pName}</span>
+            <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-blue-900 text-blue-300 border border-blue-800 uppercase tracking-wider">${fType}</span>
+        `;
+    }
+
+    // 2. Strict Offset Logic
     const startRow = currentOffset ? currentOffset.row : 0;
-    // Cortamos los datos desde el offset hacia abajo (IGNORANDO LO DE ARRIBA)
+    // Slice raw data from offset downwards
     const rawSlice = currentSheetData.slice(startRow);
 
-    // Filtrar columnas vacías o no mapeadas
+    // 3. Config Extraction (Only Mapped Columns)
     const renderingConfig = [];
     Object.keys(columnMapping).forEach(key => {
         const colIdx = parseInt(key);
@@ -911,20 +923,29 @@ function generatePreview() {
         return;
     }
 
+    // 4. Strict Sanitization (The Filter)
+    // A row is valid ONLY if it has at least one non-empty value in a MAPPED column.
+    const sanitizedData = rawSlice.filter(row => {
+        return renderingConfig.some(cfg => {
+            const val = row[cfg.index];
+            return val !== undefined && val !== null && String(val).trim() !== '';
+        });
+    });
+
     const container = document.getElementById('simulationTableContainer');
     if (!container) return;
 
     let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
 
-    // Header con MIS NOMBRES
+    // Header with MY NAMES (The Truth)
     renderingConfig.forEach(cfg => {
         html += `<th class="p-2 border border-slate-700 text-left bg-blue-900/20 text-blue-300">${cfg.label}</th>`;
     });
     html += "</tr></thead><tbody>";
 
-    // Body con DATA CRUDA del Excel (ignora headers originales)
-    rawSlice.forEach((row, i) => {
-        if (i > 50) return; // Preview limit
+    // Body with SANITIZED DATA
+    sanitizedData.forEach((row, i) => {
+        if (i > 50) return; // Preview limit for rendering, but count is real
         html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
         renderingConfig.forEach(cfg => {
             const cellVal = row[cfg.index] !== undefined ? row[cfg.index] : '';
@@ -936,7 +957,13 @@ function generatePreview() {
 
     container.innerHTML = html;
     document.getElementById('simulationModal').classList.remove('hidden');
-    document.getElementById('simMeta').innerText = `VISTA DE EXTRACCIÓN: ${renderingConfig.length} CAMPOS · ${rawSlice.length} FILAS`;
+
+    // 5. Real Count Display
+    document.getElementById('simMeta').innerHTML = `
+        <span class="text-slate-400">Total Filas Útiles:</span> <span class="text-white font-bold">${sanitizedData.length}</span> 
+        <span class="text-slate-600 mx-2">|</span> 
+        <span class="text-slate-400">Columnas:</span> <span class="text-white font-bold">${renderingConfig.length}</span>
+    `;
 }
 
 function closeSimulationModal() {
