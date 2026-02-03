@@ -722,7 +722,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.match_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4
+                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4
                         if (new RegExp(p, 'i').test(strVal)) {
                             shouldReplace = true;
                         }
@@ -745,7 +745,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.exclude_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4
+                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4
                         if (new RegExp(p, 'i').test(strVal)) {
                             keepRow = false;
                             break;
@@ -773,7 +773,7 @@ function applyProcessingRules(originalData) {
                     try {
                         let patternStr = rule.pattern;
                         if (patternStr) {
-                            patternStr = patternStr.replace(/\\/g, '\\'); // 🔥 FIX v2.4
+                            patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4
 
                             if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                             if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
