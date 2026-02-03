@@ -495,13 +495,12 @@ function openColumnMenu_v2(colIndex, buttonElement) {
         }
     };
     setTimeout(() => document.addEventListener('mousedown', closeHandler), 50);
-
     document.body.appendChild(menu);
     if (window.lucide) window.lucide.createIcons();
 }
 
-// HELPER: Select for Rules with Integrity Filters
-function createTermSelect(currentValue, placeholder, currentTermId) {
+// HELPER: Select for Rules with Integrity Filters & ID Binding
+function createTermSelect(currentId, placeholder, currentTermId) {
     const select = document.createElement('select');
     select.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none w-full appearance-none';
 
@@ -509,7 +508,7 @@ function createTermSelect(currentValue, placeholder, currentTermId) {
     defaultOpt.value = "";
     defaultOpt.text = `- ${placeholder} -`;
     defaultOpt.disabled = true;
-    if (!currentValue) defaultOpt.selected = true;
+    if (!currentId) defaultOpt.selected = true;
     select.appendChild(defaultOpt);
 
     let foundCurrent = false;
@@ -522,21 +521,25 @@ function createTermSelect(currentValue, placeholder, currentTermId) {
         if (t.reglas_procesamiento && Object.keys(t.reglas_procesamiento).length > 0) return;
 
         const opt = document.createElement('option');
-        opt.value = t.termino;
-        opt.text = t.termino;
+        opt.value = t.id; // STORE ID (The Truth)
+        opt.text = t.termino; // SHOW NAME (The UI)
 
-        if (t.termino === currentValue) {
+        if (t.id === currentId) {
             opt.selected = true;
             foundCurrent = true;
         }
         select.appendChild(opt);
     });
 
-    // Integrity Fallback: If current value exists but is filtered (e.g. became a rule later) or missing
-    if (currentValue && !foundCurrent) {
+    // Integrity Fallback: Rehydrate name if ID exists but is filtered/missing, OR if value was legacy text
+    if (currentId && !foundCurrent) {
+        // Try to find name in cache even if filtered
+        const zombieTerm = nomenclatureCache.find(z => z.id === currentId);
+        const displayName = zombieTerm ? zombieTerm.termino : (currentId.length > 20 ? "Referencia Rota" : currentId); // Simple check for UUID length vs legacy text
+
         const legacyOpt = document.createElement('option');
-        legacyOpt.value = currentValue;
-        legacyOpt.text = `${currentValue} (Legado)`;
+        legacyOpt.value = currentId;
+        legacyOpt.text = `${displayName} (Inválido)`;
         legacyOpt.classList.add('text-amber-500');
         legacyOpt.selected = true;
         select.appendChild(legacyOpt);
@@ -545,7 +548,7 @@ function createTermSelect(currentValue, placeholder, currentTermId) {
     return select;
 }
 
-// RESTORED FULL EDIT MODE WITH RULES
+// RESTORED FULL EDIT MODE WITH RULES (ID PERSISTENCE)
 function renderEditMode(container, term) {
     container.className = 'p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-3 transition-all rounded-r-lg shadow-inner';
     container.innerHTML = '';
@@ -585,7 +588,7 @@ function renderEditMode(container, term) {
     // Rule Logic
     const ruleContainer = document.createElement('div');
     ruleContainer.className = "grid grid-cols-2 gap-2";
-    const existingRule = (term.reglas_procesamiento && typeof term.reglas_procesamiento === 'object') ? term.reglas_procesamiento : { delimiter: " + ", fields: ["Descripción", "Presentación"] };
+    const existingRule = (term.reglas_procesamiento && typeof term.reglas_procesamiento === 'object') ? term.reglas_procesamiento : { delimiter: " + ", fields: [] };
 
     const inputDelim = document.createElement('input');
     inputDelim.value = existingRule.delimiter || " + ";
@@ -593,11 +596,11 @@ function renderEditMode(container, term) {
     inputDelim.className = 'col-span-2 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-emerald-400 font-mono focus:border-emerald-500 outline-none placeholder:text-slate-600 text-center';
     inputDelim.title = "Delimitador (ej: ' + ', ' - ')";
 
-    // REPLACED INPUTS WITH SELECTS (INTEGRITY ENFORCED)
-    const val1 = Array.isArray(existingRule.fields) ? existingRule.fields[0] : "";
+    // REPLACED INPUTS WITH SELECTS (ID BINDING)
+    const val1 = (existingRule.fields && existingRule.fields[0]) ? existingRule.fields[0] : "";
     const field1 = createTermSelect(val1, "Campo 1", term.id);
 
-    const val2 = Array.isArray(existingRule.fields) ? existingRule.fields[1] : "";
+    const val2 = (existingRule.fields && existingRule.fields[1]) ? existingRule.fields[1] : "";
     const field2 = createTermSelect(val2, "Campo 2", term.id);
 
     ruleContainer.appendChild(inputDelim);

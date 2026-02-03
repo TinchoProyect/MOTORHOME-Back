@@ -441,7 +441,7 @@ async function createDictionaryTerm(req, res) {
 }
 
 async function updateDictionaryTerm(req, res) {
-    const { id, termino, descripcion_uso } = req.body;
+    const { id, termino, descripcion_uso, reglas_procesamiento } = req.body;
     console.log(`[FilesController] UPDATE Term Request: ID=${id}, Term=${termino}`);
 
     if (!id || !termino) {
@@ -454,6 +454,10 @@ async function updateDictionaryTerm(req, res) {
         };
         if (descripcion_uso !== undefined) {
             updatePayload.descripcion_uso = descripcion_uso ? descripcion_uso.trim() : null;
+        }
+        // [FIX] Persistent Rules Support (JSONB)
+        if (reglas_procesamiento !== undefined) {
+            updatePayload.reglas_procesamiento = reglas_procesamiento;
         }
 
         const { data, error } = await supabase
