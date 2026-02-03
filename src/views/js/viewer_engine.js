@@ -2,10 +2,10 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v1.4 (Final Fix - Cleaned & Bound)
+ * v1.5 (Cleaned & Patched)
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v1.4 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v1.5 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 let viewerWorker = null;
@@ -35,7 +35,6 @@ let processingRules = {}; // Rules store
 let simulationModeProcessed = true; // State for Toggle
 
 // --- 2. CÓDIGO DEL OBRERO (Worker) ---
-// Usamos CDN oficial para evitar errores de ruta relativa en Blobs
 const WORKER_CODE = `
     importScripts('https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js');
 
@@ -173,7 +172,7 @@ async function openFileViewer(fileId, fileName) {
             const arrayBuffer = await response.arrayBuffer();
             currentFileBuffer = arrayBuffer;
 
-            // Worker Init (Fixed: CDN)
+            // Worker Init
             const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
             viewerWorker = new Worker(URL.createObjectURL(blob));
 
@@ -186,7 +185,6 @@ async function openFileViewer(fileId, fileName) {
                 }
             }, 7000);
 
-            // CORRECCION: NO TRANSFERIR BUFFER
             viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer });
 
             viewerWorker.onerror = (e) => {
@@ -364,7 +362,6 @@ async function updateNomenclatureTerm(id, newTerm, newDesc, newRules) {
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.error);
 
-        // Cache Update
         const idx = nomenclatureCache.findIndex(t => t.id === id);
         if (idx !== -1) {
             nomenclatureCache[idx].termino = newTerm;
@@ -391,7 +388,6 @@ async function toggleMappingMode() {
             btn.innerHTML = '<i data-lucide="layers" class="w-3 h-3"></i> Mapear Columnas';
             if (window.lucide) window.lucide.createIcons();
         }
-        // Hydrate Rules
         if (columnMapping && Object.keys(columnMapping).length > 0) {
             Object.keys(columnMapping).forEach(colIdx => {
                 const termName = columnMapping[colIdx];
@@ -449,7 +445,6 @@ function openColumnMenu_v2(colIndex, buttonElement) {
 
         content.onclick = () => {
             columnMapping[colIndex] = term.termino;
-            // Auto Trigger Rule
             if (term.reglas_procesamiento) {
                 processingRules[colIndex] = term.reglas_procesamiento;
             } else {
@@ -461,7 +456,6 @@ function openColumnMenu_v2(colIndex, buttonElement) {
             menu.remove();
         };
 
-        // Boton Editar
         const editBtn = document.createElement('button');
         editBtn.className = 'p-1.5 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all bg-slate-900/80 rounded z-10';
         editBtn.innerHTML = '<i data-lucide="pencil" class="w-3 h-3"></i>';
@@ -487,7 +481,6 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     };
     menu.appendChild(ignoreBtn);
 
-    // Close on outside click
     const closeHandler = (e) => {
         if (!menu.contains(e.target) && !buttonElement.contains(e.target)) {
             menu.remove();
@@ -499,7 +492,7 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     if (window.lucide) window.lucide.createIcons();
 }
 
-// HELPER: Select for Rules with Integrity Filters & ID Binding
+// HELPER: Select for Rules with Integrity Filters
 function createTermSelect(currentId, placeholder, currentTermId) {
     const select = document.createElement('select');
     select.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none w-full appearance-none';
@@ -514,15 +507,12 @@ function createTermSelect(currentId, placeholder, currentTermId) {
     let foundCurrent = false;
 
     nomenclatureCache.forEach(t => {
-        // FILTER 1: No Auto-Reference
-        if (t.id === currentTermId) return;
-
-        // FILTER 2: Solo Hojas (No Composite Terms)
-        if (t.reglas_procesamiento && Object.keys(t.reglas_procesamiento).length > 0) return;
+        if (t.id === currentTermId) return; // No auto-reference
+        if (t.reglas_procesamiento && Object.keys(t.reglas_procesamiento).length > 0) return; // Only leafs
 
         const opt = document.createElement('option');
-        opt.value = t.id; // STORE ID (The Truth)
-        opt.text = t.termino; // SHOW NAME (The UI)
+        opt.value = t.id;
+        opt.text = t.termino;
 
         if (t.id === currentId) {
             opt.selected = true;
@@ -531,11 +521,9 @@ function createTermSelect(currentId, placeholder, currentTermId) {
         select.appendChild(opt);
     });
 
-    // Integrity Fallback: Rehydrate name if ID exists but is filtered/missing, OR if value was legacy text
     if (currentId && !foundCurrent) {
-        // Try to find name in cache even if filtered
         const zombieTerm = nomenclatureCache.find(z => z.id === currentId);
-        const displayName = zombieTerm ? zombieTerm.termino : (currentId.length > 20 ? "Referencia Rota" : currentId); // Simple check for UUID length vs legacy text
+        const displayName = zombieTerm ? zombieTerm.termino : (currentId.length > 20 ? "Referencia Rota" : currentId);
 
         const legacyOpt = document.createElement('option');
         legacyOpt.value = currentId;
@@ -548,12 +536,11 @@ function createTermSelect(currentId, placeholder, currentTermId) {
     return select;
 }
 
-// RESTORED FULL EDIT MODE WITH RULES (ID PERSISTENCE)
+// RESTORED FULL EDIT MODE WITH RULES
 function renderEditMode(container, term) {
     container.className = 'p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-3 transition-all rounded-r-lg shadow-inner';
     container.innerHTML = '';
 
-    // Header
     const header = document.createElement('div');
     header.className = "flex justify-between items-center mb-1";
     header.innerHTML = '<span class="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Edición Rápida</span>';
@@ -580,21 +567,19 @@ function renderEditMode(container, term) {
     group2.appendChild(inputDesc);
     container.appendChild(group2);
 
-    // Input: Rules - Field Splitting Logic (Restored)
+    // Rules
     const group3 = document.createElement('div');
     group3.className = "space-y-1.5 pt-2 border-t border-slate-800";
     group3.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold flex items-center justify-between"><span>Reglas de Procesamiento</span> <i data-lucide="split" class="w-3 h-3"></i></label>';
 
-    // Rule Logic
     const ruleContainer = document.createElement('div');
     ruleContainer.className = "grid grid-cols-2 gap-2";
     const existingRule = (term.reglas_procesamiento && typeof term.reglas_procesamiento === 'object') ? term.reglas_procesamiento : { delimiter: " + ", fields: [] };
 
     const inputDelim = document.createElement('input');
-    inputDelim.type = 'hidden'; // HIDDEN as requested
+    inputDelim.type = 'hidden';
     inputDelim.value = existingRule.delimiter || " + ";
 
-    // REPLACED INPUTS WITH SELECTS (ID BINDING)
     const val1 = (existingRule.fields && existingRule.fields[0]) ? existingRule.fields[0] : "";
     const field1 = createTermSelect(val1, "Campo 1", term.id);
 
@@ -607,11 +592,10 @@ function renderEditMode(container, term) {
     group3.appendChild(ruleContainer);
     container.appendChild(group3);
 
-    // Botonera
+    // Buttons
     const btnRow = document.createElement('div');
     btnRow.className = 'flex justify-between items-end gap-2 mt-3 pt-2 border-t border-slate-800';
 
-    // Delete Button (Restored)
     const btnDelete = document.createElement('button');
     btnDelete.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3 text-red-500"></i>';
     btnDelete.className = 'p-1.5 rounded hover:bg-red-900/30 transition-colors border border-transparent hover:border-red-900/50';
@@ -621,7 +605,6 @@ function renderEditMode(container, term) {
             try {
                 const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
                 await fetch(`${backendUrl}/api/files/dictionary/delete?id=${term.id}`, { method: 'DELETE' });
-                // Remove from Cache & Refresh
                 const idx = nomenclatureCache.findIndex(t => t.id === term.id);
                 if (idx !== -1) nomenclatureCache.splice(idx, 1);
                 const colIdx = document.getElementById('colMenuDropdown').dataset.colIndex;
@@ -651,12 +634,12 @@ function renderEditMode(container, term) {
         e.stopPropagation();
         btnSave.innerText = '...';
 
-        let parsedRules = null;
-        if (inputDelim.value.trim()) {
+        let parsedRules = undefined;
+        if (field1.value || field2.value) {
             parsedRules = {
                 type: 'split',
                 delimiter: inputDelim.value,
-                fields: [field1.value || "Campo 1", field2.value || "Campo 2"]
+                fields: [field1.value, field2.value]
             };
         }
 
@@ -683,13 +666,88 @@ function renderEditMode(container, term) {
 
 function applyProcessingRules(originalData) {
     if (!originalData || originalData.length === 0) return [];
-    if (Object.keys(processingRules).length === 0) return originalData;
 
-    // Clone to avoid mutations if not needed, or mutate if displaying
-    // For VirtualTable we usually display raw. But if simulation needs it?
-    // User requested "Strict Extraction" for Preview, but "Rules" for Edit.
-    // Let's keep logic available.
-    return originalData;
+    const activeRules = Object.entries(processingRules).filter(([colIdx, rule]) => {
+        return rule && !rule.disabled;
+    });
+
+    if (activeRules.length === 0) return originalData;
+
+    const processedData = [];
+
+    for (let i = 0; i < originalData.length; i++) {
+        let row = [...originalData[i]];
+        let keepRow = true;
+
+        for (const [colIdxStr, rule] of activeRules) {
+            const colIdx = parseInt(colIdxStr);
+            const cellVal = row[colIdx];
+            const strVal = String(cellVal || "").trim();
+
+            // --- A. FILTER LOGIC ---
+            if (rule.type === 'filter' || rule.type === 'row_filter') {
+                if (rule.config?.exclude_empty && strVal === "") {
+                    keepRow = false;
+                    break;
+                }
+                if (rule.config?.exclude_regex) {
+                    try {
+                        let p = rule.config.exclude_regex;
+                        if (p.startsWith('/')) p = p.slice(1);
+                        if (p.endsWith('/')) p = p.slice(0, -1);
+                        p = p.replace(/\\\\/g, '\\');
+                        if (new RegExp(p, 'i').test(strVal)) {
+                            keepRow = false;
+                            break;
+                        }
+                    } catch (e) { }
+                }
+            }
+
+            // --- B. TRANSFORM LOGIC ---
+            if (keepRow && (rule.type === 'split' || rule.type === 'regex_split')) {
+                let pDesc = strVal;
+                let pPres = "";
+
+                if (rule.type === 'regex_split') {
+                    try {
+                        let patternStr = rule.pattern;
+                        if (patternStr) {
+                            patternStr = patternStr.replace(/\\\\/g, '\\');
+
+                            if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
+                            if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
+                            else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
+
+                            const regex = new RegExp(patternStr, 'i');
+                            const match = strVal.match(regex);
+                            if (match) {
+                                const fullMatch = match[0];
+                                pPres = fullMatch.trim();
+                                pDesc = strVal.replace(fullMatch, "").trim();
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Regex Error:", e);
+                    }
+                } else if (rule.type === 'split' && rule.delimiter) {
+                    const parts = strVal.split(rule.delimiter);
+                    if (parts.length > 0) pDesc = parts[0].trim();
+                    if (parts.length > 1) pPres = parts[1].trim();
+                }
+
+                if (pPres) {
+                    row[colIdx] = `📦 ${pDesc}  |  🏷️ ${pPres}`;
+                }
+            }
+        }
+
+        if (keepRow) {
+            processedData.push(row);
+        }
+    }
+
+    return processedData;
 }
 
 function toggleProcessingRule(colIndex) {
@@ -700,11 +758,11 @@ function toggleProcessingRule(colIndex) {
 }
 
 function renderVirtualTable(originalData) {
-    const data = originalData;
+    const data = applyProcessingRules(originalData); // APPLY RULES HERE
     const container = document.getElementById('excelContainer');
 
     if (!data || data.length === 0) {
-        if (container) container.innerHTML = '<div class="text-slate-500 p-4">Hoja vacía</div>';
+        if (container) container.innerHTML = '<div class="text-slate-500 p-4">Hoja vacía o todos los datos fueron filtrados.</div>';
         return;
     }
 
@@ -744,7 +802,6 @@ function renderVirtualTable(originalData) {
         let originalVal = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`);
         let mappedType = columnMapping[j];
 
-        // Logic for Rule Toggle Button in Header
         let toggleHtml = '';
         const hasRule = processingRules[j];
         if (mappingMode && hasRule) {
@@ -781,7 +838,7 @@ function renderVirtualTable(originalData) {
     headerHtml += '</tr>';
     thead.innerHTML = headerHtml;
 
-    // Body Renderer
+    // Body
     const updateVisibleRows = () => {
         const scrollTop = container.scrollTop;
         const viewportHeight = container.clientHeight;
@@ -886,210 +943,12 @@ function toggleSimulationMode() {
     generatePreview();
 }
 
-// 5. Dynamic Rule Toggling
 function toggleSimulationRule(colIndex) {
     if (processingRules[colIndex]) {
-        // Toggle Simulation Active State (Default True if undefined)
         const current = processingRules[colIndex].isSimActive !== undefined ? processingRules[colIndex].isSimActive : true;
         processingRules[colIndex].isSimActive = !current;
-        generatePreview(); // Re-render with new state
+        generatePreview();
     }
-}
-
-function _deprecated_generatePreview() {
-    if (!currentSheetData || currentSheetData.length === 0) return;
-
-    // 1. Context Injection
-    const pName = window.globalContext.providerName || "DESCONOCIDO";
-    const fType = window.globalContext.fileType || "GENERAL";
-    const modalTitle = document.getElementById('simModalTitle');
-
-    if (modalTitle) {
-        modalTitle.innerHTML = `
-            <span class="text-slate-400 font-normal">Vista Previa de Extracción:</span> 
-            <span class="text-white font-bold ml-2">${pName}</span>
-            <span class="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-blue-900 text-blue-300 border border-blue-800 uppercase tracking-wider">${fType}</span>
-        `;
-    }
-
-    // 2. Strict Offset Logic
-    const startRow = currentOffset ? currentOffset.row : 0;
-    const rawSlice = currentSheetData.slice(startRow);
-
-    // 3. Config Extraction & Virtual Column Building
-    const displayConfig = [];
-    const sourceConfig = []; // For sanitization filter
-
-    Object.keys(columnMapping).forEach(key => {
-        const colIdx = parseInt(key);
-        const termId = columnMapping[key];
-
-        if (termId && termId !== 'Ignorar Columna') {
-            sourceConfig.push({ index: colIdx }); // Keep track for filter
-
-            // Resolve Name from Cache (ID -> Name)
-            const termObj = nomenclatureCache.find(t => t.id === termId);
-            const termName = termObj ? termObj.termino : termId;
-
-            const rule = processingRules[colIdx];
-            const isSimActive = rule ? (rule.isSimActive !== undefined ? rule.isSimActive : true) : false;
-
-            // SCENARIO A: Rule Active (Virtual Columns)
-            if (rule && isSimActive && rule.type === 'split') {
-                console.log(`[Preview] Aplicando Regla Split en Col ${colIdx}. Delimitador: "${rule.delimiter}"`);
-
-                rule.fields.forEach((fieldId, subIdx) => {
-                    // Resolve Sub-Field ID -> Name
-                    const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
-                    const fieldName = fieldObj ? fieldObj.termino : fieldId;
-
-                    displayConfig.push({
-                        label: fieldName, // NOW READABLE NAME
-                        isVirtual: true,
-                        sourceIndex: colIdx,
-                        transform: (val) => {
-                            if (!val) return '';
-                            const valStr = String(val);
-                            const parts = valStr.split(rule.delimiter);
-                            // DEBUG LOGGING (Only for first few rows)
-                            if (Math.random() < 0.01) console.log(`[Split Debug] Val: "${valStr}" | Delim: "${rule.delimiter}" | Result:`, parts);
-
-                            return parts[subIdx] ? parts[subIdx].trim() : '';
-                        },
-                        hasSwitch: subIdx === 0, // Switch on first virtual col
-                        switchState: true,
-                        switchColIdx: colIdx
-                    });
-                });
-            }
-            // SCENARIO A.2: Smart Regex Split (The Solution)
-            else if (rule && isSimActive && rule.type === 'regex_split') {
-                // Pre-compile regex for performance
-                // Remove leading/trailing slashes if present in string (migration stores string)
-                let patternStr = rule.pattern;
-                if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
-                if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
-                else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
-
-                const regex = new RegExp(patternStr, 'i');
-
-                rule.target_labels.forEach((label, subIdx) => {
-                    displayConfig.push({
-                        label: label,
-                        isVirtual: true,
-                        sourceIndex: colIdx,
-                        transform: (val) => {
-                            if (!val) return '';
-                            const valStr = String(val).trim();
-                            const match = valStr.match(regex);
-
-                            // LOGIC: If match, match[0] is the Presentation (because the regex targets the quantity part at the end)
-                            // The rest is Description.
-                            // The user provided regex captures the QUANTITY PART.
-                            // Regla: ^(.*?)(REGEX_PART)$ ??
-                            // Wait, the user regex provided is:
-                            // /(?:(?:(?:x|por... (captures quantity)
-
-                            // IF match found: that match is the Presentation. The rest of the string is Description.
-                            if (match) {
-                                const fullMatch = match[0];
-                                const presentation = fullMatch.trim();
-                                const description = valStr.replace(fullMatch, "").trim();
-
-                                // subIdx 0 = Description, subIdx 1 = Presentation (based on migration targets)
-                                return subIdx === 0 ? description : presentation;
-                            } else {
-                                // If no match, everything is description
-                                return subIdx === 0 ? valStr : "";
-                            }
-                        },
-                        hasSwitch: subIdx === 0,
-                        switchState: true,
-                        switchColIdx: colIdx
-                    });
-                });
-            }
-            // SCENARIO B: Rule Inactive or No Rule (Identity)
-            else {
-                displayConfig.push({
-                    label: termName, // NOW READABLE NAME
-                    isVirtual: false,
-                    sourceIndex: colIdx,
-                    transform: (val) => val,
-                    hasSwitch: !!rule, // Only show switch if rule exists
-                    switchState: false,
-                    switchColIdx: colIdx
-                });
-            }
-        }
-    });
-
-    if (displayConfig.length === 0) {
-        alert("Primero debes mapear al menos una columna.");
-        return;
-    }
-
-    // 4. Strict Sanitization (The Filter - Based on Source Cols)
-    const sanitizedData = rawSlice.filter(row => {
-        return sourceConfig.some(cfg => {
-            const val = row[cfg.index];
-            return val !== undefined && val !== null && String(val).trim() !== '';
-        });
-    });
-
-    const container = document.getElementById('simulationTableContainer');
-    if (!container) return;
-
-    let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
-
-    // Header Renderer (with Switches)
-    displayConfig.forEach(cfg => {
-        let content = cfg.label;
-        if (cfg.hasSwitch) {
-            const checked = cfg.switchState ? 'checked' : '';
-            // Tailwind Switch UI
-            content = `
-                <div class="flex items-center gap-2 justify-between">
-                    <span>${cfg.label}</span>
-                    <label class="relative inline-flex items-center cursor-pointer group">
-                        <input type="checkbox" onclick="toggleSimulationRule(${cfg.switchColIdx})" ${checked} class="sr-only peer">
-                        <div class="w-7 h-3.5 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-emerald-500 hover:bg-slate-600"></div>
-                    </label>
-                </div>
-            `;
-        }
-
-        let thClass = "p-2 border border-slate-700 text-left align-middle ";
-        thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
-
-        html += `<th class="${thClass}">${content}</th>`;
-    });
-    html += "</tr></thead><tbody>";
-
-    // Body Renderer (Apply Transformations)
-    sanitizedData.forEach((row, i) => {
-        // [MOD] Limit Removed by User Request
-        // if (i > 50) return; 
-
-        html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
-        displayConfig.forEach(cfg => {
-            const rawVal = row[cfg.sourceIndex];
-            const finalVal = cfg.transform(rawVal);
-            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${finalVal}</td>`;
-        });
-        html += "</tr>";
-    });
-    html += "</tbody></table>";
-
-    container.innerHTML = html;
-    document.getElementById('simulationModal').classList.remove('hidden');
-
-    // 5. Real Count Display
-    document.getElementById('simMeta').innerHTML = `
-        <span class="text-slate-400">Total Filas Útiles:</span> <span class="text-white font-bold">${sanitizedData.length}</span> 
-        <span class="text-slate-600 mx-2">|</span> 
-        <span class="text-slate-400">Columnas:</span> <span class="text-white font-bold">${displayConfig.length}</span>
-    `;
 }
 
 function closeSimulationModal() {
@@ -1100,20 +959,14 @@ function closeViewerModal() {
     document.getElementById('viewerModal').classList.add('hidden');
 }
 
-// --- NEW PREVIEW ENGINE (VIGIA + SEARCH) ---
-// Global state for Simulation Filter
+// --- NEW PREVIEW ENGINE ---
 let currentSimData = [];
 let currentDisplayConfig = [];
 
 function generatePreview() {
-    console.log("👁️ [VIGÍA] INICIO generatePreview()");
     try {
-        if (!currentSheetData || currentSheetData.length === 0) {
-            console.warn("👁️ [VIGÍA] Abort: No hay datos en currentSheetData");
-            return;
-        }
+        if (!currentSheetData || currentSheetData.length === 0) return;
 
-        // 1. Context Injection
         const pName = window.globalContext.providerName || "DESCONOCIDO";
         const fType = window.globalContext.fileType || "GENERAL";
         const modalTitle = document.getElementById('simModalTitle');
@@ -1126,32 +979,26 @@ function generatePreview() {
             `;
         }
 
-        // 2. Strict Offset Logic
         const startRow = currentOffset ? currentOffset.row : 0;
         const rawSlice = currentSheetData.slice(startRow);
-        console.log(`👁️ [VIGÍA] Offset Row: ${startRow}. Slice Length: ${rawSlice.length}`);
 
-        // 3. Config Extraction & Virtual Column Building
         const displayConfig = [];
-        const sourceConfig = []; // For sanitization filter
+        const sourceConfig = [];
 
         Object.keys(columnMapping).forEach(key => {
             const colIdx = parseInt(key);
             const termId = columnMapping[key];
 
             if (termId && termId !== 'Ignorar Columna') {
-                sourceConfig.push({ index: colIdx }); // Keep track for filter
+                sourceConfig.push({ index: colIdx });
 
-                // Resolve Name from Cache (ID -> Name)
                 const termObj = nomenclatureCache.find(t => t.id === termId);
                 const termName = termObj ? termObj.termino : termId;
 
                 const rule = processingRules[colIdx];
                 const isSimActive = rule ? (rule.isSimActive !== undefined ? rule.isSimActive : true) : false;
 
-                // SCENARIO A: Rule Active (Virtual Columns)
                 if (rule && isSimActive && rule.type === 'split') {
-                    console.log(`👁️ [VIGÍA] Regla SPLIT en Col ${colIdx}. Delim: "${rule.delimiter}"`);
                     rule.fields.forEach((fieldId, subIdx) => {
                         const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
                         const fieldName = fieldObj ? fieldObj.termino : fieldId;
@@ -1172,41 +1019,40 @@ function generatePreview() {
                         });
                     });
                 }
-                // SCENARIO A.2: Smart Regex Split
                 else if (rule && isSimActive && rule.type === 'regex_split') {
-                    console.log(`👁️ [VIGÍA] Regla REGEX en Col ${colIdx}. Pattern: "${rule.pattern}"`);
                     let patternStr = rule.pattern;
-                    if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
-                    if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
-                    else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
+                    if (patternStr) {
+                        patternStr = patternStr.replace(/\\\\/g, '\\');
+                        if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
+                        if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
+                        else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
 
-                    const regex = new RegExp(patternStr, 'i');
-
-                    rule.target_labels.forEach((label, subIdx) => {
-                        displayConfig.push({
-                            label: label,
-                            isVirtual: true,
-                            sourceIndex: colIdx,
-                            transform: (val) => {
-                                if (!val) return '';
-                                const valStr = String(val).trim();
-                                const match = valStr.match(regex);
-                                if (match) {
-                                    const fullMatch = match[0];
-                                    const presentation = fullMatch.trim();
-                                    const description = valStr.replace(fullMatch, "").trim();
-                                    return subIdx === 0 ? description : presentation;
-                                } else {
-                                    return subIdx === 0 ? valStr : "";
-                                }
-                            },
-                            hasSwitch: subIdx === 0,
-                            switchState: true,
-                            switchColIdx: colIdx
+                        const regex = new RegExp(patternStr, 'i');
+                        rule.target_labels.forEach((label, subIdx) => {
+                            displayConfig.push({
+                                label: label,
+                                isVirtual: true,
+                                sourceIndex: colIdx,
+                                transform: (val) => {
+                                    if (!val) return '';
+                                    const valStr = String(val).trim();
+                                    const match = valStr.match(regex);
+                                    if (match) {
+                                        const fullMatch = match[0];
+                                        const presentation = fullMatch.trim();
+                                        const description = valStr.replace(fullMatch, "").trim();
+                                        return subIdx === 0 ? description : presentation;
+                                    } else {
+                                        return subIdx === 0 ? valStr : "";
+                                    }
+                                },
+                                hasSwitch: subIdx === 0,
+                                switchState: true,
+                                switchColIdx: colIdx
+                            });
                         });
-                    });
+                    }
                 }
-                // SCENARIO B: Identity
                 else {
                     displayConfig.push({
                         label: termName,
@@ -1222,29 +1068,49 @@ function generatePreview() {
         });
 
         if (displayConfig.length === 0) {
-            console.warn("👁️ [VIGÍA] Abort: Sin columnas mapeadas.");
             alert("Primero debes mapear al menos una columna.");
             return;
         }
 
-        // 4. Strict Sanitization
-        const sanitizedData = rawSlice.filter(row => {
+        let sanitizedData = rawSlice.filter(row => {
             return sourceConfig.some(cfg => {
                 const val = row[cfg.index];
                 return val !== undefined && val !== null && String(val).trim() !== '';
             });
         });
-        console.log(`👁️ [VIGÍA] Sanitization Complete. Rows Passing: ${sanitizedData.length}`);
 
-        // STORE GLOBAL STATE FOR FILTERING
+        // 🔥 FILTRADO REAL (Row Filter)
+        sanitizedData = sanitizedData.filter(row => {
+            let keepRow = true;
+            Object.keys(columnMapping).forEach(key => {
+                const colIdx = parseInt(key);
+                const rule = processingRules[colIdx];
+
+                if (rule && (rule.type === 'filter' || rule.type === 'row_filter') && rule.isSimActive !== false) {
+                    const cellValue = row[colIdx];
+                    if (rule.config?.exclude_empty) {
+                        if (!cellValue || String(cellValue).trim() === '') keepRow = false;
+                    }
+                    if (keepRow && rule.config?.exclude_regex) {
+                        try {
+                            let p = rule.config.exclude_regex;
+                            if (p.startsWith('/')) p = p.slice(1);
+                            if (p.endsWith('/')) p = p.slice(0, -1);
+                            p = p.replace(/\\\\/g, '\\');
+                            if (new RegExp(p, 'i').test(String(cellValue))) keepRow = false;
+                        } catch (e) { console.error("Filter Regex Error", e); }
+                    }
+                }
+            });
+            return keepRow;
+        });
+
         currentSimData = sanitizedData;
         currentDisplayConfig = displayConfig;
 
-        // 5. Render Full UI (Toolbar + Table)
         const container = document.getElementById('simulationTableContainer');
         if (!container) return;
 
-        // Toolbar HTML
         let optionsHtml = '<option value="ALL">Todos los Campos</option>';
         displayConfig.forEach((cfg, idx) => {
             optionsHtml += `<option value="${idx}">${cfg.label}</option>`;
@@ -1265,27 +1131,24 @@ function generatePreview() {
                 </div>
             </div>
             <div id="simTableScrollArea" class="overflow-auto max-h-[60vh]">
-                <!-- Table injected here -->
             </div>
         `;
 
         container.innerHTML = toolbar;
-        renderSimulationTable(sanitizedData); // Initial Render
+        renderSimulationTable(sanitizedData);
 
         document.getElementById('simulationModal').classList.remove('hidden');
         if (window.lucide) window.lucide.createIcons({ root: container });
 
-        // Meta Update
         document.getElementById('simMeta').innerHTML = `
             <span class="text-slate-400">Total Filas Útiles:</span> <span class="text-white font-bold">${sanitizedData.length}</span> 
             <span class="text-slate-600 mx-2">|</span> 
             <span class="text-slate-400">Columnas:</span> <span class="text-white font-bold">${displayConfig.length}</span>
         `;
-        console.log("👁️ [VIGÍA] Render Complete.");
 
     } catch (error) {
-        console.error("🔥 [VIGÍA] CRITICAL ERROR IN PREVIEW:", error);
-        alert("Error Crítico en Previsualizador: " + error.message);
+        console.error("Critical Preview Error:", error);
+        alert("Error en Previsualizador: " + error.message);
     }
 }
 
@@ -1300,13 +1163,10 @@ function filterSimulationData() {
         return;
     }
 
-    // SPLIT QUERY INTO TERMS (Space separated)
     const terms = rawQuery.split(/\s+/).filter(t => t.length > 0);
 
     const filtered = currentSimData.filter(row => {
-        // ROW MUST MATCH ALL TERMS
         return terms.every(term => {
-            // CHECK TERM AGAINST FIELD(S)
             if (fieldIdx === "ALL") {
                 return currentDisplayConfig.some(cfg => {
                     const val = cfg.transform(row[cfg.sourceIndex]);
@@ -1331,7 +1191,6 @@ function renderSimulationTable(data) {
 
     let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
 
-    // Header Renderer
     currentDisplayConfig.forEach(cfg => {
         let content = cfg.label;
         if (cfg.hasSwitch) {
@@ -1346,14 +1205,12 @@ function renderSimulationTable(data) {
                 </div>
             `;
         }
-
         let thClass = "p-2 border border-slate-700 text-left align-middle ";
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
         html += `<th class="${thClass}">${content}</th>`;
     });
     html += "</tr></thead><tbody>";
 
-    // Body Renderer
     data.forEach((row) => {
         html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
         currentDisplayConfig.forEach(cfg => {
@@ -1364,12 +1221,10 @@ function renderSimulationTable(data) {
         html += "</tr>";
     });
     html += "</tbody></table>";
-
     scrollArea.innerHTML = html;
 }
 
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
-// IMPORTANTISIMO: Esto debe estar al final, fuera de cualquier función
 window.openFileViewer = openFileViewer;
 window.handleOffsetClick = handleOffsetClick;
 window.toggleOffsetMode = toggleOffsetMode;
@@ -1381,7 +1236,7 @@ window.generatePreview = generatePreview;
 window.toggleSimulationMode = toggleSimulationMode;
 window.closeSimulationModal = closeSimulationModal;
 window.toggleProcessingRule = toggleProcessingRule;
-window.toggleSimulationRule = toggleSimulationRule; // EXPOSED
-window.filterSimulationData = filterSimulationData; // EXPOSED
+window.toggleSimulationRule = toggleSimulationRule;
+window.filterSimulationData = filterSimulationData;
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");

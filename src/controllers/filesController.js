@@ -455,9 +455,44 @@ async function updateDictionaryTerm(req, res) {
         if (descripcion_uso !== undefined) {
             updatePayload.descripcion_uso = descripcion_uso ? descripcion_uso.trim() : null;
         }
-        // [FIX] Persistent Rules Support (JSONB)
+
+        // [FIX] Persistent Rules Support (Merge Strategy)
+        // If rules are provided, we MUST merge with existing to avoid losing SQL-injected props (pattern, targets)
         if (reglas_procesamiento !== undefined) {
-            updatePayload.reglas_procesamiento = reglas_procesamiento;
+            // 1. Fetch Existing Record
+            const { data: existing, error: fetchError } = await supabase
+                .from('user_diccionario_nomenclatura')
+                .select('reglas_procesamiento')
+                .eq('id', id)
+                .single();
+
+            if (fetchError && fetchError.code !== 'PGRST116') throw fetchError; // Ignore not found if creating new? No, this is update.
+
+            let mergedRules = reglas_procesamiento;
+            if (existing && existing.reglas_procesamiento) {
+                console.log(`[FilesController] Merging Rules for ${id}...`);
+                // MERGE: Existing has priority for "protected" keys if we wanted, 
+                // BUT usually we want new UI values (like delimiter) to override, 
+                // while keeping existing "hidden" keys (pattern, logic).
+
+                // Strategy: Spread Existing, then Spread New. 
+                // This means New overrides shared keys (good for delimiter update), 
+                // but keeps keys New doesn't have (good for pattern persistence).
+                mergedRules = { ...existing.reglas_procesamiento, ...reglas_procesamiento };
+
+                // Specific Protection: If new rules is just { type: 'split' } but existing was { type: 'regex_split' }, 
+                // we might have a conflict if the UI blindly forces 'split'.
+                // The UI logic in viewer_engine currently forces 'split' if delimiter is present.
+                // IF we want to protect 'regex_split' from UI downgrade:
+                if (existing.reglas_procesamiento.type === 'regex_split' && reglas_procesamiento.type === 'split') {
+                    console.warn(`[FilesController] 🛡️ Protected Regex Rule from UI Downgrade.`);
+                    mergedRules.type = 'regex_split'; // Keep regex type
+                    // Keep pattern (already kept by spread)
+                    // Keep target_labels (already kept by spread)
+                }
+            }
+
+            updatePayload.reglas_procesamiento = mergedRules;
         }
 
         const { data, error } = await supabase
