@@ -2,10 +2,10 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v2.2 (Sanitize Logic Added)
+ * v2.3 (Format Number Logic Added)
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v2.2 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v2.3 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 let viewerWorker = null;
@@ -704,39 +704,29 @@ function applyProcessingRules(originalData) {
             const cellVal = row[colIdx];
             const strVal = String(cellVal || "").trim();
 
-            // --- A. SANITIZE LOGIC (Nuevo v2.2) ---
+            // --- A. SANITIZE LOGIC ---
             if (rule.type === 'sanitize') {
                 const fallback = rule.config?.replace_with || "0,00";
                 let shouldReplace = false;
-
-                // 1. Vacío / Null / Undefined
                 if (!strVal || strVal === "" || strVal.toLowerCase() === "undefined" || strVal.toLowerCase() === "null") {
                     shouldReplace = true;
                 }
-
-                // 2. Regex Match (Si tiene letras, etc)
                 if (!shouldReplace && rule.config?.match_regex) {
                     try {
                         let p = rule.config.match_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
                         p = p.replace(/\\/g, '\\');
-                        if (new RegExp(p, 'i').test(strVal)) {
-                            shouldReplace = true;
-                        }
+                        if (new RegExp(p, 'i').test(strVal)) shouldReplace = true;
                     } catch (e) { console.warn("Sanitize Regex Error:", e); }
                 }
-
-                if (shouldReplace) {
-                    row[colIdx] = fallback; // Reemplazamos el valor en la celda
-                }
+                if (shouldReplace) row[colIdx] = fallback;
             }
 
             // --- B. FILTER LOGIC ---
             if (rule.type === 'filter' || rule.type === 'row_filter') {
                 if (rule.config?.exclude_empty && strVal === "") {
-                    keepRow = false;
-                    break;
+                    keepRow = false; break;
                 }
                 if (rule.config?.exclude_regex) {
                     try {
@@ -744,58 +734,52 @@ function applyProcessingRules(originalData) {
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
                         p = p.replace(/\\/g, '\\');
-                        if (new RegExp(p, 'i').test(strVal)) {
-                            keepRow = false;
-                            break;
-                        }
+                        if (new RegExp(p, 'i').test(strVal)) { keepRow = false; break; }
                     } catch (e) { }
                 }
-                // ANTI-DUPLICADOS
                 if (rule.config?.unique) {
                     const uniqueKey = strVal.toUpperCase();
-                    if (seenValues.has(uniqueKey)) {
-                        keepRow = false;
-                        break;
-                    } else {
-                        seenValues.add(uniqueKey);
-                    }
+                    if (seenValues.has(uniqueKey)) { keepRow = false; break; }
+                    else { seenValues.add(uniqueKey); }
                 }
             }
 
             // --- C. TRANSFORM LOGIC ---
             if (keepRow && (rule.type === 'split' || rule.type === 'regex_split')) {
-                let pDesc = strVal;
-                let pPres = "";
-
+                let pDesc = strVal; let pPres = "";
                 if (rule.type === 'regex_split') {
                     try {
                         let patternStr = rule.pattern;
                         if (patternStr) {
                             patternStr = patternStr.replace(/\\/g, '\\');
-
                             if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                             if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
                             else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
-
                             const regex = new RegExp(patternStr, 'i');
                             const match = strVal.match(regex);
                             if (match) {
-                                const fullMatch = match[0];
-                                pPres = fullMatch.trim();
-                                pDesc = strVal.replace(fullMatch, "").trim();
+                                pPres = match[0].trim();
+                                pDesc = strVal.replace(match[0], "").trim();
                             }
                         }
-                    } catch (e) {
-                        console.warn("Regex Error:", e);
-                    }
+                    } catch (e) { console.warn("Regex Error:", e); }
                 } else if (rule.type === 'split' && rule.delimiter) {
                     const parts = strVal.split(rule.delimiter);
                     if (parts.length > 0) pDesc = parts[0].trim();
                     if (parts.length > 1) pPres = parts[1].trim();
                 }
+                if (pPres) row[colIdx] = `📦 ${pDesc}  |  🏷️ ${pPres}`;
+            }
 
-                if (pPres) {
-                    row[colIdx] = `📦 ${pDesc}  |  🏷️ ${pPres}`;
+            // --- D. FORMAT LOGIC (v2.3) ---
+            if (keepRow && rule.type === 'format_number') {
+                let num = parseFloat(String(cellVal).replace(/[^0-9.-]/g, ''));
+                if (!isNaN(num)) {
+                    row[colIdx] = new Intl.NumberFormat('es-AR', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                        useGrouping: true
+                    }).format(num);
                 }
             }
         }
@@ -1127,7 +1111,7 @@ function generatePreview() {
                         });
                     }
                 }
-                // --- D. SANITIZE PREVIEW LOGIC (Nuevo v2.2) ---
+                // --- D. SANITIZE PREVIEW LOGIC ---
                 else if (rule && isSimActive && rule.type === 'sanitize') {
                     displayConfig.push({
                         label: termName,
@@ -1136,11 +1120,7 @@ function generatePreview() {
                         transform: (val) => {
                             const strVal = String(val || "").trim();
                             const fallback = rule.config?.replace_with || "0,00";
-
-                            // 1. Vacío Check
                             if (strVal === "" || strVal.toLowerCase() === "undefined" || strVal.toLowerCase() === "null") return fallback;
-
-                            // 2. Regex Check
                             if (rule.config?.match_regex) {
                                 try {
                                     let p = rule.config.match_regex;
@@ -1151,6 +1131,34 @@ function generatePreview() {
                                 } catch (e) { }
                             }
                             return val;
+                        },
+                        hasSwitch: true,
+                        switchState: rule.isSimActive !== false,
+                        switchColIdx: colIdx
+                    });
+                }
+                // --- E. FORMAT NUMBER LOGIC (v2.3) ---
+                else if (rule && isSimActive && rule.type === 'format_number') {
+                    displayConfig.push({
+                        label: termName,
+                        isVirtual: false,
+                        sourceIndex: colIdx,
+                        transform: (val) => {
+                            const strVal = String(val);
+                            // Intentamos limpiar cualquier basura que no sea número, punto o menos
+                            let num = parseFloat(strVal);
+                            if (isNaN(num)) {
+                                num = parseFloat(strVal.replace(/[^0-9.-]/g, ''));
+                            }
+
+                            if (!isNaN(num)) {
+                                return new Intl.NumberFormat('es-AR', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                    useGrouping: true
+                                }).format(num);
+                            }
+                            return val; // Si falla, devolvemos original
                         },
                         hasSwitch: true,
                         switchState: rule.isSimActive !== false,
