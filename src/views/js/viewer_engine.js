@@ -500,6 +500,51 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     if (window.lucide) window.lucide.createIcons();
 }
 
+// HELPER: Select for Rules with Integrity Filters
+function createTermSelect(currentValue, placeholder, currentTermId) {
+    const select = document.createElement('select');
+    select.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none w-full appearance-none';
+
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = "";
+    defaultOpt.text = `- ${placeholder} -`;
+    defaultOpt.disabled = true;
+    if (!currentValue) defaultOpt.selected = true;
+    select.appendChild(defaultOpt);
+
+    let foundCurrent = false;
+
+    nomenclatureCache.forEach(t => {
+        // FILTER 1: No Auto-Reference
+        if (t.id === currentTermId) return;
+
+        // FILTER 2: Solo Hojas (No Composite Terms)
+        if (t.reglas_procesamiento && Object.keys(t.reglas_procesamiento).length > 0) return;
+
+        const opt = document.createElement('option');
+        opt.value = t.termino;
+        opt.text = t.termino;
+
+        if (t.termino === currentValue) {
+            opt.selected = true;
+            foundCurrent = true;
+        }
+        select.appendChild(opt);
+    });
+
+    // Integrity Fallback: If current value exists but is filtered (e.g. became a rule later) or missing
+    if (currentValue && !foundCurrent) {
+        const legacyOpt = document.createElement('option');
+        legacyOpt.value = currentValue;
+        legacyOpt.text = `${currentValue} (Legado)`;
+        legacyOpt.classList.add('text-amber-500');
+        legacyOpt.selected = true;
+        select.appendChild(legacyOpt);
+    }
+
+    return select;
+}
+
 // RESTORED FULL EDIT MODE WITH RULES
 function renderEditMode(container, term) {
     container.className = 'p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-3 transition-all rounded-r-lg shadow-inner';
@@ -548,15 +593,12 @@ function renderEditMode(container, term) {
     inputDelim.className = 'col-span-2 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-emerald-400 font-mono focus:border-emerald-500 outline-none placeholder:text-slate-600 text-center';
     inputDelim.title = "Delimitador (ej: ' + ', ' - ')";
 
-    const field1 = document.createElement('input');
-    field1.value = Array.isArray(existingRule.fields) ? existingRule.fields[0] : "Descripción";
-    field1.placeholder = "Campo 1";
-    field1.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none text-center';
+    // REPLACED INPUTS WITH SELECTS (INTEGRITY ENFORCED)
+    const val1 = Array.isArray(existingRule.fields) ? existingRule.fields[0] : "";
+    const field1 = createTermSelect(val1, "Campo 1", term.id);
 
-    const field2 = document.createElement('input');
-    field2.value = Array.isArray(existingRule.fields) ? existingRule.fields[1] : "Presentación";
-    field2.placeholder = "Campo 2";
-    field2.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none text-center';
+    const val2 = Array.isArray(existingRule.fields) ? existingRule.fields[1] : "";
+    const field2 = createTermSelect(val2, "Campo 2", term.id);
 
     ruleContainer.appendChild(inputDelim);
     ruleContainer.appendChild(field1);
