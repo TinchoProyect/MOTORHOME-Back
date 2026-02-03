@@ -2,10 +2,10 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v2.0 (Hot Reload & Stability Final)
+ * v2.1 (Static Main View - "Modo Muertito")
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v2.0 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v2.1 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 let viewerWorker = null;
@@ -372,17 +372,13 @@ async function updateNomenclatureTerm(id, newTerm, newDesc, newRules) {
             if (newDesc !== undefined) nomenclatureCache[idx].descripcion_uso = newDesc;
             if (newRules !== undefined) nomenclatureCache[idx].reglas_procesamiento = newRules;
 
-            // 🔥 HOT RELOAD FIX (El arreglo crítico)
-            // Actualizamos la variable processingRules en tiempo real si alguna columna usa este término
+            // 🔥 HOT RELOAD FIX (Actualiza memoria del visor al guardar)
             Object.keys(columnMapping).forEach(colIdx => {
-                if (columnMapping[colIdx] === oldName) { // Usamos el nombre viejo para mapear
-                    // Actualizamos nombre en mapeo visual
-                    columnMapping[colIdx] = newTerm;
+                if (columnMapping[colIdx] === oldName || columnMapping[colIdx] === newTerm) {
+                    columnMapping[colIdx] = newTerm; // Sync nombre
 
-                    // Actualizamos la regla en memoria (copia fresca del cache)
                     const updatedRule = nomenclatureCache[idx].reglas_procesamiento;
                     if (updatedRule) {
-                        // Deep copy para romper referencias
                         processingRules[colIdx] = JSON.parse(JSON.stringify(updatedRule));
                     } else {
                         delete processingRules[colIdx];
@@ -792,7 +788,10 @@ function toggleProcessingRule(colIndex) {
 }
 
 function renderVirtualTable(originalData) {
-    const data = applyProcessingRules(originalData); // APPLY RULES HERE
+    // 🔥 CAMBIO CRÍTICO: Tabla principal siempre muestra RAW (Muertito)
+    // const data = applyProcessingRules(originalData); // ANTES (Reactivo)
+    const data = originalData; // AHORA (Estático)
+
     const container = document.getElementById('excelContainer');
 
     if (!data || data.length === 0) {
