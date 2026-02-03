@@ -2,10 +2,10 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v2.1 (Static Main View - "Modo Muertito")
+ * v2.2 (Sanitize Logic Added)
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v2.1 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v2.2 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 let viewerWorker = null;
@@ -704,7 +704,35 @@ function applyProcessingRules(originalData) {
             const cellVal = row[colIdx];
             const strVal = String(cellVal || "").trim();
 
-            // --- A. FILTER LOGIC ---
+            // --- A. SANITIZE LOGIC (Nuevo v2.2) ---
+            if (rule.type === 'sanitize') {
+                const fallback = rule.config?.replace_with || "0,00";
+                let shouldReplace = false;
+
+                // 1. Vacío / Null / Undefined
+                if (!strVal || strVal === "" || strVal.toLowerCase() === "undefined" || strVal.toLowerCase() === "null") {
+                    shouldReplace = true;
+                }
+
+                // 2. Regex Match (Si tiene letras, etc)
+                if (!shouldReplace && rule.config?.match_regex) {
+                    try {
+                        let p = rule.config.match_regex;
+                        if (p.startsWith('/')) p = p.slice(1);
+                        if (p.endsWith('/')) p = p.slice(0, -1);
+                        p = p.replace(/\\/g, '\\');
+                        if (new RegExp(p, 'i').test(strVal)) {
+                            shouldReplace = true;
+                        }
+                    } catch (e) { console.warn("Sanitize Regex Error:", e); }
+                }
+
+                if (shouldReplace) {
+                    row[colIdx] = fallback; // Reemplazamos el valor en la celda
+                }
+            }
+
+            // --- B. FILTER LOGIC ---
             if (rule.type === 'filter' || rule.type === 'row_filter') {
                 if (rule.config?.exclude_empty && strVal === "") {
                     keepRow = false;
@@ -715,7 +743,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.exclude_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\\\/g, '\\');
+                        p = p.replace(/\\/g, '\\');
                         if (new RegExp(p, 'i').test(strVal)) {
                             keepRow = false;
                             break;
@@ -734,7 +762,7 @@ function applyProcessingRules(originalData) {
                 }
             }
 
-            // --- B. TRANSFORM LOGIC ---
+            // --- C. TRANSFORM LOGIC ---
             if (keepRow && (rule.type === 'split' || rule.type === 'regex_split')) {
                 let pDesc = strVal;
                 let pPres = "";
@@ -743,7 +771,7 @@ function applyProcessingRules(originalData) {
                     try {
                         let patternStr = rule.pattern;
                         if (patternStr) {
-                            patternStr = patternStr.replace(/\\\\/g, '\\');
+                            patternStr = patternStr.replace(/\\/g, '\\');
 
                             if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                             if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
@@ -788,9 +816,8 @@ function toggleProcessingRule(colIndex) {
 }
 
 function renderVirtualTable(originalData) {
-    // 🔥 CAMBIO CRÍTICO: Tabla principal siempre muestra RAW (Muertito)
-    // const data = applyProcessingRules(originalData); // ANTES (Reactivo)
-    const data = originalData; // AHORA (Estático)
+    // 🔥 MODO MUERTITO: Tabla principal estática (RAW)
+    const data = originalData;
 
     const container = document.getElementById('excelContainer');
 
@@ -1068,7 +1095,7 @@ function generatePreview() {
 
                     let patternStr = rule.pattern;
                     if (patternStr) {
-                        patternStr = patternStr.replace(/\\\\/g, '\\');
+                        patternStr = patternStr.replace(/\\/g, '\\');
                         if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                         if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
                         else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
@@ -1100,8 +1127,38 @@ function generatePreview() {
                         });
                     }
                 }
+                // --- D. SANITIZE PREVIEW LOGIC (Nuevo v2.2) ---
+                else if (rule && isSimActive && rule.type === 'sanitize') {
+                    displayConfig.push({
+                        label: termName,
+                        isVirtual: false,
+                        sourceIndex: colIdx,
+                        transform: (val) => {
+                            const strVal = String(val || "").trim();
+                            const fallback = rule.config?.replace_with || "0,00";
+
+                            // 1. Vacío Check
+                            if (strVal === "" || strVal.toLowerCase() === "undefined" || strVal.toLowerCase() === "null") return fallback;
+
+                            // 2. Regex Check
+                            if (rule.config?.match_regex) {
+                                try {
+                                    let p = rule.config.match_regex;
+                                    if (p.startsWith('/')) p = p.slice(1);
+                                    if (p.endsWith('/')) p = p.slice(0, -1);
+                                    p = p.replace(/\\/g, '\\');
+                                    if (new RegExp(p, 'i').test(strVal)) return fallback;
+                                } catch (e) { }
+                            }
+                            return val;
+                        },
+                        hasSwitch: true,
+                        switchState: rule.isSimActive !== false,
+                        switchColIdx: colIdx
+                    });
+                }
                 else {
-                    // 🔥 FIX SWITCH ZOMBIE
+                    // Default / Identity
                     displayConfig.push({
                         label: termName,
                         isVirtual: false,
@@ -1146,7 +1203,7 @@ function generatePreview() {
                             let p = rule.config.exclude_regex;
                             if (p.startsWith('/')) p = p.slice(1);
                             if (p.endsWith('/')) p = p.slice(0, -1);
-                            p = p.replace(/\\\\/g, '\\');
+                            p = p.replace(/\\/g, '\\');
                             if (new RegExp(p, 'i').test(String(cellValue))) keepRow = false;
                         } catch (e) { console.error("Filter Regex Error", e); }
                     }
