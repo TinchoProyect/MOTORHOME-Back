@@ -2,10 +2,10 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v2.4 (Regex Fix + All Features Active)
+ * v2.5 (Computed Columns Integration)
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v2.4 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v2.5 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 let viewerWorker = null;
@@ -120,6 +120,20 @@ async function openFileViewer(fileId, fileName) {
     const imgContainer = document.getElementById('imageContainer');
     const imgEl = document.getElementById('viewerImage');
 
+    // Reset Buttons visibility (Calc button added)
+    const btnMap = document.getElementById('btnMappingMode');
+    const btnOffset = document.getElementById('btnOffsetMode');
+    const btnCalc = document.getElementById('btnCalcMode'); // New Button
+
+    [btnMap, btnOffset, btnCalc].forEach(btn => {
+        if (btn) {
+            btn.classList.add('hidden');
+            // Reset styles
+            btn.classList.remove('bg-blue-600', 'bg-amber-600', 'bg-purple-600', 'text-white', 'border-blue-500', 'animate-pulse');
+            btn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700');
+        }
+    });
+
     if (viewerWorker) {
         viewerWorker.terminate();
         viewerWorker = null;
@@ -139,21 +153,9 @@ async function openFileViewer(fileId, fileName) {
     // Reset Tools
     mappingMode = false;
     columnMapping = {};
-    const btnMap = document.getElementById('btnMappingMode');
-    if (btnMap) {
-        btnMap.classList.add('hidden');
-        btnMap.classList.remove('bg-blue-600', 'text-white', 'border-blue-500', 'shadow-[0_0_15px_rgba(37,99,235,0.3)]');
-        btnMap.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700');
-    }
 
     offsetSelectionMode = false;
     currentOffset = null;
-    const btnOffset = document.getElementById('btnOffsetMode');
-    if (btnOffset) {
-        btnOffset.classList.add('hidden');
-        btnOffset.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
-        btnOffset.classList.add('bg-slate-800', 'text-slate-300');
-    }
 
     try {
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -166,6 +168,7 @@ async function openFileViewer(fileId, fileName) {
         if (isExcel) {
             if (btnMap) btnMap.classList.remove('hidden');
             if (btnOffset) btnOffset.classList.remove('hidden');
+            if (btnCalc) btnCalc.classList.remove('hidden'); // Show calc button
 
             const response = await fetch(downloadUrl);
             if (!response.ok) throw new Error("Error descargando archivo.");
@@ -719,7 +722,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.match_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                        p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4
                         if (new RegExp(p, 'i').test(strVal)) {
                             shouldReplace = true;
                         }
@@ -742,7 +745,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.exclude_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                        p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4
                         if (new RegExp(p, 'i').test(strVal)) {
                             keepRow = false;
                             break;
@@ -770,7 +773,7 @@ function applyProcessingRules(originalData) {
                     try {
                         let patternStr = rule.pattern;
                         if (patternStr) {
-                            patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                            patternStr = patternStr.replace(/\\/g, '\\'); // 🔥 FIX v2.4
 
                             if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                             if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
@@ -829,6 +832,9 @@ function toggleProcessingRule(colIndex) {
 function renderVirtualTable(originalData) {
     // 🔥 MODO MUERTITO: Tabla principal estática (RAW)
     const data = originalData;
+
+    // 🔥 STATE EXPOSURE FOR SATELLITE MODULES (v2.5)
+    window.viewerState = { mapping: columnMapping, data: currentSheetData };
 
     const container = document.getElementById('excelContainer');
 
@@ -1106,7 +1112,7 @@ function generatePreview() {
 
                     let patternStr = rule.pattern;
                     if (patternStr) {
-                        patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                        patternStr = patternStr.replace(/\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
                         if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                         if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
                         else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
@@ -1153,7 +1159,7 @@ function generatePreview() {
                                     let p = rule.config.match_regex;
                                     if (p.startsWith('/')) p = p.slice(1);
                                     if (p.endsWith('/')) p = p.slice(0, -1);
-                                    p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                                    p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
                                     if (new RegExp(p, 'i').test(strVal)) return fallback;
                                 } catch (e) { }
                             }
@@ -1205,6 +1211,48 @@ function generatePreview() {
             }
         });
 
+        // --- F. COMPUTED COLUMNS LOGIC (v2.5) ---
+        if (window.computedColumns && window.computedColumns.length > 0) {
+            window.computedColumns.forEach(comp => {
+                displayConfig.push({
+                    label: comp.name,
+                    isVirtual: true,
+                    // Note: We use a wrapper to access the full ROW
+                    transform: (val, row) => {
+                        try {
+                            const parseVal = (v) => {
+                                if (!v) return 0;
+                                let s = String(v).trim();
+                                if (!isNaN(s)) return parseFloat(s);
+                                // Limpieza agresiva de moneda
+                                s = s.replace(/[^0-9,.-]/g, '');
+                                if (s.includes(',') && s.includes('.')) {
+                                    s = s.replace(/\./g, '').replace(',', '.');
+                                } else if (s.includes(',')) {
+                                    s = s.replace(',', '.');
+                                }
+                                return parseFloat(s) || 0;
+                            };
+
+                            const valA = parseVal(row[comp.sourceA]); // Precio
+                            const valB = parseVal(row[comp.sourceB]); // Descuento
+
+                            // Lógica: Precio * (1 - Descuento)
+                            const result = valA * (1 - valB);
+
+                            return new Intl.NumberFormat('es-AR', {
+                                minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true
+                            }).format(result);
+
+                        } catch (e) { return "ERR"; }
+                    },
+                    hasSwitch: true,
+                    switchState: true,
+                    switchColIdx: -1
+                });
+            });
+        }
+
         if (displayConfig.length === 0) {
             alert("Primero debes mapear al menos una columna.");
             return;
@@ -1236,7 +1284,7 @@ function generatePreview() {
                             let p = rule.config.exclude_regex;
                             if (p.startsWith('/')) p = p.slice(1);
                             if (p.endsWith('/')) p = p.slice(0, -1);
-                            p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
+                            p = p.replace(/\\/g, '\\'); // 🔥 FIX v2.4 (Regreso a doble escape)
                             if (new RegExp(p, 'i').test(String(cellValue))) keepRow = false;
                         } catch (e) { console.error("Filter Regex Error", e); }
                     }
@@ -1317,13 +1365,13 @@ function filterSimulationData() {
         return terms.every(term => {
             if (fieldIdx === "ALL") {
                 return currentDisplayConfig.some(cfg => {
-                    const val = cfg.transform(row[cfg.sourceIndex]);
+                    const val = cfg.transform(row[cfg.sourceIndex], row); // 🔥 PASS ROW (v2.5)
                     return String(val).toLowerCase().includes(term);
                 });
             } else {
                 const cfg = currentDisplayConfig[parseInt(fieldIdx)];
                 if (!cfg) return false;
-                const val = cfg.transform(row[cfg.sourceIndex]);
+                const val = cfg.transform(row[cfg.sourceIndex], row); // 🔥 PASS ROW (v2.5)
                 return String(val).toLowerCase().includes(term);
             }
         });
@@ -1362,8 +1410,8 @@ function renderSimulationTable(data) {
     data.forEach((row) => {
         html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
         currentDisplayConfig.forEach(cfg => {
-            const rawVal = row[cfg.sourceIndex];
-            const finalVal = cfg.transform(rawVal);
+            const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
+            const finalVal = cfg.transform(rawVal, row); // 🔥 PASS ROW (v2.5)
             html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${finalVal}</td>`;
         });
         html += "</tr>";
