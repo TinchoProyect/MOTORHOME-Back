@@ -886,6 +886,16 @@ function toggleSimulationMode() {
     generatePreview();
 }
 
+// 5. Dynamic Rule Toggling
+function toggleSimulationRule(colIndex) {
+    if (processingRules[colIndex]) {
+        // Toggle Simulation Active State (Default True if undefined)
+        const current = processingRules[colIndex].isSimActive !== undefined ? processingRules[colIndex].isSimActive : true;
+        processingRules[colIndex].isSimActive = !current;
+        generatePreview(); // Re-render with new state
+    }
+}
+
 function generatePreview() {
     if (!currentSheetData || currentSheetData.length === 0) return;
 
@@ -894,7 +904,6 @@ function generatePreview() {
     const fType = window.globalContext.fileType || "GENERAL";
     const modalTitle = document.getElementById('simModalTitle');
 
-    // Inject if exists (Title + Badges in Header)
     if (modalTitle) {
         modalTitle.innerHTML = `
             <span class="text-slate-400 font-normal">Vista Previa de Extracción:</span> 
@@ -905,28 +914,71 @@ function generatePreview() {
 
     // 2. Strict Offset Logic
     const startRow = currentOffset ? currentOffset.row : 0;
-    // Slice raw data from offset downwards
     const rawSlice = currentSheetData.slice(startRow);
 
-    // 3. Config Extraction (Only Mapped Columns)
-    const renderingConfig = [];
+    // 3. Config Extraction & Virtual Column Building
+    const displayConfig = [];
+    const sourceConfig = []; // For sanitization filter
+
     Object.keys(columnMapping).forEach(key => {
         const colIdx = parseInt(key);
-        const label = columnMapping[key];
-        if (label && label !== 'Ignorar Columna') {
-            renderingConfig.push({ label: label, index: colIdx });
+        const termId = columnMapping[key];
+
+        if (termId && termId !== 'Ignorar Columna') {
+            sourceConfig.push({ index: colIdx }); // Keep track for filter
+
+            // Resolve Name from Cache (ID -> Name)
+            const termObj = nomenclatureCache.find(t => t.id === termId);
+            const termName = termObj ? termObj.termino : termId;
+
+            const rule = processingRules[colIdx];
+            const isSimActive = rule ? (rule.isSimActive !== undefined ? rule.isSimActive : true) : false;
+
+            // SCENARIO A: Rule Active (Virtual Columns)
+            if (rule && isSimActive && rule.type === 'split') {
+                rule.fields.forEach((fieldId, subIdx) => {
+                    // Resolve Sub-Field ID -> Name
+                    const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
+                    const fieldName = fieldObj ? fieldObj.termino : fieldId;
+
+                    displayConfig.push({
+                        label: fieldName, // NOW READABLE NAME
+                        isVirtual: true,
+                        sourceIndex: colIdx,
+                        transform: (val) => {
+                            if (!val) return '';
+                            const parts = String(val).split(rule.delimiter);
+                            return parts[subIdx] ? parts[subIdx].trim() : '';
+                        },
+                        hasSwitch: subIdx === 0, // Switch on first virtual col
+                        switchState: true,
+                        switchColIdx: colIdx
+                    });
+                });
+            }
+            // SCENARIO B: Rule Inactive or No Rule (Identity)
+            else {
+                displayConfig.push({
+                    label: termName, // NOW READABLE NAME
+                    isVirtual: false,
+                    sourceIndex: colIdx,
+                    transform: (val) => val,
+                    hasSwitch: !!rule, // Only show switch if rule exists
+                    switchState: false,
+                    switchColIdx: colIdx
+                });
+            }
         }
     });
 
-    if (renderingConfig.length === 0) {
+    if (displayConfig.length === 0) {
         alert("Primero debes mapear al menos una columna.");
         return;
     }
 
-    // 4. Strict Sanitization (The Filter)
-    // A row is valid ONLY if it has at least one non-empty value in a MAPPED column.
+    // 4. Strict Sanitization (The Filter - Based on Source Cols)
     const sanitizedData = rawSlice.filter(row => {
-        return renderingConfig.some(cfg => {
+        return sourceConfig.some(cfg => {
             const val = row[cfg.index];
             return val !== undefined && val !== null && String(val).trim() !== '';
         });
@@ -937,21 +989,40 @@ function generatePreview() {
 
     let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
 
-    // Header with MY NAMES (The Truth)
-    renderingConfig.forEach(cfg => {
-        html += `<th class="p-2 border border-slate-700 text-left bg-blue-900/20 text-blue-300">${cfg.label}</th>`;
+    // Header Renderer (with Switches)
+    displayConfig.forEach(cfg => {
+        let content = cfg.label;
+        if (cfg.hasSwitch) {
+            const checked = cfg.switchState ? 'checked' : '';
+            // Tailwind Switch UI
+            content = `
+                <div class="flex items-center gap-2 justify-between">
+                    <span>${cfg.label}</span>
+                    <label class="relative inline-flex items-center cursor-pointer group">
+                        <input type="checkbox" onclick="toggleSimulationRule(${cfg.switchColIdx})" ${checked} class="sr-only peer">
+                        <div class="w-7 h-3.5 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-emerald-500 hover:bg-slate-600"></div>
+                    </label>
+                </div>
+            `;
+        }
+
+        let thClass = "p-2 border border-slate-700 text-left align-middle ";
+        thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
+
+        html += `<th class="${thClass}">${content}</th>`;
     });
     html += "</tr></thead><tbody>";
 
-    // Body with SANITIZED DATA
+    // Body Renderer (Apply Transformations)
     sanitizedData.forEach((row, i) => {
         // [MOD] Limit Removed by User Request
         // if (i > 50) return; 
 
         html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
-        renderingConfig.forEach(cfg => {
-            const cellVal = row[cfg.index] !== undefined ? row[cfg.index] : '';
-            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${cellVal}</td>`;
+        displayConfig.forEach(cfg => {
+            const rawVal = row[cfg.sourceIndex];
+            const finalVal = cfg.transform(rawVal);
+            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${finalVal}</td>`;
         });
         html += "</tr>";
     });
@@ -964,7 +1035,7 @@ function generatePreview() {
     document.getElementById('simMeta').innerHTML = `
         <span class="text-slate-400">Total Filas Útiles:</span> <span class="text-white font-bold">${sanitizedData.length}</span> 
         <span class="text-slate-600 mx-2">|</span> 
-        <span class="text-slate-400">Columnas:</span> <span class="text-white font-bold">${renderingConfig.length}</span>
+        <span class="text-slate-400">Columnas:</span> <span class="text-white font-bold">${displayConfig.length}</span>
     `;
 }
 
@@ -989,5 +1060,6 @@ window.generatePreview = generatePreview;
 window.toggleSimulationMode = toggleSimulationMode;
 window.closeSimulationModal = closeSimulationModal;
 window.toggleProcessingRule = toggleProcessingRule;
+window.toggleSimulationRule = toggleSimulationRule; // EXPOSED
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
