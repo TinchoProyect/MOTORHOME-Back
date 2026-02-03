@@ -945,7 +945,9 @@ function generatePreview() {
 
     // Body with SANITIZED DATA
     sanitizedData.forEach((row, i) => {
-        if (i > 50) return; // Preview limit for rendering, but count is real
+        // [MOD] Limit Removed by User Request
+        // if (i > 50) return; 
+
         html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
         renderingConfig.forEach(cfg => {
             const cellVal = row[cfg.index] !== undefined ? row[cfg.index] : '';
