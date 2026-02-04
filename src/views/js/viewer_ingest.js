@@ -9,7 +9,8 @@ window.confirmIngestion = async function () {
     console.log("[Ingest] Iniciando confirmación...");
 
     // 1. Capturar Snapshot del Visor
-    const snapshot = window.getViewerSnapshot ? window.getViewerSnapshot() : [];
+    // const dataSnapshot = window.currentSimData; // <-- ELIMINAR ESTO
+    const snapshot = window.getViewerSnapshot ? window.getViewerSnapshot() : null;
     const context = window.globalContext || {};
 
     if (!snapshot || snapshot.length === 0) {

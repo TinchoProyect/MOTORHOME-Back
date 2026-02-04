@@ -1443,25 +1443,9 @@ window.toggleSimulationRule = toggleSimulationRule;
 window.filterSimulationData = filterSimulationData;
 
 // [PHASE 4] Snapshot Export for Ingestion
+// --- PUBLIC API FOR MODULES ---
 window.getViewerSnapshot = function () {
-    if (!currentSimData || currentSimData.length === 0) return [];
-    if (!currentDisplayConfig || currentDisplayConfig.length === 0) {
-        // Fallback: Return raw rows if no config (shouldn't happen if sim ran)
-        return currentSimData;
-    }
-
-    // Transform Raw Rows -> Mapped Objects
-    return currentSimData.map(row => {
-        const item = {};
-        currentDisplayConfig.forEach(cfg => {
-            const val = cfg.transform(row[cfg.sourceIndex], row);
-            // Use Label as Key (Sanitized)
-            // e.g. "PRECIO FINAL" -> "PRECIO FINAL"
-            // We verify collisions? Usually labels are unique.
-            item[cfg.label] = val;
-        });
-        return item;
-    });
+    return (typeof currentSimData !== 'undefined') ? currentSimData : null;
 };
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
