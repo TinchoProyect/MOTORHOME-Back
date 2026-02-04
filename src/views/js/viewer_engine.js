@@ -1445,7 +1445,7 @@ window.filterSimulationData = filterSimulationData;
 // [PHASE 4] Snapshot Export for Ingestion
 // --- PUBLIC API FOR MODULES ---
 window.getViewerSnapshot = function () {
-    return (typeof currentSimData !== 'undefined') ? currentSimData : null;
+    return (typeof currentSheetData !== 'undefined') ? currentSheetData : null;
 };
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");

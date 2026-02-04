@@ -44,7 +44,8 @@ window.confirmIngestion = async function () {
             dataSnapshot: snapshot
         };
 
-        const response = await fetch('/api/files/confirm', {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${backendUrl}/api/files/confirm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
