@@ -3,6 +3,7 @@ const extractionService = require('../services/extractionService');
 const supabase = require('../config/supabaseClient');
 // AGREGADO: Importamos el servicio de huellas digitales
 const fingerprintService = require('../services/fingerprintService');
+const ingestService = require('../services/ingestService');
 
 const DEFAULT_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
@@ -268,128 +269,34 @@ async function processExtraction(req, res) {
 // =============================================================================
 // CONFIRM EXTRACTION MAPPING
 // =============================================================================
+// =============================================================================
+// CONFIRM EXTRACTION MAPPING (Refactored Phase 4)
+// =============================================================================
 async function confirmExtraction(req, res) {
-    const { fileId, providerId, mapping, headers, headerIndex } = req.body;
+    const { fileId, providerId, dataSnapshot } = req.body;
 
-    console.log(`[FilesController] CONFIRM MAPPING for ${fileId}`);
+    // [PHASE 4] MODULAR INGESTION STRATEGY
+    // We delegated all logic to 'ingestService'. 
+    // filesController now acts as a pure router/validator.
+
+    console.log(`[FilesController] CONFIRM INGESTION REQUEST for ${fileId}`);
+
+    if (!fileId || !providerId || !dataSnapshot) {
+        return res.status(400).json({ error: "Faltan parámetros (fileId, providerId, dataSnapshot)" });
+    }
 
     try {
-        const headerHash = fingerprintService.generateHeaderHash(headers);
-        const fingerprint = {
-            header_hash: headerHash,
-            file_extension: "xlsx",
-            expected_headers: headers
-        };
+        // Delegate to Service
+        const result = await ingestService.processIngestion(fileId, providerId, dataSnapshot);
 
-        if (headerIndex !== undefined) mapping.headerIndex = parseInt(headerIndex);
-
-        const { data: existingTemplate } = await supabase
-            .from('proveedor_formatos_guia')
-            .select('id')
-            .eq('proveedor_id', providerId)
-            .eq('estado', 'ACTIVA')
-            .filter('fingerprint->>header_hash', 'eq', headerHash)
-            .maybeSingle();
-
-        let template;
-
-        if (existingTemplate) {
-            console.log(`[FilesController] Actualizando Template existente: ${existingTemplate.id}`);
-            const { data: updated, error: upError } = await supabase
-                .from('proveedor_formatos_guia')
-                .update({
-                    reglas_mapeo: mapping,
-                    nombre_formato: `Formato Actualizado ${new Date().toLocaleDateString()}`,
-                })
-                .eq('id', existingTemplate.id)
-                .select()
-                .single();
-
-            if (upError) throw upError;
-            template = updated;
-        } else {
-            console.log(`[FilesController] Creando NUEVO Template.`);
-            const { data: inserted, error: insError } = await supabase
-                .from('proveedor_formatos_guia')
-                .insert({
-                    proveedor_id: providerId,
-                    nombre_formato: `Formato Auto-Generado ${new Date().toLocaleDateString()}`,
-                    estado: 'ACTIVA',
-                    fingerprint: fingerprint,
-                    reglas_mapeo: mapping,
-                    archivo_origen_id: fileId
-                })
-                .select()
-                .single();
-
-            if (insError) throw insError;
-            template = inserted;
-        }
-
-        console.log(`[FilesController] Actualizando status_global='CONFIRMED' para archivo: ${fileId}`);
-        const { error: rawUpdateError } = await supabase
-            .from('proveedor_listas_raw')
-            .update({
-                status_global: 'CONFIRMED',
-                formato_guia_id: template.id
-            })
-            .eq('archivo_id', fileId)
-            .eq('proveedor_id', providerId);
-
-        if (rawUpdateError) {
-            console.error("Error updating raw status:", rawUpdateError);
-        }
-
-        try {
-            const { data: rawRecord } = await supabase
-                .from('proveedor_listas_raw')
-                .select('id')
-                .eq('archivo_id', fileId)
-                .eq('proveedor_id', providerId)
-                .single();
-
-            if (rawRecord) {
-                console.log("   [Confirm] Extrayendo datos para persistencia...");
-                const extractionResult = await extractionService.processFile(fileId, providerId, { headerIndex: mapping.headerIndex || 0 });
-
-                if (extractionResult.success) {
-                    const rows = extractionResult.data.full_data || extractionResult.data.data_sample || [];
-                    console.log(`   [Confirm] Datos a procesar para bodega: ${rows.length} filas.`);
-
-                    const itemsToInsert = rows.map(row => {
-                        return {
-                            lista_raw_id: rawRecord.id,
-                            raw_data: row,
-                            sku_detectado: null,
-                            descripcion_detectada: null,
-                            precio_detectado: null,
-                            unidad_medida_detectada: null
-                        };
-                    });
-
-                    console.log(`   [Mirror] Preparados ${itemsToInsert.length} items (Raw Mode).`);
-                    await supabase.from('proveedor_items_extraidos').delete().eq('lista_raw_id', rawRecord.id);
-
-                    if (itemsToInsert.length > 0) {
-                        const { error: insertError } = await supabase
-                            .from('proveedor_items_extraidos')
-                            .insert(itemsToInsert);
-
-                        if (insertError) console.error("Error inserting items:", insertError);
-                        else console.log(`   [Confirm] ${itemsToInsert.length} items guardados correctamente.`);
-                    } else {
-                        console.warn("⚠️ Todas las filas fueron filtradas (posible archivo vacío).");
-                    }
-                }
-            }
-        } catch (e) {
-            console.error("Error populando items:", e);
-        }
-
-        res.json({ success: true, message: "Mapeo guardado y archivo procesado.", template });
+        res.json({
+            success: true,
+            message: "Ingesta completada exitosamente.",
+            details: result
+        });
 
     } catch (error) {
-        console.error("[FilesController] Error Confirming:", error);
+        console.error("[FilesController] Error en Ingesta:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 }

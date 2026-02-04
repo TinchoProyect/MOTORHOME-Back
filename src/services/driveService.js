@@ -169,10 +169,42 @@ async function createFolder(folderName, parentId) {
     }
 }
 
+/**
+ * Move a file to a target folder
+ */
+async function moveFile(fileId, targetFolderId) {
+    const drive = await getDriveClient();
+    try {
+        // 1. Get current parents
+        const file = await drive.files.get({
+            fileId: fileId,
+            fields: 'parents'
+        });
+
+        const previousParents = file.data.parents.join(',');
+
+        // 2. Move
+        const result = await drive.files.update({
+            fileId: fileId,
+            addParents: targetFolderId,
+            removeParents: previousParents,
+            fields: 'id, parents'
+        });
+
+        console.log(`[DriveService] File ${fileId} moved to ${targetFolderId}`);
+        return result.data;
+
+    } catch (error) {
+        console.error(`[DriveService] Error moving file ${fileId}:`, error.message);
+        throw error;
+    }
+}
+
 module.exports = {
     listFiles,
     getFileContent,
     getFileMetadata,
     getFileStream,
-    createFolder
+    createFolder,
+    moveFile
 };
