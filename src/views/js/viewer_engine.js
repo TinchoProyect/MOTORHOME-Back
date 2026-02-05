@@ -1469,38 +1469,19 @@ window.loadVirtualFile = function (matrixData, fileName) {
     columnMapping = {};
     processingRules = {};
 
-    // 2. UI Update
-    const title = document.getElementById('viewerTitle');
-    if (title) title.textContent = fileName || "Documento Procesado";
+    // [PHASE 5 REFACTOR] - DELEGACIÓN A VIEWER UI 🎨
+    // Ya no manipulamos el DOM aquí. Ordenamos al Agente UI.
+    if (window.ViewerUI) {
+        // 1. Header (Iconos, Badges, Título)
+        window.ViewerUI.updateHeader(fileName, { isProcessed: true });
 
-    // [PHASE 5 FIX] - HEADER HARD RESET (Renacimiento del DOM)
-    // 1. Icono: Destruimos el SVG viejo e inyectamos un <i> fresco
-    const iconContainer = document.getElementById('viewerIconContainer');
-    if (iconContainer) {
-        iconContainer.innerHTML = '<i data-lucide="file-check" class="w-5 h-5 text-emerald-400"></i>';
-    }
+        // 2. Contenedor
+        window.ViewerUI.showContainer('excel');
 
-    // 2. Badges: Inyección Directa
-    const badges = document.getElementById('viewerBadges');
-    if (badges) {
-        badges.innerHTML = `
-            <span class="px-2 py-0.5 rounded text-[9px] bg-emerald-900 text-emerald-300 border border-emerald-800 uppercase tracking-wider font-bold">
-                PROCESADO
-            </span>
-        `;
-    }
-
-    const loader = document.getElementById('viewerLoader');
-    if (loader) loader.classList.add('hidden');
-
-    // [PHASE 5 FIX] - UNHIDE CONTAINER explicitly
-    document.getElementById('excelContainer').classList.remove('hidden');
-    document.getElementById('pdfContainer').classList.add('hidden');
-    document.getElementById('imageContainer').classList.add('hidden');
-
-    // 3. Render Icons Forcefully (Solo en el Modal para eficiencia)
-    if (window.lucide) {
-        window.lucide.createIcons({ root: document.getElementById('viewerModal') });
+        // 3. Loader
+        window.ViewerUI.toggleLoader(false);
+    } else {
+        console.error("🚨 Critical: ViewerUI not found!");
     }
 
     // 4. Render Table

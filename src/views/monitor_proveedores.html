@@ -567,11 +567,13 @@
     <!-- Module Scripts (Order Matters: Core first, then Viewer) -->
     <script type="module" src="js/app_core.js"></script>
     <script src="js/viewer_computed.js"></script>
+    <script src="js/viewer_ui.js"></script> <!-- Phase 1: Viewer UI -->
     <script type="module" src="js/viewer_engine.js"></script>
     <script src="js/viewer_ingest.js"></script>
     <!-- PHASE 5 -->
     <script src="js/viewer_adapter.js"></script>
     <script src="js/dashboard_tabs.js"></script>
+    <script src="js/viewer_watchdog.js"></script> <!-- 🕵️‍♂️ Debug Watchdog -->
 </body>
 <div id="calculationModal" class="hidden fixed inset-0 z-[250] flex items-center justify-center p-4 modal-blur">
     <div
