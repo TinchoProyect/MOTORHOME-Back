@@ -1478,14 +1478,18 @@ window.loadVirtualFile = function (matrixData, fileName) {
         // 2. Contenedor
         window.ViewerUI.showContainer('excel');
 
-        // 3. Loader
+        // 3. Herramientas y Tabs (Restaurado)
+        window.ViewerUI.toggleTools(true);
+        window.ViewerUI.renderSheetTabs(['Bodega'], 'Bodega');
+
+        // 4. Loader
         window.ViewerUI.toggleLoader(false);
+
+        // 5. Render Table (Restored)
+        renderVirtualTable(currentSheetData);
     } else {
         console.error("🚨 Critical: ViewerUI not found!");
     }
-
-    // 4. Render Table
-    renderVirtualTable(currentSheetData);
 };
 
 // [TABULA RASA] State Reset Protocol

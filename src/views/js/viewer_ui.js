@@ -145,6 +145,19 @@ window.ViewerUI = (function () {
         }
     }
 
+    function toggleTools(show) {
+        const btnMap = document.getElementById('btnMappingMode');
+        const btnOffset = document.getElementById('btnOffsetMode');
+        const btnCalc = document.getElementById('btnCalcMode');
+
+        [btnMap, btnOffset, btnCalc].forEach(btn => {
+            if (btn) {
+                if (show) btn.classList.remove('hidden');
+                else btn.classList.add('hidden');
+            }
+        });
+    }
+
     // Public API
     return {
         updateHeader,
@@ -153,7 +166,8 @@ window.ViewerUI = (function () {
         resetView,
         showContainer,
         renderSheetTabs,
-        refreshIcons
+        refreshIcons,
+        toggleTools // New API
     };
 })();
 
