@@ -25,6 +25,7 @@ let terminalInput, aiLoader, historyContent, micBtn, reportDisplay, logoutBtn;
 // Estado Global de Proveedores
 let currentSuppliers = [];
 let editingSupplierId = null;
+window.currentDriveFolderId = null; // [CONTEXT FIX] Global Memory for Drive Folder
 
 // Placeholder for real metrics
 let realMetrics = {
@@ -145,6 +146,10 @@ function setupUIListeners() {
 // --- EXPLORADOR DE ARCHIVOS (DRIVE) ---
 async function exploreSupplierFiles(folderId) {
     if (!folderId) return;
+
+    // [CONTEXT FIX] Capture this folder as the active Drive Context
+    window.currentDriveFolderId = folderId;
+    console.log(`[Context] Drive Folder Locked: ${folderId}`);
 
     // Context Inference & Global State Hydration
     // Accessing window.currentActiveProviderId to share state with other modules if needed

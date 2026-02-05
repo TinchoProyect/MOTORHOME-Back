@@ -193,16 +193,24 @@ window.DashboardActions = (function () {
                 // We can't easily refresh Drive from here without knowing the folder ID stored in the other tab DOM.
                 // But we can check if the Drive Tab element exists and maybe trigger a click or just leave it for lazy load.
                 // Best practice: Let the user refresh Drive when they go there, OR force it if we can access the ID.
-                const currentFolderId = document.getElementById('currentFolderId')?.value;
-                if (action === 'ROLLBACK' && currentFolderId && window.loadFiles) {
+                // [CONTEXT FIX] Robust Folder ID Retrieval
+                const getDriveFolderId = () => {
+                    // 1. Priority: Global Memory
+                    if (window.currentDriveFolderId) return window.currentDriveFolderId;
+                    // 2. Fallback: DOM
+                    return document.getElementById('currentFolderId')?.value;
+                };
+
+                const targetFolderId = getDriveFolderId();
+
+                if (action === 'ROLLBACK' && targetFolderId && window.loadFiles) {
                     // Silent refresh of drive content? Or just let it be.
                     // Let's just log it.
-                    console.log("%c[LIFECYCLE] T1-B: Rollback detected. Might need Drive Refresh.", "color: magenta;");
-                    // console.log("Rollback completed. Drive view might need refresh.");
+                    console.log("%c[LIFECYCLE] T1-B: Rollback detected. Triggering Pending Refresh.", "color: magenta;");
 
                     if (window.loadFiles) {
                         console.log("%c[LIFECYCLE] T1-C: Calling window.loadFiles() for Pending List Update", "color: magenta;");
-                        window.loadFiles(currentFolderId);
+                        window.loadFiles(targetFolderId);
                     }
                 }
             } else {

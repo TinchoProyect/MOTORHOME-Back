@@ -64,8 +64,12 @@ window.confirmIngestion = async function () {
             // Cerrar Modal y refrescar
             if (window.closeViewerModal) window.closeViewerModal();
 
-            // Helper to get current Drive Folder ID
+            // Helper to get current Drive Folder ID (Robust Context Aware)
             const getDriveFolderId = () => {
+                // 1. Priority: Global Memory (The "Ghost" Folder)
+                if (window.currentDriveFolderId) return window.currentDriveFolderId;
+
+                // 2. Fallback: Calculated from Provider
                 if (window.currentActiveProviderId && window.currentSuppliers) {
                     const p = window.currentSuppliers.find(s => s.id === window.currentActiveProviderId);
                     return p ? (p.drive_folder_prices_id || p.drive_folder_id) : null;
