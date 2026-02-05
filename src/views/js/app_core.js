@@ -225,7 +225,7 @@ function renderFileGrid(files, folderId) {
     // Get Provider Context
     const provider = currentSuppliers.find(s => s.id === window.currentActiveProviderId) || { nombre: 'Proveedor', id: null };
 
-    // Header con Navegación Dual
+    // PHASE 5: UNIFIED DASHBOARD LAYOUT
     let html = `
         <div class="h-full flex flex-col animate-in slide-in-from-bottom-4 duration-500 p-2">
             <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
@@ -239,25 +239,31 @@ function renderFileGrid(files, folderId) {
                         <div class="w-[1px] h-4 bg-slate-700"></div>
                         <button onclick="showSingleSupplier('${provider.id}')" class="p-2 hover:bg-slate-800 rounded-md text-slate-500 hover:text-white transition-colors flex items-center gap-2" title="Volver a Ficha">
                             <i data-lucide="arrow-left" class="w-4 h-4"></i>
-                            <span class="text-[10px] uppercase font-bold hidden md:inline">Ficha</span>
+                            <span class="text-[10px] uppercase font-bold hidden md:inline">Justo</span>
                         </button>
                     </div>
 
-                    <div>
-                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                            <i data-lucide="folder-open" class="w-5 h-5 text-blue-500"></i>
-                            Archivos de ${provider.nombre}
-                        </h2>
-                        <span class="text-[10px] text-slate-500 font-mono tracking-wider">INDEXANDO ${files.length} ELEMENTOS</span>
+                    <!-- TABS (PHASE 5) -->
+                    <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 ml-4">
+                        <button id="tabPending" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-blue-500 bg-blue-500/10 text-blue-400">
+                            <i data-lucide="hard-drive" class="w-3 h-3"></i> Pendientes
+                        </button>
+                        <button id="tabProcessed" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-emerald-300">
+                            <i data-lucide="archive" class="w-3 h-3"></i> Procesados
+                        </button>
                     </div>
                 </div>
+                
                 <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" class="px-3 py-1.5 bg-slate-800 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 border border-slate-700 rounded-lg text-xs font-medium transition-all flex items-center gap-2">
                     Drive Exte&shy;rno <i data-lucide="external-link" class="w-3 h-3"></i>
                 </a>
             </div>
+
+            <!-- CONTAINER DRIVE (DEFAULT) -->
+            <div id="fileListDrive" class="flex-1 overflow-hidden flex flex-col">
     `;
 
-    // Grid de Contenido
+    // Grid de Contenido Drive
     if (files.length === 0) {
         html += `
             <div class="flex-grow flex flex-col items-center justify-center text-slate-600">
@@ -296,8 +302,21 @@ function renderFileGrid(files, folderId) {
         html += `</div>`;
     }
 
+    html += `</div>`; // Close fileListDrive
+
+    // CONTAINER DB (HIDDEN)
+    html += `
+            <div id="fileListDB" class="hidden flex-1 overflow-hidden flex flex-col text-white">
+                <!-- Injected via DashboardTabs -->
+            </div>
+        </div>
+    `;
+
     reportDisplay.innerHTML = html;
     lucide.createIcons();
+
+    // Init Phase 5 Tabs
+    if (window.initDashboardTabs) window.initDashboardTabs();
 }
 
 async function handleFileClick(fileId, fileName) {

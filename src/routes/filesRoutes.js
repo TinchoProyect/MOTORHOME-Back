@@ -30,4 +30,8 @@ router.delete('/dictionary/:id', filesController.deleteDictionaryTerm);
 // POST /api/files/drive/provision-vendor
 router.post('/drive/provision-vendor', filesController.provisionVendorFolders);
 
+// [PHASE 5] Processed Files
+router.get('/processed-list', filesController.listProcessedFiles);
+router.get('/processed-content/:rawListId', filesController.getProcessedFileContent);
+
 module.exports = router;

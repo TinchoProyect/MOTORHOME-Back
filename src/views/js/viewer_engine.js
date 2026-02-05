@@ -1428,12 +1428,22 @@ function renderSimulationTable(data) {
 
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
-window.openFileViewer = openFileViewer;
+// --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
+window.openFileViewer = function (fileId, fileName) {
+    window.resetViewerState(); // [TABULA RASA] - Always Start Clean
+    openFileViewer(fileId, fileName);
+};
+
 window.handleOffsetClick = handleOffsetClick;
 window.toggleOffsetMode = toggleOffsetMode;
 window.toggleMappingMode = toggleMappingMode;
 window.openColumnMenu_v2 = openColumnMenu_v2;
-window.closeViewerModal = closeViewerModal;
+
+window.closeViewerModal = function () {
+    closeViewerModal();
+    window.resetViewerState(); // [TABULA RASA] - Clean on Exit
+};
+
 window.loadSheet = loadSheet;
 window.generatePreview = generatePreview;
 window.toggleSimulationMode = toggleSimulationMode;
@@ -1447,5 +1457,99 @@ window.filterSimulationData = filterSimulationData;
 window.getViewerSnapshot = function () {
     return (typeof currentSheetData !== 'undefined') ? currentSheetData : null;
 };
+
+// [PHASE 5] External Data Injection (Reader Mode)
+window.loadVirtualFile = function (matrixData, fileName) {
+    console.log("[ViewerEngine] Loading Virtual File:", fileName);
+
+    // 1. Reset State
+    currentSheetData = matrixData;
+    currentSheetName = "Bodega";
+    currentOffset = null;
+    columnMapping = {};
+    processingRules = {};
+
+    // 2. UI Update
+    const title = document.getElementById('viewerTitle');
+    if (title) title.textContent = fileName || "Documento Procesado";
+
+    // [PHASE 5 FIX] - HEADER HARD RESET (Renacimiento del DOM)
+    // 1. Icono: Destruimos el SVG viejo e inyectamos un <i> fresco
+    const iconContainer = document.getElementById('viewerIconContainer');
+    if (iconContainer) {
+        iconContainer.innerHTML = '<i data-lucide="file-check" class="w-5 h-5 text-emerald-400"></i>';
+    }
+
+    // 2. Badges: Inyección Directa
+    const badges = document.getElementById('viewerBadges');
+    if (badges) {
+        badges.innerHTML = `
+            <span class="px-2 py-0.5 rounded text-[9px] bg-emerald-900 text-emerald-300 border border-emerald-800 uppercase tracking-wider font-bold">
+                PROCESADO
+            </span>
+        `;
+    }
+
+    const loader = document.getElementById('viewerLoader');
+    if (loader) loader.classList.add('hidden');
+
+    // [PHASE 5 FIX] - UNHIDE CONTAINER explicitly
+    document.getElementById('excelContainer').classList.remove('hidden');
+    document.getElementById('pdfContainer').classList.add('hidden');
+    document.getElementById('imageContainer').classList.add('hidden');
+
+    // 3. Render Icons Forcefully (Solo en el Modal para eficiencia)
+    if (window.lucide) {
+        window.lucide.createIcons({ root: document.getElementById('viewerModal') });
+    }
+
+    // 4. Render Table
+    renderVirtualTable(currentSheetData);
+};
+
+// [TABULA RASA] State Reset Protocol
+window.resetViewerState = function () {
+    console.log("🧹 [ViewerEngine] Tabula Rasa Reset Executing...");
+
+    // 1. Variables Globales (Module Scope)
+    currentSheetData = [];
+    currentSimData = undefined;
+    if (typeof currentWorkbook !== 'undefined') currentWorkbook = null;
+
+    // 2. UI - Buttons Visibility
+    const btnConfirm = document.getElementById('btnConfirmIngest');
+    if (btnConfirm) btnConfirm.classList.remove('hidden'); // Siempre visible por defecto (Ingesta)
+
+    // 3. UI - Contenedores
+    const sheetTabs = document.getElementById('sheetTabs');
+    if (sheetTabs) sheetTabs.innerHTML = '';
+
+    // [PHASE 5 FIX] - Default Hide All
+    const ids = ['excelContainer', 'pdfContainer', 'imageContainer', 'errorContainer'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+
+    const previewTable = document.getElementById('previewTable');
+    if (previewTable) {
+        previewTable.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-full text-slate-600">
+            <i data-lucide="loader-2" class="w-8 h-8 animate-spin mb-4"></i>
+            <span class="text-xs">Iniciando Motor...</span>
+        </div>`;
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    const title = document.getElementById('viewerTitle');
+    if (title) title.textContent = "Cargando...";
+
+    const loader = document.getElementById('viewerLoader');
+    if (loader) loader.classList.remove('hidden');
+
+    console.log("✨ [ViewerEngine] State Cleaned.");
+};
+
+
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
