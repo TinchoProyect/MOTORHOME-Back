@@ -34,4 +34,7 @@ router.post('/drive/provision-vendor', filesController.provisionVendorFolders);
 router.get('/processed-list', filesController.listProcessedFiles);
 router.get('/processed-content/:rawListId', filesController.getProcessedFileContent);
 
+// [PHASE 5] Rollback / Delete
+router.post('/rollback', filesController.rollbackFiles);
+
 module.exports = router;

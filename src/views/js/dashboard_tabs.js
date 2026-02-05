@@ -7,6 +7,28 @@ console.log("%c 🗂️ DASHBOARD TABS: READY ", "background: #3b82f6; color: #f
 
 // State
 let dashboardTabState = 'DRIVE'; // 'DRIVE' | 'DB'
+window.selectedFiles = new Set(); // Selection State
+
+// Selection Logic
+window.toggleSelection = function (id, el) {
+    if (el.checked) {
+        window.selectedFiles.add(id);
+    } else {
+        window.selectedFiles.delete(id);
+    }
+
+    // Notify Action Module
+    if (window.DashboardActions) {
+        window.DashboardActions.renderActionBar(window.selectedFiles.size);
+    }
+};
+
+window.clearSelection = function () {
+    window.selectedFiles.clear();
+    if (window.DashboardActions) {
+        window.DashboardActions.renderActionBar(0);
+    }
+};
 
 // Init
 window.initDashboardTabs = function () {
@@ -71,6 +93,9 @@ async function loadProcessedFiles() {
     const container = document.getElementById('fileListDB');
     if (!providerId || !container) return;
 
+    // Reset Selection
+    if (window.clearSelection) window.clearSelection();
+
     container.innerHTML = `
         <div class="flex flex-col items-center justify-center py-20 text-emerald-500/50">
             <i data-lucide="loader-2" class="w-10 h-10 animate-spin mb-4"></i>
@@ -115,6 +140,14 @@ function renderProcessedGrid(files) {
             <div onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')" 
                 class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-900/10">
                 
+                <!-- Checkbox Selection -->
+                <div class="absolute top-2 left-2 z-10" onclick="event.stopPropagation()">
+                    <input type="checkbox" 
+                        class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                        onchange="toggleSelection('${file.id}', this)"
+                    >
+                </div>
+
                 <div class="absolute top-2 right-2 text-emerald-500">
                     <i data-lucide="check-circle-2" class="w-3 h-3"></i>
                 </div>

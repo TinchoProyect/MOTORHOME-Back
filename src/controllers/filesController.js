@@ -582,6 +582,114 @@ async function getProcessedFileContent(req, res) {
     }
 }
 
+// =============================================================================
+// ROLLBACK PROTOCOL (Eliminación con Opciones) 🗑️🔙
+// =============================================================================
+async function rollbackFiles(req, res) {
+    console.log("[FilesController] 🗑️ INICIO ROLLBACK PROTOCOL");
+    const { fileIds, action, providerId } = req.body; // action: 'ROLLBACK' | 'UNLINK'
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+        return res.status(400).json({ error: "No se seleccionaron archivos." });
+    }
+    if (!['ROLLBACK', 'UNLINK'].includes(action)) {
+        return res.status(400).json({ error: "Acción inválida. Use ROLLBACK o UNLINK." });
+    }
+
+    try {
+        console.log(`[Rollback] Archivos: ${fileIds.length} | Acción: ${action} | Proveedor: ${providerId}`);
+
+        // 1. Recuperar Metadatos Críticos (Carpetas de Proveedor)
+        // Necesitamos saber a dónde devolver el archivo (Inbox)
+        const { data: providerData, error: providerError } = await supabase
+            .from('proveedores')
+            .select('drive_folder_id, drive_folder_prices_id')
+            .eq('id', providerId)
+            .single();
+
+        if (providerError) throw new Error("Error recuperando datos del proveedor: " + providerError.message);
+
+        // Determinación de Destino (Business Rule: Inbox Priority)
+        let targetFolderId = null;
+        if (action === 'ROLLBACK') {
+            if (providerData.drive_folder_prices_id) {
+                targetFolderId = providerData.drive_folder_prices_id;
+                console.log(`[Rollback] 🎯 Destino: Inbox Real (${targetFolderId})`);
+            } else if (providerData.drive_folder_id) {
+                targetFolderId = providerData.drive_folder_id;
+                console.warn(`[Rollback] ⚠️ Inbox no definida. Usando RAIZ como Fallback (${targetFolderId})`);
+            } else {
+                console.error("[Rollback] 🚨 IMPOSIBLE MOVER: No hay carpetas definidas para el proveedor.");
+                // Modificamos acción a UNLINK forzado para no romper, pero avisamos?
+                // Mejor lanzar error para que el operador sepa.
+                throw new Error("El proveedor no tiene carpetas configuradas. No se puede hacer Rollback físico.");
+            }
+        }
+
+        const results = {
+            processed: 0,
+            errors: []
+        };
+
+        // 2. Iteración y Ejecución
+        for (const rawListId of fileIds) {
+            try {
+                // A. Obtener ID de Drive del registro
+                const { data: listRecord, error: listError } = await supabase
+                    .from('proveedor_listas_raw')
+                    .select('archivo_id, nombre_archivo') // archivo_id es el Drive File ID
+                    .eq('id', rawListId)
+                    .single();
+
+                if (listError || !listRecord) {
+                    throw new Error(`Registro no encontrado (ID: ${rawListId})`);
+                }
+
+                const driveFileId = listRecord.archivo_id;
+                console.log(`[Rollback] Procesando: ${listRecord.nombre_archivo} (${driveFileId})`);
+
+                // B. Movimiento Físico (Solo ROLLBACK)
+                if (action === 'ROLLBACK') {
+                    console.log(`   -> Moviendo a ${targetFolderId}...`);
+                    await driveService.moveFile(driveFileId, targetFolderId);
+                }
+
+                // C. Integridad Referencial (Borrado Manual en Cascada)
+                // Paso 1: Hijos (Items Extraídos)
+                const { error: delItemsError } = await supabase
+                    .from('proveedor_items_extraidos')
+                    .delete()
+                    .eq('lista_raw_id', rawListId);
+
+                if (delItemsError) throw new Error("Error borrando items hijos: " + delItemsError.message);
+
+                // Paso 2: Padre (Lista Raw)
+                const { error: delListError } = await supabase
+                    .from('proveedor_listas_raw')
+                    .delete()
+                    .eq('id', rawListId);
+
+                if (delListError) throw new Error("Error borrando registro padre: " + delListError.message);
+
+                results.processed++;
+
+            } catch (innerError) {
+                console.error(`[Rollback] Error en archivo ${rawListId}:`, innerError);
+                results.errors.push({ id: rawListId, error: innerError.message });
+            }
+        }
+
+        res.json({
+            success: true,
+            results: results
+        });
+
+    } catch (error) {
+        console.error("[FilesController] Critical Rollback Error:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
@@ -593,5 +701,6 @@ module.exports = {
     downloadFile,
     provisionVendorFolders,
     listProcessedFiles,     // [PHASE 5]
-    getProcessedFileContent // [PHASE 5]
+    getProcessedFileContent, // [PHASE 5]
+    rollbackFiles            // [PHASE 5 - ROLLBACK]
 };

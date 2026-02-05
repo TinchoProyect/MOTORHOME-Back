@@ -66,6 +66,21 @@ window.confirmIngestion = async function () {
                 window.loadFiles(currentFolderId);
             }
 
+            // [FIX] Dashboard Refresh Logic
+            if (window.loadProcessedFiles && window.switchDashboardTab) {
+                // If we ingested, we moved file to processed. 
+                // We should probably switch to DB tab or just refresh current view.
+                // For better UX, let's refresh the current view (Drive) to show it disappeared
+                // AND trigger a fetch on the DB tab so it's ready.
+
+                // Refresh Drive List (if active)
+                const btnDrive = document.getElementById('tabPending');
+                if (btnDrive && btnDrive.classList.contains('text-blue-400')) {
+                    // We are in Drive Mode
+                    if (window.loadFiles) window.loadFiles(document.getElementById('currentFolderId')?.value);
+                }
+            }
+
         } else {
             throw new Error(result.error || "Error desconocido en backend.");
         }
