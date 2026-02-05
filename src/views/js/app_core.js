@@ -181,7 +181,10 @@ async function exploreSupplierFiles(folderId) {
 
     try {
         // Fetch archivos usando la URL base (backendBaseUrl ya definido anteriormente)
-        const url = backendBaseUrl ? `${backendBaseUrl}/api/files/list?folderId=${folderId}` : `/api/files/list?folderId=${folderId}`;
+        const ts = new Date().getTime();
+        const url = backendBaseUrl
+            ? `${backendBaseUrl}/api/files/list?folderId=${folderId}&_t=${ts}`
+            : `/api/files/list?folderId=${folderId}&_t=${ts}`;
 
         const res = await fetch(url);
         const data = await res.json();
@@ -203,6 +206,10 @@ async function exploreSupplierFiles(folderId) {
         lucide.createIcons();
     }
 }
+
+// ⚠️ GLOBAL EXPOSE FOR EXTERNAL MODULES (DASHBOARD REFRESH BUG FIX)
+window.exploreSupplierFiles = exploreSupplierFiles;
+window.loadFiles = exploreSupplierFiles; // Alias requerido por viewer_ingest.js
 
 function renderFileGrid(files, folderId) {
     // Helpers de Iconos

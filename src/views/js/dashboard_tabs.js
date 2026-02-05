@@ -93,6 +93,8 @@ async function loadProcessedFiles() {
     const container = document.getElementById('fileListDB');
     if (!providerId || !container) return;
 
+    console.log(`%c[LIFECYCLE] T2: RECEIVE LOAD REQUEST [Provider: ${providerId}]`, "color: cyan; font-weight:bold;");
+
     // Reset Selection
     if (window.clearSelection) window.clearSelection();
 
@@ -106,7 +108,11 @@ async function loadProcessedFiles() {
 
     try {
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const res = await fetch(`${backendUrl}/api/files/processed-list?providerId=${providerId}`);
+
+        // Cache Busting (LIFECYCLE FIX)
+        const ts = new Date().getTime();
+        const res = await fetch(`${backendUrl}/api/files/processed-list?providerId=${providerId}&_t=${ts}`);
+
         const result = await res.json();
 
         if (!result.success) throw new Error(result.error);
@@ -123,6 +129,8 @@ function renderProcessedGrid(files) {
     const container = document.getElementById('fileListDB');
     if (!container) return;
 
+    console.log(`%c[LIFECYCLE] T3: RENDER START [Files: ${files ? files.length : 0}]`, "color: lime; font-weight:bold;");
+
     if (!files || files.length === 0) {
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center py-20 text-slate-600">
@@ -130,6 +138,7 @@ function renderProcessedGrid(files) {
                 <p class="text-sm">Sin archivos procesados</p>
             </div>`;
         if (window.lucide) window.lucide.createIcons();
+        console.log("%c[LIFECYCLE] T3: RENDER END (Empty)", "color: lime;");
         return;
     }
 

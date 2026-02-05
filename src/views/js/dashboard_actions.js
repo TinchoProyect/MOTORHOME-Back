@@ -157,6 +157,8 @@ window.DashboardActions = (function () {
         if (status) status.innerText = action === 'ROLLBACK' ? "Moviendo Archivos..." : "Eliminando Registros...";
 
         try {
+            console.log(`%c[LIFECYCLE] T0: ACTION TRIGGERED [${action}]`, "color: magenta; font-weight:bold;");
+
             const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
 
             const res = await fetch(`${backendUrl}/api/files/rollback`, {
@@ -172,6 +174,8 @@ window.DashboardActions = (function () {
             const result = await res.json();
             if (!result.success) throw new Error(result.error);
 
+            console.log("%c[LIFECYCLE] T1: ROLLBACK SUCCESS - TRACE REFRESH", "color: magenta; font-weight:bold;");
+
             // Success Feedback
             // Close Modal
             closeModal();
@@ -182,6 +186,7 @@ window.DashboardActions = (function () {
                 if (window.clearSelection) window.clearSelection();
 
                 // 1. Refresh Current View (Processed)
+                console.log("%c[LIFECYCLE] T1-A: Refreshing Processed View", "color: magenta;");
                 await window.loadProcessedFiles();
 
                 // 2. If Rollback, invalidate/refresh Drive View too (if possible)
@@ -192,8 +197,16 @@ window.DashboardActions = (function () {
                 if (action === 'ROLLBACK' && currentFolderId && window.loadFiles) {
                     // Silent refresh of drive content? Or just let it be.
                     // Let's just log it.
-                    console.log("Rollback completed. Drive view might need refresh.");
+                    console.log("%c[LIFECYCLE] T1-B: Rollback detected. Might need Drive Refresh.", "color: magenta;");
+                    // console.log("Rollback completed. Drive view might need refresh.");
+
+                    if (window.loadFiles) {
+                        console.log("%c[LIFECYCLE] T1-C: Calling window.loadFiles() for Pending List Update", "color: magenta;");
+                        window.loadFiles(currentFolderId);
+                    }
                 }
+            } else {
+                console.error("%c[LIFECYCLE] ❌ T1 FAILED: window.loadProcessedFiles NOT FOUND", "color: red;");
             }
 
         } catch (error) {
