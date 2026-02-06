@@ -251,8 +251,17 @@ function renderFileGrid(files, folderId) {
                         <div class="w-[1px] h-4 bg-slate-700"></div>
                         <button onclick="showSingleSupplier('${provider.id}')" class="p-2 hover:bg-slate-800 rounded-md text-slate-500 hover:text-white transition-colors flex items-center gap-2" title="Volver a Ficha">
                             <i data-lucide="arrow-left" class="w-4 h-4"></i>
-                            <span class="text-[10px] uppercase font-bold hidden md:inline">Justo</span>
+                            <span class="text-[10px] uppercase font-bold hidden md:inline">Volver</span>
                         </button>
+                    </div>
+
+                    <!-- SUPPLIER CONTEXT HEADER -->
+                    <div class="flex flex-col ml-4 pl-4 border-l border-slate-800/50 justify-center">
+                        <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-0.5">Auditoría Activa</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-white tracking-wide leading-none">${provider.nombre}</span>
+                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">${provider.categoria || 'GENERAL'}</span>
+                        </div>
                     </div>
 
                     <!-- TABS (PHASE 5) -->
