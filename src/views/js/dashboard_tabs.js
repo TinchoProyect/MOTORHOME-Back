@@ -1,6 +1,7 @@
 /**
  * DASHBOARD TABS - Orquestador de Tablero Unificado
  * Responsabilidad: Gestionar Pestañas (Drive/DB) y Carga de Archivos Procesados.
+ * v2.7 (Context Aware & Secure Loading)
  */
 
 console.log("%c 🗂️ DASHBOARD TABS: READY ", "background: #3b82f6; color: #fff; font-weight: bold; padding: 4px;");
@@ -93,8 +94,6 @@ async function loadProcessedFiles() {
     const container = document.getElementById('fileListDB');
     if (!providerId || !container) return;
 
-
-
     // Reset Selection
     if (window.clearSelection) window.clearSelection();
 
@@ -129,8 +128,6 @@ function renderProcessedGrid(files) {
     const container = document.getElementById('fileListDB');
     if (!container) return;
 
-
-
     if (!files || files.length === 0) {
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center py-20 text-slate-600">
@@ -149,7 +146,6 @@ function renderProcessedGrid(files) {
             <div onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')" 
                 class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-900/10">
                 
-                <!-- Checkbox Selection -->
                 <div class="absolute top-2 left-2 z-10" onclick="event.stopPropagation()">
                     <input type="checkbox" 
                         class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
@@ -185,8 +181,6 @@ window.openProcessedFile = async function (rawListId, fileName) {
     console.log(`[Dashboard] Opening processed file ${rawListId}...`);
 
     // 1. UI Loading
-    // Implement global loader overlay or reuse viewerLoader
-
     // [TABULA RASA] - Ensure Start Clean for Reader Mode
     if (window.resetViewerState) window.resetViewerState();
 
@@ -196,13 +190,13 @@ window.openProcessedFile = async function (rawListId, fileName) {
     modal.classList.remove('hidden'); // Show Viewer
     loader.classList.remove('hidden'); // Show Loader (Downloading Stream...)
 
-    // Hide specialized buttons for "Read Mode"
+    // Hide specialized buttons for "Read Mode" immediately
     const btnConfirm = document.getElementById('btnConfirmIngest');
     if (btnConfirm) btnConfirm.classList.add('hidden');
 
-    // Update Title
+    // Update Title with Tag
     const title = document.getElementById('viewerTitle');
-    if (title) title.textContent = fileName + " [MODO LECTURA]";
+    if (title) title.textContent = fileName;
 
     try {
         // 2. Fetch Content
@@ -218,8 +212,21 @@ window.openProcessedFile = async function (rawListId, fileName) {
         const workbookMap = window.adaptJsonToWorkbook(result.items);
 
         // 4. INJECT into Viewer Engine
+        // 🔥 CORRECCIÓN CRÍTICA: Recuperar nombre del proveedor de forma robusta
+        let providerName = "DATO HISTÓRICO"; // Fallback seguro
+
+        const activeTitleEl = document.getElementById('activeProviderTitle');
+        if (activeTitleEl) {
+            // Intenta extraer solo el texto visible, ignorando etiquetas ocultas
+            providerName = activeTitleEl.innerText.replace('Proveedor:', '').trim();
+        } else if (window.currentActiveProviderId) {
+            // Fallback: Si no hay título visual, usar el ID (o intentar buscar el nombre en caché)
+            providerName = `Proveedor ID: ${window.currentActiveProviderId}`;
+        }
+
         if (window.loadVirtualWorkbook) {
-            window.loadVirtualWorkbook(workbookMap, fileName);
+            // Pasamos el providerName como 3er argumento
+            window.loadVirtualWorkbook(workbookMap, fileName, providerName);
         } else {
             console.warn("Viewer Engine does not support external loading yet.");
             alert("Error: El motor del visor no admite carga externa. Actualizar viewer_engine.");

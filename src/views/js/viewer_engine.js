@@ -400,11 +400,29 @@ window.getViewerSnapshot = function () {
 };
 
 // [PHASE 5] Virtual Workbook Loader (Multi-Sheet DB Recovery)
-window.loadVirtualWorkbook = function (workbookMap, fileName) {
+window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DATO HISTÓRICO") {
     console.log("[ViewerEngine] Loading Virtual Workbook:", fileName, Object.keys(workbookMap));
 
     // 1. Reset State
     window.resetViewerState();
+
+    // Force Hide Ingest Button (Critical for UX Separation)
+    const btnConfirm = document.getElementById('btnConfirmIngest');
+    if (btnConfirm) btnConfirm.classList.add('hidden');
+
+    // Update Badges manually (Force Override -> Source: DB)
+    const badgeContainer = document.getElementById('viewerBadges');
+    if (badgeContainer) {
+        badgeContainer.innerHTML = `
+            <span class="px-2 py-0.5 text-[10px] rounded-full border bg-emerald-900/30 text-emerald-400 border-emerald-500/30 uppercase tracking-wider font-mono flex items-center gap-1">
+                <i data-lucide="database" class="w-3 h-3"></i> SOURCE: BASE DE DATOS
+            </span>
+             <span class="px-2 py-0.5 text-[10px] rounded-full border bg-slate-800 text-slate-300 border-slate-700 uppercase tracking-wider font-mono flex items-center gap-1">
+                <i data-lucide="building-2" class="w-3 h-3"></i> ${providerName}
+            </span>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+    }
 
     // 2. Load Data Cache
     const sheetNames = Object.keys(workbookMap);
@@ -416,6 +434,7 @@ window.loadVirtualWorkbook = function (workbookMap, fileName) {
     // Set Cache & Config
     window.virtualWorkbookCache = workbookMap;
     window.useWorker = false;
+    window.globalContext.fileType = "VIRTUAL_DB"; // Mark as Virtual
 
     // 3. UI Setup
     if (window.ViewerUI) {
