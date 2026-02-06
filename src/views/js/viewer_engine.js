@@ -406,24 +406,6 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
     // 1. Reset State
     window.resetViewerState();
 
-    // Force Hide Ingest Button (Critical for UX Separation)
-    const btnConfirm = document.getElementById('btnConfirmIngest');
-    if (btnConfirm) btnConfirm.classList.add('hidden');
-
-    // Update Badges manually (Force Override -> Source: DB)
-    const badgeContainer = document.getElementById('viewerBadges');
-    if (badgeContainer) {
-        badgeContainer.innerHTML = `
-            <span class="px-2 py-0.5 text-[10px] rounded-full border bg-emerald-900/30 text-emerald-400 border-emerald-500/30 uppercase tracking-wider font-mono flex items-center gap-1">
-                <i data-lucide="database" class="w-3 h-3"></i> SOURCE: BASE DE DATOS
-            </span>
-             <span class="px-2 py-0.5 text-[10px] rounded-full border bg-slate-800 text-slate-300 border-slate-700 uppercase tracking-wider font-mono flex items-center gap-1">
-                <i data-lucide="building-2" class="w-3 h-3"></i> ${providerName}
-            </span>
-        `;
-        if (window.lucide) window.lucide.createIcons();
-    }
-
     // 2. Load Data Cache
     const sheetNames = Object.keys(workbookMap);
     if (sheetNames.length === 0) {
@@ -436,7 +418,7 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
     window.useWorker = false;
     window.globalContext.fileType = "VIRTUAL_DB"; // Mark as Virtual
 
-    // 3. UI Setup
+    // 3. UI Setup (ESTO VA PRIMERO para que limpie la casa)
     if (window.ViewerUI) {
         window.ViewerUI.updateHeader(fileName, { isProcessed: true });
         window.ViewerUI.showContainer('excel');
@@ -444,13 +426,31 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
         window.ViewerUI.toggleLoader(false);
     }
 
-    // 4. Render Tabs
+    // 4. Force Hide Ingest Button
+    const btnConfirm = document.getElementById('btnConfirmIngest');
+    if (btnConfirm) btnConfirm.classList.add('hidden');
+
+    // 5. Update Badges manually (AHORA VA AL FINAL para sobrescribir)
+    const badgeContainer = document.getElementById('viewerBadges');
+    if (badgeContainer) {
+        badgeContainer.innerHTML = `
+            <span class="px-2 py-0.5 text-[10px] rounded-full border bg-emerald-900/30 text-emerald-400 border-emerald-500/30 uppercase tracking-wider font-mono flex items-center gap-1">
+                <i data-lucide="database" class="w-3 h-3"></i> BASE DE DATOS
+            </span>
+             <span class="px-2 py-0.5 text-[10px] rounded-full border bg-slate-800 text-slate-300 border-slate-700 uppercase tracking-wider font-mono flex items-center gap-1">
+                <i data-lucide="building-2" class="w-3 h-3"></i> ${providerName}
+            </span>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    // 6. Render Tabs
     renderSheetTabs(sheetNames);
     if (sheetNames.length > 1) {
         document.getElementById('sheetTabs').classList.remove('hidden');
     }
 
-    // 5. Load First Sheet (Delegado a loadSheet para conversión correcta)
+    // 7. Load First Sheet
     loadSheet(sheetNames[0]);
 };
 

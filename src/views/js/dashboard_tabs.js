@@ -213,16 +213,10 @@ window.openProcessedFile = async function (rawListId, fileName) {
 
         // 4. INJECT into Viewer Engine
         // 🔥 CORRECCIÓN CRÍTICA: Recuperar nombre del proveedor de forma robusta
-        let providerName = "DATO HISTÓRICO"; // Fallback seguro
-
-        const activeTitleEl = document.getElementById('activeProviderTitle');
-        if (activeTitleEl) {
-            // Intenta extraer solo el texto visible, ignorando etiquetas ocultas
-            providerName = activeTitleEl.innerText.replace('Proveedor:', '').trim();
-        } else if (window.currentActiveProviderId) {
-            // Fallback: Si no hay título visual, usar el ID (o intentar buscar el nombre en caché)
-            providerName = `Proveedor ID: ${window.currentActiveProviderId}`;
-        }
+        // 4. INJECT into Viewer Engine
+        // [REFACTOR] Use Centralized Provider Resolver
+        const providerContext = window.resolveProviderContext(window.currentActiveProviderId);
+        const providerName = providerContext.nombre;
 
         if (window.loadVirtualWorkbook) {
             // Pasamos el providerName como 3er argumento

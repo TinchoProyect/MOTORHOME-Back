@@ -23,7 +23,7 @@ let supabaseClient = null;
 let terminalInput, aiLoader, historyContent, micBtn, reportDisplay, logoutBtn;
 
 // Estado Global de Proveedores
-let currentSuppliers = [];
+window.currentSuppliers = []; // AHORA PÚBLICO
 let editingSupplierId = null;
 window.currentDriveFolderId = null; // [CONTEXT FIX] Global Memory for Drive Folder
 
@@ -155,14 +155,15 @@ async function exploreSupplierFiles(folderId) {
     // Accessing window.currentActiveProviderId to share state with other modules if needed
     // But currentActiveProviderId is set in showSingleSupplier
 
-    const provider = currentSuppliers.find(s => s.id === window.currentActiveProviderId);
+    // [REFACTOR] Centralized Provider Resolution
+    const provider = window.resolveProviderContext(window.currentActiveProviderId);
 
     // We need globalContext from Viewer Engine... 
     // If GlobalContext is defined in HTML (lines 804), we can access via window.globalContext logic if needed?
     // Actually, let's look at how it was. helper variables like map/viewer are in HTML.
     // We can try to set them if they are global. 
 
-    if (provider && typeof window.globalContext !== 'undefined') {
+    if (provider.id && typeof window.globalContext !== 'undefined') {
         window.globalContext.providerId = provider.id;
         window.globalContext.providerName = provider.nombre;
         window.globalContext.fileType = (provider.drive_folder_prices_id === folderId) ? "LISTA_PRECIOS" : "GENERAL";
@@ -539,8 +540,8 @@ async function showSingleSupplier(id) {
 async function loadProveedores() {
     reportDisplay.innerHTML = `<div class="flex items-center justify-center h-full text-blue-400">
     <i data-lucide="loader-2" class="w-8 h-8 animate-spin mr-2"></i>
-                                Cargando proveedores...
-                            </div > `;
+                                    Cargando proveedores...
+                                </div > `;
     lucide.createIcons();
 
     const { data, error } = await supabaseClient
@@ -554,8 +555,8 @@ async function loadProveedores() {
         return;
     }
 
-    // Actualizar estado local
-    currentSuppliers = data;
+    // 🔥 CAMBIO CRÍTICO AQUÍ: Usamos window.currentSuppliers
+    window.currentSuppliers = data;
 
     // Actualizar métricas reales
     realMetrics.proveedoresCount = data.length;
@@ -628,7 +629,6 @@ async function loadProveedores() {
         reportDisplay.innerHTML = tableHtml;
     }
     lucide.createIcons();
-    // Update realMetrics with actual count
     realMetrics.proveedoresCount = data.length;
 }
 
