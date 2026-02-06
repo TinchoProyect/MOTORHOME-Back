@@ -27,7 +27,7 @@ window.confirmIngestion = async function () {
     const confirmed = confirm(`¿Estás seguro de confirmar la ingesta de ${snapshot.length} filas?\n\nEsto guardará los datos y moverá el archivo a 'Listas Extraídas'.`);
     if (!confirmed) return;
 
-    console.log("%c[LIFECYCLE] T0: INGEST TRIGGERED", "color: magenta; font-weight:bold;");
+
 
     // 3. UI Loading state
     const btn = document.getElementById('btnConfirmIngest');
@@ -59,7 +59,7 @@ window.confirmIngestion = async function () {
             // 5. Success UI
             alert("✅ Ingesta Exitosa!\n\n" + (result.message || "Archivo procesado y movido."));
 
-            console.log("%c[LIFECYCLE] T1: INGEST SUCCESS - TRACE REFRESH", "color: magenta; font-weight:bold;");
+
 
             // Cerrar Modal y refrescar
             if (window.closeViewerModal) window.closeViewerModal();
@@ -81,7 +81,7 @@ window.confirmIngestion = async function () {
 
             // Refrescar lista de archivos (si existe la función)
             if (window.loadFiles && targetFolderId) {
-                console.log("%c[LIFECYCLE] T1-A: Refreshing File List (Pending)", "color: magenta;");
+
                 window.loadFiles(targetFolderId);
             }
 
@@ -91,7 +91,7 @@ window.confirmIngestion = async function () {
                 const btnDrive = document.getElementById('tabPending');
                 if (btnDrive && btnDrive.classList.contains('text-blue-400')) {
                     // We are in Drive Mode
-                    console.log("%c[LIFECYCLE] T1-B: Refreshing Drive View", "color: magenta;");
+
                     if (window.loadFiles && targetFolderId) window.loadFiles(targetFolderId);
                 }
             }
