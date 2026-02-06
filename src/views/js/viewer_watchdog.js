@@ -2,6 +2,7 @@
  * 🕵️‍♂️ VIEWER WATCHDOG - Script de Depuración
  * Monitorea el estado del Visor, ViewerUI y el DOM en tiempo real.
  * Uso en Consola: window.debugViewer()
+ * v2.0 (Adaptado a Arquitectura Modular)
  */
 
 (function () {
@@ -13,7 +14,11 @@
         // 1. Verificación de Módulos
         console.log("%c[1] MÓDULOS", "font-weight:bold; color: #4ade80");
         console.log("window.ViewerUI:", window.ViewerUI ? "✅ ACTIVO" : "❌ NO DEFINIDO");
-        console.log("window.loadVirtualFile:", typeof window.loadVirtualFile === 'function' ? "✅ ACTIVO" : "❌ NO DEFINIDO");
+
+        // CORRECCIÓN: Chequeamos las funciones del nuevo Engine (v2.6)
+        console.log("window.openFileViewer:", typeof window.openFileViewer === 'function' ? "✅ ACTIVO" : "❌ NO DEFINIDO");
+        console.log("window.loadVirtualWorkbook:", typeof window.loadVirtualWorkbook === 'function' ? "✅ ACTIVO" : "❌ NO DEFINIDO");
+
         console.log("window.lucide:", window.lucide ? "✅ ACTIVO" : "❌ NO DEFINIDO");
 
         // 2. Inspección del DOM Crítico
