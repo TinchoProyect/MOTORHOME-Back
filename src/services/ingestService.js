@@ -10,11 +10,15 @@ const driveService = require('./driveService');
 async function processIngestion(fileId, providerId, dataSnapshot) {
     console.log(`[IngestService] 🟢 INICIANDO INGESTA para Archivo: ${fileId} | Proveedor: ${providerId}`);
 
-    // Validar Snapshot
-    if (!Array.isArray(dataSnapshot) || dataSnapshot.length === 0) {
+    // Validar Snapshot (Array=Legacy, Object=MultiSheet)
+    let isValid = false;
+    if (Array.isArray(dataSnapshot) && dataSnapshot.length > 0) isValid = true;
+    if (dataSnapshot && typeof dataSnapshot === 'object' && dataSnapshot.mode) isValid = true;
+
+    if (!isValid) {
         throw new Error("El snapshot de datos está vacío o es inválido.");
     }
-    console.log(`   -> Filas recibidas para persistencia: ${dataSnapshot.length}`);
+    console.log(`   -> Payload recibido. Tipo: ${Array.isArray(dataSnapshot) ? 'ARRAY (Legacy)' : 'OBJECT (MultiSheet)'}`);
 
     // 1. RECUPERAR/CREAR CABECERA (Listas Raw)
     // ---------------------------------------------------------
