@@ -66,13 +66,45 @@ async function processIngestion(fileId, providerId, dataSnapshot) {
     if (deleteError) throw deleteError;
 
     // B. Preparar Bulk Insert (Mapeo a JSONB Puro)
-    // El snapshot viene del frontend con claves legibles ("CÓDIGO", "PRECIO", "Calculada").
-    // Lo guardamos tal cual en 'raw_data'.
-    const payloadBuffer = dataSnapshot.map(row => ({
-        lista_raw_id: rawRecord.id,
-        raw_data: row
-        // Las columnas sku_detectado, etc., se dejan en NULL intencionalmente.
-    }));
+    // DETECCIÓN DE MODO MULTI-HOJA
+    // El frontend puede enviar un array de objetos (Filas - Legacy) O un objeto con { mode: 'MULTI_SHEET_BLOB', sheets: [] }
+    let payloadBuffer = [];
+
+    // Check if dataSnapshot is the new protocol payload
+    if (dataSnapshot && dataSnapshot.mode === 'MULTI_SHEET_BLOB' && Array.isArray(dataSnapshot.sheets)) {
+        console.log(`   -> [Ingest] 🚀 MODO MULTI-HOJA DETECTADO. Hojas: ${dataSnapshot.sheets.length}`);
+
+        dataSnapshot.sheets.forEach(sheet => {
+            console.log(`      - Procesando Hoja: '${sheet.name}' (${sheet.data ? sheet.data.length : 0} filas en matriz)`);
+            payloadBuffer.push({
+                lista_raw_id: rawRecord.id,
+                raw_data: sheet.data, // La matriz completa
+                sheet_name: sheet.name || 'Hoja Desconocida'
+            });
+        });
+
+    } else if (Array.isArray(dataSnapshot)) {
+        // LEGACY MODE (1 Hoja = N Filas o 1 Hoja = 1 Matriz)
+        // Si dataSnapshot es array de arrays -> Es 1 hoja matriz
+        // Si dataSnapshot es array de objetos -> Es 1 hoja items sueltos
+
+        // Vamos a asumir el comportamiento previo: insertar cada elemento del array.
+        // PERO si estamos migrando a "1 Hoja = 1 Registro", idealmente el frontend "viejo" que manda filas
+        // deberíamos agruparlo? 
+        // No. El plan dice: "Zero Regresión". Si viene el formato viejo, lo guardamos como antes (muchos registros).
+        // A MENOS QUE queramos unificar.
+
+        // Plan Aprobado: "Si el payload no tiene mode, asume Legacy".
+        console.log("   -> [Ingest] 🛡️ MODO COMPATIBILIDAD (Single Sheet).");
+
+        payloadBuffer = dataSnapshot.map(row => ({
+            lista_raw_id: rawRecord.id,
+            raw_data: row,
+            sheet_name: 'Hoja1' // Default legacy
+        }));
+    } else {
+        throw new Error("Formato de Snapshot no reconocido.");
+    }
 
     // C. Insertar (Batching si fuera necesario, pero supabase aguanta bastante)
     const { error: insertError } = await supabase
@@ -80,7 +112,7 @@ async function processIngestion(fileId, providerId, dataSnapshot) {
         .insert(payloadBuffer);
 
     if (insertError) throw insertError;
-    console.log(`   -> [DB] ${payloadBuffer.length} items insertados correctamente en 'raw_data'.`);
+    console.log(`   -> [DB] ${payloadBuffer.length} registros insertados en 'proveedor_items_extraidos'.`);
 
 
     // 3. LOGÍSTICA DE ARCHIVOS (Drive)

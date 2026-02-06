@@ -566,13 +566,16 @@ async function getProcessedFileContent(req, res) {
 
         const { data, error } = await supabase
             .from('proveedor_items_extraidos')
-            .select('raw_data')
+            .select('raw_data, sheet_name')
             .eq('lista_raw_id', rawListId);
 
         if (error) throw error;
 
-        // Flatten data (supabase returns array of objects with raw_data key)
-        const items = data.map(i => i.raw_data);
+        // Return items with their sheet name
+        const items = data.map(i => ({
+            data: i.raw_data,
+            sheetName: i.sheet_name
+        }));
 
         res.json({ success: true, items: items });
 

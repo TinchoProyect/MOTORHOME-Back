@@ -73,6 +73,26 @@ const WORKER_CODE = `
                 }
                 break;
             
+                break;
+
+            case 'GET_ALL_SHEETS':
+                try {
+                    if (!currentWorkbook) throw new Error("No hay libro cargado.");
+                    const result = [];
+                    currentWorkbook.SheetNames.forEach(name => {
+                        const ws = currentWorkbook.Sheets[name];
+                        const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                        result.push({ name: name, data: json });
+                    });
+                    postMessage({
+                        type: 'ALL_SHEETS_READY',
+                        payload: result
+                    });
+                } catch (error) {
+                    postMessage({ type: 'ERROR', payload: error.message });
+                }
+                break;
+            
             case 'CLEANUP':
                 currentWorkbook = null;
                 break;
@@ -81,6 +101,70 @@ const WORKER_CODE = `
 `;
 
 // --- 3. FUNCIONES CORE DEL VISOR ---
+
+async function exportAllSheets() {
+    return new Promise((resolve, reject) => {
+        if (!viewerWorker) {
+            // Local Fallback (Si no hay worker activo)
+            if (workbook) {
+                try {
+                    const result = [];
+                    workbook.SheetNames.forEach(name => {
+                        const ws = workbook.Sheets[name];
+                        const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                        result.push({ name: name, data: json });
+                    });
+                    resolve(result);
+                } catch (e) { reject(e); }
+            } else {
+                reject(new Error("No hay libro cargado para exportar."));
+            }
+            return;
+        }
+
+        // Worker Request
+        const handler = (e) => {
+            const { type, payload } = e.data;
+            if (type === 'ALL_SHEETS_READY') {
+                viewerWorker.removeEventListener('message', handler); // Cleanup listener
+                resolve(payload);
+            } else if (type === 'ERROR') {
+                viewerWorker.removeEventListener('message', handler);
+                reject(new Error(payload));
+            }
+        };
+
+        // One-time listener for this request (to avoid capturing other messages)
+        // Note: The main onmessage handler in openFileViewer might also catch this? 
+        // We added a specific TYPE so the main handler (viewerWorker.onmessage) should just ignore it 
+        // OR we need to be careful.
+        // Actually, viewerWorker.onmessage is a property, not a listener list.
+        // If we attach a new onmessage, we overwrite the old one!
+        // FIX: Use the existing onmessage or event listeners.
+        // Since the current implementation uses `viewerWorker.onmessage = ...`, we cannot easily "add" another one without hijacking.
+
+        // BETTER STRATEGY: Modify the main onmessage to handle ALL_SHEETS_READY and dispatch a custom event.
+        // OR, temporarily hijack onmessage? Safe enough for this operation as it is blocking-like UI action.
+
+        const originalOnMessage = viewerWorker.onmessage;
+        viewerWorker.onmessage = (e) => {
+            const { type, payload } = e.data;
+            if (type === 'ALL_SHEETS_READY') {
+                viewerWorker.onmessage = originalOnMessage; // Restore
+                resolve(payload);
+            } else if (type === 'ERROR') {
+                viewerWorker.onmessage = originalOnMessage; // Restore
+                reject(new Error(payload));
+            } else {
+                // Determine if we should pass it to original?
+                // Probably yes if it's unrelated, although unlikely during specific export call.
+                if (originalOnMessage) originalOnMessage(e);
+            }
+        };
+
+        viewerWorker.postMessage({ type: 'GET_ALL_SHEETS' });
+    });
+}
 
 async function openFileViewer(fileId, fileName) {
     window.globalContext.fileId = fileId;
@@ -256,6 +340,18 @@ function loadSheet(sheetName) {
     </div>`;
 
     currentSheetData = null;
+
+    // 1. Virtual Cache Support (Multi-Sheet DB Recovery)
+    if (window.virtualWorkbookCache && window.virtualWorkbookCache[sheetName]) {
+        console.log(`[ViewerEngine] Loading '${sheetName}' from Virtual Cache.`);
+        setTimeout(() => {
+            currentSheetData = window.virtualWorkbookCache[sheetName];
+            renderVirtualTable(currentSheetData);
+            const loader = document.getElementById('viewerLoader');
+            if (loader) loader.classList.add('hidden');
+        }, 50);
+        return;
+    }
 
     if (typeof useWorker !== 'undefined' && useWorker && viewerWorker) {
         viewerWorker.postMessage({ type: 'PARSE_SHEET', payload: sheetName });
@@ -1445,6 +1541,7 @@ window.closeViewerModal = function () {
 };
 
 window.loadSheet = loadSheet;
+window.exportAllSheets = exportAllSheets;
 window.generatePreview = generatePreview;
 window.toggleSimulationMode = toggleSimulationMode;
 window.closeSimulationModal = closeSimulationModal;
@@ -1458,38 +1555,82 @@ window.getViewerSnapshot = function () {
     return (typeof currentSheetData !== 'undefined') ? currentSheetData : null;
 };
 
-// [PHASE 5] External Data Injection (Reader Mode)
-window.loadVirtualFile = function (matrixData, fileName) {
-    console.log("[ViewerEngine] Loading Virtual File:", fileName);
+
+
+window.loadVirtualWorkbook = function (workbookMap, fileName) {
+    console.log("[ViewerEngine] Loading Virtual Workbook:", fileName, Object.keys(workbookMap));
 
     // 1. Reset State
-    currentSheetData = matrixData;
-    currentSheetName = "Bodega";
-    currentOffset = null;
-    columnMapping = {};
-    processingRules = {};
+    window.resetViewerState();
 
-    // [PHASE 5 REFACTOR] - DELEGACIÓN A VIEWER UI 🎨
-    // Ya no manipulamos el DOM aquí. Ordenamos al Agente UI.
-    if (window.ViewerUI) {
-        // 1. Header (Iconos, Badges, Título)
-        window.ViewerUI.updateHeader(fileName, { isProcessed: true });
-
-        // 2. Contenedor
-        window.ViewerUI.showContainer('excel');
-
-        // 3. Herramientas y Tabs (Restaurado)
-        window.ViewerUI.toggleTools(true);
-        window.ViewerUI.renderSheetTabs(['Bodega'], 'Bodega');
-
-        // 4. Loader
-        window.ViewerUI.toggleLoader(false);
-
-        // 5. Render Table (Restored)
-        renderVirtualTable(currentSheetData);
-    } else {
-        console.error("🚨 Critical: ViewerUI not found!");
+    // 2. Load Data
+    const sheetNames = Object.keys(workbookMap);
+    if (sheetNames.length === 0) {
+        alert("El archivo está vacío.");
+        return;
     }
+
+    // Store in a way that loadSheet can access.
+    // We need to mock the worker or bypass it.
+    // Strategy: We will inject data directly into `currentSheetData` when `loadSheet` is called?
+    // No, `loadSheet` calls the worker.
+
+    // BETTER STRATEGY: 
+    // We create a "Virtual Mode" where `loadSheet` looks up `window.virtualWorkbookCache`.
+    window.virtualWorkbookCache = workbookMap;
+    window.useWorker = false; // Disable worker for this session
+
+    // 3. UI Setup (Delegated to ViewerUI or local)
+    if (window.ViewerUI) {
+        window.ViewerUI.updateHeader(fileName, { isProcessed: true });
+        window.ViewerUI.showContainer('excel');
+        window.ViewerUI.toggleTools(true);
+        window.ViewerUI.toggleLoader(false);
+    }
+
+    // 4. Render Tabs
+    renderSheetTabs(sheetNames);
+    if (sheetNames.length > 1) {
+        document.getElementById('sheetTabs').classList.remove('hidden');
+    }
+
+    // 5. Load First Sheet
+    // We override `loadSheet` behavior implicitly by checking cache inside `processLocally`? 
+    // Or we overwrite `loadSheet`? No.
+    // We simply call `loadSheet` but we need `loadSheet` to know where to get data if worker is disabled.
+    // Currently `loadSheet` calls `processLocally` if worker fails.
+    // `processLocally` reads from `workbook` (SheetJS object).
+
+    // TRICK: Construct a lightweight SheetJS-like structure or just inject data.
+    // Let's modify `loadSheet` to check virtual cache. 
+    // Since I can't modify `loadSheet` easily without replacing big chunk, 
+    // I will use a minimal Global Hook or just call `renderVirtualTable` directly for first sheet,
+    // and let the tab click handle the rest.
+
+    // But tab click calls `loadSheet`.
+    // Let's monkey-patch `viewport`? No.
+
+    // Let's Inject a "Virtual Worker" substitute? No, complex.
+
+    // SIMPLEST: Put it in `window.currentWorkbook` as if it came from Worker?
+    // No, `currentWorkbook` is inside the worker.
+
+    // Let's just set `currentSheetName` and render directly.
+    // And for tabs? The tabs call `loadSheet`.
+    // I need `loadSheet` to support this.
+    // I will modify `loadSheet` in `viewer_engine.js` separately (next tool call).
+    // For now, I define this function to set the cache and launch first sheet.
+
+    const firstSheet = sheetNames[0];
+    currentSheetName = firstSheet;
+    currentSheetData = workbookMap[firstSheet];
+
+    // Fix: Ensure `currentSheetData` is set and render.
+    renderVirtualTable(currentSheetData);
+
+    // Override loadSheet globally for this session?
+    // Dangerous.
+    // Better: Update `loadSheet` in the next step to look for `window.virtualWorkbookCache`.
 };
 
 // [TABULA RASA] State Reset Protocol
@@ -1499,6 +1640,7 @@ window.resetViewerState = function () {
     // 1. Variables Globales (Module Scope)
     currentSheetData = [];
     currentSimData = undefined;
+    window.virtualWorkbookCache = null; // Clear Cache
     if (typeof currentWorkbook !== 'undefined') currentWorkbook = null;
 
     // 2. UI - Buttons Visibility

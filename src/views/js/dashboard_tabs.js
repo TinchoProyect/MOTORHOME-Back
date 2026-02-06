@@ -212,49 +212,17 @@ window.openProcessedFile = async function (rawListId, fileName) {
 
         if (!result.success) throw new Error(result.error);
 
-        // 3. ADAPTOR: JSON -> Matrix
-        if (typeof window.adaptJsonToMatrix !== 'function') throw new Error("Viewer Adapter not loaded.");
+        // 3. ADAPTOR: JSON Items -> Workbook Map (Multi-Sheet)
+        if (typeof window.adaptJsonToWorkbook !== 'function') throw new Error("Viewer Adapter not loaded (adaptJsonToWorkbook).");
 
-        const matrixData = window.adaptJsonToMatrix(result.items);
+        const workbookMap = window.adaptJsonToWorkbook(result.items);
 
-        // 4. INJECT into Viewer Engine (Master Trick)
-        if (typeof currentSheetData !== 'undefined') {
-            // Global Injection (dirty but efficient for this architecture)
-            // We set currentSheetData (RAW)
-            // We set currentSimData (SIMULATED) same as RAW because it's already processed?
-            // Actually engine uses currentSheetData for raw view.
-
-            // We need to access the global variable. In browser modules, it is on window if not strict module.
-            // viewer_engine.js is defined as type="module" in HTML, so variables are NOT on window.
-            // BUT we added "window.loadSheet" etc.
-            // We need a way to SET data.
-
-            // ... Wait, viewer_engine variables like currentSheetData are module-scoped, NOT window-scoped.
-            // We need to Expose a "loadMatrixData" function in viewer_engine.js !!
-            // Or rely on a lucky global.
-
-            // CHECK: viewer_engine.js: line 11: let viewerWorker = null; let currentSheetData = [];
-            // These are module scoped.
-
-            // FIX: We need to modify viewer_engine.js to expose a Loader Method.
-            // "window.loadExternalData(dataMatrix, fileName)"
-
-            // Since I cannot modify viewer_engine.js right now per instructions (only specific files?), 
-            // wait, the instructions said:
-            // "Estructura de Archivos: Crea los nuevos archivos... Backend: Implementa ... El Adaptador: ... Procedé con la codificación"
-            // It didn't forbid modifying viewer_engine.js if strictly necessary for the integration.
-            // However, I can also try to piggyback on `workbook` logic? No.
-
-            // Let's assume I CAN modify viewer_engine.js to adding "window.loadVirtualFile(matrix)"
-            // I will add this to the plan (mental).
-        }
-
-        // Let's try to call the expoed function.
-        if (window.loadVirtualFile) {
-            window.loadVirtualFile(matrixData, fileName);
+        // 4. INJECT into Viewer Engine
+        if (window.loadVirtualWorkbook) {
+            window.loadVirtualWorkbook(workbookMap, fileName);
         } else {
-            console.warn("Viewer Engine does not support external loading yet. Adding polyfill/patch...");
-            alert("Error: El motor del visor no admite carga externa. Se requiere parche en viewer_engine.");
+            console.warn("Viewer Engine does not support external loading yet.");
+            alert("Error: El motor del visor no admite carga externa. Actualizar viewer_engine.");
             loader.classList.add('hidden');
             modal.classList.add('hidden');
         }

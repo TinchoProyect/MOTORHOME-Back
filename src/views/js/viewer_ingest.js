@@ -8,15 +8,41 @@ console.log("%c 📥 VIEWER INGEST: READY ", "background: #10b981; color: #fff; 
 window.confirmIngestion = async function () {
     console.log("[Ingest] Iniciando confirmación...");
 
-    // 1. Capturar Snapshot del Visor
-    // const dataSnapshot = window.currentSimData; // <-- ELIMINAR ESTO
-    const snapshot = window.getViewerSnapshot ? window.getViewerSnapshot() : null;
-    const context = window.globalContext || {};
+    // 1. Capturar Snapshot del Visor (MULTI-SHEET SUPPORT)
+    let finalPayload = {};
+    let itemCount = 0;
 
-    if (!snapshot || snapshot.length === 0) {
-        alert("No hay datos para confirmar. Por favor espera a que se cargue la simulación.");
+    try {
+        if (window.exportAllSheets) {
+            // Nueva Arquitectura: Multi-Hoja
+            const allSheets = await window.exportAllSheets();
+
+            // Validar que haya datos
+            const validSheets = allSheets.filter(s => s.data && s.data.length > 0);
+            if (validSheets.length === 0) throw new Error("El libro está vacío.");
+
+            itemCount = validSheets.reduce((acc, s) => acc + s.data.length, 0);
+
+            if (itemCount === 0) throw new Error("No hay filas con datos en ninguna hoja.");
+
+            finalPayload = {
+                mode: 'MULTI_SHEET_BLOB',
+                sheets: validSheets // [{ name: "Sheet1", data: [[...]] }]
+            };
+            console.log(`[Ingest] Snapshot Multi-Hoja capturado: ${validSheets.length} hojas, ${itemCount} filas totales.`);
+        } else {
+            // Fallback Legacy (Solo por seguridad, el motor debería tener la función)
+            const snapshot = window.getViewerSnapshot ? window.getViewerSnapshot() : null;
+            if (!snapshot || snapshot.length === 0) throw new Error("No hay datos visibles.");
+            itemCount = snapshot.length;
+            finalPayload = snapshot; // Legacy array payload
+        }
+    } catch (e) {
+        alert("Error capturando datos del visor: " + e.message);
         return;
     }
+
+    const context = window.globalContext || {};
 
     if (!context.fileId || !context.providerId) {
         alert("Error de Contexto: Falta FileId o ProviderId.");
@@ -24,10 +50,8 @@ window.confirmIngestion = async function () {
     }
 
     // 2. Confirmación de Usuario
-    const confirmed = confirm(`¿Estás seguro de confirmar la ingesta de ${snapshot.length} filas?\n\nEsto guardará los datos y moverá el archivo a 'Listas Extraídas'.`);
+    const confirmed = confirm(`¿Estás seguro de confirmar la ingesta?\n\n📄 Hojas detectadas: ${finalPayload.sheets ? finalPayload.sheets.length : 1}\n📊 Filas totales: ${itemCount}\n\nEsto guardará los datos en la Base de Datos.`);
     if (!confirmed) return;
-
-
 
     // 3. UI Loading state
     const btn = document.getElementById('btnConfirmIngest');
@@ -40,10 +64,10 @@ window.confirmIngestion = async function () {
 
     try {
         // 4. Enviar Payload
-        const payload = {
+        const apiPayload = {
             fileId: context.fileId,
             providerId: context.providerId,
-            dataSnapshot: snapshot
+            dataSnapshot: finalPayload
         };
 
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
