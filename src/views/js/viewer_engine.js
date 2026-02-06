@@ -345,8 +345,25 @@ function loadSheet(sheetName) {
     if (window.virtualWorkbookCache && window.virtualWorkbookCache[sheetName]) {
         console.log(`[ViewerEngine] Loading '${sheetName}' from Virtual Cache.`);
         setTimeout(() => {
-            currentSheetData = window.virtualWorkbookCache[sheetName];
+            let cachedData = window.virtualWorkbookCache[sheetName];
+
+            // CORRECCIÓN CRÍTICA:
+            // Si es un Objeto Worksheet (no es array), lo convertimos a Matriz Visual.
+            if (!Array.isArray(cachedData) && typeof XLSX !== 'undefined') {
+                // header: 1 genera un Array de Arrays [[A1, B1], [A2, B2]...]
+                try {
+                    currentSheetData = XLSX.utils.sheet_to_json(cachedData, { header: 1 });
+                } catch (err) {
+                    console.error("Error converting sheet to json:", err);
+                    currentSheetData = [];
+                }
+            } else {
+                // Si ya era array (fallback), lo usamos directo
+                currentSheetData = cachedData;
+            }
+
             renderVirtualTable(currentSheetData);
+
             const loader = document.getElementById('viewerLoader');
             if (loader) loader.classList.add('hidden');
         }, 50);
