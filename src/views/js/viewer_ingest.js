@@ -74,7 +74,7 @@ window.confirmIngestion = async function () {
         const response = await fetch(`${backendUrl}/api/files/confirm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(apiPayload)
         });
 
         const result = await response.json();
