@@ -1572,32 +1572,25 @@ window.getViewerSnapshot = function () {
     return (typeof currentSheetData !== 'undefined') ? currentSheetData : null;
 };
 
-
-
+// [PHASE 5] Virtual Workbook Loader (Multi-Sheet DB Recovery)
 window.loadVirtualWorkbook = function (workbookMap, fileName) {
     console.log("[ViewerEngine] Loading Virtual Workbook:", fileName, Object.keys(workbookMap));
 
     // 1. Reset State
     window.resetViewerState();
 
-    // 2. Load Data
+    // 2. Load Data Cache
     const sheetNames = Object.keys(workbookMap);
     if (sheetNames.length === 0) {
         alert("El archivo está vacío.");
         return;
     }
 
-    // Store in a way that loadSheet can access.
-    // We need to mock the worker or bypass it.
-    // Strategy: We will inject data directly into `currentSheetData` when `loadSheet` is called?
-    // No, `loadSheet` calls the worker.
-
-    // BETTER STRATEGY: 
-    // We create a "Virtual Mode" where `loadSheet` looks up `window.virtualWorkbookCache`.
+    // Set Cache & Config
     window.virtualWorkbookCache = workbookMap;
-    window.useWorker = false; // Disable worker for this session
+    window.useWorker = false;
 
-    // 3. UI Setup (Delegated to ViewerUI or local)
+    // 3. UI Setup
     if (window.ViewerUI) {
         window.ViewerUI.updateHeader(fileName, { isProcessed: true });
         window.ViewerUI.showContainer('excel');
@@ -1611,43 +1604,8 @@ window.loadVirtualWorkbook = function (workbookMap, fileName) {
         document.getElementById('sheetTabs').classList.remove('hidden');
     }
 
-    // 5. Load First Sheet
-    // We override `loadSheet` behavior implicitly by checking cache inside `processLocally`? 
-    // Or we overwrite `loadSheet`? No.
-    // We simply call `loadSheet` but we need `loadSheet` to know where to get data if worker is disabled.
-    // Currently `loadSheet` calls `processLocally` if worker fails.
-    // `processLocally` reads from `workbook` (SheetJS object).
-
-    // TRICK: Construct a lightweight SheetJS-like structure or just inject data.
-    // Let's modify `loadSheet` to check virtual cache. 
-    // Since I can't modify `loadSheet` easily without replacing big chunk, 
-    // I will use a minimal Global Hook or just call `renderVirtualTable` directly for first sheet,
-    // and let the tab click handle the rest.
-
-    // But tab click calls `loadSheet`.
-    // Let's monkey-patch `viewport`? No.
-
-    // Let's Inject a "Virtual Worker" substitute? No, complex.
-
-    // SIMPLEST: Put it in `window.currentWorkbook` as if it came from Worker?
-    // No, `currentWorkbook` is inside the worker.
-
-    // Let's just set `currentSheetName` and render directly.
-    // And for tabs? The tabs call `loadSheet`.
-    // I need `loadSheet` to support this.
-    // I will modify `loadSheet` in `viewer_engine.js` separately (next tool call).
-    // For now, I define this function to set the cache and launch first sheet.
-
-    const firstSheet = sheetNames[0];
-    currentSheetName = firstSheet;
-    currentSheetData = workbookMap[firstSheet];
-
-    // Fix: Ensure `currentSheetData` is set and render.
-    renderVirtualTable(currentSheetData);
-
-    // Override loadSheet globally for this session?
-    // Dangerous.
-    // Better: Update `loadSheet` in the next step to look for `window.virtualWorkbookCache`.
+    // 5. Load First Sheet (Delegado a loadSheet para conversión correcta)
+    loadSheet(sheetNames[0]);
 };
 
 // [TABULA RASA] State Reset Protocol
@@ -1693,7 +1651,5 @@ window.resetViewerState = function () {
 
     console.log("✨ [ViewerEngine] State Cleaned.");
 };
-
-
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
