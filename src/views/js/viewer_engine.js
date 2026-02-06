@@ -8,31 +8,9 @@
 console.log("%c 🚀 VIEWER ENGINE: v2.6 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 // --- 1. VARIABLES GLOBALES (Scope Módulo) ---
-let viewerWorker = null;
-let currentSheetData = [];
-let workbook = null;       // LIBRO EXCEL
-let currentFileBuffer = null; // BUFFER RAW (Rescate)
-let useWorker = true;      // ESTADO DEL WORKER
-let currentSheetName = ""; // HOJA ACTUAL
-let sheetConfigStore = {}; // { "Sheet1": { offset: {}, mapping: {} } }
+// --- 1. VARIABLES GLOBALES (MIGRADO A viewer_core.js) ---
+// viewerWorker, currentSheetData, workbook, etc. ahora residen en viewer_core.js
 
-// Global Context
-window.globalContext = {
-    providerId: null,
-    providerName: "",
-    fileId: null,
-    fileType: "GENERAL",
-    timestamp: null
-};
-
-// --- Mapeo y Offset ---
-let mappingMode = false;
-let columnMapping = {}; // { colIndex: "Tipo" }
-let offsetSelectionMode = false;
-let currentOffset = null; // { row: 0, col: 0 }
-let nomenclatureCache = []; // Cache de términos
-let processingRules = {}; // Rules store
-let simulationModeProcessed = true; // State for Toggle
 
 // --- 2. CÓDIGO DEL OBRERO (Worker) ---
 const WORKER_CODE = `
@@ -1156,8 +1134,9 @@ function closeViewerModal() {
 }
 
 // --- NEW PREVIEW ENGINE ---
-let currentSimData = [];
-let currentDisplayConfig = [];
+// --- NEW PREVIEW ENGINE ---
+// currentSimData & currentDisplayConfig moved to viewer_core.js
+
 
 function generatePreview() {
     try {
@@ -1609,47 +1588,7 @@ window.loadVirtualWorkbook = function (workbookMap, fileName) {
 };
 
 // [TABULA RASA] State Reset Protocol
-window.resetViewerState = function () {
-    console.log("🧹 [ViewerEngine] Tabula Rasa Reset Executing...");
+// [TABULA RASA] State Reset Protocol logic moved to viewer_core.js
 
-    // 1. Variables Globales (Module Scope)
-    currentSheetData = [];
-    currentSimData = undefined;
-    window.virtualWorkbookCache = null; // Clear Cache
-    if (typeof currentWorkbook !== 'undefined') currentWorkbook = null;
-
-    // 2. UI - Buttons Visibility
-    const btnConfirm = document.getElementById('btnConfirmIngest');
-    if (btnConfirm) btnConfirm.classList.remove('hidden'); // Siempre visible por defecto (Ingesta)
-
-    // 3. UI - Contenedores
-    const sheetTabs = document.getElementById('sheetTabs');
-    if (sheetTabs) sheetTabs.innerHTML = '';
-
-    // [PHASE 5 FIX] - Default Hide All
-    const ids = ['excelContainer', 'pdfContainer', 'imageContainer', 'errorContainer'];
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-
-    const previewTable = document.getElementById('previewTable');
-    if (previewTable) {
-        previewTable.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-full text-slate-600">
-            <i data-lucide="loader-2" class="w-8 h-8 animate-spin mb-4"></i>
-            <span class="text-xs">Iniciando Motor...</span>
-        </div>`;
-        if (window.lucide) window.lucide.createIcons();
-    }
-
-    const title = document.getElementById('viewerTitle');
-    if (title) title.textContent = "Cargando...";
-
-    const loader = document.getElementById('viewerLoader');
-    if (loader) loader.classList.remove('hidden');
-
-    console.log("✨ [ViewerEngine] State Cleaned.");
-};
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
