@@ -37,12 +37,21 @@ var currentDisplayConfig = [];
 // --- 5. STATE RESET PROTOCOL ---
 window.resetViewerState = function () {
     console.log("🧹 Resetting Viewer State...");
+
+    // Variables de Datos
     currentSheetData = [];
     currentSheetName = null;
+
+    // Variables de Mapeo
     mappingMode = false;
     columnMapping = {};
     currentOffset = { row: 0, col: 0 };
     processingRules = {};
+
+    // CORRECCIÓN: Limpiar la caché de términos para evitar fugas entre proveedores
+    nomenclatureCache = [];
+
+    // Variables de Simulación
     currentSimData = [];
     currentDisplayConfig = [];
     sheetConfigStore = {};
@@ -54,7 +63,7 @@ window.resetViewerState = function () {
     }
 };
 
-// --- 6. PERSISTENCE LOGIC (Paso 2: Guardado) ---
+// --- 6. PERSISTENCE LOGIC (Guardado) ---
 /**
  * Empaqueta el estado actual (Mapping + Reglas) y lo envía al Backend.
  * Se invoca desde el botón "Guardar Configuración" en el Simulador.
@@ -72,7 +81,6 @@ window.saveSimulationConfig = async function () {
     }
 
     // 2. Preparar el Payload
-    // Estructuramos los datos para que el Controller los entienda fácilmente
     const payload = {
         providerId: window.globalContext.providerId,
         fileType: window.globalContext.fileType || "GENERAL", // ej: LISTA_PRECIOS
@@ -86,7 +94,6 @@ window.saveSimulationConfig = async function () {
 
     // 3. UI Feedback (Loading)
     const btn = document.querySelector('button[onclick="saveSimulationConfig()"]');
-    const originalContent = btn ? btn.innerHTML : "Guardar";
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Guardando...`;
@@ -95,9 +102,10 @@ window.saveSimulationConfig = async function () {
 
     try {
         console.log("💾 Enviando configuración al servidor...", payload);
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
 
         // 4. Llamada al Backend
-        const response = await fetch('http://localhost:5655/api/files/save-template', {
+        const response = await fetch(`${backendUrl}/api/files/save-template`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -113,11 +121,22 @@ window.saveSimulationConfig = async function () {
 
         // 5. Success
         console.log("✅ Configuración guardada:", result);
-        alert("¡Configuración guardada exitosamente! \nSe aplicará automáticamente la próxima vez.");
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'success',
+                title: 'Guardado',
+                text: 'Configuración guardada exitosamente.',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        } else {
+            alert("¡Configuración guardada exitosamente!");
+        }
 
     } catch (error) {
         console.error("❌ Error saveSimulationConfig:", error);
-        alert("Error al guardar la configuración: " + error.message);
+        if (typeof Swal !== 'undefined') Swal.fire("Error", error.message, "error");
+        else alert("Error al guardar: " + error.message);
     } finally {
         // 6. UI Restore
         if (btn) {
@@ -141,8 +160,8 @@ window.loadSavedConfiguration = async function () {
     try {
         console.log(`🧠 [ViewerCore] Buscando configuración guardada para Proveedor ${providerId} (Hoja: ${sheetName})...`);
 
-        // NOTA: Usamos el puerto 5655 directo para evitar el bloqueo del Frontend
-        const url = new URL('http://localhost:5655/api/files/get-template');
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const url = new URL(`${backendUrl}/api/files/get-template`);
         url.searchParams.append('providerId', providerId);
         if (sheetName) url.searchParams.append('sheetName', sheetName);
 
@@ -188,4 +207,4 @@ window.loadSavedConfiguration = async function () {
     return false;
 };
 
-console.log("🧠 [ViewerCore] Estado Global Inicializado (+Persistencia)");
+console.log("🧠 [ViewerCore] Estado Global Inicializado (+Persistencia +CacheFix)");

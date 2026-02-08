@@ -304,29 +304,53 @@ async function confirmExtraction(req, res) {
 // =============================================================================
 // DICTIONARY API
 // =============================================================================
+// =============================================================================
+// DICTIONARY API (DEBUGGED & SECURED)
+// =============================================================================
 async function getDictionaryTerms(req, res) {
     try {
         const { providerId } = req.query;
+
+        console.log(`[Dictionary] 🔍 Solicitando términos. Contexto: ${providerId || 'GLOBAL'}`);
+
         let query = supabase
             .from('user_diccionario_nomenclatura')
             .select('*')
             .order('termino', { ascending: true });
 
-        // [PRIVATE BY DEFAULT V2 - SAFETY NET]
+        // LÓGICA BLINDADA DE FILTRADO
         if (providerId && providerId !== 'null' && providerId !== 'undefined') {
-            // Contexto Válido: Mostrar Globales (NULL) + Privados (ID)
+            // Sintaxis explícita de Supabase para evitar fugas en el OR
+            // "Traeme filas donde proveedor_id sea NULL, O donde sea IGUAL al ID solicitado"
             query = query.or(`proveedor_id.is.null,proveedor_id.eq.${providerId}`);
         } else {
-            // Contexto Perdido/Invalido: FALLBACK SEGURO.
-            // Solo retornamos Globales. Jamás mostramos privados de otros.
-            console.warn("[FilesController] ⚠️ Warning: getDictionaryTerms called without clean providerId. Fallback to Globals only.");
+            // Si no hay proveedor, SOLO mostrar globales. (Modo Seguro)
+            console.log("   🛡️ Modo Seguro activado: Solo globales.");
             query = query.is('proveedor_id', null);
         }
 
         const { data, error } = await query;
 
         if (error) throw error;
-        res.json(data);
+
+        // --- 🕵️‍♂️ VIGÍA DEPURADOR DE FUGAS ---
+        // Verificamos en JS si se coló algún intruso
+        const sanitizedData = data.filter(term => {
+            const isGlobal = term.proveedor_id === null;
+            const isMine = providerId && term.proveedor_id === providerId;
+
+            // Si NO es global Y NO es mío, es un intruso.
+            if (!isGlobal && !isMine) {
+                console.warn(`🚨 [LEAK DETECTED] Se filtró término ajeno: "${term.termino}" (Pertenece a: ${term.proveedor_id})`);
+                return false; // Lo borramos de la respuesta
+            }
+            return true;
+        });
+
+        console.log(`   ✅ Resultados: ${sanitizedData.length} (Originales: ${data.length})`);
+
+        res.json(sanitizedData);
+
     } catch (error) {
         console.error("Error fetching dictionary:", error);
         res.status(500).json({ error: error.message });
@@ -334,18 +358,23 @@ async function getDictionaryTerms(req, res) {
 }
 
 async function createDictionaryTerm(req, res) {
-    const { termino, descripcion, providerId } = req.body;
+    // 1. Recibimos el parámetro 'isGlobal' desde el frontend
+    const { termino, descripcion, providerId, isGlobal } = req.body;
+
     try {
         const termUpper = termino.trim().toUpperCase();
 
-        // [PRIVATE CREATION]
-        // Si no hay providerId, se asume Global (comportamiento admin/legacy).
-        // Se valida existencia previa para evitar duplicados en el mismo scope.
+        // 2. LÓGICA DE ALCANCE (SCOPE)
+        // Si isGlobal es true, forzamos que proveedor_id sea NULL.
+        // Si no, usamos el providerId que nos llega (siempre que sea válido).
+        const finalProviderId = isGlobal ? null : ((providerId && providerId !== 'null') ? providerId : null);
+
+        console.log(`[Dictionary] Creando término: ${termUpper} | Global: ${isGlobal} | Provider: ${finalProviderId}`);
 
         const payload = {
             termino: termUpper,
             descripcion_uso: descripcion,
-            proveedor_id: (providerId && providerId !== 'null') ? providerId : null
+            proveedor_id: finalProviderId
         };
 
         const { data, error } = await supabase
@@ -355,14 +384,27 @@ async function createDictionaryTerm(req, res) {
             .single();
 
         if (error) {
+            // Manejo de duplicados
             if (error.code === '23505') {
-                // Manejo de duplicados: Retornar existente si colisiona
-                const { data: existing } = await supabase
+                console.warn("⚠️ Término duplicado, intentando recuperar existente...");
+                let query = supabase
                     .from('user_diccionario_nomenclatura')
                     .select('*')
-                    .eq('termino', termUpper)
-                    .maybeSingle();
-                return res.json(existing);
+                    .eq('termino', termUpper);
+
+                // Buscamos coincidencia exacta de scope para devolver el correcto
+                if (finalProviderId) {
+                    query = query.eq('proveedor_id', finalProviderId);
+                } else {
+                    query = query.is('proveedor_id', null);
+                }
+
+                const { data: existing } = await query.maybeSingle();
+
+                if (existing) return res.json(existing);
+
+                // Si colisiona pero no lo encontramos (caso raro de scope cruzado), lanzamos error
+                return res.status(409).json({ error: "El término ya existe en este contexto." });
             }
             throw error;
         }
@@ -374,8 +416,9 @@ async function createDictionaryTerm(req, res) {
 }
 
 async function updateDictionaryTerm(req, res) {
-    const { id, termino, descripcion_uso, reglas_procesamiento } = req.body;
-    console.log(`[FilesController] UPDATE Term Request: ID=${id}, Term=${termino}`);
+    // Agregamos 'isGlobal' y 'currentProviderId' a los parámetros recibidos
+    const { id, termino, descripcion_uso, reglas_procesamiento, isGlobal, currentProviderId } = req.body;
+    console.log(`[FilesController] UPDATE Term Request: ID=${id}, Term=${termino}, Global=${isGlobal}`);
 
     if (!id || !termino) {
         return res.status(400).json({ error: "Faltan datos requeridos (id, termino)" });
@@ -385,46 +428,42 @@ async function updateDictionaryTerm(req, res) {
         const updatePayload = {
             termino: termino.trim().toUpperCase()
         };
+
         if (descripcion_uso !== undefined) {
             updatePayload.descripcion_uso = descripcion_uso ? descripcion_uso.trim() : null;
         }
 
+        // --- LÓGICA DE CAMBIO DE ALCANCE (SCOPE) ---
+        // Si nos envían el flag 'isGlobal', decidimos el dueño del término.
+        if (isGlobal !== undefined) {
+            // Si es Global -> proveedor_id es NULL
+            // Si es Privado -> proveedor_id es el ID del proveedor actual (o NULL si no hay provider)
+            // IMPORTANTE: currentProviderId es crucial si queremos devolverlo a "privado"
+            const targetProvider = isGlobal ? null : (currentProviderId && currentProviderId !== 'null' ? currentProviderId : null);
+            updatePayload.proveedor_id = targetProvider;
+        }
+
         // [FIX] Persistent Rules Support (Merge Strategy)
-        // If rules are provided, we MUST merge with existing to avoid losing SQL-injected props (pattern, targets)
         if (reglas_procesamiento !== undefined) {
-            // 1. Fetch Existing Record
             const { data: existing, error: fetchError } = await supabase
                 .from('user_diccionario_nomenclatura')
                 .select('reglas_procesamiento')
                 .eq('id', id)
                 .single();
 
-            if (fetchError && fetchError.code !== 'PGRST116') throw fetchError; // Ignore not found if creating new? No, this is update.
+            if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
 
             let mergedRules = reglas_procesamiento;
             if (existing && existing.reglas_procesamiento) {
                 console.log(`[FilesController] Merging Rules for ${id}...`);
-                // MERGE: Existing has priority for "protected" keys if we wanted, 
-                // BUT usually we want new UI values (like delimiter) to override, 
-                // while keeping existing "hidden" keys (pattern, logic).
-
-                // Strategy: Spread Existing, then Spread New. 
-                // This means New overrides shared keys (good for delimiter update), 
-                // but keeps keys New doesn't have (good for pattern persistence).
                 mergedRules = { ...existing.reglas_procesamiento, ...reglas_procesamiento };
 
-                // Specific Protection: If new rules is just { type: 'split' } but existing was { type: 'regex_split' }, 
-                // we might have a conflict if the UI blindly forces 'split'.
-                // The UI logic in viewer_engine currently forces 'split' if delimiter is present.
-                // IF we want to protect 'regex_split' from UI downgrade:
+                // Protección específica para no perder regex si el UI manda split simple
                 if (existing.reglas_procesamiento.type === 'regex_split' && reglas_procesamiento.type === 'split') {
                     console.warn(`[FilesController] 🛡️ Protected Regex Rule from UI Downgrade.`);
-                    mergedRules.type = 'regex_split'; // Keep regex type
-                    // Keep pattern (already kept by spread)
-                    // Keep target_labels (already kept by spread)
+                    mergedRules.type = 'regex_split';
                 }
             }
-
             updatePayload.reglas_procesamiento = mergedRules;
         }
 
@@ -434,9 +473,14 @@ async function updateDictionaryTerm(req, res) {
             .eq('id', id)
             .select();
 
-        if (error) throw error;
+        if (error) {
+            // Manejo de colisiones: Si intentas hacerlo Global pero YA EXISTE uno global con ese nombre
+            if (error.code === '23505') {
+                return res.status(409).json({ error: "No se puede actualizar: Ya existe un término con este nombre en el ámbito destino (Global/Privado)." });
+            }
+            throw error;
+        }
 
-        // Validar si realmente se actualizó algo
         if (!data || data.length === 0) {
             console.warn(`[FilesController] ⚠️ Update exitoso pero SIN DATOS retornados para ID ${id}. Verificar existencia.`);
         } else {

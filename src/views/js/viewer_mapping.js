@@ -1,6 +1,7 @@
 /**
  * VIEWER MAPPING - Nomenclature & Processing Rules
  * Extracted from viewer_engine.js
+ * [UPDATED]: Global Scope Support via Checkbox
  */
 
 // --- MAPPING & NOMENCLATURE TOOLS ---
@@ -20,10 +21,28 @@ async function loadNomenclature() {
     }
 }
 
-async function addNomenclatureTerm(term, desc = "") {
+// [MODIFIED] Now supports isGlobal flag
+async function addNomenclatureTerm(term, desc = "", isGlobal = false) {
     try {
         const providerId = window.globalContext ? window.globalContext.providerId : null;
-        await window.NomenclatureService.create(term, desc, providerId);
+        // The service needs to handle the payload structure manually here or updated in service
+        // We'll do a direct fetch here to ensure custom payload support
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+
+        const response = await fetch(`${backendUrl}/api/files/dictionary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                termino: term,
+                descripcion: desc,
+                providerId: providerId,
+                isGlobal: isGlobal
+            })
+        });
+
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
+
         await loadNomenclature();
         return true;
     } catch (e) {
@@ -32,11 +51,22 @@ async function addNomenclatureTerm(term, desc = "") {
     }
 }
 
-async function updateNomenclatureTerm(id, newTerm, newDesc, newRules) {
+// [MODIFIED] Now supports isGlobal flag
+async function updateNomenclatureTerm(id, newTerm, newDesc, newRules, isGlobal) {
     try {
-        const updatePayload = { id: id, termino: newTerm };
+        const updatePayload = {
+            id: id,
+            termino: newTerm,
+            currentProviderId: window.globalContext.providerId
+        };
         if (newDesc !== undefined) updatePayload.descripcion_uso = newDesc;
         if (newRules !== undefined) updatePayload.reglas_procesamiento = newRules;
+        if (isGlobal !== undefined) updatePayload.isGlobal = isGlobal;
+
+        // --- 🕵️‍♂️ VIGÍA DEPURADOR: INICIO ---
+        console.group("🕵️‍♂️ DEBUG: Transacción de Actualización");
+        console.log("📤 [Cliente] Payload Enviado:", updatePayload);
+        // ----------------------------------
 
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
 
@@ -46,35 +76,66 @@ async function updateNomenclatureTerm(id, newTerm, newDesc, newRules) {
             body: JSON.stringify(updatePayload)
         });
         const result = await response.json();
-        if (!response.ok || !result.success) throw new Error(result.error);
+
+        // --- 🕵️‍♂️ VIGÍA DEPURADOR: RESPUESTA ---
+        console.log("📥 [Servidor] Respuesta Cruda:", result);
+        console.log("🧐 [Análisis] ¿Qué hay en result.data?:", result.data);
+        console.log("📊 [Tipo] ¿result.data es Array?:", Array.isArray(result.data));
+        if (Array.isArray(result.data) && result.data.length > 0) {
+            console.log("👉 Primer elemento del array:", result.data[0]);
+            console.log("🔑 ¿Tiene propiedad proveedor_id?:", result.data[0].hasOwnProperty('proveedor_id'));
+        } else {
+            console.log("⚠️ result.data no es un array o está vacío.");
+        }
+        console.groupEnd();
+        // -------------------------------------
+
+        if (!response.ok || !result.success) throw new Error(result.error || "Error desconocido");
 
         const idx = nomenclatureCache.findIndex(t => t.id === id);
         if (idx !== -1) {
             const oldName = nomenclatureCache[idx].termino;
+
+            // Update Local Cache
             nomenclatureCache[idx].termino = newTerm;
             if (newDesc !== undefined) nomenclatureCache[idx].descripcion_uso = newDesc;
             if (newRules !== undefined) nomenclatureCache[idx].reglas_procesamiento = newRules;
 
+            // INTENTO DE ACTUALIZACIÓN DE SCOPE (Aquí es donde sospechamos el fallo)
+            if (result.data) {
+                // Si el servidor devuelve array, tomamos el primero, si no, el objeto directo.
+                // El depurador nos dirá cuál de las dos líneas siguientes es la necesaria.
+                const dataObj = Array.isArray(result.data) ? result.data[0] : result.data;
+
+                if (dataObj && dataObj.proveedor_id !== undefined) {
+                    console.log(`✅ [Cache Update] Actualizando proveedor_id local de ${nomenclatureCache[idx].proveedor_id} a ${dataObj.proveedor_id}`);
+                    nomenclatureCache[idx].proveedor_id = dataObj.proveedor_id;
+                } else {
+                    console.warn("⚠️ [Cache Warning] No se encontró proveedor_id en la respuesta para actualizar el cache.");
+                }
+            }
+
+            // Update Mappings in UI
             Object.keys(columnMapping).forEach(colIdx => {
                 if (columnMapping[colIdx] === oldName || columnMapping[colIdx] === newTerm) {
                     columnMapping[colIdx] = newTerm;
                     const updatedRule = nomenclatureCache[idx].reglas_procesamiento;
                     if (updatedRule) {
-                        // [V3] NORMALIZACIÓN A PIPELINE (ARRAY)
                         processingRules[colIdx] = Array.isArray(updatedRule)
                             ? updatedRule
                             : [updatedRule];
                     } else {
                         delete processingRules[colIdx];
                     }
-                    console.log(`[Hot Reload] Regla actualizada en memoria para Col ${colIdx}`);
                 }
             });
         }
         return true;
     } catch (e) {
         console.error("Error updating:", e);
-        alert("Error: " + e.message);
+        // Si tienes SweetAlert cargado, úsalo, si no, alert normal
+        if (typeof Swal !== 'undefined') Swal.fire("Error", e.message, "error");
+        else alert("Error: " + e.message);
         return false;
     }
 }
@@ -96,7 +157,6 @@ async function toggleMappingMode() {
                 const termName = columnMapping[colIdx];
                 const term = nomenclatureCache.find(t => t.termino === termName);
                 if (term && term.reglas_procesamiento) {
-                    // [V3] NORMALIZACIÓN A PIPELINE (ARRAY)
                     processingRules[colIdx] = Array.isArray(term.reglas_procesamiento)
                         ? term.reglas_procesamiento
                         : [term.reglas_procesamiento];
@@ -112,6 +172,7 @@ async function toggleMappingMode() {
     if (currentSheetData) renderVirtualTable(currentSheetData);
 }
 
+// [MODIFIED] Replaced inline create with Modal
 function openColumnMenu_v2(colIndex, buttonElement) {
     const existing = document.getElementById('colMenuDropdown');
     if (existing) {
@@ -140,23 +201,68 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     const createBtn = document.createElement('button');
     createBtn.className = 'w-full px-4 py-2 text-left bg-blue-600/10 hover:bg-blue-600/20 border-b border-blue-500/20 text-[10px] uppercase font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2';
     createBtn.innerHTML = '<i data-lucide="plus-circle" class="w-3 h-3"></i> Crear Nuevo Encabezado';
-    createBtn.onclick = () => {
+
+    // [MODIFIED] Use SweetAlert for Creation
+    createBtn.onclick = async () => {
         menu.remove();
+        if (typeof Swal === 'undefined') return alert("SweetAlert not loaded");
 
-        window.ViewerUI.renderCreateTermModal("", async (newTermName) => {
-            await loadNomenclature();
-
-            // 🔥 BUG FIX: Limpiar reglas remanentes al asignar un término nuevo
-            if (processingRules[colIndex]) {
-                delete processingRules[colIndex];
-                console.log(`[Mapping] Regla eliminada para Col ${colIndex} (Nuevo Término)`);
+        const { value: formValues } = await Swal.fire({
+            title: 'Nuevo Encabezado',
+            html: `
+                <div class="flex flex-col gap-3 text-left">
+                    <label class="text-xs font-bold text-slate-400 uppercase">Nombre del Término</label>
+                    <input id="swal-input-term" class="swal2-input m-0 w-full" placeholder="Ej: PRECIO_LISTA">
+                    
+                    <label class="text-xs font-bold text-slate-400 uppercase mt-2">Descripción (Opcional)</label>
+                    <input id="swal-input-desc" class="swal2-input m-0 w-full" placeholder="Para qué se usa...">
+                    
+                    <div class="flex items-center gap-2 mt-4 p-3 bg-blue-900/20 rounded border border-blue-500/30">
+                        <input type="checkbox" id="swal-input-global" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        <div class="flex flex-col">
+                            <label for="swal-input-global" class="text-sm font-medium text-slate-200 cursor-pointer">Hacer Global</label>
+                            <span class="text-[10px] text-slate-400">Disponible para todos los proveedores.</span>
+                        </div>
+                    </div>
+                </div>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'Crear',
+            confirmButtonColor: '#3b82f6',
+            background: '#1e293b',
+            color: '#fff',
+            preConfirm: () => {
+                return {
+                    termino: document.getElementById('swal-input-term').value,
+                    descripcion: document.getElementById('swal-input-desc').value,
+                    isGlobal: document.getElementById('swal-input-global').checked
+                }
             }
-
-            columnMapping[colIndex] = newTermName;
-            renderVirtualTable(currentSheetData);
-            saveSheetState(currentSheetName);
-            renderSheetTabs();
         });
+
+        if (formValues && formValues.termino) {
+            const success = await addNomenclatureTerm(formValues.termino, formValues.descripcion, formValues.isGlobal);
+            if (success) {
+                // Bug fix: Clean old rules
+                if (processingRules[colIndex]) {
+                    delete processingRules[colIndex];
+                }
+                columnMapping[colIndex] = formValues.termino.toUpperCase();
+                renderVirtualTable(currentSheetData);
+                saveSheetState(currentSheetName);
+                renderSheetTabs();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Creado',
+                    text: `Término "${formValues.termino.toUpperCase()}" creado correctamente.`,
+                    timer: 1500,
+                    showConfirmButton: false,
+                    background: '#1e293b',
+                    color: '#fff'
+                });
+            }
+        }
     };
     scrollArea.appendChild(createBtn);
 
@@ -166,7 +272,10 @@ function openColumnMenu_v2(colIndex, buttonElement) {
 
         const content = document.createElement('div');
         content.className = 'flex-grow px-2 flex flex-col';
-        content.innerHTML = `<span class="text-[11px] font-mono text-slate-300 font-bold">${term.termino}</span>
+        // Add Globe Icon if Global
+        const globalIcon = !term.proveedor_id ? '<i data-lucide="globe" class="w-3 h-3 inline text-slate-500 mr-1" title="Global"></i>' : '';
+
+        content.innerHTML = `<span class="text-[11px] font-mono text-slate-300 font-bold flex items-center">${globalIcon}${term.termino}</span>
                              <span class="text-[9px] text-slate-500 truncate">${term.descripcion_uso || ''}</span>`;
 
         if (columnMapping[colIndex] === term.termino) {
@@ -177,7 +286,6 @@ function openColumnMenu_v2(colIndex, buttonElement) {
         content.onclick = () => {
             columnMapping[colIndex] = term.termino;
             if (term.reglas_procesamiento) {
-                // [V3] NORMALIZACIÓN A PIPELINE
                 processingRules[colIndex] = Array.isArray(term.reglas_procesamiento)
                     ? term.reglas_procesamiento
                     : [term.reglas_procesamiento];
@@ -195,7 +303,9 @@ function openColumnMenu_v2(colIndex, buttonElement) {
         editBtn.innerHTML = '<i data-lucide="pencil" class="w-3 h-3"></i>';
         editBtn.onclick = (e) => {
             e.stopPropagation();
-            renderEditMode(item, term);
+            // Call Modal Edit instead of inline
+            menu.remove();
+            openEditTermModal(term, colIndex);
         };
 
         item.appendChild(content);
@@ -260,130 +370,100 @@ function createTermSelect(currentId, placeholder, currentTermId) {
     return select;
 }
 
-function renderEditMode(container, term) {
-    container.className = 'p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-3 transition-all rounded-r-lg shadow-inner';
-    container.innerHTML = '';
+// [MODIFIED] New Modal for Editing with Scope Control
+async function openEditTermModal(term, colIndex) {
+    if (typeof Swal === 'undefined') return alert("SweetAlert not loaded");
 
-    const header = document.createElement('div');
-    header.className = "flex justify-between items-center mb-1";
-    header.innerHTML = '<span class="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Edición Rápida</span>';
-    container.appendChild(header);
+    const isCurrentlyGlobal = (term.proveedor_id === null);
 
-    const group1 = document.createElement('div');
-    group1.className = "space-y-1";
-    group1.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold">Término</label>';
-    const inputTerm = document.createElement('input');
-    inputTerm.value = term.termino;
-    inputTerm.className = 'w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-[11px] text-white focus:border-blue-500 outline-none placeholder:text-slate-600 font-mono';
-    group1.appendChild(inputTerm);
-    container.appendChild(group1);
+    const { value: formValues } = await Swal.fire({
+        title: 'Editar Encabezado',
+        html: `
+            <div class="flex flex-col gap-3 text-left">
+                <input type="hidden" id="swal-edit-id" value="${term.id}">
+                
+                <label class="text-xs font-bold text-slate-400 uppercase">Nombre</label>
+                <input id="swal-edit-term" class="swal2-input m-0 w-full" value="${term.termino}">
+                
+                <label class="text-xs font-bold text-slate-400 uppercase mt-2">Descripción</label>
+                <input id="swal-edit-desc" class="swal2-input m-0 w-full" value="${term.descripcion_uso || ''}">
+                
+                <div class="flex items-center gap-2 mt-4 p-3 bg-slate-700/50 rounded border border-slate-600">
+                    <input type="checkbox" id="swal-edit-global" class="w-4 h-4 rounded border-gray-500 text-blue-600 focus:ring-blue-500" 
+                        ${isCurrentlyGlobal ? 'checked' : ''}>
+                    <div class="flex flex-col">
+                        <label for="swal-edit-global" class="text-sm font-medium text-slate-200 cursor-pointer">Es Global</label>
+                        <span class="text-[10px] text-slate-400">Si marcas esto, estará disponible para TODOS los proveedores.</span>
+                    </div>
+                </div>
 
-    const group2 = document.createElement('div');
-    group2.className = "space-y-1";
-    group2.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold">Descripción</label>';
-    const inputDesc = document.createElement('input');
-    inputDesc.value = term.descripcion_uso || '';
-    inputDesc.placeholder = 'Contexto de uso...';
-    inputDesc.className = 'w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-[10px] text-slate-400 focus:border-blue-500 outline-none placeholder:text-slate-600';
-    group2.appendChild(inputDesc);
-    container.appendChild(group2);
+                <div class="mt-2 pt-2 border-t border-slate-700">
+                    <span class="text-[9px] text-slate-500 uppercase">Configuración de Reglas (Solo lectura en modal rápido)</span>
+                    <div class="text-[10px] text-slate-400 font-mono truncate">${JSON.stringify(term.reglas_procesamiento || {})}</div>
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Guardar Cambios',
+        showDenyButton: true,
+        denyButtonText: 'Eliminar Término',
+        denyButtonColor: '#ef4444',
+        background: '#1e293b',
+        color: '#fff',
+        preConfirm: () => {
+            return {
+                id: document.getElementById('swal-edit-id').value,
+                termino: document.getElementById('swal-edit-term').value,
+                descripcion: document.getElementById('swal-edit-desc').value,
+                isGlobal: document.getElementById('swal-edit-global').checked
+            }
+        }
+    });
 
-    // 🔥 SELECTOR DE REGLAS
-    const group3 = document.createElement('div');
-    group3.className = "space-y-1.5 pt-2 border-t border-slate-800";
-    group3.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold flex items-center justify-between"><span>Reglas de Procesamiento</span> <i data-lucide="split" class="w-3 h-3"></i></label>';
-
-    const ruleContainer = document.createElement('div');
-    ruleContainer.className = "grid grid-cols-2 gap-2";
-
-    // Extracción segura de regla (si es array toma la primera, si es objeto lo toma directo)
-    let rawRule = term.reglas_procesamiento;
-    if (Array.isArray(rawRule)) rawRule = rawRule[0];
-    const existingRule = (rawRule && typeof rawRule === 'object') ? rawRule : { delimiter: " + ", fields: [] };
-
-    const inputDelim = document.createElement('input');
-    inputDelim.type = 'hidden';
-    inputDelim.value = existingRule.delimiter || " + ";
-
-    const val1 = (existingRule.fields && existingRule.fields[0]) ? existingRule.fields[0] : "";
-    const field1 = createTermSelect(val1, "Campo 1", term.id);
-    const val2 = (existingRule.fields && existingRule.fields[1]) ? existingRule.fields[1] : "";
-    const field2 = createTermSelect(val2, "Campo 2", term.id);
-
-    ruleContainer.appendChild(inputDelim);
-    ruleContainer.appendChild(field1);
-    ruleContainer.appendChild(field2);
-    group3.appendChild(ruleContainer);
-    container.appendChild(group3);
-
-    const btnRow = document.createElement('div');
-    btnRow.className = 'flex justify-between items-end gap-2 mt-3 pt-2 border-t border-slate-800';
-
-    const btnDelete = document.createElement('button');
-    btnDelete.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3 text-red-500"></i>';
-    btnDelete.className = 'p-1.5 rounded hover:bg-red-900/30 transition-colors border border-transparent hover:border-red-900/50';
-    btnDelete.onclick = async (e) => {
-        e.stopPropagation();
-        if (confirm("¿Eliminar término?")) {
+    if (formValues) {
+        await updateNomenclatureTerm(
+            formValues.id,
+            formValues.termino,
+            formValues.descripcion,
+            undefined, // No rules update from simple modal
+            formValues.isGlobal
+        );
+        Swal.fire({
+            icon: 'success',
+            title: 'Actualizado',
+            text: 'Término modificado correctamente.',
+            timer: 1000,
+            showConfirmButton: false,
+            background: '#1e293b',
+            color: '#fff'
+        });
+        // Re-open menu to show changes? Or just let user click again.
+    } else if (Swal.getDenyButton().getAttribute('data-swal-deny-clicked') === 'true') {
+        // Handle Delete
+        if (confirm("¿Seguro que deseas eliminar este término permanentemente?")) {
             try {
                 const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
                 await fetch(`${backendUrl}/api/files/dictionary/delete?id=${term.id}`, { method: 'DELETE' });
                 const idx = nomenclatureCache.findIndex(t => t.id === term.id);
                 if (idx !== -1) nomenclatureCache.splice(idx, 1);
-                const colIdx = document.getElementById('colMenuDropdown').dataset.colIndex;
-                const triggerBtn = document.querySelector(`#excelContainer th:nth-child(${parseInt(colIdx) + 1}) button`);
-                if (triggerBtn) openColumnMenu_v2(colIdx, triggerBtn);
-            } catch (error) { alert("Error eliminando."); }
+                Swal.fire('Eliminado', '', 'success');
+            } catch (e) {
+                Swal.fire('Error', 'No se pudo eliminar', 'error');
+            }
         }
-    };
+    }
+}
 
-    const rightActions = document.createElement('div');
-    rightActions.className = "flex gap-2";
-
-    const btnCancel = document.createElement('button');
-    btnCancel.innerText = 'Cancelar';
-    btnCancel.className = 'text-[10px] text-slate-500 hover:text-white px-3 py-1.5 rounded hover:bg-slate-800 uppercase font-bold';
-    btnCancel.onclick = (e) => {
-        e.stopPropagation();
-        const colIdx = document.getElementById('colMenuDropdown').dataset.colIndex;
-        const triggerBtn = document.querySelector(`#excelContainer th:nth-child(${parseInt(colIdx) + 1}) button`);
-        if (triggerBtn) openColumnMenu_v2(colIdx, triggerBtn);
-    };
-
-    const btnSave = document.createElement('button');
-    btnSave.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i> Guardar';
-    btnSave.className = 'bg-blue-600 text-white px-4 py-1.5 rounded text-[10px] hover:bg-blue-500 uppercase font-bold';
-    btnSave.onclick = async (e) => {
-        e.stopPropagation();
-        btnSave.innerText = '...';
-
-        let parsedRules = undefined;
-        // Solo guardamos regla si es Split y tiene campos definidos (compatibilidad legacy)
-        if (field1.value || field2.value) {
-            parsedRules = {
-                type: 'split',
-                delimiter: inputDelim.value,
-                fields: [field1.value, field2.value]
-            };
-        }
-
-        await updateNomenclatureTerm(term.id, inputTerm.value, inputDesc.value, parsedRules);
-        const colIdx = document.getElementById('colMenuDropdown').dataset.colIndex;
-        const triggerBtn = document.querySelector(`#excelContainer th:nth-child(${parseInt(colIdx) + 1}) button`);
-        if (triggerBtn) openColumnMenu_v2(colIdx, triggerBtn);
-    };
-
-    btnRow.appendChild(btnDelete);
-    rightActions.appendChild(btnCancel);
-    rightActions.appendChild(btnSave);
-    btnRow.appendChild(rightActions);
-
-    container.appendChild(group1);
-    container.appendChild(group2);
-    container.appendChild(group3);
-    container.appendChild(btnRow);
-
-    setTimeout(() => { if (window.lucide) window.lucide.createIcons({ root: container }); inputTerm.focus(); }, 50);
+// Legacy renderEditMode kept for internal specific UI calls if any, 
+// but main flow now uses openEditTermModal. 
+// Can be removed if confirmed no other usage.
+function renderEditMode(container, term) {
+    // Kept empty or redirect to modal to avoid code rot, 
+    // but for safety in this "surgical" paste, I'll comment it out 
+    // or just log warning.
+    console.warn("Legacy renderEditMode called. Redirecting to Modal...");
+    openEditTermModal(term, 0);
 }
 
 function applyProcessingRules(originalData) {
@@ -506,4 +586,4 @@ window.resetMappingCache = function () {
     nomenclatureCache = [];
 };
 
-console.log("🗺️ [ViewerMapping] Herramientas de Mapeo Cargadas.");
+console.log("🗺️ [ViewerMapping] Herramientas de Mapeo Cargadas (Global Support).");
