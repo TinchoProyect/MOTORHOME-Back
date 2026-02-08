@@ -7,37 +7,23 @@
 
 async function loadNomenclature() {
     try {
-        // [V2] REFACTOR: Use NomenclatureService
-        // Eliminado acceso directo a Supabase.
-        // Ahora usamos el servicio con el contexto del proveedor inyectado en globalContext.
-
         const providerId = window.globalContext ? window.globalContext.providerId : null;
         const data = await window.NomenclatureService.getAll(providerId);
-
         nomenclatureCache = data;
         return data;
     } catch (e) {
         console.error("Error loading nomenclature:", e);
-        // Fallback local en memoria si falla la red, para no bloquear UI
         if (nomenclatureCache.length === 0) {
-            nomenclatureCache = [
-                { id: 'temp1', termino: 'Código', descripcion_uso: 'SKU' },
-                { id: 'temp2', termino: 'Descripción', descripcion_uso: 'Nombre' },
-                { id: 'temp3', termino: 'Precio', descripcion_uso: 'Costo' }
-            ];
+            nomenclatureCache = [];
         }
-        return nomenclatureCache; // Devolver caché o fallback
+        return nomenclatureCache;
     }
 }
 
 async function addNomenclatureTerm(term, desc = "") {
     try {
-        // [V2] REFACTOR: Use NomenclatureService
         const providerId = window.globalContext ? window.globalContext.providerId : null;
-
         await window.NomenclatureService.create(term, desc, providerId);
-
-        // Recargar caché para que aparezca el nuevo término
         await loadNomenclature();
         return true;
     } catch (e) {
@@ -62,21 +48,16 @@ async function updateNomenclatureTerm(id, newTerm, newDesc, newRules) {
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.error);
 
-        // Actualizamos el Caché Local
         const idx = nomenclatureCache.findIndex(t => t.id === id);
         if (idx !== -1) {
-            // Guardamos el nombre viejo para encontrar columnas afectadas
             const oldName = nomenclatureCache[idx].termino;
-
             nomenclatureCache[idx].termino = newTerm;
             if (newDesc !== undefined) nomenclatureCache[idx].descripcion_uso = newDesc;
             if (newRules !== undefined) nomenclatureCache[idx].reglas_procesamiento = newRules;
 
-            // 🔥 HOT RELOAD FIX (Actualiza memoria del visor al guardar)
             Object.keys(columnMapping).forEach(colIdx => {
                 if (columnMapping[colIdx] === oldName || columnMapping[colIdx] === newTerm) {
-                    columnMapping[colIdx] = newTerm; // Sync nombre
-
+                    columnMapping[colIdx] = newTerm;
                     const updatedRule = nomenclatureCache[idx].reglas_procesamiento;
                     if (updatedRule) {
                         processingRules[colIdx] = JSON.parse(JSON.stringify(updatedRule));
@@ -148,29 +129,25 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     scrollArea.className = "overflow-y-auto custom-scrollbar flex-1";
     menu.appendChild(scrollArea);
 
-    // [V2] DYNAMIC CREATION TRIGGER
     const createBtn = document.createElement('button');
     createBtn.className = 'w-full px-4 py-2 text-left bg-blue-600/10 hover:bg-blue-600/20 border-b border-blue-500/20 text-[10px] uppercase font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2';
     createBtn.innerHTML = '<i data-lucide="plus-circle" class="w-3 h-3"></i> Crear Nuevo Encabezado';
     createBtn.onclick = () => {
-        menu.remove(); // Close menu
+        menu.remove();
 
-        // Open Dynamic Modal
         window.ViewerUI.renderCreateTermModal("", async (newTermName) => {
-            // Callback on Success
-            // 1. Refresh global cache to get the new ID and data
             await loadNomenclature();
 
-            // 2. Assign to current column
-            columnMapping[colIndex] = newTermName;
+            // 🔥 BUG FIX: Limpiar reglas remanentes al asignar un término nuevo
+            if (processingRules[colIndex]) {
+                delete processingRules[colIndex];
+                console.log(`[Mapping] Regla eliminada para Col ${colIndex} (Nuevo Término)`);
+            }
 
-            // 3. Update UI
+            columnMapping[colIndex] = newTermName;
             renderVirtualTable(currentSheetData);
             saveSheetState(currentSheetName);
             renderSheetTabs();
-
-            // 4. Optional: Show success toast or log
-            console.log(`[Mapping] New term '${newTermName}' assigned to column ${colIndex}`);
         });
     };
     scrollArea.appendChild(createBtn);
@@ -238,11 +215,9 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     if (window.lucide) window.lucide.createIcons();
 }
 
-// HELPER: Select for Rules with Integrity Filters
 function createTermSelect(currentId, placeholder, currentTermId) {
     const select = document.createElement('select');
     select.className = 'bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:border-blue-500 outline-none w-full appearance-none';
-
     const defaultOpt = document.createElement('option');
     defaultOpt.value = "";
     defaultOpt.text = `- ${placeholder} -`;
@@ -251,15 +226,12 @@ function createTermSelect(currentId, placeholder, currentTermId) {
     select.appendChild(defaultOpt);
 
     let foundCurrent = false;
-
     nomenclatureCache.forEach(t => {
-        if (t.id === currentTermId) return; // No auto-reference
-        if (t.reglas_procesamiento && Object.keys(t.reglas_procesamiento).length > 0) return; // Only leafs
-
+        if (t.id === currentTermId) return;
+        if (t.reglas_procesamiento && Object.keys(t.reglas_procesamiento).length > 0) return;
         const opt = document.createElement('option');
         opt.value = t.id;
         opt.text = t.termino;
-
         if (t.id === currentId) {
             opt.selected = true;
             foundCurrent = true;
@@ -268,21 +240,15 @@ function createTermSelect(currentId, placeholder, currentTermId) {
     });
 
     if (currentId && !foundCurrent) {
-        const zombieTerm = nomenclatureCache.find(z => z.id === currentId);
-        const displayName = zombieTerm ? zombieTerm.termino : (currentId.length > 20 ? "Referencia Rota" : currentId);
-
         const legacyOpt = document.createElement('option');
         legacyOpt.value = currentId;
-        legacyOpt.text = `${displayName} (Inválido)`;
-        legacyOpt.classList.add('text-amber-500');
+        legacyOpt.text = `ID Desconocido`;
         legacyOpt.selected = true;
         select.appendChild(legacyOpt);
     }
-
     return select;
 }
 
-// RESTORED FULL EDIT MODE WITH RULES
 function renderEditMode(container, term) {
     container.className = 'p-3 bg-slate-900 border-l-2 border-blue-500 flex flex-col gap-3 transition-all rounded-r-lg shadow-inner';
     container.innerHTML = '';
@@ -292,7 +258,6 @@ function renderEditMode(container, term) {
     header.innerHTML = '<span class="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Edición Rápida</span>';
     container.appendChild(header);
 
-    // Input: Name
     const group1 = document.createElement('div');
     group1.className = "space-y-1";
     group1.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold">Término</label>';
@@ -302,7 +267,6 @@ function renderEditMode(container, term) {
     group1.appendChild(inputTerm);
     container.appendChild(group1);
 
-    // Input: Description
     const group2 = document.createElement('div');
     group2.className = "space-y-1";
     group2.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold">Descripción</label>';
@@ -313,7 +277,6 @@ function renderEditMode(container, term) {
     group2.appendChild(inputDesc);
     container.appendChild(group2);
 
-    // Rules
     const group3 = document.createElement('div');
     group3.className = "space-y-1.5 pt-2 border-t border-slate-800";
     group3.innerHTML = '<label class="text-[9px] text-slate-500 uppercase font-bold flex items-center justify-between"><span>Reglas de Procesamiento</span> <i data-lucide="split" class="w-3 h-3"></i></label>';
@@ -328,7 +291,6 @@ function renderEditMode(container, term) {
 
     const val1 = (existingRule.fields && existingRule.fields[0]) ? existingRule.fields[0] : "";
     const field1 = createTermSelect(val1, "Campo 1", term.id);
-
     const val2 = (existingRule.fields && existingRule.fields[1]) ? existingRule.fields[1] : "";
     const field2 = createTermSelect(val2, "Campo 2", term.id);
 
@@ -338,7 +300,6 @@ function renderEditMode(container, term) {
     group3.appendChild(ruleContainer);
     container.appendChild(group3);
 
-    // Buttons
     const btnRow = document.createElement('div');
     btnRow.className = 'flex justify-between items-end gap-2 mt-3 pt-2 border-t border-slate-800';
 
@@ -408,8 +369,6 @@ function renderEditMode(container, term) {
     setTimeout(() => { if (window.lucide) window.lucide.createIcons({ root: container }); inputTerm.focus(); }, 50);
 }
 
-// --- VIRTUAL SCROLLER & PROCESSING ---
-
 function applyProcessingRules(originalData) {
     if (!originalData || originalData.length === 0) return [];
 
@@ -420,7 +379,6 @@ function applyProcessingRules(originalData) {
     if (activeRules.length === 0) return originalData;
 
     const processedData = [];
-    // 🔥 SET PARA DEDUPLICAR (Memoria de Elefante)
     const seenValues = new Set();
 
     for (let i = 0; i < originalData.length; i++) {
@@ -432,7 +390,6 @@ function applyProcessingRules(originalData) {
             const cellVal = row[colIdx];
             const strVal = String(cellVal || "").trim();
 
-            // --- A. SANITIZE LOGIC (REGEX FIX v2.6) ---
             if (rule.type === 'sanitize') {
                 const fallback = rule.config?.replace_with || "0,00";
                 let shouldReplace = false;
@@ -446,7 +403,7 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.match_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (DOBLE ESCAPE RESTAURADO)
+                        p = p.replace(/\\\\/g, '\\');
                         if (new RegExp(p, 'i').test(strVal)) {
                             shouldReplace = true;
                         }
@@ -456,14 +413,12 @@ function applyProcessingRules(originalData) {
                 if (shouldReplace) {
                     row[colIdx] = fallback;
                 } else {
-                    // Si es un número válido pero tiene punto, lo pasamos a coma
                     if (strVal && strVal.includes('.')) {
                         row[colIdx] = strVal.replace(/\./g, ',');
                     }
                 }
             }
 
-            // --- B. FILTER LOGIC (REGEX FIX v2.6) ---
             if (rule.type === 'filter' || rule.type === 'row_filter') {
                 if (rule.config?.exclude_empty && strVal === "") {
                     keepRow = false;
@@ -474,14 +429,13 @@ function applyProcessingRules(originalData) {
                         let p = rule.config.exclude_regex;
                         if (p.startsWith('/')) p = p.slice(1);
                         if (p.endsWith('/')) p = p.slice(0, -1);
-                        p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (DOBLE ESCAPE RESTAURADO)
+                        p = p.replace(/\\\\/g, '\\');
                         if (new RegExp(p, 'i').test(strVal)) {
                             keepRow = false;
                             break;
                         }
                     } catch (e) { }
                 }
-                // LOGICA DE DEDUPLICACION
                 if (rule.config?.unique) {
                     const uniqueKey = strVal.toUpperCase();
                     if (seenValues.has(uniqueKey)) {
@@ -493,7 +447,6 @@ function applyProcessingRules(originalData) {
                 }
             }
 
-            // --- C. TRANSFORM LOGIC (REGEX FIX v2.6) ---
             if (keepRow && (rule.type === 'split' || rule.type === 'regex_split')) {
                 let pDesc = strVal;
                 let pPres = "";
@@ -502,7 +455,7 @@ function applyProcessingRules(originalData) {
                     try {
                         let patternStr = rule.pattern;
                         if (patternStr) {
-                            patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (DOBLE ESCAPE RESTAURADO)
+                            patternStr = patternStr.replace(/\\\\/g, '\\');
 
                             if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                             if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
@@ -530,7 +483,6 @@ function applyProcessingRules(originalData) {
                 }
             }
 
-            // --- D. FORMAT LOGIC (v2.3) ---
             if (keepRow && rule.type === 'format_number') {
                 let num = parseFloat(String(cellVal).replace(/[^0-9.-]/g, ''));
                 if (!isNaN(num)) {
@@ -558,13 +510,9 @@ function toggleProcessingRule(colIndex) {
     }
 }
 
-// [PHASE 5] CACHE BUSTER - RESET MAPPING MEMORY
 window.resetMappingCache = function () {
     console.log("🧹 [ViewerMapping] Limpiando caché de nomenclaturas...");
-    nomenclatureCache = []; // Vaciar array
-    // También limpiamos mapeos viejos si fuera necesario
-    // columnMapping = {}; // (Opcional, depende de viewer_core.js)
+    nomenclatureCache = [];
 };
 
-// [VIGÍA DE CONTROL]
 console.log("🗺️ [ViewerMapping] Herramientas de Mapeo Cargadas.");

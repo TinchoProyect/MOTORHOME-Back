@@ -167,6 +167,7 @@ function generatePreview() {
                 const rule = processingRules[colIdx];
                 const isSimActive = rule ? (rule.isSimActive !== undefined ? rule.isSimActive : true) : false;
 
+                // --- 1. RULE: SPLIT ---
                 if (rule && isSimActive && rule.type === 'split') {
                     rule.fields.forEach((fieldId, subIdx) => {
                         const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
@@ -188,8 +189,8 @@ function generatePreview() {
                         });
                     });
                 }
+                // --- 2. RULE: REGEX SPLIT ---
                 else if (rule && isSimActive && rule.type === 'regex_split') {
-                    // 🔥 HEADERS DINÁMICOS
                     const targets = [];
                     if (rule.fields && rule.fields.length > 0) {
                         rule.fields.forEach(fid => {
@@ -203,7 +204,7 @@ function generatePreview() {
 
                     let patternStr = rule.pattern;
                     if (patternStr) {
-                        patternStr = patternStr.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6 (Double backslash restored)
+                        patternStr = patternStr.replace(/\\\\/g, '\\');
                         if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
                         if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
                         else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
@@ -235,7 +236,19 @@ function generatePreview() {
                         });
                     }
                 }
-                // --- D. SANITIZE PREVIEW LOGIC (REGEX FIX v2.6) ---
+                // --- 3. RULE: SANITIZE NUMBERS (SOLO NÚMEROS) ---
+                else if (rule && isSimActive && rule.type === 'sanitize_numbers') {
+                    displayConfig.push({
+                        label: termName,
+                        isVirtual: false,
+                        sourceIndex: colIdx,
+                        transform: (val) => String(val || "").replace(/[^0-9]/g, ''),
+                        hasSwitch: true, // ✅ TIENE SWITCH
+                        switchState: true,
+                        switchColIdx: colIdx
+                    });
+                }
+                // --- 4. RULE: SANITIZE GENERIC ---
                 else if (rule && isSimActive && rule.type === 'sanitize') {
                     displayConfig.push({
                         label: termName,
@@ -250,19 +263,18 @@ function generatePreview() {
                                     let p = rule.config.match_regex;
                                     if (p.startsWith('/')) p = p.slice(1);
                                     if (p.endsWith('/')) p = p.slice(0, -1);
-                                    p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6
+                                    p = p.replace(/\\\\/g, '\\');
                                     if (new RegExp(p, 'i').test(strVal)) return fallback;
                                 } catch (e) { }
                             }
-                            // Si tiene punto, visualmente mostralo con coma
                             return val && String(val).includes('.') ? String(val).replace(/\./g, ',') : val;
                         },
-                        hasSwitch: true,
+                        hasSwitch: true, // ✅ TIENE SWITCH
                         switchState: rule.isSimActive !== false,
                         switchColIdx: colIdx
                     });
                 }
-                // --- E. FORMAT NUMBER LOGIC ---
+                // --- 5. RULE: FORMAT NUMBER ---
                 else if (rule && isSimActive && rule.type === 'format_number') {
                     displayConfig.push({
                         label: termName,
@@ -283,20 +295,20 @@ function generatePreview() {
                             }
                             return val;
                         },
-                        hasSwitch: true,
+                        hasSwitch: true, // ✅ TIENE SWITCH
                         switchState: rule.isSimActive !== false,
                         switchColIdx: colIdx
                     });
                 }
+                // --- 6. DEFAULT (SIN REGLA) ---
                 else {
-                    // Default / Identity
                     displayConfig.push({
                         label: termName,
                         isVirtual: false,
                         sourceIndex: colIdx,
                         transform: (val) => val,
-                        hasSwitch: !!rule,
-                        switchState: rule ? (rule.isSimActive !== false) : false,
+                        hasSwitch: false, // 🚫 NO TIENE SWITCH (CORRECCIÓN)
+                        switchState: false,
                         switchColIdx: colIdx
                     });
                 }
