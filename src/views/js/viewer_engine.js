@@ -20,8 +20,9 @@ console.log("%c 🚀 VIEWER ENGINE: v2.6 - READY ", "background: #8b5cf6; color:
 // exportAllSheets moved to viewer_worker.js
 
 
-async function openFileViewer(fileId, fileName) {
+async function openFileViewer(fileId, fileName, providerId = null) {
     window.globalContext.fileId = fileId;
+    window.globalContext.providerId = providerId; // [V2] PRIVATE CONTEXT INJECTION
 
     // UI Elements
     const modal = document.getElementById('viewerModal');
@@ -366,13 +367,9 @@ function closeViewerModal() {
 
 
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
-window.openFileViewer = function (fileId, fileName) {
-    window.resetViewerState(); // [TABULA RASA] - Always Start Clean
-    openFileViewer(fileId, fileName);
-};
-
-window.handleOffsetClick = handleOffsetClick;
-window.toggleOffsetMode = toggleOffsetMode;
+window.openFileViewer = (fileId, fileName, providerId) => openFileViewer(fileId, fileName, providerId);
+window.loadSheet = (sheetName) => loadSheet(sheetName);
+window.loadVirtualWorkbook = (data) => loadVirtualWorkbook(data);
 window.toggleMappingMode = toggleMappingMode;
 window.openColumnMenu_v2 = openColumnMenu_v2;
 

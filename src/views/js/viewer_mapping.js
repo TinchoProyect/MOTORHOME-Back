@@ -7,19 +7,18 @@
 
 async function loadNomenclature() {
     try {
-        const supabase = window.supabaseClient;
-        if (!supabase) throw new Error("Supabase client not initialized");
+        // [V2] REFACTOR: Use NomenclatureService
+        // Eliminado acceso directo a Supabase.
+        // Ahora usamos el servicio con el contexto del proveedor inyectado en globalContext.
 
-        const { data, error } = await supabase
-            .from('user_diccionario_nomenclatura')
-            .select('*')
-            .order('termino', { ascending: true });
+        const providerId = window.globalContext ? window.globalContext.providerId : null;
+        const data = await window.NomenclatureService.getAll(providerId);
 
-        if (error) throw error;
         nomenclatureCache = data;
         return data;
     } catch (e) {
         console.error("Error loading nomenclature:", e);
+        // Fallback local en memoria si falla la red, para no bloquear UI
         if (nomenclatureCache.length === 0) {
             nomenclatureCache = [
                 { id: 'temp1', termino: 'Código', descripcion_uso: 'SKU' },
@@ -27,17 +26,18 @@ async function loadNomenclature() {
                 { id: 'temp3', termino: 'Precio', descripcion_uso: 'Costo' }
             ];
         }
+        return nomenclatureCache; // Devolver caché o fallback
     }
 }
 
 async function addNomenclatureTerm(term, desc = "") {
     try {
-        const supabase = window.supabaseClient;
-        const { error } = await supabase
-            .from('user_diccionario_nomenclatura')
-            .insert([{ termino: term, descripcion_uso: desc }]);
+        // [V2] REFACTOR: Use NomenclatureService
+        const providerId = window.globalContext ? window.globalContext.providerId : null;
 
-        if (error) throw error;
+        await window.NomenclatureService.create(term, desc, providerId);
+
+        // Recargar caché para que aparezca el nuevo término
         await loadNomenclature();
         return true;
     } catch (e) {

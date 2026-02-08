@@ -306,10 +306,24 @@ async function confirmExtraction(req, res) {
 // =============================================================================
 async function getDictionaryTerms(req, res) {
     try {
-        const { data, error } = await supabase
+        const { providerId } = req.query;
+        let query = supabase
             .from('user_diccionario_nomenclatura')
             .select('*')
             .order('termino', { ascending: true });
+
+        // [PRIVATE BY DEFAULT V2 - SAFETY NET]
+        if (providerId && providerId !== 'null' && providerId !== 'undefined') {
+            // Contexto Válido: Mostrar Globales (NULL) + Privados (ID)
+            query = query.or(`proveedor_id.is.null,proveedor_id.eq.${providerId}`);
+        } else {
+            // Contexto Perdido/Invalido: FALLBACK SEGURO.
+            // Solo retornamos Globales. Jamás mostramos privados de otros.
+            console.warn("[FilesController] ⚠️ Warning: getDictionaryTerms called without clean providerId. Fallback to Globals only.");
+            query = query.is('proveedor_id', null);
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
         res.json(data);
@@ -320,22 +334,34 @@ async function getDictionaryTerms(req, res) {
 }
 
 async function createDictionaryTerm(req, res) {
-    const { termino, descripcion } = req.body;
+    const { termino, descripcion, providerId } = req.body;
     try {
         const termUpper = termino.trim().toUpperCase();
+
+        // [PRIVATE CREATION]
+        // Si no hay providerId, se asume Global (comportamiento admin/legacy).
+        // Se valida existencia previa para evitar duplicados en el mismo scope.
+
+        const payload = {
+            termino: termUpper,
+            descripcion_uso: descripcion,
+            proveedor_id: (providerId && providerId !== 'null') ? providerId : null
+        };
+
         const { data, error } = await supabase
             .from('user_diccionario_nomenclatura')
-            .insert({ termino: termUpper, descripcion_uso: descripcion })
+            .insert(payload)
             .select()
             .single();
 
         if (error) {
             if (error.code === '23505') {
+                // Manejo de duplicados: Retornar existente si colisiona
                 const { data: existing } = await supabase
                     .from('user_diccionario_nomenclatura')
                     .select('*')
                     .eq('termino', termUpper)
-                    .single();
+                    .maybeSingle();
                 return res.json(existing);
             }
             throw error;

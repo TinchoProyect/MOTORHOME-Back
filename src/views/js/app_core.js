@@ -344,11 +344,13 @@ function renderFileGrid(files, folderId) {
 async function handleFileClick(fileId, fileName) {
     console.log("Abriendo visor para:", fileName);
     // Bridge to Global openFileViewer (defined in HTML)
-    if (typeof window.openFileViewer === 'function') {
-        window.openFileViewer(fileId, fileName);
+    // 3. Abrir Visor
+    if (window.openFileViewer) {
+        // [V2] Pass current provider ID for Private Headers
+        console.log(`[AppCore] Opening viewer for ${fileName} with Provider Context: ${window.currentActiveProviderId}`);
+        window.openFileViewer(fileId, fileName, window.currentActiveProviderId);
     } else {
-        console.error("Error: openFileViewer not found on window.");
-        alert("Error de sistema: Motor de visor no inicializado.");
+        console.error("Módulo ViewerEngine no cargado");
     }
 }
 
