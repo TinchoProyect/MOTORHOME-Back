@@ -352,7 +352,7 @@ function closeViewerModal() {
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
 window.openFileViewer = (fileId, fileName, providerId) => openFileViewer(fileId, fileName, providerId);
 window.loadSheet = (sheetName) => loadSheet(sheetName);
-window.loadVirtualWorkbook = (data) => loadVirtualWorkbook(data);
+
 
 // 🔥 BINDINGS FALTANTES CORREGIDOS 🔥
 window.toggleMappingMode = toggleMappingMode; // Lo usa viewer_mapping.js
