@@ -1,24 +1,20 @@
 /**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
- * v2.6 (Regex Logic Restored + Computed Columns + Preview Fix)
+ * v2.7 (Bindings Fix + Dynamic UI Integration)
  */
 
-console.log("%c 🚀 VIEWER ENGINE: v2.6 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
+console.log("%c 🚀 VIEWER ENGINE: v2.7 - READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
-// --- 1. VARIABLES GLOBALES (Scope Módulo) ---
 // --- 1. VARIABLES GLOBALES (MIGRADO A viewer_core.js) ---
 // viewerWorker, currentSheetData, workbook, etc. ahora residen en viewer_core.js
 
 
-// --- 2. CÓDIGO DEL OBRERO (Worker) ---
 // --- 2. CÓDIGO DEL OBRERO (MIGRADO A viewer_worker.js) ---
 // WORKER_CODE ahora es window.WORKER_CODE
 
 
 // --- 3. FUNCIONES CORE DEL VISOR ---
-// exportAllSheets moved to viewer_worker.js
-
 
 async function openFileViewer(fileId, fileName, providerId = null) {
     window.globalContext.fileId = fileId;
@@ -274,14 +270,6 @@ const processLocally = (wb, sName) => {
     }
 };
 
-// --- MAPPING & NOMENCLATURE TOOLS ---
-// Moved to viewer_mapping.js
-
-
-// --- VIRTUAL SCROLLER & PROCESSING ---
-// renderVirtualTable moved to viewer_render.js
-
-
 // --- STATE MANAGEMENT ---
 
 function saveSheetState(sheetName) {
@@ -361,37 +349,36 @@ function closeViewerModal() {
     document.getElementById('viewerModal').classList.add('hidden');
 }
 
-// --- NEW PREVIEW ENGINE ---
-// currentSimData & currentDisplayConfig moved to viewer_core.js
-// generatePreview, filterSimulationData, renderSimulationTable moved to viewer_render.js
-
-
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
 window.openFileViewer = (fileId, fileName, providerId) => openFileViewer(fileId, fileName, providerId);
 window.loadSheet = (sheetName) => loadSheet(sheetName);
 window.loadVirtualWorkbook = (data) => loadVirtualWorkbook(data);
-window.toggleMappingMode = toggleMappingMode;
-window.openColumnMenu_v2 = openColumnMenu_v2;
+
+// 🔥 BINDINGS FALTANTES CORREGIDOS 🔥
+window.toggleMappingMode = toggleMappingMode; // Lo usa viewer_mapping.js
+window.openColumnMenu_v2 = openColumnMenu_v2; // Lo usa viewer_mapping.js
+window.toggleOffsetMode = toggleOffsetMode;   // Lo usa el botón HTML
+window.handleOffsetClick = handleOffsetClick; // Lo usa el click en celda
+window.generatePreview = generatePreview;     // Lo usa el botón "Play"
+window.saveComputedColumn = saveComputedColumn; // Lo usa el modal de cálculos
+window.openCalculationModal = openCalculationModal; // Lo usa el botón "Calc"
 
 window.closeViewerModal = function () {
     closeViewerModal();
     window.resetViewerState(); // [TABULA RASA] - Clean on Exit
 };
 
-window.loadSheet = loadSheet;
 window.exportAllSheets = exportAllSheets;
 
-// 🔥 CORRECCIÓN: BINDINGS PARA SATELLITE MODULES
-// Estas funciones se definen aquí pero son llamadas por mapping.js o render.js
+// Satellite Bindings
 window.saveSheetState = saveSheetState;
 window.loadSheetState = loadSheetState;
-window.renderSheetTabs = renderSheetTabs; // <--- ESTA ES LA CLAVE (Faltaba esta)
-window.toggleProcessingRule = toggleProcessingRule; // Lo busca el render.js
-window.toggleSimulationRule = toggleSimulationRule; // Lo busca el HTML del preview
-window.closeSimulationModal = closeSimulationModal; // Lo busca el botón del HTML
+window.renderSheetTabs = renderSheetTabs;
+window.toggleProcessingRule = toggleProcessingRule;
+window.toggleSimulationRule = toggleSimulationRule;
+window.closeSimulationModal = closeSimulationModal;
 
 // [PHASE 4] Snapshot Export for Ingestion
-// --- PUBLIC API FOR MODULES ---
 window.getViewerSnapshot = function () {
     return (typeof currentSheetData !== 'undefined') ? currentSheetData : null;
 };

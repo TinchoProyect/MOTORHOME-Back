@@ -44,6 +44,12 @@ window.resetViewerState = function () {
     window.virtualWorkbookCache = null; // Clear Cache
     if (typeof currentWorkbook !== 'undefined') currentWorkbook = null;
 
+    // 🔥 CACHE BUSTER: Limpieza profunda de memoria de mapeo
+    // Esto evita que los encabezados privados de un proveedor "persistan" al cambiar a otro.
+    if (window.resetMappingCache) {
+        window.resetMappingCache();
+    }
+
     // 2. UI - Buttons Visibility
     const btnConfirm = document.getElementById('btnConfirmIngest');
     if (btnConfirm) btnConfirm.classList.remove('hidden'); // Siempre visible por defecto (Ingesta)

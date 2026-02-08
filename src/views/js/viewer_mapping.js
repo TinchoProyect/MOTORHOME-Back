@@ -148,6 +148,33 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     scrollArea.className = "overflow-y-auto custom-scrollbar flex-1";
     menu.appendChild(scrollArea);
 
+    // [V2] DYNAMIC CREATION TRIGGER
+    const createBtn = document.createElement('button');
+    createBtn.className = 'w-full px-4 py-2 text-left bg-blue-600/10 hover:bg-blue-600/20 border-b border-blue-500/20 text-[10px] uppercase font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2';
+    createBtn.innerHTML = '<i data-lucide="plus-circle" class="w-3 h-3"></i> Crear Nuevo Encabezado';
+    createBtn.onclick = () => {
+        menu.remove(); // Close menu
+
+        // Open Dynamic Modal
+        window.ViewerUI.renderCreateTermModal("", async (newTermName) => {
+            // Callback on Success
+            // 1. Refresh global cache to get the new ID and data
+            await loadNomenclature();
+
+            // 2. Assign to current column
+            columnMapping[colIndex] = newTermName;
+
+            // 3. Update UI
+            renderVirtualTable(currentSheetData);
+            saveSheetState(currentSheetName);
+            renderSheetTabs();
+
+            // 4. Optional: Show success toast or log
+            console.log(`[Mapping] New term '${newTermName}' assigned to column ${colIndex}`);
+        });
+    };
+    scrollArea.appendChild(createBtn);
+
     nomenclatureCache.forEach(term => {
         const item = document.createElement('div');
         item.className = 'flex items-center border-l-2 border-transparent hover:bg-slate-800 transition-colors group relative cursor-pointer p-2';
@@ -530,6 +557,14 @@ function toggleProcessingRule(colIndex) {
         renderVirtualTable(currentSheetData);
     }
 }
+
+// [PHASE 5] CACHE BUSTER - RESET MAPPING MEMORY
+window.resetMappingCache = function () {
+    console.log("🧹 [ViewerMapping] Limpiando caché de nomenclaturas...");
+    nomenclatureCache = []; // Vaciar array
+    // También limpiamos mapeos viejos si fuera necesario
+    // columnMapping = {}; // (Opcional, depende de viewer_core.js)
+};
 
 // [VIGÍA DE CONTROL]
 console.log("🗺️ [ViewerMapping] Herramientas de Mapeo Cargadas.");
