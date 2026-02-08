@@ -150,9 +150,21 @@ async function openFileViewer(fileId, fileName, providerId = null) {
                 } else if (type === 'SHEET_DATA_READY') {
                     currentSheetData = payload.data;
                     renderVirtualTable(currentSheetData);
+
+                    // [CORRECCIÓN FINAL] INTENTAR CARGAR MEMORIA AUTOMÁTICAMENTE
+                    if (window.loadSavedConfiguration) {
+                        window.loadSavedConfiguration().then(ok => {
+                            if (ok) {
+                                console.log("🔄 [ViewerEngine] Worker terminó + Configuración aplicada. Repintando...");
+                                renderVirtualTable(currentSheetData);
+                            }
+                        });
+                    }
+
                 } else if (type === 'ERROR') {
                     console.error("Worker Logical Error:", payload);
                     useWorker = false;
+                    viewerWorker.terminate();
                     processLocally(workbook, currentSheetName);
                 }
             };
@@ -185,23 +197,25 @@ function loadSheet(sheetName) {
     renderSheetTabs();
 
     const excelContainer = document.getElementById('excelContainer');
-    excelContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-64 text-blue-400">
-        <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <span class="text-xs font-mono animate-pulse">PROCESANDO...</span>
-    </div>`;
+    if (excelContainer) {
+        excelContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-64 text-blue-400">
+            <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+            <span class="text-xs font-mono animate-pulse">PROCESANDO...</span>
+        </div>`;
+    }
 
     currentSheetData = null;
 
     // 1. Virtual Cache Support (Multi-Sheet DB Recovery)
     if (window.virtualWorkbookCache && window.virtualWorkbookCache[sheetName]) {
         console.log(`[ViewerEngine] Loading '${sheetName}' from Virtual Cache.`);
-        setTimeout(() => {
+
+        // Hacemos el callback async para poder esperar a la configuración
+        setTimeout(async () => {
             let cachedData = window.virtualWorkbookCache[sheetName];
 
-            // CORRECCIÓN CRÍTICA:
-            // Si es un Objeto Worksheet (no es array), lo convertimos a Matriz Visual.
+            // CORRECCIÓN CRÍTICA: Convertir Worksheet a Array si es necesario
             if (!Array.isArray(cachedData) && typeof XLSX !== 'undefined') {
-                // header: 1 genera un Array de Arrays [[A1, B1], [A2, B2]...]
                 try {
                     currentSheetData = XLSX.utils.sheet_to_json(cachedData, { header: 1 });
                 } catch (err) {
@@ -209,11 +223,21 @@ function loadSheet(sheetName) {
                     currentSheetData = [];
                 }
             } else {
-                // Si ya era array (fallback), lo usamos directo
                 currentSheetData = cachedData;
             }
 
+            // 1. Render inicial (crudo)
             renderVirtualTable(currentSheetData);
+
+            // 2. [NUEVO] INTENTAR CARGAR CONFIGURACIÓN GUARDADA 🧠
+            if (window.loadSavedConfiguration) {
+                const loaded = await window.loadSavedConfiguration();
+                if (loaded) {
+                    console.log("🔄 [ViewerEngine] Re-pintando tabla con configuración aplicada...");
+                    // Volver a pintar para que se vean los colores y el offset aplicado
+                    renderVirtualTable(currentSheetData);
+                }
+            }
 
             const loader = document.getElementById('viewerLoader');
             if (loader) loader.classList.add('hidden');
@@ -221,6 +245,7 @@ function loadSheet(sheetName) {
         return;
     }
 
+    // Worker Logic
     if (typeof useWorker !== 'undefined' && useWorker && viewerWorker) {
         viewerWorker.postMessage({ type: 'PARSE_SHEET', payload: sheetName });
         setTimeout(() => {

@@ -792,6 +792,69 @@ async function saveTemplateConfig(req, res) {
     }
 }
 
+// =============================================================================
+// [PERSISTENCE] GET TEMPLATE CONFIG (Retrieve Memory)
+// =============================================================================
+async function getTemplateConfig(req, res) {
+    const { providerId, sheetName } = req.query;
+
+    if (!providerId) {
+        return res.status(400).json({ error: "Faltan datos requeridos (providerId)" });
+    }
+
+    try {
+        console.log(`[FilesController] 🧠 Buscando configuración para Proveedor ${providerId}...`);
+
+        let query = supabase
+            .from('proveedor_formatos_guia')
+            .select('*')
+            .eq('proveedor_id', providerId)
+            .order('updated_at', { ascending: false }); // Priorizar la más reciente
+
+        // Si tenemos nombre de hoja, intentamos buscar una específica primero
+        if (sheetName) {
+            // Buscamos coincidencia exacta de hoja o genérica (NULL)
+            // Nota: Supabase no soporta OR complejo facilmente en cadena sin raw filter
+            // Haremos fetch de todas del proveedor y filtramos en JS para lógica precisa
+            // O simplificamos: Trae la ultima que coincida.
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            return res.json({ success: false, message: "No se encontraron plantillas guardadas." });
+        }
+
+        // Lógica de Selección Inteligente
+        // 1. Buscamos coincidencia exacta de hoja
+        let bestMatch = data.find(t => t.hoja_excel === sheetName);
+
+        // 2. Si no, buscamos una genérica (hoja_excel es null o vacía)
+        if (!bestMatch) {
+            bestMatch = data.find(t => !t.hoja_excel);
+        }
+
+        // 3. Si no, devolvemos la última modificada (la primera del array ordenado)
+        if (!bestMatch && data.length > 0) {
+            bestMatch = data[0];
+            console.log("   ⚠️ No match exacto de hoja. Usando última modificada como fallback.");
+        }
+
+        if (bestMatch) {
+            console.log(`   ✅ Plantilla encontrada: ${bestMatch.nombre_formato} (Offset: ${bestMatch.fila_encabezado}, ${bestMatch.columna_encabezado})`);
+            return res.json({ success: true, data: bestMatch });
+        } else {
+            return res.json({ success: false });
+        }
+
+    } catch (error) {
+        console.error("[FilesController] Error fetching template:", error);
+        res.status(500).json({ error: "Error recuperando configuración: " + error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
@@ -805,5 +868,6 @@ module.exports = {
     listProcessedFiles,
     getProcessedFileContent,
     rollbackFiles,
-    saveTemplateConfig // [NEW EXPORT]
+    saveTemplateConfig, // [NEW EXPORT]
+    getTemplateConfig,
 };

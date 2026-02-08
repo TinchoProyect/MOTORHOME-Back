@@ -97,7 +97,7 @@ window.saveSimulationConfig = async function () {
         console.log("💾 Enviando configuración al servidor...", payload);
 
         // 4. Llamada al Backend
-        const response = await fetch('/api/files/save-template', {
+        const response = await fetch('http://localhost:5655/api/files/save-template', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -127,6 +127,65 @@ window.saveSimulationConfig = async function () {
             if (window.lucide) window.lucide.createIcons();
         }
     }
+};
+
+// =============================================================================
+// --- 7. LOAD CONFIGURATION (Recuperar Memoria) ---
+// =============================================================================
+window.loadSavedConfiguration = async function () {
+    const providerId = window.globalContext.providerId;
+    const sheetName = currentSheetName; // Variable global definida arriba
+
+    if (!providerId) return false;
+
+    try {
+        console.log(`🧠 [ViewerCore] Buscando configuración guardada para Proveedor ${providerId} (Hoja: ${sheetName})...`);
+
+        // NOTA: Usamos el puerto 5655 directo para evitar el bloqueo del Frontend
+        const url = new URL('http://localhost:5655/api/files/get-template');
+        url.searchParams.append('providerId', providerId);
+        if (sheetName) url.searchParams.append('sheetName', sheetName);
+
+        const response = await fetch(url);
+        if (!response.ok) return false;
+
+        const result = await response.json();
+
+        if (result && result.success && result.data) {
+            const config = result.data;
+            console.log("✅ Configuración recuperada:", config);
+
+            // 1. APLICAR OFFSET (Filas/Columnas)
+            if (config.fila_encabezado !== undefined && config.columna_encabezado !== undefined) {
+                currentOffset = {
+                    row: parseInt(config.fila_encabezado) || 0,
+                    col: parseInt(config.columna_encabezado) || 0
+                };
+                offsetSelectionMode = true; // Activar visualmente
+                // Actualizar UI del header si existe
+                if (window.ViewerUI && window.ViewerUI.updateOffsetDisplay) {
+                    window.ViewerUI.updateOffsetDisplay(currentOffset);
+                }
+            }
+
+            // 2. APLICAR MAPEO (Columnas -> Variables)
+            if (config.reglas_mapeo && Object.keys(config.reglas_mapeo).length > 0) {
+                columnMapping = config.reglas_mapeo;
+                mappingMode = true;
+            }
+
+            // 3. APLICAR REGLAS (Sanitización, etc.)
+            if (config.reglas_procesamiento) {
+                processingRules = config.reglas_procesamiento;
+            }
+
+            return true; // Éxito: Se cargó configuración
+        }
+
+    } catch (error) {
+        console.warn("⚠️ No se pudo cargar la configuración guardada (esto es normal si es nuevo):", error);
+    }
+    return false;
 };
 
 console.log("🧠 [ViewerCore] Estado Global Inicializado (+Persistencia)");

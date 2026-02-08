@@ -40,4 +40,7 @@ router.post('/rollback', filesController.rollbackFiles);
 // [PERSISTENCE] Save Simulation Config (Template)
 router.post('/save-template', filesController.saveTemplateConfig);
 
+// [PERSISTENCE] Get Simulation Config (Template)
+router.get('/get-template', filesController.getTemplateConfig);
+
 module.exports = router;
