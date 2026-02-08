@@ -53,15 +53,7 @@ function renderVirtualTable(originalData) {
         let originalVal = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`);
         let mappedType = columnMapping[j];
 
-        let toggleHtml = '';
-        const hasRule = processingRules[j];
-        if (mappingMode && hasRule) {
-            const isOff = hasRule.disabled;
-            toggleHtml = `
-                 <button onclick="event.stopPropagation(); toggleProcessingRule(${j})" class="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold ${isOff ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'} hover:opacity-80 transition-all border border-transparent hover:border-white/20">
-                    ${isOff ? 'OFF' : 'ON'}
-                 </button>`;
-        }
+        // Legacy toggle removed from main view
 
         let thContent = originalVal;
         let thClass = "bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap";
@@ -75,7 +67,6 @@ function renderVirtualTable(originalData) {
                     <span class="truncate font-bold text-[10px] uppercase">${mappedType || originalVal}</span>
                     <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                 </button>
-                ${toggleHtml}
             </div>`;
         } else {
             if (mappedType && mappedType !== 'Ignorar Columna') {
@@ -164,51 +155,42 @@ function generatePreview() {
                 const termObj = nomenclatureCache.find(t => t.id === termId);
                 const termName = termObj ? termObj.termino : termId;
 
-                const rule = processingRules[colIdx];
-                const isSimActive = rule ? (rule.isSimActive !== undefined ? rule.isSimActive : true) : false;
+                // [V3] PIPELINE HANDLING
+                const rawRule = processingRules[colIdx];
+                // Ensure Array
+                const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
 
-                // --- 1. RULE: SPLIT ---
-                if (rule && isSimActive && rule.type === 'split') {
-                    rule.fields.forEach((fieldId, subIdx) => {
-                        const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
-                        const fieldName = fieldObj ? fieldObj.termino : fieldId;
+                // Check for Structure Modifying Rules (Split) - Toma prioridad
+                const splitRule = rulesStack.find(r => !r.disabled && (r.type === 'split' || r.type === 'regex_split'));
 
-                        displayConfig.push({
-                            label: fieldName,
-                            isVirtual: true,
-                            sourceIndex: colIdx,
-                            transform: (val) => {
-                                if (!val) return '';
-                                const valStr = String(val);
-                                const parts = valStr.split(rule.delimiter);
-                                return parts[subIdx] ? parts[subIdx].trim() : '';
-                            },
-                            hasSwitch: subIdx === 0,
-                            switchState: true,
-                            switchColIdx: colIdx
+                if (splitRule) {
+                    // --- SPLIT LOGIC ---
+                    if (splitRule.type === 'split') {
+                        splitRule.fields.forEach((fieldId, subIdx) => {
+                            const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
+                            const fieldName = fieldObj ? fieldObj.termino : fieldId;
+                            displayConfig.push({
+                                label: fieldName,
+                                isVirtual: true,
+                                sourceIndex: colIdx,
+                                transform: (val) => {
+                                    if (!val) return '';
+                                    const parts = String(val).split(splitRule.delimiter);
+                                    return parts[subIdx] ? parts[subIdx].trim() : '';
+                                },
+                                hasSwitch: false, // Managed via Gear
+                                switchColIdx: colIdx
+                            });
                         });
-                    });
-                }
-                // --- 2. RULE: REGEX SPLIT ---
-                else if (rule && isSimActive && rule.type === 'regex_split') {
-                    const targets = [];
-                    if (rule.fields && rule.fields.length > 0) {
-                        rule.fields.forEach(fid => {
+                    } else if (splitRule.type === 'regex_split') {
+                        const targets = [];
+                        if (splitRule.fields) splitRule.fields.forEach(fid => {
                             const t = nomenclatureCache.find(x => x.id === fid);
                             targets.push(t ? t.termino : "Campo Dinámico");
                         });
-                    }
-                    if (targets.length === 0 && rule.target_labels) {
-                        targets.push(...rule.target_labels);
-                    }
-
-                    let patternStr = rule.pattern;
-                    if (patternStr) {
-                        patternStr = patternStr.replace(/\\\\/g, '\\');
+                        let patternStr = splitRule.pattern.replace(/\\\\/g, '\\');
                         if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
-                        if (patternStr.endsWith('/i')) patternStr = patternStr.slice(0, -2);
-                        else if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
-
+                        if (patternStr.endsWith('/')) patternStr = patternStr.slice(0, -1);
                         const regex = new RegExp(patternStr, 'i');
 
                         targets.forEach((label, subIdx) => {
@@ -217,141 +199,90 @@ function generatePreview() {
                                 isVirtual: true,
                                 sourceIndex: colIdx,
                                 transform: (val) => {
-                                    if (!val) return '';
-                                    const valStr = String(val).trim();
-                                    const match = valStr.match(regex);
+                                    const match = String(val || "").trim().match(regex);
                                     if (match) {
-                                        const fullMatch = match[0];
-                                        const presentation = fullMatch.trim();
-                                        const description = valStr.replace(fullMatch, "").trim();
-                                        return subIdx === 0 ? description : presentation;
-                                    } else {
-                                        return subIdx === 0 ? valStr : "";
+                                        const pPres = match[0].trim();
+                                        const pDesc = String(val).replace(match[0], "").trim();
+                                        return subIdx === 0 ? pDesc : pPres;
                                     }
+                                    return subIdx === 0 ? val : "";
                                 },
-                                hasSwitch: subIdx === 0,
-                                switchState: true,
+                                hasSwitch: false,
                                 switchColIdx: colIdx
                             });
                         });
                     }
-                }
-                // --- 3. RULE: SANITIZE NUMBERS (SOLO NÚMEROS) ---
-                else if (rule && isSimActive && rule.type === 'sanitize_numbers') {
-                    displayConfig.push({
-                        label: termName,
-                        isVirtual: false,
-                        sourceIndex: colIdx,
-                        transform: (val) => String(val || "").replace(/[^0-9]/g, ''),
-                        hasSwitch: true, // ✅ TIENE SWITCH
-                        switchState: true,
-                        switchColIdx: colIdx
-                    });
-                }
-                // --- 4. RULE: SANITIZE GENERIC ---
-                else if (rule && isSimActive && rule.type === 'sanitize') {
+                } else {
+                    // --- PIPELINE TRANSFORM (Chain) ---
                     displayConfig.push({
                         label: termName,
                         isVirtual: false,
                         sourceIndex: colIdx,
                         transform: (val) => {
-                            const strVal = String(val || "").trim();
-                            const fallback = rule.config?.replace_with || "0,00";
-                            if (strVal === "" || strVal.toLowerCase() === "undefined" || strVal.toLowerCase() === "null") return fallback;
-                            if (rule.config?.match_regex) {
-                                try {
-                                    let p = rule.config.match_regex;
-                                    if (p.startsWith('/')) p = p.slice(1);
-                                    if (p.endsWith('/')) p = p.slice(0, -1);
-                                    p = p.replace(/\\\\/g, '\\');
-                                    if (new RegExp(p, 'i').test(strVal)) return fallback;
-                                } catch (e) { }
+                            let currentVal = val;
+                            // 🔥 Apply all active rules in order
+                            for (const rule of rulesStack) {
+                                if (rule.disabled) continue;
+                                const strVal = String(currentVal || "").trim();
+
+                                if (rule.type === 'sanitize_numbers') {
+                                    currentVal = strVal.replace(/[^0-9]/g, '');
+                                }
+                                else if (rule.type === 'sanitize') {
+                                    const fallback = rule.config?.replace_with || "0,00";
+                                    let shouldReplace = false;
+                                    if (!strVal || strVal === "undefined" || strVal === "null") shouldReplace = true;
+                                    if (!shouldReplace && rule.config?.match_regex) {
+                                        try {
+                                            let p = rule.config.match_regex.replace(/\\\\/g, '\\');
+                                            if (p.startsWith('/')) p = p.slice(1, -1);
+                                            if (new RegExp(p, 'i').test(strVal)) shouldReplace = true;
+                                        } catch (e) { }
+                                    }
+                                    if (shouldReplace) currentVal = fallback;
+                                    else if (strVal.includes('.')) currentVal = strVal.replace(/\./g, ',');
+                                }
+                                else if (rule.type === 'format_number') {
+                                    let num = parseFloat(strVal.replace(/[^0-9.-]/g, ''));
+                                    if (!isNaN(num)) {
+                                        currentVal = new Intl.NumberFormat('es-AR', {
+                                            minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true
+                                        }).format(num);
+                                    }
+                                }
                             }
-                            return val && String(val).includes('.') ? String(val).replace(/\./g, ',') : val;
+                            return currentVal;
                         },
-                        hasSwitch: true, // ✅ TIENE SWITCH
-                        switchState: rule.isSimActive !== false,
-                        switchColIdx: colIdx
-                    });
-                }
-                // --- 5. RULE: FORMAT NUMBER ---
-                else if (rule && isSimActive && rule.type === 'format_number') {
-                    displayConfig.push({
-                        label: termName,
-                        isVirtual: false,
-                        sourceIndex: colIdx,
-                        transform: (val) => {
-                            const strVal = String(val);
-                            let num = parseFloat(strVal);
-                            if (isNaN(num)) {
-                                num = parseFloat(strVal.replace(/[^0-9.-]/g, ''));
-                            }
-                            if (!isNaN(num)) {
-                                return new Intl.NumberFormat('es-AR', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                    useGrouping: true
-                                }).format(num);
-                            }
-                            return val;
-                        },
-                        hasSwitch: true, // ✅ TIENE SWITCH
-                        switchState: rule.isSimActive !== false,
-                        switchColIdx: colIdx
-                    });
-                }
-                // --- 6. DEFAULT (SIN REGLA) ---
-                else {
-                    displayConfig.push({
-                        label: termName,
-                        isVirtual: false,
-                        sourceIndex: colIdx,
-                        transform: (val) => val,
-                        hasSwitch: false, // 🚫 NO TIENE SWITCH (CORRECCIÓN)
-                        switchState: false,
-                        switchColIdx: colIdx
+                        hasSwitch: false, // Legacy switch hidden, relying on Gear
+                        switchColIdx: colIdx,
+                        sourceIndex: colIdx // Important for Gear ID
                     });
                 }
             }
         });
 
-        // --- F. COMPUTED COLUMNS LOGIC (v2.5) ---
+        // --- F. COMPUTED COLUMNS LOGIC ---
         if (window.computedColumns && window.computedColumns.length > 0) {
             window.computedColumns.forEach(comp => {
                 displayConfig.push({
                     label: comp.name,
                     isVirtual: true,
-                    // Note: We use a wrapper to access the full ROW
                     transform: (val, row) => {
                         try {
                             const parseVal = (v) => {
                                 if (!v) return 0;
-                                let s = String(v).trim();
-                                if (!isNaN(s)) return parseFloat(s);
-                                // Limpieza agresiva de moneda
-                                s = s.replace(/[^0-9,.-]/g, '');
-                                if (s.includes(',') && s.includes('.')) {
-                                    s = s.replace(/\./g, '').replace(',', '.');
-                                } else if (s.includes(',')) {
-                                    s = s.replace(',', '.');
-                                }
+                                let s = String(v).trim().replace(/[^0-9,.-]/g, '');
+                                if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+                                else if (s.includes(',')) s = s.replace(',', '.');
                                 return parseFloat(s) || 0;
                             };
-
-                            const valA = parseVal(row[comp.sourceA]); // Precio
-                            const valB = parseVal(row[comp.sourceB]); // Descuento
-
-                            // Lógica: Precio * (1 - Descuento)
+                            const valA = parseVal(row[comp.sourceA]);
+                            const valB = parseVal(row[comp.sourceB]);
                             const result = valA * (1 - valB);
-
-                            return new Intl.NumberFormat('es-AR', {
-                                minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true
-                            }).format(result);
-
+                            return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(result);
                         } catch (e) { return "ERR"; }
                     },
-                    hasSwitch: true,
-                    switchState: true,
+                    hasSwitch: false,
                     switchColIdx: -1
                 });
             });
@@ -369,36 +300,29 @@ function generatePreview() {
             });
         });
 
-        // 🔥 FILTRADO REAL + ANTI-DUPLICADOS (REGEX FIX v2.6)
+        // 🔥 FILTER PIPELINE (Deduplication + Row Filter)
         const seenValues = new Set();
 
         sanitizedData = sanitizedData.filter(row => {
             let keepRow = true;
+
             Object.keys(columnMapping).forEach(key => {
                 const colIdx = parseInt(key);
-                const rule = processingRules[colIdx];
+                const rawRule = processingRules[colIdx];
+                const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
 
-                if (rule && (rule.type === 'filter' || rule.type === 'row_filter') && rule.isSimActive !== false) {
+                for (const rule of rulesStack) {
+                    if (!keepRow) break;
+                    if (rule.disabled) continue;
+
                     const cellValue = row[colIdx];
-                    if (rule.config?.exclude_empty) {
-                        if (!cellValue || String(cellValue).trim() === '') keepRow = false;
-                    }
-                    if (keepRow && rule.config?.exclude_regex) {
-                        try {
-                            let p = rule.config.exclude_regex;
-                            if (p.startsWith('/')) p = p.slice(1);
-                            if (p.endsWith('/')) p = p.slice(0, -1);
-                            p = p.replace(/\\\\/g, '\\'); // 🔥 FIX v2.6
-                            if (new RegExp(p, 'i').test(String(cellValue))) keepRow = false;
-                        } catch (e) { console.error("Filter Regex Error", e); }
-                    }
-                    if (keepRow && rule.config?.unique) {
-                        const uniqueKey = String(cellValue || "").toUpperCase().trim();
-                        if (seenValues.has(uniqueKey)) {
+                    const strVal = String(cellValue || "").trim();
+
+                    if (rule.type === 'row_filter' || rule.type === 'filter') {
+                        if (rule.config?.exclude_empty && strVal === "") {
                             keepRow = false;
-                        } else {
-                            seenValues.add(uniqueKey);
                         }
+                        // Add other row filters here
                     }
                 }
             });
@@ -469,13 +393,13 @@ function filterSimulationData() {
         return terms.every(term => {
             if (fieldIdx === "ALL") {
                 return currentDisplayConfig.some(cfg => {
-                    const val = cfg.transform(row[cfg.sourceIndex], row); // 🔥 PASS ROW (v2.5)
+                    const val = cfg.transform(row[cfg.sourceIndex], row);
                     return String(val).toLowerCase().includes(term);
                 });
             } else {
                 const cfg = currentDisplayConfig[parseInt(fieldIdx)];
                 if (!cfg) return false;
-                const val = cfg.transform(row[cfg.sourceIndex], row); // 🔥 PASS ROW (v2.5)
+                const val = cfg.transform(row[cfg.sourceIndex], row);
                 return String(val).toLowerCase().includes(term);
             }
         });
@@ -492,22 +416,30 @@ function renderSimulationTable(data) {
     let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
 
     currentDisplayConfig.forEach(cfg => {
-        let content = cfg.label;
-        if (cfg.hasSwitch) {
-            const checked = cfg.switchState ? 'checked' : '';
-            content = `
-                <div class="flex items-center gap-2 justify-between">
-                    <span>${cfg.label}</span>
-                    <label class="relative inline-flex items-center cursor-pointer group">
-                        <input type="checkbox" onclick="toggleSimulationRule(${cfg.switchColIdx})" ${checked} class="sr-only peer">
-                        <div class="w-7 h-3.5 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-emerald-500 hover:bg-slate-600"></div>
-                    </label>
-                </div>
+        let content = `<span>${cfg.label}</span>`;
+        let actions = '';
+
+        // [New] Gear Icon for Pipeline Manager
+        if (cfg.sourceIndex >= 0) {
+            actions += `
+                <button onclick="window.ViewerUI.openRulesManager(${cfg.sourceIndex}, this)" class="text-slate-500 hover:text-white transition-colors p-1 rounded hover:bg-slate-800" title="Gestionar Reglas">
+                    <i data-lucide="settings-2" class="w-3 h-3"></i>
+                </button>
             `;
         }
+
+        let thContent = `
+            <div class="flex items-center justify-between gap-2">
+                <div class="font-bold truncate">${cfg.label}</div>
+                <div class="flex items-center shrink-0">
+                    ${actions}
+                </div>
+            </div>
+        `;
+
         let thClass = "p-2 border border-slate-700 text-left align-middle ";
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
-        html += `<th class="${thClass}">${content}</th>`;
+        html += `<th class="${thClass}">${thContent}</th>`;
     });
     html += "</tr></thead><tbody>";
 
@@ -515,7 +447,7 @@ function renderSimulationTable(data) {
         html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
         currentDisplayConfig.forEach(cfg => {
             const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
-            const finalVal = cfg.transform(rawVal, row); // 🔥 PASS ROW (v2.5)
+            const finalVal = cfg.transform(rawVal, row);
             html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${finalVal}</td>`;
         });
         html += "</tr>";

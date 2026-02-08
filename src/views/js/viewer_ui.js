@@ -23,8 +23,6 @@ window.ViewerUI = (function () {
 
     /**
      * Actualiza el encabezado del visor (Título, Icono, Badges).
-     * @param {string} fileName - Nombre del archivo
-     * @param {object} meta - { providerName, fileType, isProcessed }
      */
     function updateHeader(fileName, meta = {}) {
         const titleEl = document.getElementById(DOM.title);
@@ -219,7 +217,6 @@ window.ViewerUI = (function () {
         const privacyContainer = document.createElement('div');
         privacyContainer.className = "pt-2";
 
-        // Structure for switch
         const switchLabel = document.createElement('label');
         switchLabel.className = "flex items-center justify-between p-3 rounded-xl border border-blue-500/30 bg-blue-900/10 cursor-pointer group hover:bg-blue-900/20 transition-all select-none";
 
@@ -346,6 +343,184 @@ window.ViewerUI = (function () {
         setTimeout(() => inputName.focus(), 50);
     }
 
+    // --- [PHASE 5: RULES MANAGER POP-OVER] ---
+
+    function renderRulesManager(colIndex, anchorElement) {
+        // 1. Remove existing if any
+        const existing = document.getElementById('rulesManagerPopover');
+        if (existing) existing.remove();
+
+        // 2. Create Popover
+        const popover = document.createElement('div');
+        popover.id = 'rulesManagerPopover';
+        popover.className = 'fixed z-[300] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col w-[300px] animate-in zoom-in-95 duration-100';
+
+        // Positioning (Initial or fallback)
+        if (anchorElement) {
+            const rect = anchorElement.getBoundingClientRect();
+            popover.style.top = (rect.bottom + 8) + 'px';
+            popover.style.left = (rect.left - 130) + 'px'; // Center align roughly
+        } else {
+            // Failsafe center
+            popover.style.top = '50%';
+            popover.style.left = '50%';
+            popover.style.transform = 'translate(-50%, -50%)';
+        }
+
+        // 3. Header
+        const header = document.createElement('div');
+        header.className = 'px-3 py-2 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center rounded-t-lg';
+        header.innerHTML = '<span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pipeline de Reglas</span>';
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'text-slate-500 hover:text-white';
+        closeBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
+        closeBtn.onclick = () => popover.remove();
+        header.appendChild(closeBtn);
+        popover.appendChild(header);
+
+        // 4. Rules List (Pipeline)
+        const listContainer = document.createElement('div');
+        listContainer.className = 'p-2 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar';
+
+        // Ensure array
+        let currentRules = [];
+        if (processingRules[colIndex]) {
+            currentRules = Array.isArray(processingRules[colIndex]) ? processingRules[colIndex] : [processingRules[colIndex]];
+        }
+
+        if (currentRules.length === 0) {
+            listContainer.innerHTML = '<div class="text-[10px] text-slate-600 text-center py-4 italic">No hay reglas aplicadas</div>';
+        } else {
+            currentRules.forEach((rule, idx) => {
+                const item = document.createElement('div');
+                item.className = `flex items-center justify-between p-2 rounded border ${rule.disabled ? 'border-slate-800 bg-slate-900 opacity-50' : 'border-slate-700 bg-slate-800/50'} group`;
+
+                let icon = 'settings-2';
+                let label = rule.type;
+                if (rule.type === 'sanitize_numbers') { icon = 'hash'; label = 'Solo Números'; }
+                if (rule.type === 'sanitize') { icon = 'eraser'; label = 'Sanitizar Texto'; }
+                if (rule.type === 'split') { icon = 'split'; label = 'Dividir Columna'; }
+                if (rule.type === 'row_filter') { icon = 'filter'; label = 'Filtro de Fila'; }
+
+                item.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="p-1 rounded bg-slate-800 text-slate-400"><i data-lucide="${icon}" class="w-3 h-3"></i></div>
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-bold text-slate-300 uppercase">${label}</span>
+                            <span class="text-[9px] text-slate-500">Paso ${idx + 1}</span>
+                        </div>
+                    </div>
+                `;
+
+                const actions = document.createElement('div');
+                actions.className = 'flex items-center gap-1';
+
+                // Helper to refresh and re-anchor
+                const refreshAndReAnchor = () => {
+                    // 1. Refresh Data
+                    if (window.generatePreview) window.generatePreview();
+                    else renderVirtualTable(currentSheetData);
+
+                    // 2. Find New Anchor (The button was destroyed and recreated)
+                    // We look for a button that calls openRulesManager with our colIndex
+                    // Selector: #simTableScrollArea button[onclick*="openRulesManager(2,"]
+                    setTimeout(() => {
+                        const newAnchor = document.querySelector(`#simTableScrollArea button[onclick*="ViewerUI.openRulesManager(${colIndex},"]`);
+                        renderRulesManager(colIndex, newAnchor);
+                    }, 50); // Small delay for DOM paint
+                };
+
+                // Toggle Btn
+                const btnToggle = document.createElement('button');
+                btnToggle.className = 'p-1 hover:bg-slate-700 rounded text-slate-500 hover:text-white transition-colors';
+                btnToggle.innerHTML = `<i data-lucide="${rule.disabled ? 'eye-off' : 'eye'}" class="w-3 h-3"></i>`;
+                btnToggle.onclick = () => {
+                    rule.disabled = !rule.disabled;
+                    refreshAndReAnchor();
+                };
+
+                // Delete Btn
+                const btnDel = document.createElement('button');
+                btnDel.className = 'p-1 hover:bg-red-900/30 rounded text-slate-500 hover:text-red-400 transition-colors';
+                btnDel.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3"></i>';
+                btnDel.onclick = () => {
+                    currentRules.splice(idx, 1);
+                    if (currentRules.length === 0) delete processingRules[colIndex];
+                    refreshAndReAnchor();
+                };
+
+                actions.appendChild(btnToggle);
+                actions.appendChild(btnDel);
+                item.appendChild(actions);
+                listContainer.appendChild(item);
+            });
+        }
+        popover.appendChild(listContainer);
+
+        // 5. Add Rule Button
+        const footer = document.createElement('div');
+        footer.className = 'p-2 border-t border-slate-800 bg-slate-950/30';
+
+        const btnAdd = document.createElement('button');
+        btnAdd.className = 'w-full py-1.5 rounded border border-dashed border-slate-700 text-[10px] text-slate-500 hover:text-blue-400 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all flex items-center justify-center gap-2';
+        btnAdd.innerHTML = '<i data-lucide="plus" class="w-3 h-3"></i> Agregar Regla';
+
+        // Simple Catalog Dropdown Logic (Inline for speed)
+        btnAdd.onclick = (e) => {
+            const catalog = [
+                { type: 'sanitize_numbers', label: 'Solo Números' },
+                { type: 'row_filter', label: 'Eliminar Si Vacío', config: { exclude_empty: true } },
+                { type: 'sanitize', label: 'Limpiar Basura', config: { match_regex: '/[^a-zA-Z0-9 ]/g', replace_with: '' } }
+            ];
+
+            // Add first rule for test (MVP)
+            const nextRule = catalog[0];
+
+            if (!processingRules[colIndex]) processingRules[colIndex] = [];
+            if (!Array.isArray(processingRules[colIndex])) processingRules[colIndex] = [processingRules[colIndex]];
+
+            processingRules[colIndex].push({ type: nextRule.type, disabled: false });
+
+            // Re-anchor logic inline for add
+            if (window.generatePreview) window.generatePreview();
+            else renderVirtualTable(currentSheetData);
+
+            setTimeout(() => {
+                const newAnchor = document.querySelector(`#simTableScrollArea button[onclick*="ViewerUI.openRulesManager(${colIndex},"]`);
+                renderRulesManager(colIndex, newAnchor);
+            }, 50);
+        };
+
+        footer.appendChild(btnAdd);
+        popover.appendChild(footer);
+
+        document.body.appendChild(popover);
+        if (window.lucide) window.lucide.createIcons({ root: popover });
+
+        // Close on click outside
+        const closeHandler = (e) => {
+            // Check if popover still exists (might be removed by re-render)
+            const currentPopover = document.getElementById('rulesManagerPopover');
+            if (!currentPopover) {
+                document.removeEventListener('click', closeHandler);
+                return;
+            }
+            // Check anchor existence (might be dead)
+            const isAnchorLive = anchorElement && document.body.contains(anchorElement);
+
+            if (!currentPopover.contains(e.target)) {
+                // If anchor is dead, we don't care if we clicked it (it's gone). 
+                // If anchor is live, we check if we clicked it.
+                if (!isAnchorLive || !anchorElement.contains(e.target)) {
+                    currentPopover.remove();
+                    document.removeEventListener('click', closeHandler);
+                }
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 10);
+    }
+
+
     // Public API
     return {
         updateHeader,
@@ -356,7 +531,8 @@ window.ViewerUI = (function () {
         renderSheetTabs,
         refreshIcons,
         toggleTools,
-        renderCreateTermModal
+        renderCreateTermModal,
+        openRulesManager: renderRulesManager // Exposed
     };
 })();
 
