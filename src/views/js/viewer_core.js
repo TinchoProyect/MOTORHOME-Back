@@ -1,85 +1,132 @@
 /**
- * VIEWER CORE - Global State & Configuration
- * Extracted from viewer_engine.js
+ * VIEWER CORE - Estado Global y Configuración 🧠
+ * Este archivo DEBE cargarse primero. Define el "Store" del visor.
  */
 
-// --- 1. VARIABLES GLOBALES (Moved from viewer_engine.js) ---
-let viewerWorker = null;
-let currentSheetData = [];
-let workbook = null;       // LIBRO EXCEL
-let currentFileBuffer = null; // BUFFER RAW (Rescate)
-let useWorker = true;      // ESTADO DEL WORKER
-let currentSheetName = ""; // HOJA ACTUAL
-let sheetConfigStore = {}; // { "Sheet1": { offset: {}, mapping: {} } }
+// --- 1. CORE STATE (Variables Globales) ---
+var viewerWorker = null;
+var currentSheetData = [];
+var workbook = null;
+var currentFileBuffer = null;
+var useWorker = true;
+var currentSheetName = null;
+var sheetConfigStore = {}; // Almacena configuraciones (offset/mapping) por hoja
 
-// Global Context
+// --- 2. GLOBAL CONTEXT (Datos del Proveedor/Archivo) ---
 window.globalContext = {
     providerId: null,
-    providerName: "",
+    providerName: '',
     fileId: null,
-    fileType: "GENERAL",
+    fileType: null,
     timestamp: null
 };
 
-// --- Mapeo y Offset ---
-let mappingMode = false;
-let columnMapping = {}; // { colIndex: "Tipo" }
-let offsetSelectionMode = false;
-let currentOffset = null; // { row: 0, col: 0 }
-let nomenclatureCache = []; // Cache de términos
-let processingRules = {}; // Rules store
-let simulationModeProcessed = true; // State for Toggle
+// --- 3. MAPPING & RULES STATE (Lógica de Negocio) ---
+var mappingMode = false;
+var columnMapping = {}; // { colIndex: "TerminoID" }
+var offsetSelectionMode = false;
+var currentOffset = { row: 0, col: 0 };
+var nomenclatureCache = []; // Catálogo de términos (se llena desde API)
+var processingRules = {}; // { colIndex: [RuleObject, ...] }
+var simulationModeProcessed = false;
 
-// --- Simulation State (Moved to ensure availability for resetViewerState) ---
-let currentSimData = [];
-let currentDisplayConfig = [];
+// --- 4. SIMULATION STATE (Cache de Previsualización) ---
+var currentSimData = [];
+var currentDisplayConfig = [];
 
-// [TABULA RASA] State Reset Protocol
+// --- 5. STATE RESET PROTOCOL ---
 window.resetViewerState = function () {
-    console.log("🧹 [ViewerEngine] Tabula Rasa Reset Executing...");
-
-    // 1. Variables Globales (Module Scope)
+    console.log("🧹 Resetting Viewer State...");
     currentSheetData = [];
-    currentSimData = []; // Resetting to empty array as per declaration
-    window.virtualWorkbookCache = null; // Clear Cache
-    if (typeof currentWorkbook !== 'undefined') currentWorkbook = null;
+    currentSheetName = null;
+    mappingMode = false;
+    columnMapping = {};
+    currentOffset = { row: 0, col: 0 };
+    processingRules = {};
+    currentSimData = [];
+    currentDisplayConfig = [];
+    sheetConfigStore = {};
 
-    // 🔥 CACHE BUSTER: Limpieza profunda de memoria de mapeo
-    // Esto evita que los encabezados privados de un proveedor "persistan" al cambiar a otro.
-    if (window.resetMappingCache) {
-        window.resetMappingCache();
+    // UI Reset
+    if (window.ViewerUI) {
+        window.ViewerUI.resetView();
+        window.ViewerUI.updateHeader("", {});
+    }
+};
+
+// --- 6. PERSISTENCE LOGIC (Paso 2: Guardado) ---
+/**
+ * Empaqueta el estado actual (Mapping + Reglas) y lo envía al Backend.
+ * Se invoca desde el botón "Guardar Configuración" en el Simulador.
+ */
+window.saveSimulationConfig = async function () {
+    // 1. Validaciones Básicas
+    if (!window.globalContext || !window.globalContext.providerId) {
+        alert("Error Crítico: No se ha identificado el proveedor en el contexto global.");
+        return;
     }
 
-    // 2. UI - Buttons Visibility
-    const btnConfirm = document.getElementById('btnConfirmIngest');
-    if (btnConfirm) btnConfirm.classList.remove('hidden'); // Siempre visible por defecto (Ingesta)
+    if (Object.keys(columnMapping).length === 0) {
+        alert("Atención: No hay columnas mapeadas para guardar.");
+        return;
+    }
 
-    // 3. UI - Contenedores
-    const sheetTabs = document.getElementById('sheetTabs');
-    if (sheetTabs) sheetTabs.innerHTML = '';
+    // 2. Preparar el Payload
+    // Estructuramos los datos para que el Controller los entienda fácilmente
+    const payload = {
+        providerId: window.globalContext.providerId,
+        fileType: window.globalContext.fileType || "GENERAL", // ej: LISTA_PRECIOS
+        sheetName: currentSheetName,
+        config: {
+            offset: currentOffset,       // { row: 3, col: 0 }
+            mapping: columnMapping,      // { 0: "codigo", 2: "precio" }
+            rules: processingRules       // { 2: [{type: 'sanitize_numbers'}] }
+        }
+    };
 
-    // [PHASE 5 FIX] - Default Hide All
-    const ids = ['excelContainer', 'pdfContainer', 'imageContainer', 'errorContainer'];
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-
-    const previewTable = document.getElementById('previewTable');
-    if (previewTable) {
-        previewTable.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-full text-slate-600">
-            <i data-lucide="loader-2" class="w-8 h-8 animate-spin mb-4"></i>
-            <span class="text-xs">Iniciando Motor...</span>
-        </div>`;
+    // 3. UI Feedback (Loading)
+    const btn = document.querySelector('button[onclick="saveSimulationConfig()"]');
+    const originalContent = btn ? btn.innerHTML : "Guardar";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Guardando...`;
         if (window.lucide) window.lucide.createIcons();
     }
 
-    const title = document.getElementById('viewerTitle');
-    if (title) title.textContent = "Cargando...";
+    try {
+        console.log("💾 Enviando configuración al servidor...", payload);
 
-    const loader = document.getElementById('viewerLoader');
-    if (loader) loader.classList.remove('hidden');
+        // 4. Llamada al Backend
+        const response = await fetch('/api/files/save-template', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
 
-    console.log("✨ [ViewerEngine] State Cleaned.");
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Error desconocido al guardar.");
+        }
+
+        // 5. Success
+        console.log("✅ Configuración guardada:", result);
+        alert("¡Configuración guardada exitosamente! \nSe aplicará automáticamente la próxima vez.");
+
+    } catch (error) {
+        console.error("❌ Error saveSimulationConfig:", error);
+        alert("Error al guardar la configuración: " + error.message);
+    } finally {
+        // 6. UI Restore
+        if (btn) {
+            btn.disabled = false;
+            // Restauramos el icono de guardar
+            btn.innerHTML = `<i data-lucide="save" class="w-3 h-3"></i> Guardar`;
+            if (window.lucide) window.lucide.createIcons();
+        }
+    }
 };
+
+console.log("🧠 [ViewerCore] Estado Global Inicializado (+Persistencia)");

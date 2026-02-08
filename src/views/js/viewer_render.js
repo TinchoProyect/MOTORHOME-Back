@@ -383,6 +383,11 @@ function generatePreview() {
                 <select id="simSearchField" onchange="filterSimulationData()" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 outline-none focus:border-emerald-500 max-w-[150px]">
                     ${optionsHtml}
                 </select>
+                
+                <button onclick="saveSimulationConfig()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-blue-900/20 transition-all flex items-center gap-2">
+                    <i data-lucide="save" class="w-3 h-3"></i> Guardar
+                </button>
+
                 <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700">
                     <span id="simFilteredCount">${sanitizedData.length}</span> / ${sanitizedData.length}
                 </div>

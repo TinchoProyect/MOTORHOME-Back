@@ -719,6 +719,79 @@ async function rollbackFiles(req, res) {
     }
 }
 
+// =============================================================================
+// [PERSISTENCE] SAVE TEMPLATE CONFIG (New for Step 4)
+// =============================================================================
+async function saveTemplateConfig(req, res) {
+    console.log("[FilesController] 💾 Saving Template Configuration...");
+    const { providerId, fileType, sheetName, config } = req.body;
+
+    if (!providerId || !config) {
+        return res.status(400).json({ error: "Faltan datos requeridos (providerId, config)" });
+    }
+
+    try {
+        // 1. Construct Format Name (Unique Key logic)
+        // E.g., "LISTA_PRECIOS_SHEET1" or just "LISTA_PRECIOS" if no sheet
+        const typeSafe = (fileType || "GENERAL").toUpperCase();
+        const sheetSafe = sheetName ? `_${sheetName.toUpperCase()}` : "";
+        const formatName = `${typeSafe}${sheetSafe}`;
+
+        console.log(`   - Provider: ${providerId}`);
+        console.log(`   - Format Name: ${formatName}`);
+
+        // 2. Check Existence (Upsert Logic)
+        const { data: existing } = await supabase
+            .from('proveedor_formatos_guia')
+            .select('id')
+            .eq('proveedor_id', providerId)
+            .eq('nombre_formato', formatName)
+            .maybeSingle();
+
+        const payload = {
+            proveedor_id: providerId,
+            nombre_formato: formatName,
+            hoja_excel: sheetName,
+            fila_encabezado: config.offset?.row || 0,
+            columna_encabezado: config.offset?.col || 0,
+            reglas_mapeo: config.mapping,
+            reglas_procesamiento: config.rules || {},
+            ultima_deteccion: new Date()
+        };
+
+        let resultData;
+
+        if (existing) {
+            console.log(`   - Updating existing template (ID: ${existing.id})`);
+            const { data, error } = await supabase
+                .from('proveedor_formatos_guia')
+                .update(payload)
+                .eq('id', existing.id)
+                .select()
+                .single();
+
+            if (error) throw error;
+            resultData = data;
+        } else {
+            console.log(`   - Creating NEW template`);
+            const { data, error } = await supabase
+                .from('proveedor_formatos_guia')
+                .insert(payload)
+                .select()
+                .single();
+
+            if (error) throw error;
+            resultData = data;
+        }
+
+        res.json({ success: true, data: resultData });
+
+    } catch (error) {
+        console.error("[FilesController] Error saving template:", error);
+        res.status(500).json({ error: "Error guardando configuración: " + error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
@@ -729,7 +802,8 @@ module.exports = {
     deleteDictionaryTerm,
     downloadFile,
     provisionVendorFolders,
-    listProcessedFiles,     // [PHASE 5]
-    getProcessedFileContent, // [PHASE 5]
-    rollbackFiles            // [PHASE 5 - ROLLBACK]
+    listProcessedFiles,
+    getProcessedFileContent,
+    rollbackFiles,
+    saveTemplateConfig // [NEW EXPORT]
 };

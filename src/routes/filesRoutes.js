@@ -37,4 +37,7 @@ router.get('/processed-content/:rawListId', filesController.getProcessedFileCont
 // [PHASE 5] Rollback / Delete
 router.post('/rollback', filesController.rollbackFiles);
 
+// [PERSISTENCE] Save Simulation Config (Template)
+router.post('/save-template', filesController.saveTemplateConfig);
+
 module.exports = router;
