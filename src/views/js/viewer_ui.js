@@ -388,6 +388,19 @@ window.ViewerUI = (function () {
             currentRules = Array.isArray(processingRules[colIndex]) ? processingRules[colIndex] : [processingRules[colIndex]];
         }
 
+        // Helper to refresh and re-anchor
+        const refreshAndReAnchor = () => {
+            // 1. Refresh Data
+            if (window.generatePreview) window.generatePreview();
+            else renderVirtualTable(currentSheetData);
+
+            // 2. Find New Anchor (The button was destroyed and recreated)
+            setTimeout(() => {
+                const newAnchor = document.querySelector(`#simTableScrollArea button[onclick*="ViewerUI.openRulesManager(${colIndex},"]`);
+                renderRulesManager(colIndex, newAnchor);
+            }, 50); // Small delay for DOM paint
+        };
+
         if (currentRules.length === 0) {
             listContainer.innerHTML = '<div class="text-[10px] text-slate-600 text-center py-4 italic">No hay reglas aplicadas</div>';
         } else {
@@ -414,21 +427,6 @@ window.ViewerUI = (function () {
 
                 const actions = document.createElement('div');
                 actions.className = 'flex items-center gap-1';
-
-                // Helper to refresh and re-anchor
-                const refreshAndReAnchor = () => {
-                    // 1. Refresh Data
-                    if (window.generatePreview) window.generatePreview();
-                    else renderVirtualTable(currentSheetData);
-
-                    // 2. Find New Anchor (The button was destroyed and recreated)
-                    // We look for a button that calls openRulesManager with our colIndex
-                    // Selector: #simTableScrollArea button[onclick*="openRulesManager(2,"]
-                    setTimeout(() => {
-                        const newAnchor = document.querySelector(`#simTableScrollArea button[onclick*="ViewerUI.openRulesManager(${colIndex},"]`);
-                        renderRulesManager(colIndex, newAnchor);
-                    }, 50); // Small delay for DOM paint
-                };
 
                 // Toggle Btn
                 const btnToggle = document.createElement('button');
@@ -457,41 +455,29 @@ window.ViewerUI = (function () {
         }
         popover.appendChild(listContainer);
 
-        // 5. Add Rule Button
+        // 5. Menu Builder (Multi-Option) - REPLACED SINGLE BUTTON
         const footer = document.createElement('div');
-        footer.className = 'p-2 border-t border-slate-800 bg-slate-950/30';
+        footer.className = 'p-2 border-t border-slate-800 bg-slate-950/30 flex flex-col gap-1';
 
-        const btnAdd = document.createElement('button');
-        btnAdd.className = 'w-full py-1.5 rounded border border-dashed border-slate-700 text-[10px] text-slate-500 hover:text-blue-400 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all flex items-center justify-center gap-2';
-        btnAdd.innerHTML = '<i data-lucide="plus" class="w-3 h-3"></i> Agregar Regla';
+        const createRuleBtn = (label, icon, type, config) => {
+            const btn = document.createElement('button');
+            btn.className = 'w-full py-1.5 rounded border border-slate-700 bg-slate-800/50 text-[10px] text-slate-300 hover:text-white hover:bg-blue-600 hover:border-blue-500 transition-all flex items-center justify-start px-3 gap-2';
+            btn.innerHTML = `<i data-lucide="${icon}" class="w-3 h-3"></i> ${label}`;
+            btn.onclick = () => {
+                if (!processingRules[colIndex]) processingRules[colIndex] = [];
+                if (!Array.isArray(processingRules[colIndex])) processingRules[colIndex] = [processingRules[colIndex]];
 
-        // Simple Catalog Dropdown Logic (Inline for speed)
-        btnAdd.onclick = (e) => {
-            const catalog = [
-                { type: 'sanitize_numbers', label: 'Solo Números' },
-                { type: 'row_filter', label: 'Eliminar Si Vacío', config: { exclude_empty: true } },
-                { type: 'sanitize', label: 'Limpiar Basura', config: { match_regex: '/[^a-zA-Z0-9 ]/g', replace_with: '' } }
-            ];
-
-            // Add first rule for test (MVP)
-            const nextRule = catalog[0];
-
-            if (!processingRules[colIndex]) processingRules[colIndex] = [];
-            if (!Array.isArray(processingRules[colIndex])) processingRules[colIndex] = [processingRules[colIndex]];
-
-            processingRules[colIndex].push({ type: nextRule.type, disabled: false });
-
-            // Re-anchor logic inline for add
-            if (window.generatePreview) window.generatePreview();
-            else renderVirtualTable(currentSheetData);
-
-            setTimeout(() => {
-                const newAnchor = document.querySelector(`#simTableScrollArea button[onclick*="ViewerUI.openRulesManager(${colIndex},"]`);
-                renderRulesManager(colIndex, newAnchor);
-            }, 50);
+                processingRules[colIndex].push({ type: type, config: config, disabled: false });
+                refreshAndReAnchor(); // Use the existing helper
+            };
+            return btn;
         };
 
-        footer.appendChild(btnAdd);
+        // Opción A: Solo Números
+        footer.appendChild(createRuleBtn("Limpiar: Solo Números", "hash", "sanitize_numbers"));
+        // Opción B: Eliminar Vacíos
+        footer.appendChild(createRuleBtn("Filtrar: Eliminar Vacíos", "filter-x", "row_filter", { exclude_empty: true }));
+
         popover.appendChild(footer);
 
         document.body.appendChild(popover);
@@ -519,7 +505,6 @@ window.ViewerUI = (function () {
         };
         setTimeout(() => document.addEventListener('click', closeHandler), 10);
     }
-
 
     // Public API
     return {

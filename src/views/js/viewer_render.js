@@ -300,7 +300,7 @@ function generatePreview() {
             });
         });
 
-        // 🔥 FILTER PIPELINE (Deduplication + Row Filter)
+        // 🔥 FILTER PIPELINE (CORRECTED: Apply transforms BEFORE filter)
         const seenValues = new Set();
 
         sanitizedData = sanitizedData.filter(row => {
@@ -311,18 +311,51 @@ function generatePreview() {
                 const rawRule = processingRules[colIdx];
                 const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
 
+                // 1. First, apply "Transformation" rules to get the REAL value in memory
+                let cellValue = row[colIdx];
+
+                for (const rule of rulesStack) {
+                    if (rule.disabled) continue;
+                    const strVal = String(cellValue || "").trim();
+
+                    // Apply Transforms
+                    if (rule.type === 'sanitize_numbers') {
+                        cellValue = strVal.replace(/[^0-9]/g, '');
+                    }
+                    else if (rule.type === 'sanitize') {
+                        const fallback = rule.config?.replace_with || ""; // Empty string for filter check
+                        let shouldReplace = false;
+                        if (!strVal || strVal === "undefined" || strVal === "null") shouldReplace = true;
+                        if (!shouldReplace && rule.config?.match_regex) {
+                            try {
+                                let p = rule.config.match_regex.replace(/\\\\/g, '\\');
+                                if (p.startsWith('/')) p = p.slice(1, -1);
+                                if (new RegExp(p, 'i').test(strVal)) shouldReplace = true;
+                            } catch (e) { }
+                        }
+                        if (shouldReplace) cellValue = fallback;
+                        else if (strVal.includes('.')) cellValue = strVal.replace(/\./g, ',');
+                    }
+                }
+
+                // 2. Now, check "Filter" rules against the TRANSFORMED value
                 for (const rule of rulesStack) {
                     if (!keepRow) break;
                     if (rule.disabled) continue;
 
-                    const cellValue = row[colIdx];
-                    const strVal = String(cellValue || "").trim();
+                    const strVal = String(cellValue || "").trim(); // Use transformed value
 
                     if (rule.type === 'row_filter' || rule.type === 'filter') {
                         if (rule.config?.exclude_empty && strVal === "") {
                             keepRow = false;
                         }
-                        // Add other row filters here
+                        if (keepRow && rule.config?.exclude_regex) {
+                            try {
+                                let p = rule.config.exclude_regex.replace(/\\\\/g, '\\');
+                                if (p.startsWith('/')) p = p.slice(1, -1);
+                                if (new RegExp(p, 'i').test(strVal)) keepRow = false;
+                            } catch (e) { }
+                        }
                     }
                 }
             });
