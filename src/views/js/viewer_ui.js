@@ -168,7 +168,7 @@ window.ViewerUI = (function () {
 
         // 2. Create Panel
         const panel = document.createElement('div');
-        panel.className = 'w-full max-w-md glass-panel border-blue-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200';
+        panel.className = 'w-full max-w-md glass-panel rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200';
 
         // 3. Header
         const header = document.createElement('div');
@@ -353,7 +353,7 @@ window.ViewerUI = (function () {
         // 2. Create Popover
         const popover = document.createElement('div');
         popover.id = 'rulesManagerPopover';
-        popover.className = 'fixed z-[300] glass-panel border-slate-700 rounded-lg shadow-2xl flex flex-col w-[300px] animate-in zoom-in-95 duration-100';
+        popover.className = 'fixed z-[300] glass-panel rounded-lg shadow-2xl flex flex-col w-[300px] animate-in zoom-in-95 duration-100';
 
         // Positioning (Initial or fallback)
         if (anchorElement) {
@@ -506,6 +506,62 @@ window.ViewerUI = (function () {
         setTimeout(() => document.addEventListener('click', closeHandler), 10);
     }
 
+    // --- [PHASE 6: DELETE CONFIRMATION] ---
+
+    function renderDeleteConfirmation(termName, onConfirm) {
+        // 1. Crear Overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 z-[400] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200';
+
+        // 2. Crear Panel Glass
+        const panel = document.createElement('div');
+        panel.className = 'w-full max-w-sm glass-panel rounded-2xl shadow-2xl p-6 text-center animate-in zoom-in-95 duration-200 border border-red-500/20';
+
+        // Icono de Alerta
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500';
+        iconDiv.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6"></i>';
+        panel.appendChild(iconDiv);
+
+        // Título
+        const title = document.createElement('h3');
+        title.className = 'text-lg font-bold text-white mb-2';
+        title.innerText = '¿Eliminar Encabezado?';
+        panel.appendChild(title);
+
+        // Mensaje
+        const msg = document.createElement('p');
+        msg.className = 'text-sm text-slate-400 mb-6';
+        msg.innerHTML = `Estás a punto de borrar <strong>"${termName}"</strong>.<br>Esta acción liberará la columna.`;
+        panel.appendChild(msg);
+
+        // Botones
+        const btnContainer = document.createElement('div');
+        btnContainer.className = 'flex gap-3 justify-center';
+
+        const btnCancel = document.createElement('button');
+        btnCancel.className = 'px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-xs font-bold uppercase';
+        btnCancel.innerText = 'Cancelar';
+        btnCancel.onclick = () => overlay.remove();
+
+        const btnConfirm = document.createElement('button');
+        btnConfirm.className = 'px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/20 transition-all text-xs font-bold uppercase flex items-center gap-2';
+        btnConfirm.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3"></i> Eliminar';
+        btnConfirm.onclick = () => {
+            if (onConfirm) onConfirm();
+            overlay.remove();
+        };
+
+        btnContainer.appendChild(btnCancel);
+        btnContainer.appendChild(btnConfirm);
+        panel.appendChild(btnContainer);
+
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+
+        if (window.lucide) window.lucide.createIcons({ root: panel });
+    }
+
     // Public API
     return {
         updateHeader,
@@ -517,7 +573,8 @@ window.ViewerUI = (function () {
         refreshIcons,
         toggleTools,
         renderCreateTermModal,
-        openRulesManager: renderRulesManager // Exposed
+        openRulesManager: renderRulesManager,
+        renderDeleteConfirmation: renderDeleteConfirmation,   // <-- AGREGAR ESTO
     };
 })();
 
