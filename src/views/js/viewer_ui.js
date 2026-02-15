@@ -168,7 +168,7 @@ window.ViewerUI = (function () {
 
         // 2. Create Panel
         const panel = document.createElement('div');
-        panel.className = 'w-full max-w-md bg-slate-900 border border-blue-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200';
+        panel.className = 'w-full max-w-md glass-panel border-blue-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200';
 
         // 3. Header
         const header = document.createElement('div');
@@ -353,7 +353,7 @@ window.ViewerUI = (function () {
         // 2. Create Popover
         const popover = document.createElement('div');
         popover.id = 'rulesManagerPopover';
-        popover.className = 'fixed z-[300] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col w-[300px] animate-in zoom-in-95 duration-100';
+        popover.className = 'fixed z-[300] glass-panel border-slate-700 rounded-lg shadow-2xl flex flex-col w-[300px] animate-in zoom-in-95 duration-100';
 
         // Positioning (Initial or fallback)
         if (anchorElement) {
