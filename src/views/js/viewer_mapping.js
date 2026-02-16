@@ -202,66 +202,29 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     createBtn.className = 'w-full px-4 py-2 text-left bg-blue-600/10 hover:bg-blue-600/20 border-b border-blue-500/20 text-[10px] uppercase font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2';
     createBtn.innerHTML = '<i data-lucide="plus-circle" class="w-3 h-3"></i> Crear Nuevo Encabezado';
 
-    // [MODIFIED] Use SweetAlert for Creation
-    createBtn.onclick = async () => {
+    // [MODIFIED] Use ViewerUI v4 (Glassmorphism)
+    createBtn.onclick = () => {
         menu.remove();
-        if (typeof Swal === 'undefined') return alert("SweetAlert not loaded");
-
-        const { value: formValues } = await Swal.fire({
-            title: 'Nuevo Encabezado',
-            html: `
-                <div class="flex flex-col gap-3 text-left">
-                    <label class="text-xs font-bold text-slate-400 uppercase">Nombre del Término</label>
-                    <input id="swal-input-term" class="swal2-input m-0 w-full" placeholder="Ej: PRECIO_LISTA">
-                    
-                    <label class="text-xs font-bold text-slate-400 uppercase mt-2">Descripción (Opcional)</label>
-                    <input id="swal-input-desc" class="swal2-input m-0 w-full" placeholder="Para qué se usa...">
-                    
-                    <div class="flex items-center gap-2 mt-4 p-3 bg-blue-900/20 rounded border border-blue-500/30">
-                        <input type="checkbox" id="swal-input-global" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                        <div class="flex flex-col">
-                            <label for="swal-input-global" class="text-sm font-medium text-slate-200 cursor-pointer">Hacer Global</label>
-                            <span class="text-[10px] text-slate-400">Disponible para todos los proveedores.</span>
-                        </div>
-                    </div>
-                </div>
-            `,
-            focusConfirm: false,
-            showCancelButton: true,
-            confirmButtonText: 'Crear',
-            confirmButtonColor: '#3b82f6',
-            background: '#1e293b',
-            color: '#fff',
-            preConfirm: () => {
-                return {
-                    termino: document.getElementById('swal-input-term').value,
-                    descripcion: document.getElementById('swal-input-desc').value,
-                    isGlobal: document.getElementById('swal-input-global').checked
+        if (window.ViewerUI && window.ViewerUI.renderCreateTermModal) {
+            window.ViewerUI.renderCreateTermModal("", (newTermName) => {
+                if (newTermName) {
+                    // Success Callback from UI
+                    // 1. Invalidate old rules if any
+                    if (processingRules[colIndex]) {
+                        delete processingRules[colIndex];
+                    }
+                    // 2. Map Column
+                    columnMapping[colIndex] = newTermName.toUpperCase();
+                    // 3. Refresh & Save
+                    renderVirtualTable(currentSheetData);
+                    saveSheetState(currentSheetName);
+                    renderSheetTabs();
+                    // 4. Update Cache (Silent Reload)
+                    loadNomenclature();
                 }
-            }
-        });
-
-        if (formValues && formValues.termino) {
-            const success = await addNomenclatureTerm(formValues.termino, formValues.descripcion, formValues.isGlobal);
-            if (success) {
-                // Bug fix: Clean old rules
-                if (processingRules[colIndex]) {
-                    delete processingRules[colIndex];
-                }
-                columnMapping[colIndex] = formValues.termino.toUpperCase();
-                renderVirtualTable(currentSheetData);
-                saveSheetState(currentSheetName);
-                renderSheetTabs();
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Creado',
-                    text: `Término "${formValues.termino.toUpperCase()}" creado correctamente.`,
-                    timer: 1500,
-                    showConfirmButton: false,
-                    background: '#1e293b',
-                    color: '#fff'
-                });
-            }
+            });
+        } else {
+            alert("Error: ViewerUI no disponible. Recarga la página.");
         }
     };
     scrollArea.appendChild(createBtn);
@@ -371,87 +334,46 @@ function createTermSelect(currentId, placeholder, currentTermId) {
 }
 
 // [MODIFIED] New Modal for Editing with Scope Control
+// BYPASS: Redirects to ViewerUI.renderCreateTermModal (Edit Mode)
 async function openEditTermModal(term, colIndex) {
-    if (typeof Swal === 'undefined') return alert("SweetAlert not loaded");
+    if (window.ViewerUI && window.ViewerUI.renderCreateTermModal) {
+        // [ADAPTER] Map Cache Object to UI Object
+        // User confirmed: 'descripcion_uso' is the active field. 'Descripcion' is obsolete.
+        const uiPayload = {
+            id: term.id,
+            term: term.termino,
+            description: term.descripcion_uso || '',
+            proveedor_id: term.proveedor_id
+        };
 
-    const isCurrentlyGlobal = (term.proveedor_id === null);
-
-    const { value: formValues } = await Swal.fire({
-        title: 'Editar Encabezado',
-        html: `
-            <div class="flex flex-col gap-3 text-left">
-                <input type="hidden" id="swal-edit-id" value="${term.id}">
-                
-                <label class="text-xs font-bold text-slate-400 uppercase">Nombre</label>
-                <input id="swal-edit-term" class="swal2-input m-0 w-full" value="${term.termino}">
-                
-                <label class="text-xs font-bold text-slate-400 uppercase mt-2">Descripción</label>
-                <input id="swal-edit-desc" class="swal2-input m-0 w-full" value="${term.descripcion_uso || ''}">
-                
-                <div class="flex items-center gap-2 mt-4 p-3 bg-slate-700/50 rounded border border-slate-600">
-                    <input type="checkbox" id="swal-edit-global" class="w-4 h-4 rounded border-gray-500 text-blue-600 focus:ring-blue-500" 
-                        ${isCurrentlyGlobal ? 'checked' : ''}>
-                    <div class="flex flex-col">
-                        <label for="swal-edit-global" class="text-sm font-medium text-slate-200 cursor-pointer">Es Global</label>
-                        <span class="text-[10px] text-slate-400">Si marcas esto, estará disponible para TODOS los proveedores.</span>
-                    </div>
-                </div>
-
-                <div class="mt-2 pt-2 border-t border-slate-700">
-                    <span class="text-[9px] text-slate-500 uppercase">Configuración de Reglas (Solo lectura en modal rápido)</span>
-                    <div class="text-[10px] text-slate-400 font-mono truncate">${JSON.stringify(term.reglas_procesamiento || {})}</div>
-                </div>
-            </div>
-        `,
-        focusConfirm: false,
-        showCancelButton: true,
-        confirmButtonText: 'Guardar Cambios',
-        showDenyButton: true,
-        denyButtonText: 'Eliminar Término',
-        denyButtonColor: '#ef4444',
-        background: '#1e293b',
-        color: '#fff',
-        preConfirm: () => {
-            return {
-                id: document.getElementById('swal-edit-id').value,
-                termino: document.getElementById('swal-edit-term').value,
-                descripcion: document.getElementById('swal-edit-desc').value,
-                isGlobal: document.getElementById('swal-edit-global').checked
-            }
-        }
-    });
-
-    if (formValues) {
-        await updateNomenclatureTerm(
-            formValues.id,
-            formValues.termino,
-            formValues.descripcion,
-            undefined, // No rules update from simple modal
-            formValues.isGlobal
-        );
-        Swal.fire({
-            icon: 'success',
-            title: 'Actualizado',
-            text: 'Término modificado correctamente.',
-            timer: 1000,
-            showConfirmButton: false,
-            background: '#1e293b',
-            color: '#fff'
-        });
-        // Re-open menu to show changes? Or just let user click again.
-    } else if (Swal.getDenyButton().getAttribute('data-swal-deny-clicked') === 'true') {
-        // Handle Delete
-        if (confirm("¿Seguro que deseas eliminar este término permanentemente?")) {
-            try {
-                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-                await fetch(`${backendUrl}/api/files/dictionary/delete?id=${term.id}`, { method: 'DELETE' });
+        // Pass the full term object to trigger Edit Mode in ViewerUI
+        window.ViewerUI.renderCreateTermModal(uiPayload, (result) => {
+            // Result can be:
+            // - null: Deleted or Cancelled
+            // - string: Updated Name
+            if (result === null) {
+                // Term was deleted. Remove from cache locally.
                 const idx = nomenclatureCache.findIndex(t => t.id === term.id);
                 if (idx !== -1) nomenclatureCache.splice(idx, 1);
-                Swal.fire('Eliminado', '', 'success');
-            } catch (e) {
-                Swal.fire('Error', 'No se pudo eliminar', 'error');
+
+                // Clear mapping if it was this term
+                if (columnMapping[colIndex] === term.termino) {
+                    columnMapping[colIndex] = 'Ignorar Columna'; // Or empty
+                    renderVirtualTable(currentSheetData);
+                }
+            } else {
+                // Term Updated. Refresh Cache
+                loadNomenclature().then(() => {
+                    // Update mapping if name changed
+                    if (columnMapping[colIndex] !== result) {
+                        columnMapping[colIndex] = result;
+                        renderVirtualTable(currentSheetData);
+                    }
+                });
             }
-        }
+        });
+    } else {
+        alert("Error: ViewerUI no disponible.");
     }
 }
 

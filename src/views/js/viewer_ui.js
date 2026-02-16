@@ -160,27 +160,36 @@ window.ViewerUI = (function () {
 
     // --- [PHASE 4: DYNAMIC DOM MODAL] ---
 
-    function renderCreateTermModal(defaultTermName, onSaveCallback) {
-        // 1. Create Overlay
+    function renderCreateTermModal(termData, onSaveCallback) {
+        // [ADAPTIVIDAD ENTRE V3 (String) y V4 (Object)]
+        const isEditMode = (typeof termData === 'object' && termData !== null) || (typeof termData === 'string' && termData.length > 0);
+
+        const initialValues = typeof termData === 'object' ? termData : { term: termData, description: '' };
+        const termId = initialValues.id || null;
+
+        // 1. Create Overlay (GLASSMOPHISM: Reduced opacity, strong blur)
         const overlay = document.createElement('div');
         overlay.id = 'dynamicCreationModal';
-        overlay.className = 'fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200';
+        overlay.className = 'fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200';
 
-        // 2. Create Panel
+        // 2. Create Panel (PREMIUM GLASS: No solid bg, pure blur + subtle border)
         const panel = document.createElement('div');
-        panel.className = 'w-full max-w-md glass-panel rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200';
+        panel.className = 'w-full max-w-md glass-panel rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-white/10 ring-1 ring-white/5';
 
         // 3. Header
         const header = document.createElement('div');
-        header.className = 'p-4 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center';
+        header.className = 'p-4 border-b border-white/5 bg-slate-900/40 flex justify-between items-center';
         header.innerHTML = `
             <div class="flex items-center gap-3">
-                <div class="p-2 bg-blue-500/10 rounded-lg text-blue-400"><i data-lucide="plus-circle" class="w-5 h-5"></i></div>
-                <div><h3 class="text-white font-bold text-sm">Nuevo Encabezado</h3><p class="text-[10px] text-slate-400 font-mono">DICCIONARIO DINÁMICO</p></div>
+                <div class="p-2 bg-blue-500/20 rounded-lg text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.2)]"><i data-lucide="${isEditMode ? 'edit-2' : 'plus-circle'}" class="w-5 h-5"></i></div>
+                <div>
+                    <h3 class="text-white font-bold text-sm tracking-wide">${isEditMode ? 'Editar Encabezado' : 'Nuevo Encabezado'}</h3>
+                    <p class="text-[10px] text-slate-400 font-mono tracking-wider">DICCIONARIO DINÁMICO</p>
+                </div>
             </div>
         `;
         const closeBtn = document.createElement('button');
-        closeBtn.className = 'text-slate-400 hover:text-white transition-colors';
+        closeBtn.className = 'text-slate-500 hover:text-white transition-colors hover:rotate-90 duration-300';
         closeBtn.innerHTML = '<i data-lucide="x" class="w-5 h-5"></i>';
         closeBtn.onclick = () => overlay.remove();
         header.appendChild(closeBtn);
@@ -188,28 +197,29 @@ window.ViewerUI = (function () {
 
         // 4. Body
         const body = document.createElement('div');
-        body.className = 'p-6 space-y-5';
+        body.className = 'p-6 space-y-5 bg-gradient-to-b from-transparent to-slate-900/30';
 
         // Input 1: Name
         const group1 = document.createElement('div');
-        group1.className = 'space-y-1';
-        group1.innerHTML = '<label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Nombre del Término (Obligatorio)</label>';
+        group1.className = 'space-y-1.5';
+        group1.innerHTML = '<label class="text-[10px] font-bold text-blue-300/80 uppercase ml-1 tracking-wider">Nombre del Término (Obligatorio)</label>';
         const inputName = document.createElement('input');
         inputName.type = 'text';
-        inputName.value = defaultTermName || '';
-        inputName.placeholder = 'Ej: Código SKU';
-        inputName.className = 'w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:border-blue-500 outline-none placeholder:text-slate-600 font-bold tracking-wide';
+        inputName.value = initialValues.term || '';
+        inputName.placeholder = 'Ej: CÓDIGO SKU';
+        inputName.className = 'w-full bg-slate-950/40 border border-slate-700/50 rounded-xl px-4 py-3 text-sm text-white focus:border-blue-500/80 focus:ring-1 focus:ring-blue-500/50 outline-none placeholder:text-slate-600 font-bold tracking-wide transition-all shadow-inner';
         group1.appendChild(inputName);
         body.appendChild(group1);
 
         // Input 2: Description
         const group2 = document.createElement('div');
-        group2.className = 'space-y-1';
-        group2.innerHTML = '<label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Descripción (Opcional)</label>';
+        group2.className = 'space-y-1.5';
+        group2.innerHTML = '<label class="text-[10px] font-bold text-slate-500 uppercase ml-1 tracking-wider">Descripción (Opcional)</label>';
         const inputDesc = document.createElement('input');
         inputDesc.type = 'text';
-        inputDesc.placeholder = 'Contexto de uso...';
-        inputDesc.className = 'w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-2 text-xs text-slate-300 focus:border-blue-500 outline-none placeholder:text-slate-600';
+        inputDesc.value = initialValues.description || '';
+        inputDesc.placeholder = 'Contexto de uso para la IA...';
+        inputDesc.className = 'w-full bg-slate-950/40 border border-slate-700/50 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:border-blue-500/60 outline-none placeholder:text-slate-600 transition-all shadow-inner';
         group2.appendChild(inputDesc);
         body.appendChild(group2);
 
@@ -218,12 +228,12 @@ window.ViewerUI = (function () {
         privacyContainer.className = "pt-2";
 
         const switchLabel = document.createElement('label');
-        switchLabel.className = "flex items-center justify-between p-3 rounded-xl border border-blue-500/30 bg-blue-900/10 cursor-pointer group hover:bg-blue-900/20 transition-all select-none";
+        switchLabel.className = "flex items-center justify-between p-3 rounded-xl border border-blue-500/20 bg-blue-500/5 cursor-pointer group hover:bg-blue-500/10 transition-all select-none";
 
         const leftSide = document.createElement('div');
         leftSide.className = "flex items-center gap-3";
         const iconBox = document.createElement('div');
-        iconBox.className = "p-2 rounded-lg bg-blue-500 text-white shadow-lg shadow-blue-500/20 transition-all";
+        iconBox.className = "p-2 rounded-lg bg-blue-500/20 text-blue-400 shadow-sm transition-all";
         iconBox.innerHTML = '<i data-lucide="lock" class="w-4 h-4"></i>';
 
         const textCol = document.createElement('div');
@@ -232,7 +242,7 @@ window.ViewerUI = (function () {
         titleSpan.className = "text-xs font-bold text-blue-100 group-hover:text-white transition-colors";
         titleSpan.innerText = "Privado (Recomendado)";
         const descSpan = document.createElement('span');
-        descSpan.className = "text-[9px] text-blue-300/70";
+        descSpan.className = "text-[9px] text-blue-300/60";
         descSpan.innerText = "Solo visible para este proveedor";
 
         textCol.appendChild(titleSpan);
@@ -248,7 +258,7 @@ window.ViewerUI = (function () {
         infoCheckbox.checked = true; // Default TRUE
 
         const visualSwitch = document.createElement('div');
-        visualSwitch.className = "w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500";
+        visualSwitch.className = "w-9 h-5 bg-slate-700/50 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500 shadow-inner";
 
         switchWrapper.appendChild(infoCheckbox);
         switchWrapper.appendChild(visualSwitch);
@@ -261,18 +271,18 @@ window.ViewerUI = (function () {
         // Toggle Logic
         infoCheckbox.onchange = () => {
             if (infoCheckbox.checked) {
-                switchLabel.className = "flex items-center justify-between p-3 rounded-xl border border-blue-500/30 bg-blue-900/10 cursor-pointer group hover:bg-blue-900/20 transition-all select-none";
-                iconBox.className = "p-2 rounded-lg bg-blue-500 text-white shadow-lg shadow-blue-500/20 transition-all";
+                switchLabel.className = "flex items-center justify-between p-3 rounded-xl border border-blue-500/20 bg-blue-500/5 cursor-pointer group hover:bg-blue-500/10 transition-all select-none";
+                iconBox.className = "p-2 rounded-lg bg-blue-500/20 text-blue-400 shadow-sm transition-all";
                 iconBox.innerHTML = '<i data-lucide="lock" class="w-4 h-4"></i>';
                 titleSpan.innerText = "Privado (Recomendado)";
                 titleSpan.className = "text-xs font-bold text-blue-100 group-hover:text-white transition-colors";
                 descSpan.innerText = "Solo visible para este proveedor";
             } else {
-                switchLabel.className = "flex items-center justify-between p-3 rounded-xl border border-slate-600 bg-slate-800/30 cursor-pointer group hover:bg-slate-800/50 transition-all select-none";
-                iconBox.className = "p-2 rounded-lg bg-slate-700 text-slate-400 transition-all";
+                switchLabel.className = "flex items-center justify-between p-3 rounded-xl border border-slate-700/50 bg-slate-900/30 cursor-pointer group hover:bg-slate-800/50 transition-all select-none";
+                iconBox.className = "p-2 rounded-lg bg-slate-700/50 text-slate-400 transition-all";
                 iconBox.innerHTML = '<i data-lucide="globe" class="w-4 h-4"></i>';
                 titleSpan.innerText = "Global (Público)";
-                titleSpan.className = "text-xs font-bold text-slate-300 group-hover:text-white transition-colors";
+                titleSpan.className = "text-xs font-bold text-slate-400 group-hover:text-white transition-colors";
                 descSpan.innerText = "Visible para TODOS los proveedores";
             }
             if (window.lucide) window.lucide.createIcons({ root: iconBox });
@@ -280,24 +290,42 @@ window.ViewerUI = (function () {
 
         panel.appendChild(body);
 
-        // 6. Footer (ACTUALIZADO CON BOTÓN ELIMINAR)
+        // 6. Footer
         const footer = document.createElement('div');
-        footer.className = 'p-4 border-t border-slate-800 bg-slate-950/30 flex justify-between items-center rounded-b-2xl';
+        footer.className = 'p-4 border-t border-white/5 bg-slate-900/60 flex justify-between items-center rounded-b-2xl backdrop-blur-md';
 
-        // --- ZONA IZQUIERDA: BOTÓN ELIMINAR (Solo si es edición) ---
+        // --- ZONA IZQUIERDA: BOTÓN ELIMINAR (Solo si hay ID o Nombre) ---
         const leftActions = document.createElement('div');
-        if (defaultTermName) { // Si hay nombre por defecto, asumimos edición
+
+        // Solo mostramos eliminar si tenemos un ID válido (Ideal) o al menos un nombre para intentar.
+        if (termId || initialValues.term) {
             const btnDelete = document.createElement('button');
-            btnDelete.className = 'text-red-400 hover:text-red-300 text-xs font-bold uppercase flex items-center gap-1 opacity-70 hover:opacity-100 transition-all';
-            btnDelete.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i> Eliminar';
+            btnDelete.className = 'text-red-400 hover:text-red-300 text-xs font-bold uppercase flex items-center gap-1.5 opacity-60 hover:opacity-100 transition-all group';
+            btnDelete.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4 group-hover:scale-110 transition-transform"></i> Eliminar';
             btnDelete.onclick = () => {
+                // Si no hay ID, advertimos.
+                if (!termId) {
+                    alert("Aviso: Estás intentando eliminar un término sin ID persistente. Si es nuevo, simplemente cancela.");
+                }
+
                 // Llamamos al modal de confirmación
-                renderDeleteConfirmation(defaultTermName, async () => {
-                    // Lógica de Eliminación (Intento llamar al servicio)
+                renderDeleteConfirmation(initialValues.term, async () => {
+                    const deleteId = termId || initialValues.term; // Fallback al nombre (aunque el servicio requiere ID)
+
+                    // Lógica de Eliminación
                     if (window.NomenclatureService && window.NomenclatureService.delete) {
                         try {
-                            await window.NomenclatureService.delete(defaultTermName);
-                            if (onSaveCallback) onSaveCallback(null); // Null indica borrado
+                            // INTENTO 1: Borrar por ID (Si existe)
+                            if (termId) {
+                                await window.NomenclatureService.delete(termId);
+                            } else {
+                                // Fallback crítico: No tenemos ID. 
+                                // Opcion A: Buscar ID por nombre? (Muy caro)
+                                // Opcion B: Error.
+                                throw new Error("No se puede eliminar un término sin ID guardado.");
+                            }
+
+                            if (onSaveCallback) onSaveCallback(null); // Null indica borrado/cancelado
                             overlay.remove();
                         } catch (e) {
                             console.error("Error eliminando:", e);
@@ -305,7 +333,7 @@ window.ViewerUI = (function () {
                         }
                     } else {
                         // Fallback si no hay servicio DELETE
-                        alert("Simulación: Elemento eliminado (Servicio DELETE no encontrado)");
+                        alert("Error Crítico: Servicio NomenclatureService.delete no encontrado.");
                         overlay.remove();
                     }
                 });
@@ -325,7 +353,7 @@ window.ViewerUI = (function () {
 
         const btnSave = document.createElement('button');
         btnSave.innerHTML = '<i data-lucide="save" class="w-3 h-3 inline mr-1"></i> Guardar';
-        btnSave.className = 'px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-blue-900/20 transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed';
+        btnSave.className = 'px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border border-blue-400/20';
 
         btnSave.onclick = async () => {
             const termName = inputName.value.trim();
@@ -386,10 +414,10 @@ window.ViewerUI = (function () {
         const existing = document.getElementById('rulesManagerPopover');
         if (existing) existing.remove();
 
-        // 2. Create Popover
+        // 2. Create Popover (GLASSMOPHISM UPDATE)
         const popover = document.createElement('div');
         popover.id = 'rulesManagerPopover';
-        popover.className = 'fixed z-[300] glass-panel rounded-lg shadow-2xl flex flex-col w-[300px] animate-in zoom-in-95 duration-100';
+        popover.className = 'fixed z-[300] glass-panel rounded-xl shadow-2xl flex flex-col w-[300px] animate-in zoom-in-95 duration-100 border border-white/10 ring-1 ring-black/50 backdrop-blur-xl';
 
         // Positioning (Initial or fallback)
         if (anchorElement) {
@@ -405,10 +433,10 @@ window.ViewerUI = (function () {
 
         // 3. Header
         const header = document.createElement('div');
-        header.className = 'px-3 py-2 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center rounded-t-lg';
-        header.innerHTML = '<span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pipeline de Reglas</span>';
+        header.className = 'px-4 py-3 border-b border-white/5 bg-slate-900/60 flex justify-between items-center rounded-t-xl';
+        header.innerHTML = '<span class="text-[10px] font-bold text-blue-300 uppercase tracking-widest flex items-center gap-2"><i data-lucide="zap" class="w-3 h-3"></i> Pipeline de Reglas</span>';
         const closeBtn = document.createElement('button');
-        closeBtn.className = 'text-slate-500 hover:text-white';
+        closeBtn.className = 'text-slate-500 hover:text-white transition-colors hover:bg-white/10 rounded p-0.5';
         closeBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
         closeBtn.onclick = () => popover.remove();
         header.appendChild(closeBtn);
@@ -416,7 +444,7 @@ window.ViewerUI = (function () {
 
         // 4. Rules List (Pipeline)
         const listContainer = document.createElement('div');
-        listContainer.className = 'p-2 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar';
+        listContainer.className = 'p-2 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar bg-slate-950/20';
 
         // Ensure array
         let currentRules = [];
@@ -438,25 +466,25 @@ window.ViewerUI = (function () {
         };
 
         if (currentRules.length === 0) {
-            listContainer.innerHTML = '<div class="text-[10px] text-slate-600 text-center py-4 italic">No hay reglas aplicadas</div>';
+            listContainer.innerHTML = '<div class="text-[10px] text-slate-500 text-center py-6 italic flex flex-col items-center gap-2"><i data-lucide="wind" class="w-5 h-5 opacity-50"></i><span>Sin reglas aplicadas</span></div>';
         } else {
             currentRules.forEach((rule, idx) => {
                 const item = document.createElement('div');
-                item.className = `flex items-center justify-between p-2 rounded border ${rule.disabled ? 'border-slate-800 bg-slate-900 opacity-50' : 'border-slate-700 bg-slate-800/50'} group`;
+                item.className = `flex items-center justify-between p-2.5 rounded-lg border transition-all ${rule.disabled ? 'border-slate-800 bg-slate-900/50 opacity-60' : 'border-slate-700/50 bg-slate-800/40 hover:bg-slate-800/60 hover:border-slate-600'} group`;
 
                 let icon = 'settings-2';
                 let label = rule.type;
                 if (rule.type === 'sanitize_numbers') { icon = 'hash'; label = 'Solo Números'; }
                 if (rule.type === 'sanitize') { icon = 'eraser'; label = 'Sanitizar Texto'; }
                 if (rule.type === 'split') { icon = 'split'; label = 'Dividir Columna'; }
-                if (rule.type === 'row_filter') { icon = 'filter'; label = 'Filtro de Fila'; }
+                if (rule.type === 'row_filter') { icon = 'filter-x'; label = 'Filtro de Fila'; }
 
                 item.innerHTML = `
-                    <div class="flex items-center gap-2">
-                        <div class="p-1 rounded bg-slate-800 text-slate-400"><i data-lucide="${icon}" class="w-3 h-3"></i></div>
+                    <div class="flex items-center gap-3">
+                        <div class="p-1.5 rounded-md bg-slate-900 border border-slate-700 text-slate-400 group-hover:text-blue-400 group-hover:border-blue-500/30 transition-colors"><i data-lucide="${icon}" class="w-3.5 h-3.5"></i></div>
                         <div class="flex flex-col">
-                            <span class="text-[10px] font-bold text-slate-300 uppercase">${label}</span>
-                            <span class="text-[9px] text-slate-500">Paso ${idx + 1}</span>
+                            <span class="text-[10px] font-bold text-slate-300 group-hover:text-white uppercase tracking-wide transition-colors">${label}</span>
+                            <span class="text-[9px] text-slate-500 font-mono">Paso ${idx + 1}</span>
                         </div>
                     </div>
                 `;
@@ -466,8 +494,9 @@ window.ViewerUI = (function () {
 
                 // Toggle Btn
                 const btnToggle = document.createElement('button');
-                btnToggle.className = 'p-1 hover:bg-slate-700 rounded text-slate-500 hover:text-white transition-colors';
-                btnToggle.innerHTML = `<i data-lucide="${rule.disabled ? 'eye-off' : 'eye'}" class="w-3 h-3"></i>`;
+                btnToggle.className = 'p-1.5 hover:bg-white/10 rounded text-slate-500 hover:text-white transition-colors';
+                btnToggle.title = rule.disabled ? "Habilitar" : "Deshabilitar";
+                btnToggle.innerHTML = `<i data-lucide="${rule.disabled ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i>`;
                 btnToggle.onclick = () => {
                     rule.disabled = !rule.disabled;
                     refreshAndReAnchor();
@@ -475,8 +504,9 @@ window.ViewerUI = (function () {
 
                 // Delete Btn
                 const btnDel = document.createElement('button');
-                btnDel.className = 'p-1 hover:bg-red-900/30 rounded text-slate-500 hover:text-red-400 transition-colors';
-                btnDel.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3"></i>';
+                btnDel.className = 'p-1.5 hover:bg-red-500/20 rounded text-slate-500 hover:text-red-400 transition-colors';
+                btnDel.title = "Eliminar Regla";
+                btnDel.innerHTML = `<i data-lucide="trash-2" class="w-3.5 h-3.5"></i>`;
                 btnDel.onclick = () => {
                     currentRules.splice(idx, 1);
                     if (currentRules.length === 0) delete processingRules[colIndex];
@@ -491,14 +521,14 @@ window.ViewerUI = (function () {
         }
         popover.appendChild(listContainer);
 
-        // 5. Menu Builder (Multi-Option) - REPLACED SINGLE BUTTON
+        // 5. Menu Builder (Multi-Option)
         const footer = document.createElement('div');
-        footer.className = 'p-2 border-t border-slate-800 bg-slate-950/30 flex flex-col gap-1';
+        footer.className = 'p-3 border-t border-white/5 bg-slate-900/40 flex flex-col gap-2 rounded-b-xl';
 
         const createRuleBtn = (label, icon, type, config) => {
             const btn = document.createElement('button');
-            btn.className = 'w-full py-1.5 rounded border border-slate-700 bg-slate-800/50 text-[10px] text-slate-300 hover:text-white hover:bg-blue-600 hover:border-blue-500 transition-all flex items-center justify-start px-3 gap-2';
-            btn.innerHTML = `<i data-lucide="${icon}" class="w-3 h-3"></i> ${label}`;
+            btn.className = 'w-full py-2 rounded-lg border border-slate-700/50 bg-slate-800/30 text-[10px] text-slate-300 hover:text-white hover:bg-blue-600 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 transition-all flex items-center justify-start px-3 gap-3 group';
+            btn.innerHTML = `<i data-lucide="${icon}" class="w-3.5 h-3.5 text-slate-500 group-hover:text-white transition-colors"></i> ${label}`;
             btn.onclick = () => {
                 if (!processingRules[colIndex]) processingRules[colIndex] = [];
                 if (!Array.isArray(processingRules[colIndex])) processingRules[colIndex] = [processingRules[colIndex]];
@@ -547,28 +577,33 @@ window.ViewerUI = (function () {
     function renderDeleteConfirmation(termName, onConfirm) {
         // 1. Crear Overlay
         const overlay = document.createElement('div');
-        overlay.className = 'fixed inset-0 z-[400] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200';
+        overlay.className = 'fixed inset-0 z-[400] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200';
 
         // 2. Crear Panel Glass
         const panel = document.createElement('div');
-        panel.className = 'w-full max-w-sm glass-panel rounded-2xl shadow-2xl p-6 text-center animate-in zoom-in-95 duration-200 border border-red-500/20';
+        panel.className = 'w-full max-w-sm glass-panel rounded-2xl shadow-2xl p-6 text-center animate-in zoom-in-95 duration-200 border border-red-500/20 ring-1 ring-red-500/10 relative overflow-hidden';
+
+        // Background Gradient Accent for Danger
+        const accent = document.createElement('div');
+        accent.className = 'absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-orange-500';
+        panel.appendChild(accent);
 
         // Icono de Alerta
         const iconDiv = document.createElement('div');
-        iconDiv.className = 'w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500';
-        iconDiv.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6"></i>';
+        iconDiv.className = 'w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-5 text-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)] animate-pulse';
+        iconDiv.innerHTML = '<i data-lucide="alert-triangle" class="w-7 h-7"></i>';
         panel.appendChild(iconDiv);
 
         // Título
         const title = document.createElement('h3');
-        title.className = 'text-lg font-bold text-white mb-2';
+        title.className = 'text-xl font-bold text-white mb-2 tracking-tight';
         title.innerText = '¿Eliminar Encabezado?';
         panel.appendChild(title);
 
         // Mensaje
         const msg = document.createElement('p');
-        msg.className = 'text-sm text-slate-400 mb-6';
-        msg.innerHTML = `Estás a punto de borrar <strong>"${termName}"</strong>.<br>Esta acción liberará la columna.`;
+        msg.className = 'text-sm text-slate-300/80 mb-8 px-4 leading-relaxed';
+        msg.innerHTML = `Estás a punto de borrar <strong class="text-white bg-white/5 px-2 py-0.5 rounded border border-white/10 mx-1">${termName}</strong>.<br>Esta acción es irreversible y liberará la columna.`;
         panel.appendChild(msg);
 
         // Botones
@@ -576,13 +611,13 @@ window.ViewerUI = (function () {
         btnContainer.className = 'flex gap-3 justify-center';
 
         const btnCancel = document.createElement('button');
-        btnCancel.className = 'px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-xs font-bold uppercase';
+        btnCancel.className = 'px-5 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors text-xs font-bold uppercase tracking-wider';
         btnCancel.innerText = 'Cancelar';
         btnCancel.onclick = () => overlay.remove();
 
         const btnConfirm = document.createElement('button');
-        btnConfirm.className = 'px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/20 transition-all text-xs font-bold uppercase flex items-center gap-2';
-        btnConfirm.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3"></i> Eliminar';
+        btnConfirm.className = 'px-6 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20 transition-all text-xs font-bold uppercase flex items-center gap-2 hover:scale-105 active:scale-95 border border-red-500/50';
+        btnConfirm.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i> Eliminar';
         btnConfirm.onclick = () => {
             if (onConfirm) onConfirm();
             overlay.remove();

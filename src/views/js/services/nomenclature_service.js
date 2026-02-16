@@ -64,10 +64,36 @@ const NomenclatureService = (function () {
         }
     }
 
+    /**
+     * Elimina un término del diccionario por su ID.
+     * @param {string} id - ID del término a eliminar
+     * @returns {Promise<Object>} Resultado de la operación
+     */
+    async function deleteTerm(id) {
+        try {
+            if (!id) throw new Error("ID es requerido para eliminar");
+
+            console.log(`[NomenclatureService] Deleting term ID: ${id}`);
+            const response = await fetch(`${getBaseUrl()}/api/files/dictionary/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || "Error eliminando término");
+            }
+            return await response.json();
+        } catch (error) {
+            console.error("[NomenclatureService] Error deleting term:", error);
+            throw error;
+        }
+    }
+
     // Public API
     return {
         getAll,
-        create
+        create,
+        delete: deleteTerm
     };
 
 })();
