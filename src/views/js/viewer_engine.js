@@ -20,6 +20,15 @@ async function openFileViewer(fileId, fileName, providerId = null) {
     window.globalContext.fileId = fileId;
     window.globalContext.providerId = providerId; // [V2] PRIVATE CONTEXT INJECTION
 
+    // [FIX] Resolve Provider Name if not set
+    if (providerId && window.currentSuppliers) {
+        const provider = window.currentSuppliers.find(p => p.id === providerId);
+        if (provider) {
+            window.globalContext.providerName = provider.nombre;
+            console.log(`[ViewerContext] Resolved Provider: ${provider.nombre}`);
+        }
+    }
+
     // UI Elements
     const modal = document.getElementById('viewerModal');
     const loader = document.getElementById('viewerLoader');
@@ -193,8 +202,8 @@ function loadSheet(sheetName) {
         saveSheetState(currentSheetName);
     }
 
-    // [FIX] Reset Viewer State to prevent "Zombie" config leak
-    if (window.resetViewerState) window.resetViewerState();
+    // [FIX] Reset Viewer State REMOVED to prevent Context Loss (Provider Name)
+    // if (window.resetViewerState) window.resetViewerState();
 
     currentSheetName = sheetName;
     loadSheetState(sheetName);
@@ -432,7 +441,11 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
     // Set Cache & Config
     window.virtualWorkbookCache = workbookMap;
     window.useWorker = false;
-    window.globalContext.fileType = "VIRTUAL_DB"; // Mark as Virtual
+
+    // [FIX] Hydrate Context
+    window.globalContext.fileType = "VIRTUAL_DB";
+    window.globalContext.providerName = providerName;
+    console.log("[ViewerEngine] Virtual Context Hydrated:", window.globalContext);
 
     // 3. UI Setup (ESTO VA PRIMERO para que limpie la casa)
     if (window.ViewerUI) {
