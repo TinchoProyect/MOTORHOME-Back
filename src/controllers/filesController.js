@@ -880,16 +880,14 @@ async function getTemplateConfig(req, res) {
             bestMatch = data.find(t => !t.hoja_excel);
         }
 
-        // 3. Si no, devolvemos la última modificada (la primera del array ordenado)
-        if (!bestMatch && data.length > 0) {
-            bestMatch = data[0];
-            console.log("   ⚠️ No match exacto de hoja. Usando última modificada como fallback.");
-        }
+        // 3. [FIX] Strict Mode: Solo devolvemos si hay coincidencia EXACTA de hoja
+        // Eliminamos el fallback "bestMatch = data[0]" para evitar confussión entre hojas.
 
         if (bestMatch) {
             console.log(`   ✅ Plantilla encontrada: ${bestMatch.nombre_formato} (Offset: ${bestMatch.fila_encabezado}, ${bestMatch.columna_encabezado})`);
             return res.json({ success: true, data: bestMatch });
         } else {
+            console.log("   ⚠️ No se encontró plantilla para esta hoja específica.");
             return res.json({ success: false });
         }
 

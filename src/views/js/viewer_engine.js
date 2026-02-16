@@ -192,12 +192,19 @@ function loadSheet(sheetName) {
     if (currentSheetName && currentSheetName !== sheetName) {
         saveSheetState(currentSheetName);
     }
+
+    // [FIX] Reset Viewer State to prevent "Zombie" config leak
+    if (window.resetViewerState) window.resetViewerState();
+
     currentSheetName = sheetName;
     loadSheetState(sheetName);
     renderSheetTabs();
 
     const excelContainer = document.getElementById('excelContainer');
     if (excelContainer) {
+        // [FIX] Ensure container is VISIBLE (resetViewerState might hide it)
+        excelContainer.classList.remove('hidden');
+
         excelContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-64 text-blue-400">
             <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
             <span class="text-xs font-mono animate-pulse">PROCESANDO...</span>

@@ -75,8 +75,22 @@ function renderVirtualTable(originalData) {
             } else if (mappedType === 'Ignorar Columna') {
                 thClass += " opacity-40 grayscale decoration-line-through";
             }
+
+            // [FIX] Add Visual Feedback for Offset Mode on Headers
+            if (offsetSelectionMode) {
+                thClass += " cursor-crosshair hover:bg-amber-500/30 border-amber-500/50";
+                // Add Anchor style if this is the selected offset
+                if (currentOffset && currentOffset.row === 0 && currentOffset.col === j) {
+                    thClass += " border-2 border-amber-500 bg-amber-900/40 text-amber-400";
+                }
+            }
         }
-        headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px">${thContent}</th>`;
+
+        // [FIX] Allow clicking header to set offset (Row 0)
+        // Only if NOT in mapping mode (because mapping mode uses buttons inside th)
+        const clickAttr = (!mappingMode && offsetSelectionMode) ? `onclick="handleOffsetClick(0, ${j})"` : '';
+
+        headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px" ${clickAttr}>${thContent}</th>`;
     }
     headerHtml += '</tr>';
     thead.innerHTML = headerHtml;
