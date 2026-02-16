@@ -437,6 +437,15 @@
                         class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-purple-500/50">
                         <i data-lucide="calculator" class="w-3 h-3"></i> Agregar Cálculo
                     </button>
+                    <!-- [NEW] Persistence Tools -->
+                    <button id="btnSaveConfig" onclick="saveSimulationConfig()"
+                        class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-emerald-500/50">
+                        <i data-lucide="save" class="w-3 h-3"></i> Guardar Config
+                    </button>
+                    <button id="btnResetConfig" onclick="deleteSimulationConfig()"
+                        class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-red-500/50">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i> Limpiar
+                    </button>
                     <div class="h-6 w-[1px] bg-slate-800 mx-4"></div>
                     <button id="btnConfirmIngest" onclick="confirmIngestion()"
                         class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-lg hover:shadow-emerald-500/20 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all hover:scale-105 mr-4">

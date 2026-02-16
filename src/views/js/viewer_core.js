@@ -148,6 +148,64 @@ window.saveSimulationConfig = async function () {
     }
 };
 
+
+// --- 6.1. PERSISTENCE LOGIC (Reset/Delete) ---
+/**
+ * Elimina la configuración guardada y resetea el visor.
+ */
+window.deleteSimulationConfig = async function () {
+    if (!window.globalContext || !window.globalContext.providerId) return;
+
+    if (!confirm("¿Estás seguro de eliminar toda la configuración guardada para esta hoja? Esto borrará el mapeo y las reglas.")) {
+        return;
+    }
+
+    const payload = {
+        providerId: window.globalContext.providerId,
+        sheetName: currentSheetName
+    };
+
+    const btn = document.querySelector('button[onclick="deleteSimulationConfig()"]');
+    if (btn) btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>`;
+
+    try {
+        console.log("🗑️ Eliminando configuración del servidor...", payload);
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+
+        const response = await fetch(`${backendUrl}/api/files/template`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) throw new Error(result.error || "Error al eliminar.");
+
+        console.log("✅ Configuración eliminada.");
+
+        // Reset Local State
+        window.resetViewerState();
+
+        // Reload Sheet to see "virgin" state
+        if (currentSheetName) {
+            loadSheet(currentSheetName);
+        }
+
+        if (typeof Swal !== 'undefined') Swal.fire("Reseteado", "La configuración ha sido eliminada.", "success");
+        else alert("Configuración eliminada.");
+
+    } catch (error) {
+        console.error("❌ Error deleteSimulationConfig:", error);
+        alert("Error al eliminar: " + error.message);
+    } finally {
+        if (btn) {
+            btn.innerHTML = `<i data-lucide="trash-2" class="w-3 h-3"></i> Limpiar`;
+            if (window.lucide) window.lucide.createIcons();
+        }
+    }
+};
+
 // =============================================================================
 // --- 7. LOAD CONFIGURATION (Recuperar Memoria) ---
 // =============================================================================

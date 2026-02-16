@@ -899,6 +899,45 @@ async function getTemplateConfig(req, res) {
     }
 }
 
+// =============================================================================
+// [PERSISTENCE] DELETE TEMPLATE CONFIG (Reset Memory)
+// =============================================================================
+async function deleteTemplateConfig(req, res) {
+    const { providerId, sheetName } = req.body; // Using body for DELETE payload
+
+    if (!providerId) {
+        return res.status(400).json({ error: "Faltan datos requeridos (providerId)" });
+    }
+
+    try {
+        console.log(`[FilesController] 🗑️ Eliminando configuración para Proveedor ${providerId}...`);
+
+        let query = supabase
+            .from('proveedor_formatos_guia')
+            .delete()
+            .eq('proveedor_id', providerId);
+
+        if (sheetName) {
+            query = query.eq('hoja_excel', sheetName);
+        } else {
+            // If no sheet specified, maybe delete generic one? Or all?
+            // For safety, if no sheet is specified, we only delete the generic one (null)
+            query = query.is('hoja_excel', null);
+        }
+
+        const { error } = await query;
+
+        if (error) throw error;
+
+        console.log("✅ Configuración eliminada.");
+        res.json({ success: true, message: "Configuración eliminada correctamente." });
+
+    } catch (error) {
+        console.error("[FilesController] Error deleting template:", error);
+        res.status(500).json({ error: "Error eliminando configuración: " + error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
@@ -914,4 +953,5 @@ module.exports = {
     rollbackFiles,
     saveTemplateConfig, // [NEW EXPORT]
     getTemplateConfig,
+    deleteTemplateConfig // [NEW]
 };

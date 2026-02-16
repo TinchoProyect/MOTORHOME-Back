@@ -147,8 +147,11 @@ window.ViewerUI = (function () {
         const btnMap = document.getElementById('btnMappingMode');
         const btnOff = document.getElementById('btnOffsetMode');
         const btnCalc = document.getElementById('btnCalcMode');
+        // [NEW]
+        const btnSave = document.getElementById('btnSaveConfig');
+        const btnReset = document.getElementById('btnResetConfig');
 
-        const tools = [btnMap, btnOff, btnCalc];
+        const tools = [btnMap, btnOff, btnCalc, btnSave, btnReset];
 
         tools.forEach(btn => {
             if (btn) {

@@ -43,4 +43,7 @@ router.post('/save-template', filesController.saveTemplateConfig);
 // [PERSISTENCE] Get Simulation Config (Template)
 router.get('/get-template', filesController.getTemplateConfig);
 
+// [PERSISTENCE] Delete Simulation Config (Reset)
+router.delete('/template', filesController.deleteTemplateConfig);
+
 module.exports = router;
