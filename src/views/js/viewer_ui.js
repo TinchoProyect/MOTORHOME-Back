@@ -280,9 +280,43 @@ window.ViewerUI = (function () {
 
         panel.appendChild(body);
 
-        // 6. Footer
+        // 6. Footer (ACTUALIZADO CON BOTÓN ELIMINAR)
         const footer = document.createElement('div');
-        footer.className = 'p-4 border-t border-slate-800 bg-slate-950/30 flex justify-end gap-3 rounded-b-2xl';
+        footer.className = 'p-4 border-t border-slate-800 bg-slate-950/30 flex justify-between items-center rounded-b-2xl';
+
+        // --- ZONA IZQUIERDA: BOTÓN ELIMINAR (Solo si es edición) ---
+        const leftActions = document.createElement('div');
+        if (defaultTermName) { // Si hay nombre por defecto, asumimos edición
+            const btnDelete = document.createElement('button');
+            btnDelete.className = 'text-red-400 hover:text-red-300 text-xs font-bold uppercase flex items-center gap-1 opacity-70 hover:opacity-100 transition-all';
+            btnDelete.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i> Eliminar';
+            btnDelete.onclick = () => {
+                // Llamamos al modal de confirmación
+                renderDeleteConfirmation(defaultTermName, async () => {
+                    // Lógica de Eliminación (Intento llamar al servicio)
+                    if (window.NomenclatureService && window.NomenclatureService.delete) {
+                        try {
+                            await window.NomenclatureService.delete(defaultTermName);
+                            if (onSaveCallback) onSaveCallback(null); // Null indica borrado
+                            overlay.remove();
+                        } catch (e) {
+                            console.error("Error eliminando:", e);
+                            alert("Error al eliminar: " + e.message);
+                        }
+                    } else {
+                        // Fallback si no hay servicio DELETE
+                        alert("Simulación: Elemento eliminado (Servicio DELETE no encontrado)");
+                        overlay.remove();
+                    }
+                });
+            };
+            leftActions.appendChild(btnDelete);
+        }
+        footer.appendChild(leftActions);
+
+        // --- ZONA DERECHA: CANCELAR / GUARDAR ---
+        const rightActions = document.createElement('div');
+        rightActions.className = 'flex gap-3';
 
         const btnCancel = document.createElement('button');
         btnCancel.innerText = 'Cancelar';
@@ -331,8 +365,10 @@ window.ViewerUI = (function () {
             }
         };
 
-        footer.appendChild(btnCancel);
-        footer.appendChild(btnSave);
+        rightActions.appendChild(btnCancel);
+        rightActions.appendChild(btnSave);
+        footer.appendChild(rightActions);
+
         panel.appendChild(footer);
 
         overlay.appendChild(panel);
@@ -574,7 +610,7 @@ window.ViewerUI = (function () {
         toggleTools,
         renderCreateTermModal,
         openRulesManager: renderRulesManager,
-        renderDeleteConfirmation: renderDeleteConfirmation,   // <-- AGREGAR ESTO
+        renderDeleteConfirmation: renderDeleteConfirmation,   // <-- EXPOSED
     };
 })();
 
