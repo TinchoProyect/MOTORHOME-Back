@@ -238,7 +238,7 @@ window.loadSavedConfiguration = async function () {
                     row: parseInt(config.fila_encabezado) || 0,
                     col: parseInt(config.columna_encabezado) || 0
                 };
-                offsetSelectionMode = true; // Activar visualmente
+                // offsetSelectionMode = true; // [DISABLED] Start in Read-Only Mode per UX Requirements
                 // Actualizar UI del header si existe
                 if (window.ViewerUI && window.ViewerUI.updateOffsetDisplay) {
                     window.ViewerUI.updateOffsetDisplay(currentOffset);
