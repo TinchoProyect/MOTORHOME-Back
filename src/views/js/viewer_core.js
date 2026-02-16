@@ -190,7 +190,7 @@ window.loadSavedConfiguration = async function () {
             // 2. APLICAR MAPEO (Columnas -> Variables)
             if (config.reglas_mapeo && Object.keys(config.reglas_mapeo).length > 0) {
                 columnMapping = config.reglas_mapeo;
-                mappingMode = true;
+                // mappingMode = true; // [DISABLED] Start in Read-Only Mode per UX Requirements
             }
 
             // 3. APLICAR REGLAS (Sanitización, etc.)
