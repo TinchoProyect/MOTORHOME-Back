@@ -89,11 +89,46 @@ const NomenclatureService = (function () {
         }
     }
 
+    /**
+     * Actualiza un término existente (Scope, Descripción, etc.)
+     * @param {string} id - ID del término a actualizar
+     * @param {Object} data - Datos a actualizar ({termino, descripcion, isGlobal, currentProviderId})
+     */
+    async function updateTerm(id, data) {
+        try {
+            console.log(`[NomenclatureService] Updating Term ID: ${id}`, data);
+
+            // Mapper para adaptar al backend
+            const payload = {
+                id: id,
+                termino: data.termino,
+                descripcion_uso: data.descripcion,
+                isGlobal: data.isGlobal,
+                currentProviderId: data.currentProviderId
+            };
+
+            const response = await fetch(`${getBaseUrl()}/api/files/dictionary/update`, {
+                method: 'POST', // Backend usa POST para updates complejos
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || "Error actualizando término");
+
+            return result;
+        } catch (error) {
+            console.error("[NomenclatureService] Error updating term:", error);
+            throw error;
+        }
+    }
+
     // Public API
     return {
         getAll,
         create,
-        delete: deleteTerm
+        delete: deleteTerm,
+        update: updateTerm // [NEW] Exposed Update Method
     };
 
 })();

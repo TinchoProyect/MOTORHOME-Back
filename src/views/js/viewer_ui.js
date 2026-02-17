@@ -258,7 +258,14 @@ window.ViewerUI = (function () {
         const infoCheckbox = document.createElement('input');
         infoCheckbox.type = 'checkbox';
         infoCheckbox.className = "sr-only peer";
-        infoCheckbox.checked = true; // Default TRUE
+        // [FIX] Initialize based on EXISTING scope (if editing)
+        if (termId) {
+            // Si hay un providerId, es Privado (TRUE). Si es null, es Global (FALSE).
+            infoCheckbox.checked = (initialValues.proveedor_id !== null && initialValues.proveedor_id !== undefined);
+        } else {
+            // Default CREAR: Privado (TRUE)
+            infoCheckbox.checked = true;
+        }
 
         const visualSwitch = document.createElement('div');
         visualSwitch.className = "w-9 h-5 bg-slate-700/50 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500 shadow-inner";
@@ -375,21 +382,34 @@ window.ViewerUI = (function () {
             try {
                 // Determine Provider ID
                 const isPrivate = infoCheckbox.checked;
+                // Si es privado, usamos el ID global. Si no, NULL.
                 const targetProviderId = isPrivate ? (window.globalContext?.providerId || null) : null;
 
-                // Call Service
-                if (window.NomenclatureService) {
+                // [FIX] Detectar Modo EDICIÓN vs CREACIÓN
+                if (termId && window.NomenclatureService.update) {
+                    // MODO EDICIÓN:
+                    // Necesitamos decirle al backend si es Global (isGlobal: !isPrivate)
+                    // Y necesitamos pasar el currentProviderId para que pueda validarlo si vuelve a Privado.
+                    await window.NomenclatureService.update(termId, {
+                        termino: termName,
+                        descripcion: termDesc,
+                        isGlobal: !isPrivate, // Invertimos check "Solo Mío" -> Global
+                        currentProviderId: window.globalContext?.providerId
+                    });
+
+                } else if (window.NomenclatureService) {
+                    // MODO CREACIÓN:
                     await window.NomenclatureService.create(termName, termDesc, targetProviderId);
-
-                    // Success callback
-                    if (onSaveCallback) onSaveCallback(termName);
-
-                    overlay.remove();
                 } else {
                     throw new Error("Servicio de Nomenclatura no disponible");
                 }
+
+                // Success callback
+                if (onSaveCallback) onSaveCallback(termName);
+                overlay.remove();
+
             } catch (e) {
-                console.error("Error creating term:", e);
+                console.error("[ViewerUI] Error saving term:", e);
                 alert("Error al guardar: " + e.message);
                 btnSave.innerText = 'Guardar';
                 btnSave.disabled = false;
