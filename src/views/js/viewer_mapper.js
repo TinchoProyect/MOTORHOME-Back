@@ -73,7 +73,8 @@ export function activatePointerMode(masterField) {
         backdrop.id = 'mapperBackdrop';
         tableContainer.appendChild(backdrop);
     }
-    backdrop.className = "absolute inset-0 bg-slate-950/80 backdrop-blur-sm z-40 transition-opacity duration-300 opacity-100 flex items-start justify-center pt-20 pointer-events-none";
+    // FASE 1: Floating Toast (Sin oscurecer la pantalla, sin bloquear clics)
+    backdrop.className = "fixed top-24 left-1/2 -translate-x-1/2 z-50 transition-opacity duration-300 opacity-100 pointer-events-none flex items-start justify-center";
     backdrop.innerHTML = `
         <div class="bg-blue-900/90 border border-blue-400 text-blue-100 px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl shadow-blue-500/20 animate-bounce">
             <i data-lucide="mouse-pointer-click" class="w-5 h-5"></i>
@@ -143,8 +144,9 @@ function enterFocusMode(tableContainer, targetColIndex) {
 
     const backdrop = document.getElementById('mapperBackdrop');
     if (backdrop) {
-        backdrop.classList.remove('pointer-events-none');
         backdrop.innerHTML = ''; // Remove the central message
+        // FASE 2: Modo Foco Real (Oscurece la tabla para aislar la columna)
+        backdrop.className = "absolute inset-0 bg-slate-950/80 backdrop-blur-sm z-40 transition-opacity duration-300 opacity-100 pointer-events-none";
     }
 
     const rows = tableContainer.querySelectorAll('tr');
