@@ -248,55 +248,93 @@ window.loadSavedConfiguration = async function () {
 
     if (!providerId) return false;
 
+    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+    let loadedAnything = false;
+
+    // ==========================================
+    // 1. CARGA V3 (Offset y Formatos Básicos)
+    // ==========================================
+    try {
+        console.log(`🧠 [V3] Buscando Formato Base para Proveedor ${providerId} (Hoja: ${sheetName})...`);
+        const v3Url = `${backendUrl}/api/files/get-template?providerId=${providerId}&sheetName=${encodeURIComponent(sheetName)}`;
+        const responseV3 = await fetch(v3Url);
+
+        if (responseV3.ok) {
+            const resultV3 = await responseV3.json();
+            if (resultV3 && resultV3.data) {
+                console.log("✅ [V3] Formato Base recuperado:", resultV3.data);
+
+                // Aplicar Offset V3
+                if (resultV3.data.fila_encabezado !== undefined) {
+                    currentOffset = {
+                        row: resultV3.data.fila_encabezado,
+                        col: resultV3.data.columna_encabezado || 0
+                    };
+                    offsetSelectionMode = false;
+                }
+
+                // Aplicar Mapping V3 Clásico (Renombrado de Columnas)
+                if (resultV3.data.reglas_mapeo) {
+                    columnMapping = resultV3.data.reglas_mapeo;
+                }
+
+                if (resultV3.data.reglas_procesamiento) {
+                    processingRules = resultV3.data.reglas_procesamiento;
+                }
+
+                loadedAnything = true;
+            }
+        }
+    } catch (e) {
+        console.warn("⚠️ [V3] No se encontró formato base previo (offset/nombres).");
+    }
+
+    // ==========================================
+    // 2. CARGA V4 (Pipeline de Reglas ETL)
+    // ==========================================
     try {
         console.log(`🧠 [V4] Buscando Pipeline ETL para Proveedor ${providerId} (Hoja: ${sheetName})...`);
+        const urlV4 = `${backendUrl}/api/mapping/${providerId}/${encodeURIComponent(sheetName)}`;
 
-        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const url = `${backendUrl}/api/mapping/${providerId}/${encodeURIComponent(sheetName)}`;
+        const responseV4 = await fetch(urlV4);
+        if (responseV4.ok) {
+            const resultV4 = await responseV4.json();
 
-        const response = await fetch(url);
-        if (!response.ok) return false;
+            if (resultV4 && resultV4.status === 'found' && resultV4.mapeos) {
+                console.log("✅ [V4] Motor ETL configurado desde DB:", resultV4);
 
-        const result = await response.json();
+                window.draftPipelines = {};
 
-        if (result && result.status === 'found' && result.mapeos) {
-            console.log("✅ [V4] Motor ETL configurado desde DB:", result);
+                // 3. RECONSTRUIR PIPELINES MULTI-HOJA
+                for (const m of resultV4.mapeos) {
+                    const rulesArr = (m.mapeo_reglas_aplicadas || []).map(r => ({
+                        id: r.regla_id,
+                        nombre_regla: r.reglas_limpieza ? r.reglas_limpieza.nombre_regla : 'Regla Desconocida',
+                        tipo_regex: r.reglas_limpieza ? r.reglas_limpieza.tipo_regex : 'unknown',
+                        descripcion: ""
+                    }));
 
-            window.draftPipelines = {};
+                    window.draftPipelines[m.columna_origen_index] = {
+                        masterField: { id: m.campo_maestro_id, nombre_campo: `Campo ID ${m.campo_maestro_id.substring(0, 4)}` },
+                        colName: m.columna_origen_nombre,
+                        rules: rulesArr
+                    };
 
-            // 1. APLICAR OFFSET FORMATO (Legacy compatibility if needed)
-            if (result.formato && result.formato.offset_filas !== undefined) {
-                currentOffset = { row: result.formato.offset_filas, col: 0 };
-            }
-
-            // 2. RECONSTRUIR PIPELINES MULTI-HOJA
-            for (const m of result.mapeos) {
-                const rulesArr = (m.mapeo_reglas_aplicadas || []).map(r => ({
-                    id: r.regla_id,
-                    nombre_regla: r.reglas_limpieza.nombre_regla,
-                    tipo_regex: r.reglas_limpieza.tipo_regex,
-                    descripcion: ""
-                }));
-
-                window.draftPipelines[m.columna_origen_index] = {
-                    masterField: { id: m.campo_maestro_id, nombre_campo: `Mapeo Recuperado (${m.campo_maestro_id.substring(0, 4)})` },
-                    colName: m.columna_origen_nombre,
-                    rules: rulesArr
-                };
-
-                // Aplicar visualmente
-                if (window.viewerETL && window.viewerETL.commitColumnMapping) {
-                    window.viewerETL.commitColumnMapping(m.columna_origen_index, window.draftPipelines[m.columna_origen_index].masterField, rulesArr);
+                    // Aplicar visualmente
+                    if (window.viewerETL && window.viewerETL.commitColumnMapping) {
+                        window.viewerETL.commitColumnMapping(m.columna_origen_index, window.draftPipelines[m.columna_origen_index].masterField, rulesArr);
+                    }
                 }
+
+                loadedAnything = true;
             }
-
-            return true;
         }
-
     } catch (error) {
-        console.warn("⚠️ No se pudo cargar la configuración V4 guardada (normal si es nuevo):", error);
+        console.warn("⚠️ [V4] No se pudo cargar la configuración V4 guardada (normal si es nuevo):", error);
     }
-    return false;
+
+    // Retorna true si encontró algo para disparar UI re-renders masivos si aplica
+    return loadedAnything;
 };
 
 console.log("🧠 [ViewerCore] Estado Global Inicializado (+Persistencia +CacheFix)");
