@@ -11,6 +11,10 @@ function renderVirtualTable(originalData) {
     window.viewerState = { mapping: columnMapping, data: currentSheetData };
 
     const container = document.getElementById('excelContainer');
+    if (container) {
+        container.style.overflowY = 'auto';
+        container.style.overflowX = 'auto';
+    }
 
     if (!data || data.length === 0) {
         if (container) container.innerHTML = '<div class="text-slate-500 p-4">Hoja vacía o todos los datos fueron filtrados.</div>';

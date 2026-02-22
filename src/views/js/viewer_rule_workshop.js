@@ -201,9 +201,9 @@ export function applyMapping() {
 
     close();
 
-    // Trigger silent save to backend
+    // Trigger save to backend (NOT silent, user needs feedback)
     if (typeof window.saveViewerConfig === 'function') {
-        window.saveViewerConfig(null, true);
+        window.saveViewerConfig(null, false);
     }
 }
 
