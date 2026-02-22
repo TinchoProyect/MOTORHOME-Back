@@ -63,7 +63,7 @@ export function activatePointerMode(masterField) {
     selectedMasterField = masterField;
     console.log(`🎯 [MAPPER] Phase 1 OK. Esperando clic en Excel para: ${masterField.nombre_campo}`);
 
-    const tableContainer = document.querySelector('.table-container');
+    const tableContainer = document.getElementById('excelContainer');
     if (!tableContainer) return;
 
     // Reset old backdrop if exists
@@ -125,7 +125,7 @@ function executeMappingPhaseTwo(colIndex, colName) {
     console.log(`🎯 [MAPPER] Phase 2: Enlazando Columna ${colIndex} a ${selectedMasterField.nombre_campo}`);
 
     // UI FOCUS MODE
-    const tableContainer = document.querySelector('.table-container');
+    const tableContainer = document.getElementById('excelContainer');
     enterFocusMode(tableContainer, colIndex);
 
     // CALL RIGHT PANEL (Taller de Reglas)
@@ -170,7 +170,7 @@ export function cancelMapping() {
     // Quitar visual highlight de Phase 1 en Panel Izquierdo
     document.querySelectorAll('#tab-content div').forEach(c => c.classList.remove('border-blue-500', 'bg-blue-900/20'));
 
-    const tableContainer = document.querySelector('.table-container');
+    const tableContainer = document.getElementById('excelContainer');
     if (!tableContainer) return;
 
     tableContainer.onclick = null; // Clean delegation
