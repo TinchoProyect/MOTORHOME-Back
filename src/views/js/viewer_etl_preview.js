@@ -49,7 +49,7 @@ export function transformCell(rawValue, pipeline) {
 
 // SIMULATE CHANGES IN DOM
 export function previewColumn(colIndex, pipeline) {
-    const tableContainer = document.querySelector('.table-container');
+    const tableContainer = document.getElementById('excelContainer');
     if (!tableContainer) return;
 
     const rows = tableContainer.querySelectorAll('tbody tr');
@@ -111,13 +111,36 @@ export function previewColumn(colIndex, pipeline) {
 
     if (window.lucide) window.lucide.createIcons();
 
-    // Si tenemos etiqueta de estadísticas, actualizarla (Opcional)
+    // Actualizar Panel Derecho con Estadísticas
+    const countBadge = document.getElementById('vrwRuleCount');
+    if (countBadge) {
+        countBadge.textContent = `${pipeline.length} reglas`;
+    }
+
+    const infoPanel = document.getElementById('vrwCurrentMappingInfo');
+    if (infoPanel) {
+        const spanExistente = infoPanel.querySelector('div.text-emerald-400');
+        const statsHtml = `
+            <div class="mt-2 text-[10px] bg-slate-950 p-2 rounded border border-slate-800 flex justify-between text-slate-400 font-mono">
+                <span>Totales: <strong class="text-white">${countTotal}</strong></span>
+                <span>Válidas: <strong class="text-emerald-400">${countTotal - countRejected}</strong></span>
+                <span>Descartadas: <strong class="text-red-400">${countRejected}</strong></span>
+            </div>
+        `;
+
+        if (spanExistente) {
+            spanExistente.outerHTML = statsHtml;
+        } else {
+            infoPanel.innerHTML += statsHtml;
+        }
+    }
+
     console.log(`[ETL PREVIEW] Total: ${countTotal} | Válidas: ${countTotal - countRejected} | Descartadas: ${countRejected}`);
 }
 
 // COMMIT VISUALS TO HEADER
 export function commitColumnMapping(colIndex, masterField, pipeline) {
-    const tableContainer = document.querySelector('.table-container');
+    const tableContainer = document.getElementById('excelContainer');
     if (!tableContainer) return;
 
     const th = tableContainer.querySelector(`thead tr th:nth-child(${colIndex + 1})`);
