@@ -146,7 +146,7 @@ function enterFocusMode(tableContainer, targetColIndex) {
     if (backdrop) {
         backdrop.innerHTML = ''; // Remove the central message
         // FASE 2: Modo Foco Real (Oscurece la tabla para aislar la columna)
-        backdrop.className = "absolute inset-0 bg-slate-950/80 backdrop-blur-sm z-40 transition-opacity duration-300 opacity-100 pointer-events-none";
+        backdrop.className = "absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-40 transition-opacity duration-300 opacity-100 pointer-events-none";
     }
 
     const rows = tableContainer.querySelectorAll('tr');
@@ -159,9 +159,6 @@ function enterFocusMode(tableContainer, targetColIndex) {
             cell.classList.add('relative', 'z-50', 'bg-slate-800', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]', 'border-x', 'border-blue-500/50');
         }
     });
-
-    // Clean up headers pulse immediately
-    cleanUpHeaders(tableContainer);
 }
 
 export function cancelMapping() {
