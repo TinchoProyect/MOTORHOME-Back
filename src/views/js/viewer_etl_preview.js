@@ -22,6 +22,13 @@ export function transformCell(rawValue, pipeline) {
         else if (rule.tipo_regex === 'TRANSFORM_UPPERCASE') {
             currentValue = currentValue.toUpperCase();
         }
+        else if (rule.tipo_regex === 'VALIDATE_NUMERIC') {
+            // Rechaza completamente si hay caracteres no numéricos
+            if (!/^\d+$/.test(currentValue)) {
+                currentValue = "";
+                isRejected = true;
+            }
+        }
         else {
             // Regla Regex Dinámica
             try {
