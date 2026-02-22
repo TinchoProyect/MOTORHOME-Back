@@ -139,13 +139,23 @@ function renderProcessedGrid(files) {
         return;
     }
 
-    let html = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 pr-2 pb-10">`;
+    // Ordenar archivos por fecha más reciente primero
+    const sortedFiles = [...files].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    files.forEach(file => {
+    // Se agrega pt-6 para que el hover y la etiqueta superior no se corten con el contenedor padre
+    let html = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 pr-2 pb-10 pt-6">`;
+
+    sortedFiles.forEach((file, index) => {
+        const isNewest = index === 0;
+        const currentBorderClass = isNewest ? 'border-emerald-500/60 shadow-lg shadow-emerald-900/30' : 'border-slate-800';
+        const badgeHtml = isNewest ? `<div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white font-bold text-[9px] px-3 py-0.5 rounded-full shadow-lg shadow-emerald-900/50 border border-emerald-400/50 z-20 whitespace-nowrap">NUEVO</div>` : '';
+
         html += `
             <div onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')" 
-                class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-900/10">
+                class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border ${currentBorderClass} hover:border-emerald-400 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-900/40">
                 
+                ${badgeHtml}
+
                 <div class="absolute top-2 left-2 z-10" onclick="event.stopPropagation()">
                     <input type="checkbox" 
                         class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
@@ -165,7 +175,7 @@ function renderProcessedGrid(files) {
                 
                 <div class="mt-auto flex flex-col items-center">
                     <span class="text-[9px] text-emerald-600/80 font-mono font-bold">${file.items_count || 0} ITEMS</span>
-                    <span class="text-[8px] text-slate-600 font-mono">${new Date(file.created_at).toLocaleDateString()}</span>
+                    <span class="text-[10px] text-slate-400 font-mono mt-0.5">${new Date(file.created_at).toLocaleDateString()}</span>
                 </div>
             </div>
         `;
