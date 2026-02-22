@@ -138,6 +138,7 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
             };
 
             console.log("💾 [V4] Guardando Pipeline ETL en el servidor...", payloadV4);
+            console.log('🛑 [VIGÍA SAVE] Payload enviado al backend: ', payloadV4);
             const responseV4 = await fetch(`${backendUrl}/api/mapping/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -298,9 +299,11 @@ window.loadSavedConfiguration = async function () {
         console.log(`🧠 [V4] Buscando Pipeline ETL para Proveedor ${providerId} (Hoja: ${sheetName})...`);
         const urlV4 = `${backendUrl}/api/mapping/${providerId}/${encodeURIComponent(sheetName)}`;
 
+        console.log('🛑 [VIGÍA LOAD] Solicitando V4 a BD...');
         const responseV4 = await fetch(urlV4);
         if (responseV4.ok) {
             const resultV4 = await responseV4.json();
+            console.log('🛑 [VIGÍA LOAD] Respuesta BD: ', resultV4);
 
             if (resultV4 && resultV4.status === 'found' && resultV4.mapeos) {
                 console.log("✅ [V4] Motor ETL configurado desde DB:", resultV4);
@@ -326,6 +329,11 @@ window.loadSavedConfiguration = async function () {
                     if (window.viewerETL && window.viewerETL.commitColumnMapping) {
                         window.viewerETL.commitColumnMapping(m.columna_origen_index, window.draftPipelines[m.columna_origen_index].masterField, rulesArr);
                     }
+                }
+
+                if (typeof window.renderVirtualTable === 'function') {
+                    console.log('🛑 [VIGÍA LOAD] Rehidratando UI con reglas aplicadas...');
+                    window.renderVirtualTable(currentSheetData);
                 }
 
                 loadedAnything = true;
