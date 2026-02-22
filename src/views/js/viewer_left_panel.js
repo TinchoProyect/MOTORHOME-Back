@@ -152,6 +152,30 @@ function renderTabContent(category) {
             <i data-lucide="grip-vertical" class="w-4 h-4 text-slate-600 shrink-0"></i>
         `;
 
+        // [V4] FASE 1: Click en Tarjeta Maestra
+        card.onclick = () => {
+            // Block if V3 Header Formatter is open
+            if (window.mappingMode) {
+                console.warn("⚠️ [V4] Fase 1 bloqueada: El panel de Formateo de Encabezados (V3) está activo.");
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire("Acción Bloqueada", "Bloqueo Activo: Cierra el botón de 'Mapear Columnas' (Encabezados) antes de vincular campos maestros.", "warning");
+                } else {
+                    alert("Cierra 'Mapear Columnas' antes de vincular campos maestros.");
+                }
+                return;
+            }
+
+            if (window.viewerMapper && typeof window.viewerMapper.activatePointerMode === 'function') {
+                console.log(`🎯 [V4] FASE 1: Campo Maestro seleccionado -> ${field.nombre_campo}`);
+
+                // Visual Highlight
+                document.querySelectorAll('#tab-content div').forEach(c => c.classList.remove('border-blue-500', 'bg-blue-900/20'));
+                card.classList.add('border-blue-500', 'bg-blue-900/20');
+
+                window.viewerMapper.activatePointerMode(field);
+            }
+        };
+
         content.appendChild(card);
     });
 

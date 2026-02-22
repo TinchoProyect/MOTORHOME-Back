@@ -54,11 +54,12 @@ export function toggleMappingState() {
 
 // PHASE 1: Click on Master Field
 export function activatePointerMode(masterField) {
-    if (!isMappingMode) {
-        console.warn('🎯 [MAPPER] Clic ignorado: Modo Mapeo inactivo.');
+    if (window.mappingMode) {
+        console.warn('🎯 [MAPPER] Clic ignorado: Modo V3 (Formateo) está activo.');
         return;
     }
 
+    isMappingMode = true;
     selectedMasterField = masterField;
     console.log(`🎯 [MAPPER] Phase 1 OK. Esperando clic en Excel para: ${masterField.nombre_campo}`);
 
@@ -76,39 +77,46 @@ export function activatePointerMode(masterField) {
     backdrop.innerHTML = `
         <div class="bg-blue-900/90 border border-blue-400 text-blue-100 px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl shadow-blue-500/20 animate-bounce">
             <i data-lucide="mouse-pointer-click" class="w-5 h-5"></i>
-            <span class="text-sm font-bold tracking-wide">Selecciona la columna en el Excel para enlazar "${masterField.nombre_campo}"</span>
+            <span class="text-sm font-bold tracking-wide">Selecciona cualquier celda o encabezado para enlazar "${masterField.nombre_campo}"</span>
             <button onclick="if(window.viewerMapper) window.viewerMapper.cancelMapping()" class="ml-2 text-blue-300 hover:text-white pointer-events-auto"><i data-lucide="x-circle" class="w-4 h-4"></i></button>
         </div>
     `;
     if (window.lucide) window.lucide.createIcons({ root: backdrop });
 
-    // Make headers clickable
-    const headers = tableContainer.querySelectorAll('thead th');
-    headers.forEach((th, index) => {
-        if (!th.dataset.originalClasses) th.dataset.originalClasses = th.className;
-        th.className = "sticky top-0 bg-blue-600 text-white font-bold p-2 text-xs border border-blue-400 cursor-pointer hover:bg-blue-500 hover:shadow-lg transition-all z-50 animate-pulse";
+    // Table Delegation for Clicks (Phase 2)
+    tableContainer.onclick = (e) => {
+        if (!selectedMasterField) return;
 
-        // Clone to remove old listeners just in case
-        const newTh = th.cloneNode(true);
-        th.parentNode.replaceChild(newTh, th);
+        const cell = e.target.closest('td, th');
+        if (!cell || !tableContainer.contains(cell)) return;
 
-        newTh.onclick = (e) => {
-            e.stopPropagation();
-            if (selectedMasterField) {
-                // Determine column name
-                let colName = `Columna ${index}`;
-                // First try to get text, excluding any spans if it's already mapped
-                const spanNodes = newTh.querySelectorAll('span');
+        e.stopPropagation();
+
+        const tr = cell.closest('tr');
+        if (!tr) return;
+
+        const colIndex = Array.from(tr.children).indexOf(cell);
+
+        // Determinar nombre de la columna buscando el th
+        let colName = `Columna ${colIndex}`;
+        const thead = tableContainer.querySelector('thead');
+        if (thead) {
+            const th = thead.querySelectorAll('th')[colIndex];
+            if (th) {
+                const spanNodes = th.querySelectorAll('span');
                 if (spanNodes.length > 0) {
                     colName = spanNodes[0].innerText || colName;
-                } else if (newTh.innerText.trim() !== "") {
-                    colName = newTh.innerText.trim();
+                } else if (th.innerText.trim() !== "") {
+                    colName = th.innerText.trim();
                 }
-
-                executeMappingPhaseTwo(index, colName);
             }
-        };
-    });
+        }
+
+        executeMappingPhaseTwo(colIndex, colName);
+    };
+
+    // Pulse effect on wrapper
+    tableContainer.classList.add('cursor-crosshair');
 }
 
 // PHASE 2: Click on Excel Column
@@ -155,11 +163,18 @@ function enterFocusMode(tableContainer, targetColIndex) {
 }
 
 export function cancelMapping() {
+    isMappingMode = false;
     selectedMasterField = null;
     activeFocusCol = null;
 
+    // Quitar visual highlight de Phase 1 en Panel Izquierdo
+    document.querySelectorAll('#tab-content div').forEach(c => c.classList.remove('border-blue-500', 'bg-blue-900/20'));
+
     const tableContainer = document.querySelector('.table-container');
     if (!tableContainer) return;
+
+    tableContainer.onclick = null; // Clean delegation
+    tableContainer.classList.remove('cursor-crosshair');
 
     const backdrop = document.getElementById('mapperBackdrop');
     if (backdrop) backdrop.remove();
@@ -173,18 +188,6 @@ export function cancelMapping() {
                 cell.className = cell.dataset.originalClassesFocused;
             }
         });
-    });
-
-    cleanUpHeaders(tableContainer);
-}
-
-function cleanUpHeaders(tableContainer) {
-    const headers = tableContainer.querySelectorAll('thead th');
-    headers.forEach(th => {
-        if (th.dataset.originalClasses) {
-            th.className = th.dataset.originalClasses;
-        }
-        th.onclick = null;
     });
 }
 
