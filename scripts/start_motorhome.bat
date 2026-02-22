@@ -17,5 +17,5 @@ echo [MOTORHOME] Levantando Backend (puerto 5655)...
 start "Backend Service (DO NOT CLOSE)" /min node src/server.js
 
 echo [MOTORHOME] Levantando Frontend (puerto 2573)...
-start /b cmd /c "timeout /t 4 >nul & start "" http://localhost:2573/src/views/acceso.html"
+start "" "%CD%\scripts\splash.html"
 call npx -y http-server . -p 2573 -c-1

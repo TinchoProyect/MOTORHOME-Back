@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAMDA | Inicializando Sistema...</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+            min-height: 100vh;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #f8fafc;
+            margin: 0;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border-radius: 1.5rem;
+            padding: 3rem;
+            text-align: center;
+            max-width: 24rem;
+            width: 100%;
+        }
+
+        .cockpit-glow {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+            filter: blur(40px);
+            z-index: -1;
+        }
+
+        .logo-container {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 2rem;
+        }
+
+        .logo-container img {
+            height: 10rem;
+            width: auto;
+            position: relative;
+            z-index: 10;
+            filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.6));
+            animation: pulse-glow 3s infinite alternate;
+            border-radius: 1rem;
+        }
+
+        .spinner-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 140%;
+            height: 140%;
+            border: 2px solid transparent;
+            border-top-color: rgba(59, 130, 246, 0.8);
+            border-right-color: rgba(59, 130, 246, 0.4);
+            border-radius: 50%;
+            animation: spin 1.5s linear infinite;
+            z-index: 1;
+        }
+
+        .spinner-ring::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 110%;
+            height: 110%;
+            border: 2px solid transparent;
+            border-bottom-color: rgba(16, 185, 129, 0.6);
+            border-left-color: rgba(16, 185, 129, 0.3);
+            border-radius: 50%;
+            animation: spin 2s linear infinite reverse;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: translate(-50%, -50%) rotate(0deg);
+            }
+
+            100% {
+                transform: translate(-50%, -50%) rotate(360deg);
+            }
+        }
+
+        @keyframes pulse-glow {
+            0% {
+                filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.4));
+            }
+
+            100% {
+                filter: drop-shadow(0 0 25px rgba(59, 130, 246, 0.8));
+            }
+        }
+
+        .status-text {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-weight: 500;
+            margin-top: 1.5rem;
+            animation: pulse-text 2s infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        @keyframes pulse-text {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .progress-bar-bg {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+            border-radius: 9999px;
+            height: 6px;
+            width: 100%;
+            margin-top: 1.5rem;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            width: 0%;
+            transition: width 0.3s ease-out;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        .checks-container {
+            margin-top: 1.5rem;
+            font-size: 0.75rem;
+            color: #64748b;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.3s ease;
+        }
+
+        .check-icon {
+            color: #3b82f6;
+        }
+
+        .check-icon.success {
+            color: #10b981;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="cockpit-glow" style="top: -100px; left: -100px;"></div>
+    <div class="cockpit-glow" style="bottom: -100px; right: -100px;"></div>
+
+    <div class="glass-card">
+        <div class="logo-container">
+            <div class="spinner-ring"></div>
+            <img src="../public/logo-lamda.jpg" alt="LAMDA Logo"
+                onerror="this.src='https://via.placeholder.com/300/1e293b/3b82f6?text=LAMDA'">
+        </div>
+
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const config = {
+            backendUrl: 'http://localhost:5655/api/health',
+            frontendUrl: 'http://localhost:2573/',
+            targetUrl: 'http://localhost:2573/src/views/acceso.html',
+            pollInterval: 1000,
+            maxRetries: 30 // 30 segundos timeout
+        };
+
+        let backendReady = false;
+        let frontendReady = false;
+        let retries = 0;
+
+        async function checkBackend() {
+            if (backendReady) return;
+            try {
+                const res = await fetch(config.backendUrl);
+                if (res.ok) {
+                    backendReady = true;
+                    checkIfAllReady();
+                }
+            } catch (e) {
+                // Not ready
+            }
+        }
+
+        async function checkFrontend() {
+            if (frontendReady) return;
+            try {
+                // no-cors porque localhost:2573 es http-server sin cors
+                await fetch(config.frontendUrl, { mode: 'no-cors' });
+                frontendReady = true;
+                checkIfAllReady();
+            } catch (e) {
+                // Not ready
+            }
+        }
+
+        function checkIfAllReady() {
+            if (backendReady && frontendReady) {
+                // Redirigir suavemente
+                setTimeout(() => {
+                    document.body.style.opacity = '0';
+                    document.body.style.transition = 'opacity 0.5s ease-out';
+                    setTimeout(() => {
+                        window.location.replace(config.targetUrl);
+                    }, 500);
+                }, 800);
+            }
+        }
+
+        const pollTimer = setInterval(() => {
+            retries++;
+            if (retries > config.maxRetries && (!backendReady || !frontendReady)) {
+                clearInterval(pollTimer);
+                return;
+            }
+            checkBackend();
+            checkFrontend();
+        }, config.pollInterval);
+
+        // Disparo inicial
+        setTimeout(() => {
+            checkBackend();
+            checkFrontend();
+        }, 300);
+
+    </script>
+</body>
+
+</html>
