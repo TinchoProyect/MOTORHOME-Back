@@ -17,6 +17,7 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/files', require('./routes/filesRoutes'));
+app.use('/api/master-table', require('./routes/masterTableRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {
