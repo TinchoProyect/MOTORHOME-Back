@@ -101,20 +101,20 @@ export function previewColumn(colIndex, pipeline) {
             cell.innerHTML = `
                 <div class="flex items-center gap-2 line-through text-red-400">
                     <span class="truncate" title="${rawVal}">${rawVal}</span>
-                    <i data-lucide="ban" class="w-3 h-3 flex-shrink-0"></i>
+                    <i data-lucide="ban" class="w-4 h-4 flex-shrink-0"></i>
                 </div>
             `;
         } else {
             row.classList.remove('opacity-30', 'grayscale', 'bg-red-500/10');
 
             if (result !== rawVal) {
-                // Modificado
+                // Modificado: Audit Visual (Non-Destructive)
                 cell.innerHTML = `
-                    <div class="flex flex-col gap-0.5">
-                        <span class="text-[9px] text-slate-500 line-through truncate" title="${rawVal}">${rawVal}</span>
-                        <div class="flex items-center gap-1.5 text-emerald-400 font-bold">
-                            <i data-lucide="corner-down-right" class="w-3 h-3 flex-shrink-0"></i>
-                            <span class="truncate" title="${result}">${result || '<vacío>'}</span>
+                    <div class="flex flex-col gap-1 py-1">
+                        <span class="text-[10px] text-slate-500 line-through truncate" title="${rawVal}">${rawVal}</span>
+                        <div class="flex items-center gap-2 text-emerald-400 font-bold bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900/50">
+                            <i data-lucide="arrow-down-right" class="w-3 h-3 flex-shrink-0"></i>
+                            <span class="truncate text-xs" title="${result}">${result || '<vacío>'}</span>
                         </div>
                     </div>
                 `;
@@ -127,7 +127,6 @@ export function previewColumn(colIndex, pipeline) {
 
     if (window.lucide) window.lucide.createIcons();
 
-    // Actualizar Panel Derecho con Estadísticas
     const countBadge = document.getElementById('vrwRuleCount');
     if (countBadge) {
         countBadge.textContent = `${pipeline.length} reglas`;
@@ -135,19 +134,19 @@ export function previewColumn(colIndex, pipeline) {
 
     const infoPanel = document.getElementById('vrwCurrentMappingInfo');
     if (infoPanel) {
-        const spanExistente = infoPanel.querySelector('div.text-emerald-400');
+        let statsContainer = document.getElementById('vrwStatsContainer');
         const statsHtml = `
-            <div class="mt-2 text-[10px] bg-slate-950 p-2 rounded border border-slate-800 flex justify-between text-slate-400 font-mono">
+            <div id="vrwStatsContainer" class="mt-2 text-[10px] bg-slate-950 p-2 rounded border border-slate-800 flex justify-between text-slate-400 font-mono">
                 <span>Totales: <strong class="text-white">${countTotal}</strong></span>
                 <span>Válidas: <strong class="text-emerald-400">${countTotal - countRejected}</strong></span>
                 <span>Descartadas: <strong class="text-red-400">${countRejected}</strong></span>
             </div>
         `;
 
-        if (spanExistente) {
-            spanExistente.outerHTML = statsHtml;
+        if (statsContainer) {
+            statsContainer.outerHTML = statsHtml;
         } else {
-            infoPanel.innerHTML += statsHtml;
+            infoPanel.insertAdjacentHTML('beforeend', statsHtml);
         }
     }
 
