@@ -467,27 +467,72 @@
                 </div>
             </div>
 
-            <div id="viewerContent" class="flex-grow bg-slate-100 relative overflow-hidden flex flex-col">
-                <div id="viewerLoader"
-                    class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-50">
-                    <i data-lucide="loader-2" class="w-10 h-10 text-blue-500 animate-spin mb-3"></i>
-                    <p class="text-xs text-blue-400 font-mono animate-pulse">DESCARGANDO STREAM...</p>
-                </div>
+            <div class="flex flex-row flex-grow overflow-hidden relative">
 
-                <div id="sheetTabs"
-                    class="hidden w-full bg-slate-800 border-b border-blue-500/20 px-2 py-1 flex gap-1 overflow-x-auto custom-scrollbar">
-                </div>
-                <div id="excelContainer"
-                    class="hidden w-full h-full overflow-auto bg-slate-900 text-slate-300 text-xs font-mono p-1"></div>
-                <iframe id="pdfContainer" class="hidden w-full h-full border-0"></iframe>
-                <div id="imageContainer"
-                    class="hidden w-full h-full flex items-center justify-center bg-slate-900 overflow-auto">
-                    <img id="viewerImage" class="max-w-full max-h-full object-contain shadow-2xl" />
-                </div>
-                <div id="errorContainer"
-                    class="hidden w-full h-full flex flex-col items-center justify-center bg-slate-900 text-red-400">
-                    <i data-lucide="alert-triangle" class="w-12 h-12 mb-4"></i>
-                    <p id="viewerErrorMessage" class="text-sm font-bold">Error al cargar archivo</p>
+                <!-- BOTÓN FLOTANTE (MINI SOLAPA) CUANDO ESTÁ COLAPSADO -->
+                <button id="vlpFloatingToggle" onclick="window.viewerLeftPanel.toggle()"
+                    class="absolute left-0 top-1/3 -translate-y-1/2 z-10 w-6 h-16 bg-slate-900/80 hover:bg-slate-800 border-y border-r border-slate-700/50 rounded-r-xl flex items-center justify-center text-slate-400 hover:text-white backdrop-blur-sm transition-all shadow-lg hover:w-8 hidden group">
+                    <i data-lucide="chevron-right" class="w-4 h-4 group-hover:translate-x-0.5 transition-transform"></i>
+                </button>
+
+                <!-- PANEl LATERAL IZQUIERDO (Visor Universal) - POSICIÓN ABSOLUTA -->
+                <aside id="viewerLeftPanel"
+                    class="absolute left-0 top-0 bottom-0 bg-slate-950/95 backdrop-blur-xl border-r border-slate-800 flex flex-col hidden z-20 shadow-2xl transition-[transform,opacity] duration-300 ease-in-out w-80 transform -translate-x-full opacity-0">
+                    <div
+                        class="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between shrink-0 h-[73px]">
+                        <div id="vlpHeaderTexts"
+                            class="transition-opacity duration-200 whitespace-nowrap overflow-hidden">
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                <i data-lucide="layout-list" class="w-4 h-4 text-blue-400 shrink-0"></i>
+                                Campos Maestros
+                            </h3>
+                            <p class="text-[10px] text-slate-500 font-mono mt-1">CATÁLOGO DISPONIBLE</p>
+                        </div>
+                        <button onclick="window.viewerLeftPanel.toggle()"
+                            class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors shrink-0 absolute right-3 mt-0.5 z-10"
+                            title="Contraer/Expandir Panel">
+                            <i id="vlpToggleIcon" data-lucide="panel-left-close" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div id="vlpCollapsibleArea" class="flex flex-col flex-grow overflow-hidden w-full">
+                        <!-- Pestañas (Tabs) Generadas Dinámicamente -->
+                        <div id="vlpTabsHeader"
+                            class="flex overflow-x-auto custom-scrollbar border-b border-slate-800 bg-slate-900/30 shrink-0">
+                            <!-- JS injects tabs here -->
+                            <div class="p-3 text-xs text-slate-500 font-mono italic">Cargando...</div>
+                        </div>
+
+                        <!-- Contenido de las Pestañas (Listas de Campos) -->
+                        <div id="vlpTabsContent" class="flex-grow overflow-y-auto custom-scrollbar p-2 bg-slate-950">
+                            <!-- JS injects lists here -->
+                        </div>
+                    </div>
+                </aside>
+
+                <div id="viewerContent" class="flex-grow bg-slate-100 relative overflow-hidden flex flex-col">
+                    <div id="viewerLoader"
+                        class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-50">
+                        <i data-lucide="loader-2" class="w-10 h-10 text-blue-500 animate-spin mb-3"></i>
+                        <p class="text-xs text-blue-400 font-mono animate-pulse">DESCARGANDO STREAM...</p>
+                    </div>
+
+                    <div id="sheetTabs"
+                        class="hidden w-full bg-slate-800 border-b border-blue-500/20 px-2 py-1 flex gap-1 overflow-x-auto custom-scrollbar">
+                    </div>
+                    <div id="excelContainer"
+                        class="hidden w-full h-full overflow-auto bg-slate-900 text-slate-300 text-xs font-mono p-1">
+                    </div>
+                    <iframe id="pdfContainer" class="hidden w-full h-full border-0"></iframe>
+                    <div id="imageContainer"
+                        class="hidden w-full h-full flex items-center justify-center bg-slate-900 overflow-auto">
+                        <img id="viewerImage" class="max-w-full max-h-full object-contain shadow-2xl" />
+                    </div>
+                    <div id="errorContainer"
+                        class="hidden w-full h-full flex flex-col items-center justify-center bg-slate-900 text-red-400">
+                        <i data-lucide="alert-triangle" class="w-12 h-12 mb-4"></i>
+                        <p id="viewerErrorMessage" class="text-sm font-bold">Error al cargar archivo</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -785,6 +830,7 @@
     <script src="js/viewer_debug.js"></script> <!-- 🕵️‍♂️ DEBUG WATCHDOG -->
 
     <!-- Viewer Modules -->
+    <script type="module" src="./js/viewer_left_panel.js?v=3"></script>
     <script src="js/viewer_core.js"></script>
     <script src="js/viewer_ui.js"></script>
     <script src="js/viewer_render.js"></script>

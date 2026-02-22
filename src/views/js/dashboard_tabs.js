@@ -200,6 +200,10 @@ window.openProcessedFile = async function (rawListId, fileName) {
     modal.classList.remove('hidden'); // Show Viewer
     loader.classList.remove('hidden'); // Show Loader (Downloading Stream...)
 
+    // Inicializar Panel Izquierdo si está disponible
+    if (window.viewerLeftPanel) {
+        window.viewerLeftPanel.init();
+    }
     // Hide specialized buttons for "Read Mode" immediately
     const btnConfirm = document.getElementById('btnConfirmIngest');
     if (btnConfirm) btnConfirm.classList.add('hidden');
