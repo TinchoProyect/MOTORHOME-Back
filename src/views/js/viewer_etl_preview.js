@@ -48,26 +48,51 @@ export function transformCell(rawValue, pipeline) {
 }
 
 // SIMULATE CHANGES IN DOM
-export function previewColumn(colIndex, pipeline) {
+export function previewColumn(colIndex, pipeline, skipMath = false) {
     const tableContainer = document.getElementById('excelContainer');
     if (!tableContainer) return;
 
-    // 1. Math Calculation on the REAL DATA (Ignoring virtual DOM limits)
-    let countTotal = 0;
-    let countRejected = 0;
+    if (!skipMath) {
+        // 1. Math Calculation on the REAL DATA (Ignoring virtual DOM limits)
+        let countTotal = 0;
+        let countRejected = 0;
 
-    // Attempt to read from global Viewer State
-    const realData = (window.viewerState && window.viewerState.data) ? window.viewerState.data : null;
-    if (realData && realData.length > 1) { // >1 to have rows beyond header
-        countTotal = realData.length - 1; // exclude header
-        for (let i = 1; i < realData.length; i++) {
-            const rawVal = (realData[i][colIndex] !== undefined && realData[i][colIndex] !== null) ? String(realData[i][colIndex]) : "";
-            const { rejected } = transformCell(rawVal, pipeline);
-            if (rejected) countRejected++;
+        // Attempt to read from global Viewer State
+        const realData = (window.viewerState && window.viewerState.data) ? window.viewerState.data : null;
+        if (realData && realData.length > 1) { // >1 to have rows beyond header
+            countTotal = realData.length - 1; // exclude header
+            for (let i = 1; i < realData.length; i++) {
+                const rawVal = (realData[i][colIndex] !== undefined && realData[i][colIndex] !== null) ? String(realData[i][colIndex]) : "";
+                const { rejected } = transformCell(rawVal, pipeline);
+                if (rejected) countRejected++;
+            }
+        } else {
+            // Fallback for some reason, though should never hit in active table
+            console.warn("[ETL PREVIEW] Warning: window.viewerState.data is missing, stats might be inaccurate.");
         }
-    } else {
-        // Fallback for some reason, though should never hit in active table
-        console.warn("[ETL PREVIEW] Warning: window.viewerState.data is missing, stats might be inaccurate.");
+
+        const countBadge = document.getElementById('vrwRuleCount');
+        if (countBadge) {
+            countBadge.textContent = `${pipeline.length} reglas`;
+        }
+
+        const infoPanel = document.getElementById('vrwCurrentMappingInfo');
+        if (infoPanel) {
+            let statsContainer = document.getElementById('vrwStatsContainer');
+            const statsHtml = `
+                <div id="vrwStatsContainer" class="mt-2 text-[10px] bg-slate-950 p-2 rounded border border-slate-800 flex justify-between text-slate-400 font-mono">
+                    <span>Totales: <strong class="text-white">${countTotal}</strong></span>
+                    <span>Válidas: <strong class="text-emerald-400">${countTotal - countRejected}</strong></span>
+                    <span>Descartadas: <strong class="text-red-400">${countRejected}</strong></span>
+                </div>
+            `;
+
+            if (statsContainer) {
+                statsContainer.outerHTML = statsHtml;
+            } else {
+                infoPanel.insertAdjacentHTML('beforeend', statsHtml);
+            }
+        }
     }
 
     // 2. Visual Layer update (Only targeting rendered ghost rows, max ~50)
@@ -76,6 +101,9 @@ export function previewColumn(colIndex, pipeline) {
     rows.forEach(row => {
         const cell = row.children[colIndex];
         if (!cell) return;
+
+        // Force visual elevation over z-40 backdrop
+        cell.classList.add('relative', 'z-[60]', 'bg-slate-800', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]', 'border-x', 'border-blue-500/50');
 
         // Restore original HTML if returning to empty pipeline
         if (!cell.dataset.originalRawHtml) {
@@ -125,32 +153,14 @@ export function previewColumn(colIndex, pipeline) {
         }
     });
 
+    // Elevate Header to prevent it getting buried under the backdrop
+    const th = tableContainer.querySelector(`thead tr th:nth-child(${colIndex + 1})`);
+    if (th) {
+        th.classList.remove('z-20'); // Remove default sticky index if conflicting
+        th.classList.add('relative', 'z-[60]', 'bg-slate-800', 'shadow-[0_-5px_15px_rgba(59,130,246,0.3)]', 'border-x', 'border-blue-500/50');
+    }
+
     if (window.lucide) window.lucide.createIcons();
-
-    const countBadge = document.getElementById('vrwRuleCount');
-    if (countBadge) {
-        countBadge.textContent = `${pipeline.length} reglas`;
-    }
-
-    const infoPanel = document.getElementById('vrwCurrentMappingInfo');
-    if (infoPanel) {
-        let statsContainer = document.getElementById('vrwStatsContainer');
-        const statsHtml = `
-            <div id="vrwStatsContainer" class="mt-2 text-[10px] bg-slate-950 p-2 rounded border border-slate-800 flex justify-between text-slate-400 font-mono">
-                <span>Totales: <strong class="text-white">${countTotal}</strong></span>
-                <span>Válidas: <strong class="text-emerald-400">${countTotal - countRejected}</strong></span>
-                <span>Descartadas: <strong class="text-red-400">${countRejected}</strong></span>
-            </div>
-        `;
-
-        if (statsContainer) {
-            statsContainer.outerHTML = statsHtml;
-        } else {
-            infoPanel.insertAdjacentHTML('beforeend', statsHtml);
-        }
-    }
-
-    console.log(`[ETL PREVIEW] Total: ${countTotal} | Válidas: ${countTotal - countRejected} | Descartadas: ${countRejected}`);
 }
 
 // COMMIT VISUALS TO HEADER

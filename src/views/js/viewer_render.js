@@ -133,6 +133,16 @@ function renderVirtualTable(originalData) {
         }
         tbody.innerHTML = rowsHtml;
         if (window.lucide) window.lucide.createIcons();
+
+        // [V4 FIX] Si estamos en modo Foco de Taller de Reglas, restaurar Preview (DOM puramente, skipMath=true)
+        if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+            const state = window.viewerRuleWorkshop.getActiveState();
+            if (state.isOpen && state.colIndex !== null) {
+                if (window.viewerETL && typeof window.viewerETL.previewColumn === 'function') {
+                    window.viewerETL.previewColumn(state.colIndex, state.pipeline, true);
+                }
+            }
+        }
     };
 
     container.onscroll = () => requestAnimationFrame(updateVisibleRows);

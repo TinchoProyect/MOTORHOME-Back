@@ -156,7 +156,7 @@ function enterFocusMode(tableContainer, targetColIndex) {
             if (!cell.dataset.originalClassesFocused) {
                 cell.dataset.originalClassesFocused = cell.className;
             }
-            cell.classList.add('relative', 'z-50', 'bg-slate-800', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]', 'border-x', 'border-blue-500/50');
+            cell.classList.add('relative', 'z-[60]', 'bg-slate-800', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]', 'border-x', 'border-blue-500/50');
         }
     });
 }

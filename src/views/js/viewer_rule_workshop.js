@@ -202,13 +202,22 @@ export function applyMapping() {
     close();
 }
 
+export function getActiveState() {
+    return {
+        isOpen: isPanelOpen,
+        colIndex: activeContext.colIndex,
+        pipeline: currentDraftPipeline
+    };
+}
+
 window.viewerRuleWorkshop = {
     init: initRuleWorkshop,
     open,
     close,
     addSelectedRule,
     removeRule,
-    applyMapping
+    applyMapping,
+    getActiveState
 };
 
 // Auto-initialize on load
