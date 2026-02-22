@@ -74,6 +74,13 @@ export function open(masterField, colIndex, colName) {
         panel.classList.remove('hidden', 'translate-x-full', 'opacity-0');
     }
 
+    // Shrink excelContainer so scrollbar is visible
+    const excelContainer = document.getElementById('excelContainer');
+    if (excelContainer) {
+        excelContainer.style.paddingRight = '400px'; // Panel width + margin
+        excelContainer.style.transition = 'padding-right 0.3s ease-in-out';
+    }
+
     if (window.lucide) window.lucide.createIcons();
     renderPipeline();
 
@@ -91,6 +98,12 @@ export function close() {
     if (panel) {
         panel.classList.add('translate-x-full', 'opacity-0');
         setTimeout(() => panel.classList.add('hidden'), 300);
+    }
+
+    // Restore excelContainer width
+    const excelContainer = document.getElementById('excelContainer');
+    if (excelContainer) {
+        excelContainer.style.paddingRight = '0px';
     }
 
     if (window.viewerMapper) {
@@ -201,9 +214,18 @@ export function applyMapping() {
 
     close();
 
-    // Trigger save to backend (NOT silent, user needs feedback)
-    if (typeof window.saveViewerConfig === 'function') {
-        window.saveViewerConfig(null, false);
+    console.log('🛑 [VIGÍA] Botón Enlazar clickeado');
+    console.log('🛑 [VIGÍA] Verificando window.saveViewerConfig: ', typeof window.saveViewerConfig);
+
+    try {
+        if (typeof window.saveViewerConfig === 'function') {
+            window.saveViewerConfig(null, false);
+            console.log('🛑 [VIGÍA] Llamada a saveViewerConfig ejecutada correctamente');
+        } else {
+            console.error('🛑 [VIGÍA FATAL] window.saveViewerConfig NO EXISTE en el entorno global');
+        }
+    } catch (error) {
+        console.error('🛑 [VIGÍA FATAL] Error en guardado: ', error);
     }
 }
 
