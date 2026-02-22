@@ -68,7 +68,7 @@ window.resetViewerState = function () {
  * Empaqueta el estado actual (Mapping + Reglas) y lo envía al Backend.
  * Se invoca desde el botón "Guardar Configuración" en el Simulador.
  */
-window.saveSimulationConfig = async function () {
+window.saveSimulationConfig = async function (config = null, silent = false) {
     // 1. Validaciones Básicas
     if (!window.globalContext || !window.globalContext.providerId) {
         alert("Error Crítico: No se ha identificado el proveedor en el contexto global.");
