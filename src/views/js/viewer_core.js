@@ -75,29 +75,7 @@ window.saveSimulationConfig = async function () {
         return;
     }
 
-    if (!window.draftPipelines || Object.keys(window.draftPipelines).length === 0) {
-        alert("Atención: No hay mapeos configurados en el Taller de Reglas para esta hoja.");
-        return;
-    }
-
-    // 2. Preparar el Payload V4
-    const mapeosPayload = [];
-    for (const [colIndexStr, config] of Object.entries(window.draftPipelines)) {
-        mapeosPayload.push({
-            columna_origen_index: parseInt(colIndexStr),
-            columna_origen_nombre: config.colName || `Columna ${colIndexStr}`,
-            campo_maestro_id: config.masterField.id,
-            reglas: (config.rules || []).map(r => r.id)
-        });
-    }
-
-    const payload = {
-        proveedor_id: window.globalContext.providerId,
-        nombre_hoja: currentSheetName || 'Sheet1',
-        mapeos: mapeosPayload
-    };
-
-    // 3. UI Feedback (Loading)
+    // 2. UI Feedback (Loading)
     const btn = document.querySelector('button[onclick="saveSimulationConfig()"]');
     if (btn) {
         btn.disabled = true;
@@ -106,38 +84,90 @@ window.saveSimulationConfig = async function () {
     }
 
     try {
-        console.log("💾 [V4] Guardando Pipeline ETL en el servidor...", payload);
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const providerId = window.globalContext.providerId;
+        const sheetName = currentSheetName || 'Sheet1';
 
-        // 4. Llamada al Backend
-        const response = await fetch(`${backendUrl}/api/mapping/save`, {
+        // ==========================================
+        // GUARDADO V3: FORMATOS BÁSICOS (Offset, Encabezados Locales)
+        // ==========================================
+        const templatePayload = {
+            providerId: providerId,
+            fileType: window.globalContext.fileType || "GENERAL",
+            sheetName: sheetName,
+            config: {
+                offset: typeof currentOffset !== 'undefined' ? currentOffset : { row: 0, col: 0 },
+                mapping: typeof columnMapping !== 'undefined' ? columnMapping : {},
+                rules: typeof processingRules !== 'undefined' ? processingRules : {}
+            }
+        };
+
+        console.log("💾 [V3] Guardando formato base (offset/encabezados)...", templatePayload);
+        const templateResponse = await fetch(`${backendUrl}/api/files/save-template`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(templatePayload)
         });
 
-        const result = await response.json();
+        const templateResult = await templateResponse.json();
+        if (!templateResponse.ok) {
+            throw new Error(templateResult.error || "Error al guardar el formato base de la hoja.");
+        }
+        console.log("✅ [V3] Formato base guardado:", templateResult);
 
-        if (!response.ok) {
-            throw new Error(result.error || "Error desconocido al guardar.");
+        // ==========================================
+        // GUARDADO V4: MOTOR ETL (Solo si hay pipilines definidos en el taller)
+        // ==========================================
+        const hasPipelines = window.draftPipelines && Object.keys(window.draftPipelines).length > 0;
+
+        if (hasPipelines) {
+            const mapeosPayload = [];
+            for (const [colIndexStr, config] of Object.entries(window.draftPipelines)) {
+                mapeosPayload.push({
+                    columna_origen_index: parseInt(colIndexStr),
+                    columna_origen_nombre: config.colName || `Columna ${colIndexStr}`,
+                    campo_maestro_id: config.masterField.id,
+                    reglas: (config.rules || []).map(r => r.id)
+                });
+            }
+
+            const payloadV4 = {
+                proveedor_id: providerId,
+                nombre_hoja: sheetName,
+                mapeos: mapeosPayload
+            };
+
+            console.log("💾 [V4] Guardando Pipeline ETL en el servidor...", payloadV4);
+            const responseV4 = await fetch(`${backendUrl}/api/mapping/save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payloadV4)
+            });
+
+            const resultV4 = await responseV4.json();
+            if (!responseV4.ok) {
+                throw new Error(resultV4.error || "Error al guardar pipelines ETL.");
+            }
+            console.log("✅ [V4] Motor ETL guardado:", resultV4);
+        } else {
+            console.log("⏭️ [V4] No hay reglas ETL configuradas, omitiendo guardado de mappings avanzados.");
         }
 
         // 5. Success
-        console.log("✅ [V4] Configuración guardada:", result);
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 icon: 'success',
-                title: 'Motor ETL Guardado',
-                text: 'Mapeo y Reglas configurados exitosamente.',
-                timer: 1500,
+                title: 'Configuración Guardada',
+                text: hasPipelines ? 'Formato base y reglas ETL guardados exitosamente.' : 'Formato de encabezados guardado exitosamente.',
+                timer: 2000,
                 showConfirmButton: false
             });
         } else {
-            alert("¡Mapeo guardado exitosamente!");
+            alert("¡Configuración guardada exitosamente!");
         }
 
     } catch (error) {
-        console.error("❌ Error saveSimulationConfig [V4]:", error);
+        console.error("❌ Error guardando configuración:", error);
         if (typeof Swal !== 'undefined') Swal.fire("Error", error.message, "error");
         else alert("Error al guardar: " + error.message);
     } finally {
