@@ -64,18 +64,15 @@ async function openFileViewer(fileId, fileName, providerId = null) {
     const imgContainer = document.getElementById('imageContainer');
     const imgEl = document.getElementById('viewerImage');
 
-    // Reset Buttons visibility (Calc button added)
+    // Ocultar botones especiales al abrir un nuevo archivo (se habilitan si es Excel)
     const btnMap = document.getElementById('btnMappingMode');
     const btnOffset = document.getElementById('btnOffsetMode');
-    const btnCalc = document.getElementById('btnCalcMode'); // New Button
+    const btnCalc = document.getElementById('btnCalcMode');
+    const btnSave = document.getElementById('btnSaveConfig');
+    const btnReset = document.getElementById('btnResetConfig');
 
-    [btnMap, btnOffset, btnCalc].forEach(btn => {
-        if (btn) {
-            btn.classList.add('hidden');
-            // Reset styles
-            btn.classList.remove('bg-blue-600', 'bg-amber-600', 'bg-purple-600', 'text-white', 'border-blue-500', 'animate-pulse');
-            btn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-700');
-        }
+    [btnMap, btnOffset, btnCalc, btnSave, btnReset].forEach(btn => {
+        if (btn) btn.classList.add('hidden');
     });
 
     if (viewerWorker) {
@@ -110,9 +107,16 @@ async function openFileViewer(fileId, fileName, providerId = null) {
         const isImg = fileName.match(/\.(jpg|jpeg|png)$/i);
 
         if (isExcel) {
-            if (btnMap) btnMap.classList.remove('hidden');
-            if (btnOffset) btnOffset.classList.remove('hidden');
-            if (btnCalc) btnCalc.classList.remove('hidden'); // Show calc button
+            // [V4 Fix] Utilizamos toggleTools en vez de manipular CSS crudo, para respetar el DOM.
+            if (window.ViewerUI && window.ViewerUI.toggleTools) {
+                window.ViewerUI.toggleTools(true);
+            } else {
+                if (btnMap) btnMap.classList.remove('hidden');
+                if (btnOffset) btnOffset.classList.remove('hidden');
+                if (btnCalc) btnCalc.classList.remove('hidden');
+                if (btnSave) btnSave.classList.remove('hidden');
+                if (btnReset) btnReset.classList.remove('hidden');
+            }
 
             const response = await fetch(downloadUrl);
             if (!response.ok) throw new Error("Error descargando archivo.");
@@ -315,17 +319,26 @@ const processLocally = (wb, sName) => {
 
 function saveSheetState(sheetName) {
     if (!sheetName) return;
-    sheetConfigStore[sheetName] = { offset: currentOffset, mapping: columnMapping || {} };
+    // Guardamos el draftPipelines actual para esta hoja aislando memoria
+    sheetConfigStore[sheetName] = {
+        offset: window.currentOffset,
+        pipelines: window.draftPipelines ? JSON.parse(JSON.stringify(window.draftPipelines)) : {}
+    };
 }
 
 function loadSheetState(sheetName) {
-    currentOffset = null;
-    columnMapping = {};
-    offsetSelectionMode = false;
+    window.currentOffset = null;
+    window.draftPipelines = {};
+    window.offsetSelectionMode = false;
+
+    // Variables legacy reset
+    window.columnMapping = {};
+    window.processingRules = {};
+
     const config = sheetConfigStore[sheetName];
     if (config) {
-        currentOffset = config.offset;
-        columnMapping = config.mapping || {};
+        window.currentOffset = config.offset;
+        window.draftPipelines = config.pipelines || {};
     }
 }
 
@@ -351,10 +364,10 @@ function renderSheetTabs(sheetNames) {
 }
 
 function toggleOffsetMode() {
-    offsetSelectionMode = !offsetSelectionMode;
+    window.offsetSelectionMode = !window.offsetSelectionMode;
     const btn = document.getElementById('btnOffsetMode');
-    if (offsetSelectionMode) {
-        if (mappingMode) toggleMappingMode();
+    if (window.offsetSelectionMode) {
+        if (window.viewerMapper) window.viewerMapper.cancelMapping();
         btn.classList.add('bg-amber-600', 'text-white', 'animate-pulse');
     } else {
         btn.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
@@ -363,8 +376,8 @@ function toggleOffsetMode() {
 }
 
 function handleOffsetClick(i, j) {
-    if (!offsetSelectionMode) return;
-    currentOffset = { row: i, col: j };
+    if (!window.offsetSelectionMode) return;
+    window.currentOffset = { row: i, col: j };
     toggleOffsetMode();
     saveSheetState(currentSheetName);
     renderSheetTabs();
@@ -396,26 +409,18 @@ window.loadSheet = (sheetName) => loadSheet(sheetName);
 
 
 // 🔥 BINDINGS FALTANTES CORREGIDOS 🔥
-window.toggleMappingMode = toggleMappingMode; // Lo usa viewer_mapping.js
-window.openColumnMenu_v2 = openColumnMenu_v2; // Lo usa viewer_mapping.js
 window.toggleOffsetMode = toggleOffsetMode;   // Lo usa el botón HTML
 window.handleOffsetClick = handleOffsetClick; // Lo usa el click en celda
-window.generatePreview = generatePreview;     // Lo usa el botón "Play"
-window.saveComputedColumn = saveComputedColumn; // Lo usa el modal de cálculos
-window.openCalculationModal = openCalculationModal; // Lo usa el botón "Calc"
 
 window.closeViewerModal = function () {
     closeViewerModal();
     window.resetViewerState(); // [TABULA RASA] - Clean on Exit
 };
 
-window.exportAllSheets = exportAllSheets;
-
 // Satellite Bindings
 window.saveSheetState = saveSheetState;
 window.loadSheetState = loadSheetState;
 window.renderSheetTabs = renderSheetTabs;
-window.toggleProcessingRule = toggleProcessingRule;
 window.toggleSimulationRule = toggleSimulationRule;
 window.closeSimulationModal = closeSimulationModal;
 

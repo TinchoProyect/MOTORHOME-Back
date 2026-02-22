@@ -136,3 +136,6 @@ async function exportAllSheets() {
 
 // [VIGÍA DE CONTROL] - Protocolo de Pruebas
 console.log("👷 [ViewerWorker] Módulo de Procesamiento Cargado.");
+
+// Global Export
+window.exportAllSheets = exportAllSheets;

@@ -58,7 +58,8 @@ function renderVirtualTable(originalData) {
         let thContent = originalVal;
         let thClass = "bg-slate-800 text-blue-400 font-bold uppercase border border-slate-700 p-2 sticky top-0 z-20 text-left overflow-hidden text-ellipsis whitespace-nowrap";
 
-        if (mappingMode) {
+        // Global check: mappingMode comes from viewer_mapping.js
+        if (window.mappingMode || typeof mappingMode !== 'undefined' && mappingMode) {
             const isMapped = !!mappedType;
             const btnClass = isMapped ? 'bg-blue-600/10 border-blue-500/50 text-blue-300' : 'bg-slate-800/50 text-slate-500 hover:text-blue-400';
             thClass = "bg-slate-950 p-1 sticky top-0 z-20";
@@ -88,7 +89,8 @@ function renderVirtualTable(originalData) {
 
         // [FIX] Allow clicking header to set offset (Row 0)
         // Only if NOT in mapping mode (because mapping mode uses buttons inside th)
-        const clickAttr = (!mappingMode && offsetSelectionMode) ? `onclick="handleOffsetClick(0, ${j})"` : '';
+        const isHeaderMapping = (window.mappingMode || typeof mappingMode !== 'undefined' && mappingMode);
+        const clickAttr = (!isHeaderMapping && window.offsetSelectionMode) ? `onclick="handleOffsetClick(0, ${j})"` : '';
 
         headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px" ${clickAttr}>${thContent}</th>`;
     }
@@ -115,15 +117,15 @@ function renderVirtualTable(originalData) {
                 const cellVal = row[j] !== undefined ? row[j] : '';
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
 
-                const minRow = currentOffset ? currentOffset.row : 0;
-                const minCol = currentOffset ? currentOffset.col : 0;
+                const minRow = window.currentOffset ? window.currentOffset.row : 0;
+                const minCol = window.currentOffset ? window.currentOffset.col : 0;
                 const isIgnored = (i < minRow) || (j < minCol);
                 const isAnchor = (i === minRow && j === minCol);
 
                 if (isIgnored) cellClass += " opacity-25 grayscale bg-slate-950/50";
-                if (!offsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
+                if (!window.offsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
                 if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
-                if (offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
+                if (window.offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
 
                 rowsHtml += `<td onclick="handleOffsetClick(${i}, ${j})" class="${cellClass}">${cellVal}</td>`;
             }

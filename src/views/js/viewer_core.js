@@ -75,21 +75,26 @@ window.saveSimulationConfig = async function () {
         return;
     }
 
-    if (Object.keys(columnMapping).length === 0) {
-        alert("Atención: No hay columnas mapeadas para guardar.");
+    if (!window.draftPipelines || Object.keys(window.draftPipelines).length === 0) {
+        alert("Atención: No hay mapeos configurados en el Taller de Reglas para esta hoja.");
         return;
     }
 
-    // 2. Preparar el Payload
+    // 2. Preparar el Payload V4
+    const mapeosPayload = [];
+    for (const [colIndexStr, config] of Object.entries(window.draftPipelines)) {
+        mapeosPayload.push({
+            columna_origen_index: parseInt(colIndexStr),
+            columna_origen_nombre: config.colName || `Columna ${colIndexStr}`,
+            campo_maestro_id: config.masterField.id,
+            reglas: (config.rules || []).map(r => r.id)
+        });
+    }
+
     const payload = {
-        providerId: window.globalContext.providerId,
-        fileType: window.globalContext.fileType || "GENERAL", // ej: LISTA_PRECIOS
-        sheetName: currentSheetName,
-        config: {
-            offset: currentOffset,       // { row: 3, col: 0 }
-            mapping: columnMapping,      // { 0: "codigo", 2: "precio" }
-            rules: processingRules       // { 2: [{type: 'sanitize_numbers'}] }
-        }
+        proveedor_id: window.globalContext.providerId,
+        nombre_hoja: currentSheetName || 'Sheet1',
+        mapeos: mapeosPayload
     };
 
     // 3. UI Feedback (Loading)
@@ -101,15 +106,13 @@ window.saveSimulationConfig = async function () {
     }
 
     try {
-        console.log("💾 Enviando configuración al servidor...", payload);
+        console.log("💾 [V4] Guardando Pipeline ETL en el servidor...", payload);
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
 
         // 4. Llamada al Backend
-        const response = await fetch(`${backendUrl}/api/files/save-template`, {
+        const response = await fetch(`${backendUrl}/api/mapping/save`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
 
@@ -120,21 +123,21 @@ window.saveSimulationConfig = async function () {
         }
 
         // 5. Success
-        console.log("✅ Configuración guardada:", result);
+        console.log("✅ [V4] Configuración guardada:", result);
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 icon: 'success',
-                title: 'Guardado',
-                text: 'Configuración guardada exitosamente.',
+                title: 'Motor ETL Guardado',
+                text: 'Mapeo y Reglas configurados exitosamente.',
                 timer: 1500,
                 showConfirmButton: false
             });
         } else {
-            alert("¡Configuración guardada exitosamente!");
+            alert("¡Mapeo guardado exitosamente!");
         }
 
     } catch (error) {
-        console.error("❌ Error saveSimulationConfig:", error);
+        console.error("❌ Error saveSimulationConfig [V4]:", error);
         if (typeof Swal !== 'undefined') Swal.fire("Error", error.message, "error");
         else alert("Error al guardar: " + error.message);
     } finally {
@@ -211,56 +214,57 @@ window.deleteSimulationConfig = async function () {
 // =============================================================================
 window.loadSavedConfiguration = async function () {
     const providerId = window.globalContext.providerId;
-    const sheetName = currentSheetName; // Variable global definida arriba
+    const sheetName = currentSheetName || 'Sheet1';
 
     if (!providerId) return false;
 
     try {
-        console.log(`🧠 [ViewerCore] Buscando configuración guardada para Proveedor ${providerId} (Hoja: ${sheetName})...`);
+        console.log(`🧠 [V4] Buscando Pipeline ETL para Proveedor ${providerId} (Hoja: ${sheetName})...`);
 
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const url = new URL(`${backendUrl}/api/files/get-template`);
-        url.searchParams.append('providerId', providerId);
-        if (sheetName) url.searchParams.append('sheetName', sheetName);
+        const url = `${backendUrl}/api/mapping/${providerId}/${encodeURIComponent(sheetName)}`;
 
         const response = await fetch(url);
         if (!response.ok) return false;
 
         const result = await response.json();
 
-        if (result && result.success && result.data) {
-            const config = result.data;
-            console.log("✅ Configuración recuperada:", config);
+        if (result && result.status === 'found' && result.mapeos) {
+            console.log("✅ [V4] Motor ETL configurado desde DB:", result);
 
-            // 1. APLICAR OFFSET (Filas/Columnas)
-            if (config.fila_encabezado !== undefined && config.columna_encabezado !== undefined) {
-                currentOffset = {
-                    row: parseInt(config.fila_encabezado) || 0,
-                    col: parseInt(config.columna_encabezado) || 0
+            window.draftPipelines = {};
+
+            // 1. APLICAR OFFSET FORMATO (Legacy compatibility if needed)
+            if (result.formato && result.formato.offset_filas !== undefined) {
+                currentOffset = { row: result.formato.offset_filas, col: 0 };
+            }
+
+            // 2. RECONSTRUIR PIPELINES MULTI-HOJA
+            for (const m of result.mapeos) {
+                const rulesArr = (m.mapeo_reglas_aplicadas || []).map(r => ({
+                    id: r.regla_id,
+                    nombre_regla: r.reglas_limpieza.nombre_regla,
+                    tipo_regex: r.reglas_limpieza.tipo_regex,
+                    descripcion: ""
+                }));
+
+                window.draftPipelines[m.columna_origen_index] = {
+                    masterField: { id: m.campo_maestro_id, nombre_campo: `Mapeo Recuperado (${m.campo_maestro_id.substring(0, 4)})` },
+                    colName: m.columna_origen_nombre,
+                    rules: rulesArr
                 };
-                // offsetSelectionMode = true; // [DISABLED] Start in Read-Only Mode per UX Requirements
-                // Actualizar UI del header si existe
-                if (window.ViewerUI && window.ViewerUI.updateOffsetDisplay) {
-                    window.ViewerUI.updateOffsetDisplay(currentOffset);
+
+                // Aplicar visualmente
+                if (window.viewerETL && window.viewerETL.commitColumnMapping) {
+                    window.viewerETL.commitColumnMapping(m.columna_origen_index, window.draftPipelines[m.columna_origen_index].masterField, rulesArr);
                 }
             }
 
-            // 2. APLICAR MAPEO (Columnas -> Variables)
-            if (config.reglas_mapeo && Object.keys(config.reglas_mapeo).length > 0) {
-                columnMapping = config.reglas_mapeo;
-                // mappingMode = true; // [DISABLED] Start in Read-Only Mode per UX Requirements
-            }
-
-            // 3. APLICAR REGLAS (Sanitización, etc.)
-            if (config.reglas_procesamiento) {
-                processingRules = config.reglas_procesamiento;
-            }
-
-            return true; // Éxito: Se cargó configuración
+            return true;
         }
 
     } catch (error) {
-        console.warn("⚠️ No se pudo cargar la configuración guardada (esto es normal si es nuevo):", error);
+        console.warn("⚠️ No se pudo cargar la configuración V4 guardada (normal si es nuevo):", error);
     }
     return false;
 };
