@@ -95,72 +95,12 @@ export function previewColumn(colIndex, pipeline, skipMath = false) {
         }
     }
 
-    // 2. Visual Layer update (Only targeting rendered ghost rows, max ~50)
-    const rows = tableContainer.querySelectorAll('tbody tr');
-
-    rows.forEach(row => {
-        const cell = row.children[colIndex];
-        if (!cell) return;
-
-        // Force visual elevation over z-40 backdrop
-        cell.classList.add('relative', 'z-[60]', 'bg-slate-800', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]', 'border-x', 'border-blue-500/50');
-
-        // Restore original HTML if returning to empty pipeline
-        if (!cell.dataset.originalRawHtml) {
-            cell.dataset.originalRawHtml = cell.innerHTML;
-            cell.dataset.originalRawText = cell.innerText;
-        }
-
-        const rawVal = cell.dataset.originalRawText;
-
-        // If pipeline is empty, revert
-        if (!pipeline || pipeline.length === 0) {
-            cell.innerHTML = cell.dataset.originalRawHtml;
-            row.classList.remove('opacity-30', 'grayscale', 'bg-red-500/10');
-            return;
-        }
-
-        const { result, rejected } = transformCell(rawVal, pipeline);
-
-        // Visual "Before -> After" render
-        if (rejected) {
-            // Fila Fantasma (Ghost Row)
-            row.classList.add('opacity-30', 'grayscale', 'bg-red-500/10');
-            cell.innerHTML = `
-                <div class="flex items-center gap-2 line-through text-red-400">
-                    <span class="truncate" title="${rawVal}">${rawVal}</span>
-                    <i data-lucide="ban" class="w-4 h-4 flex-shrink-0"></i>
-                </div>
-            `;
-        } else {
-            row.classList.remove('opacity-30', 'grayscale', 'bg-red-500/10');
-
-            if (result !== rawVal) {
-                // Modificado: Audit Visual (Non-Destructive)
-                cell.innerHTML = `
-                    <div class="flex flex-col gap-1 py-1">
-                        <span class="text-[10px] text-slate-500 line-through truncate" title="${rawVal}">${rawVal}</span>
-                        <div class="flex items-center gap-2 text-emerald-400 font-bold bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900/50">
-                            <i data-lucide="arrow-down-right" class="w-3 h-3 flex-shrink-0"></i>
-                            <span class="truncate text-xs" title="${result}">${result || '<vacío>'}</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Intacto
-                cell.innerHTML = cell.dataset.originalRawHtml;
-            }
-        }
-    });
-
-    // Elevate Header to prevent it getting buried under the backdrop
-    const th = tableContainer.querySelector(`thead tr th:nth-child(${colIndex + 1})`);
-    if (th) {
-        th.classList.remove('z-20'); // Remove default sticky index if conflicting
-        th.classList.add('relative', 'z-[60]', 'bg-slate-800', 'shadow-[0_-5px_15px_rgba(59,130,246,0.3)]', 'border-x', 'border-blue-500/50');
+    // 2. Trigger Native Repaint (Header + Body + Z-[60])
+    if (window.renderVirtualTable && window.viewerState && window.viewerState.data) {
+        window.renderVirtualTable(window.viewerState.data);
+    } else {
+        tableContainer.dispatchEvent(new Event('scroll'));
     }
-
-    if (window.lucide) window.lucide.createIcons();
 }
 
 // COMMIT VISUALS TO HEADER

@@ -49,6 +49,11 @@ function renderVirtualTable(originalData) {
     const headerRow = data[0] || [];
     let headerHtml = `<tr style="height: ${HEADER_HEIGHT}px">`;
 
+    let activeEtlState = null;
+    if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+        activeEtlState = window.viewerRuleWorkshop.getActiveState();
+    }
+
     for (let j = 0; j < maxCols; j++) {
         let originalVal = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`);
         let mappedType = columnMapping[j];
@@ -92,6 +97,12 @@ function renderVirtualTable(originalData) {
         const isHeaderMapping = (window.mappingMode || typeof mappingMode !== 'undefined' && mappingMode);
         const clickAttr = (!isHeaderMapping && window.offsetSelectionMode) ? `onclick="handleOffsetClick(0, ${j})"` : '';
 
+        // ETL Preview Injection - Elevate Active Column
+        if (activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j) {
+            thClass = thClass.replace(/z-20/g, ''); // Remove sticky conflict
+            thClass += " relative z-[60] bg-slate-800 shadow-[0_-5px_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
+        }
+
         headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px" ${clickAttr}>${thContent}</th>`;
     }
     headerHtml += '</tr>';
@@ -110,11 +121,16 @@ function renderVirtualTable(originalData) {
         let startDataIndex = Math.max(1, startIndex);
         if (startDataIndex === 0) startDataIndex = 1;
 
+        let activeEtlState = null;
+        if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+            activeEtlState = window.viewerRuleWorkshop.getActiveState();
+        }
+
         for (let i = startDataIndex; i < endIndex; i++) {
             const row = data[i] || [];
             rowsHtml += `<tr style="height: ${ROW_HEIGHT}px;" class="hover:bg-slate-800/50">`;
             for (let j = 0; j < maxCols; j++) {
-                const cellVal = row[j] !== undefined ? row[j] : '';
+                let cellVal = row[j] !== undefined ? row[j] : '';
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
 
                 const minRow = window.currentOffset ? window.currentOffset.row : 0;
@@ -127,22 +143,44 @@ function renderVirtualTable(originalData) {
                 if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
                 if (window.offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
 
+                // ETL Preview Injection
+                if (activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j) {
+                    if (i === startDataIndex) console.log(`[ETL RENDER] Pintando celda en fila ${i} para la columna activa ${j}`);
+
+                    cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
+
+                    if (activeEtlState.pipeline && activeEtlState.pipeline.length > 0 && window.viewerETL) {
+                        const rawVal = String(cellVal);
+                        const { result, rejected } = window.viewerETL.transformCell(rawVal, activeEtlState.pipeline);
+
+                        if (rejected) {
+                            cellClass += " opacity-30 grayscale bg-red-500/10";
+                            cellVal = `
+                                <div class="flex items-center gap-2 line-through text-red-400">
+                                    <span class="truncate" title="${rawVal}">${rawVal}</span>
+                                    <i data-lucide="ban" class="w-4 h-4 flex-shrink-0"></i>
+                                </div>
+                            `;
+                        } else if (result !== rawVal) {
+                            cellVal = `
+                                <div class="flex flex-col gap-1 py-1">
+                                    <span class="text-[10px] text-slate-500 line-through truncate" title="${rawVal}">${rawVal}</span>
+                                    <div class="flex items-center gap-2 text-emerald-400 font-bold bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900/50">
+                                        <i data-lucide="arrow-down-right" class="w-3 h-3 flex-shrink-0"></i>
+                                        <span class="truncate text-xs" title="${result}">${result || '<vacío>'}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+                }
+
                 rowsHtml += `<td onclick="handleOffsetClick(${i}, ${j})" class="${cellClass}">${cellVal}</td>`;
             }
             rowsHtml += '</tr>';
         }
         tbody.innerHTML = rowsHtml;
         if (window.lucide) window.lucide.createIcons();
-
-        // [V4 FIX] Si estamos en modo Foco de Taller de Reglas, restaurar Preview (DOM puramente, skipMath=true)
-        if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
-            const state = window.viewerRuleWorkshop.getActiveState();
-            if (state.isOpen && state.colIndex !== null) {
-                if (window.viewerETL && typeof window.viewerETL.previewColumn === 'function') {
-                    window.viewerETL.previewColumn(state.colIndex, state.pipeline, true);
-                }
-            }
-        }
     };
 
     container.onscroll = () => requestAnimationFrame(updateVisibleRows);
@@ -519,6 +557,8 @@ function renderSimulationTable(data) {
     html += "</tbody></table>";
     scrollArea.innerHTML = html;
 }
+
+window.renderSimulationTable = renderSimulationTable;
 
 // [VIGÍA DE CONTROL]
 console.log("🎨 [ViewerRender] Motor Gráfico Iniciado.");
