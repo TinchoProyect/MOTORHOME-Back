@@ -154,16 +154,18 @@ window.saveSimulationConfig = async function () {
         }
 
         // 5. Success
-        if (typeof Swal !== 'undefined') {
-            Swal.fire({
-                icon: 'success',
-                title: 'Configuración Guardada',
-                text: hasPipelines ? 'Formato base y reglas ETL guardados exitosamente.' : 'Formato de encabezados guardado exitosamente.',
-                timer: 2000,
-                showConfirmButton: false
-            });
-        } else {
-            alert("¡Configuración guardada exitosamente!");
+        if (!silent) {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Configuración Guardada',
+                    text: hasPipelines ? 'Formato base y reglas ETL guardados exitosamente.' : 'Formato de encabezados guardado exitosamente.',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            } else {
+                alert("¡Configuración guardada exitosamente!");
+            }
         }
 
     } catch (error) {

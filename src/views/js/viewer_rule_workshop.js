@@ -162,7 +162,7 @@ function renderPipeline() {
                 <div class="bg-slate-800 text-slate-400 font-mono text-[9px] w-5 h-5 flex items-center justify-center rounded-full border border-slate-700">${index + 1}</div>
                 <div>
                     <h4 class="text-xs font-bold text-emerald-400">${rule.nombre_regla}</h4>
-                    <p class="text-[9px] text-slate-500 mt-0.5 leading-tight">${rule.descripcion || 'Regla de limpieza nativa.'}</p>
+                    <p class="text-[10px] text-slate-500 mt-0.5 leading-snug" title="${rule.descripcion || 'Regla de limpieza nativa.'}">${rule.descripcion || 'Regla de limpieza nativa.'}</p>
                 </div>
             </div>
             <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.removeRule(${index})" class="text-slate-600 hover:text-red-400 transition-colors bg-slate-900 hover:bg-red-500/10 p-1.5 rounded-md border border-transparent hover:border-red-500/30">
@@ -200,6 +200,11 @@ export function applyMapping() {
     }
 
     close();
+
+    // Trigger silent save to backend
+    if (typeof window.saveViewerConfig === 'function') {
+        window.saveViewerConfig(null, true);
+    }
 }
 
 export function getActiveState() {

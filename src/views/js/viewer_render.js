@@ -75,7 +75,17 @@ function renderVirtualTable(originalData) {
                 </button>
             </div>`;
         } else {
-            if (mappedType && mappedType !== 'Ignorar Columna') {
+            if (window.draftPipelines && window.draftPipelines[j]) {
+                const pipe = window.draftPipelines[j];
+                thContent = `
+                    <div class="flex items-center gap-2 text-emerald-300">
+                        <i data-lucide="link-2" class="w-3 h-3"></i>
+                        <span class="truncate" title="${pipe.masterField.nombre_campo}">${pipe.masterField.nombre_campo}</span>
+                        <div class="bg-emerald-800 text-emerald-200 text-[9px] px-1.5 rounded-full ml-auto">${pipe.rules ? pipe.rules.length : 0}r</div>
+                    </div>
+                `;
+                thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
+            } else if (mappedType && mappedType !== 'Ignorar Columna') {
                 thContent = `<span class="text-emerald-400">${mappedType}</span> <span class="text-slate-600 text-[9px] ml-1">(${originalVal})</span>`;
                 thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
             } else if (mappedType === 'Ignorar Columna') {
@@ -145,7 +155,6 @@ function renderVirtualTable(originalData) {
 
                 // ETL Preview Injection
                 if (activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j) {
-                    if (i === startDataIndex) console.log(`[ETL RENDER] Pintando celda en fila ${i} para la columna activa ${j}`);
 
                     cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
 
