@@ -62,6 +62,8 @@ function renderMasterTableRows(fields) {
         const statusColor = isActivo ? 'text-blue-400 bg-blue-500/10' : 'text-slate-500 bg-slate-800';
         const rowOpacity = isActivo ? 'opacity-100' : 'opacity-50';
 
+        const idBadge = field.es_identificador ? `<i data-lucide="key" class="w-3 h-3 text-amber-500 inline ml-2" title="Identificador Único (DNI)"></i>` : '';
+
         const tr = document.createElement('tr');
         tr.className = `border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors ${rowOpacity}`;
         tr.innerHTML = `
@@ -71,7 +73,7 @@ function renderMasterTableRows(fields) {
                         <i data-lucide="database" class="w-4 h-4"></i>
                     </div>
                     <div>
-                        <p class="text-sm font-bold text-slate-200">${field.nombre_campo}</p>
+                        <p class="text-sm font-bold text-slate-200 flex items-center">${field.nombre_campo} ${idBadge}</p>
                         <p class="text-[10px] text-slate-500 font-mono tracking-wider">TIPO: ${field.tipo_dato}</p>
                     </div>
                 </div>
@@ -171,6 +173,7 @@ export function promptCreateMasterField() {
     document.getElementById('mfmName').value = '';
     document.getElementById('mfmType').value = '';
     document.getElementById('mfmReq').checked = false;
+    document.getElementById('mfmIsId').checked = false;
 
     document.getElementById('mfmTitle').innerText = 'Nuevo Campo';
     document.getElementById('mfmWarning').classList.add('hidden');
@@ -188,6 +191,7 @@ export function editMasterField(id) {
     document.getElementById('mfmName').value = field.nombre_campo;
     document.getElementById('mfmType').value = field.tipo_dato;
     document.getElementById('mfmReq').checked = field.es_requerido;
+    document.getElementById('mfmIsId').checked = field.es_identificador || false;
 
     document.getElementById('mfmTitle').innerText = 'Editar Campo';
     document.getElementById('mfmWarning').classList.remove('hidden');
@@ -208,6 +212,7 @@ export async function saveMasterFieldModal() {
     const name = document.getElementById('mfmName').value.trim();
     const type = document.getElementById('mfmType').value.trim();
     const isReq = document.getElementById('mfmReq').checked;
+    const isId = document.getElementById('mfmIsId').checked;
 
     errText.classList.add('hidden');
 
@@ -222,13 +227,13 @@ export async function saveMasterFieldModal() {
         btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
         if (window.lucide) window.lucide.createIcons();
 
-        const payload = { nombre_campo: name, tipo_dato: type, es_requerido: isReq };
+        const payload = { nombre_campo: name, tipo_dato: type, es_requerido: isReq, es_identificador: isId };
 
         if (id) {
             // EDIT MODE
             const originalField = masterTableFieldsLocal.find(f => f.id === id);
             // Skip network if identical
-            if (originalField && originalField.nombre_campo === name && originalField.tipo_dato === type && originalField.es_requerido === isReq) {
+            if (originalField && originalField.nombre_campo === name && originalField.tipo_dato === type && originalField.es_requerido === isReq && !!originalField.es_identificador === isId) {
                 closeMasterFieldModal();
                 return;
             }

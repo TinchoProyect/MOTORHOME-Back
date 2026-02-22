@@ -28,7 +28,7 @@ async function getMasterFields(req, res) {
 // POST /api/master-table/dictionary
 async function createMasterField(req, res) {
     try {
-        const { nombre_campo, tipo_dato, es_requerido } = req.body;
+        const { nombre_campo, tipo_dato, es_requerido, es_identificador } = req.body;
 
         // 1. Validación estricta
         if (!nombre_campo || !nombre_campo.trim()) {
@@ -44,7 +44,8 @@ async function createMasterField(req, res) {
         const payload = {
             nombre_campo: finalName,
             tipo_dato: finalTipoDato,
-            es_requerido: es_requerido === true || es_requerido === 'true'
+            es_requerido: es_requerido === true || es_requerido === 'true',
+            es_identificador: es_identificador === true || es_identificador === 'true'
         };
 
         const { data, error } = await supabase
@@ -79,7 +80,7 @@ async function createMasterField(req, res) {
 async function updateMasterField(req, res) {
     try {
         const { id } = req.params;
-        const { nombre_campo, tipo_dato, es_requerido } = req.body;
+        const { nombre_campo, tipo_dato, es_requerido, es_identificador } = req.body;
 
         if (!id) return res.status(400).json({ success: false, error: "ID de campo requerido" });
 
@@ -94,6 +95,9 @@ async function updateMasterField(req, res) {
         }
         if (es_requerido !== undefined) {
             updatePayload.es_requerido = es_requerido === true || es_requerido === 'true';
+        }
+        if (es_identificador !== undefined) {
+            updatePayload.es_identificador = es_identificador === true || es_identificador === 'true';
         }
 
         // Si el payload está vacío, no hacemos el hit a DB

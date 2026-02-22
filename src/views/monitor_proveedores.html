@@ -719,11 +719,23 @@
                     </div>
                 </div>
 
-                <div class="flex items-center gap-3 mt-6 p-4 bg-slate-950 border border-slate-800 rounded-lg">
-                    <input type="checkbox" id="mfmReq"
-                        class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer">
-                    <label for="mfmReq" class="text-xs text-slate-300 font-medium cursor-pointer">Marcar como propiedad
-                        obligatoria al extraer</label>
+                <div class="flex flex-col gap-3 mt-6 p-4 bg-slate-950 border border-slate-800 rounded-lg">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" id="mfmReq"
+                            class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                        <label for="mfmReq" class="text-xs text-slate-300 font-medium cursor-pointer">Marcar como
+                            propiedad obligatoria al extraer</label>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" id="mfmIsId"
+                            class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                        <label for="mfmIsId"
+                            class="text-xs text-slate-300 font-medium cursor-pointer flex items-center gap-2">
+                            Usar como Identificador Único (DNI)
+                            <i data-lucide="key" class="w-3 h-3 text-amber-500"></i>
+                        </label>
+                    </div>
                 </div>
 
                 <!-- Feedback block for validation errors inside modal -->
