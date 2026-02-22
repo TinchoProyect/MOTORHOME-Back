@@ -6,7 +6,6 @@ exports.getRules = async (req, res) => {
         const { data, error } = await supabase
             .from('reglas_limpieza')
             .select('*')
-            .eq('es_global', true)
             .order('creado_en', { ascending: true });
 
         if (error) throw error;

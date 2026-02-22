@@ -102,7 +102,7 @@ export function close() {
 export function addSelectedRule() {
     const selector = document.getElementById('vrwRuleSelector');
     if (!selector || !selector.value) {
-        if (typeof Swal !== 'undefined') Swal.fire({ icon: 'warning', title: 'Atención', text: 'Selecciona una transformación del catálogo primero.', toast: true, position: 'bottom-end', timer: 3000, showConfirmButton: false });
+        alert("Atención: Selecciona una transformación del catálogo primero.");
         return;
     }
 
@@ -199,18 +199,6 @@ export function applyMapping() {
         window.viewerETL.commitColumnMapping(activeContext.colIndex, activeContext.masterField, currentDraftPipeline);
     }
 
-    // Success Feedback and Close
-    if (typeof Swal !== 'undefined') {
-        const Toast = Swal.mixin({
-            toast: true,
-            position: "bottom-end",
-            showConfirmButton: false,
-            timer: 2000,
-            timerProgressBar: true
-        });
-        Toast.fire({ icon: "success", title: "Mapeo preparado" });
-    }
-
     close();
 }
 
@@ -222,3 +210,6 @@ window.viewerRuleWorkshop = {
     removeRule,
     applyMapping
 };
+
+// Auto-initialize on load
+initRuleWorkshop();

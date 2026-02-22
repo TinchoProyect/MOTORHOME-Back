@@ -118,10 +118,7 @@ async function openFileViewer(fileId, fileName, providerId = null) {
                 if (btnReset) btnReset.classList.remove('hidden');
             }
 
-            // [V4 Fix] Init Rule Workshop to fetch Catalog
-            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.init === 'function') {
-                window.viewerRuleWorkshop.init();
-            }
+            // [V4 Fix] Rule Workshop se auto-inicializa ahora.
 
             const response = await fetch(downloadUrl);
             if (!response.ok) throw new Error("Error descargando archivo.");
