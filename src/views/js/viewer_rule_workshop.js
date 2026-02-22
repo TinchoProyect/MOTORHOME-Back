@@ -25,7 +25,10 @@ async function loadRuleCatalog() {
         const response = await fetch(`${backendUrl}/api/mapping/rules`);
         if (response.ok) {
             catalogRules = await response.json();
+            console.log(`✅ [WORKSHOP] Catálogo de reglas cargado: ${catalogRules.length} reglas.`);
             renderRuleSelector();
+        } else {
+            console.error(`❌ [WORKSHOP] Error HTTP cargando reglas: ${response.status}`);
         }
     } catch (err) {
         console.error("Error cargando catálogo de reglas:", err);
@@ -98,18 +101,25 @@ export function close() {
 // PIPELINE MANAGEMENT
 export function addSelectedRule() {
     const selector = document.getElementById('vrwRuleSelector');
-    if (!selector || !selector.value) return;
+    if (!selector || !selector.value) {
+        if (typeof Swal !== 'undefined') Swal.fire({ icon: 'warning', title: 'Atención', text: 'Selecciona una transformación del catálogo primero.', toast: true, position: 'bottom-end', timer: 3000, showConfirmButton: false });
+        return;
+    }
 
     const ruleId = selector.value;
-    const ruleObj = catalogRules.find(r => r.id === ruleId);
+    // ruleId from DOM is a string, rule.id from DB is an int.
+    const ruleObj = catalogRules.find(r => r.id.toString() === ruleId);
 
     if (ruleObj) {
+        console.log(`➕ [WORKSHOP] Añadiendo Regla: ${ruleObj.nombre_regla} (ID: ${ruleObj.id})`);
         // We push a clone
         currentDraftPipeline.push({ ...ruleObj });
         renderPipeline();
         selector.value = ""; // reset
 
         triggerPreview();
+    } else {
+        console.error(`❌ [WORKSHOP] Regla ID ${ruleId} no encontrada en catálogo.`);
     }
 }
 

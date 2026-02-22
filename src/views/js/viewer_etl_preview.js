@@ -52,9 +52,26 @@ export function previewColumn(colIndex, pipeline) {
     const tableContainer = document.getElementById('excelContainer');
     if (!tableContainer) return;
 
-    const rows = tableContainer.querySelectorAll('tbody tr');
-    let countTotal = rows.length;
+    // 1. Math Calculation on the REAL DATA (Ignoring virtual DOM limits)
+    let countTotal = 0;
     let countRejected = 0;
+
+    // Attempt to read from global Viewer State
+    const realData = (window.viewerState && window.viewerState.data) ? window.viewerState.data : null;
+    if (realData && realData.length > 1) { // >1 to have rows beyond header
+        countTotal = realData.length - 1; // exclude header
+        for (let i = 1; i < realData.length; i++) {
+            const rawVal = (realData[i][colIndex] !== undefined && realData[i][colIndex] !== null) ? String(realData[i][colIndex]) : "";
+            const { rejected } = transformCell(rawVal, pipeline);
+            if (rejected) countRejected++;
+        }
+    } else {
+        // Fallback for some reason, though should never hit in active table
+        console.warn("[ETL PREVIEW] Warning: window.viewerState.data is missing, stats might be inaccurate.");
+    }
+
+    // 2. Visual Layer update (Only targeting rendered ghost rows, max ~50)
+    const rows = tableContainer.querySelectorAll('tbody tr');
 
     rows.forEach(row => {
         const cell = row.children[colIndex];
@@ -79,7 +96,6 @@ export function previewColumn(colIndex, pipeline) {
 
         // Visual "Before -> After" render
         if (rejected) {
-            countRejected++;
             // Fila Fantasma (Ghost Row)
             row.classList.add('opacity-30', 'grayscale', 'bg-red-500/10');
             cell.innerHTML = `
