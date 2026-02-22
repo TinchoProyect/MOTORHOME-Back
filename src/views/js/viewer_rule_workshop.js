@@ -215,14 +215,14 @@ export function applyMapping() {
     close();
 
     console.log('🛑 [VIGÍA] Botón Enlazar clickeado');
-    console.log('🛑 [VIGÍA] Verificando window.saveViewerConfig: ', typeof window.saveViewerConfig);
+    console.log('🛑 [VIGÍA] Verificando window.saveSimulationConfig: ', typeof window.saveSimulationConfig);
 
     try {
-        if (typeof window.saveViewerConfig === 'function') {
-            window.saveViewerConfig(null, false);
-            console.log('🛑 [VIGÍA] Llamada a saveViewerConfig ejecutada correctamente');
+        if (typeof window.saveSimulationConfig === 'function') {
+            window.saveSimulationConfig(null, false);
+            console.log('🛑 [VIGÍA] Llamada a saveSimulationConfig ejecutada correctamente');
         } else {
-            console.error('🛑 [VIGÍA FATAL] window.saveViewerConfig NO EXISTE en el entorno global');
+            console.error('🛑 [VIGÍA FATAL] window.saveSimulationConfig NO EXISTE en el entorno global');
         }
     } catch (error) {
         console.error('🛑 [VIGÍA FATAL] Error en guardado: ', error);

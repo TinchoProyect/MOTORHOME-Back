@@ -14,6 +14,31 @@ function renderVirtualTable(originalData) {
     if (container) {
         container.style.overflowY = 'auto';
         container.style.overflowX = 'auto';
+
+        // Estilizar scrollbar nativa generada dinámicamente
+        if (!document.getElementById('virtual-scrollbar-style')) {
+            const style = document.createElement('style');
+            style.id = 'virtual-scrollbar-style';
+            style.textContent = `
+                #excelContainer::-webkit-scrollbar {
+                    width: 12px;
+                    height: 12px;
+                }
+                #excelContainer::-webkit-scrollbar-track {
+                    background: #0f172a; /* bg-slate-900 */
+                    border-left: 1px solid #1e293b;
+                }
+                #excelContainer::-webkit-scrollbar-thumb {
+                    background: #334155; /* bg-slate-700 */
+                    border-radius: 6px;
+                    border: 3px solid #0f172a;
+                }
+                #excelContainer::-webkit-scrollbar-thumb:hover {
+                    background: #10b981; /* bg-emerald-500 */
+                }
+            `;
+            document.head.appendChild(style);
+        }
     }
 
     if (!data || data.length === 0) {
