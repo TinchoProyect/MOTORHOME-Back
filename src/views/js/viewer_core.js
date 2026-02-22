@@ -331,6 +331,8 @@ window.loadSavedConfiguration = async function () {
                     }
                 }
 
+                console.log('🛑 [VIGÍA HYDRATION] draftPipelines reconstruido: ', window.draftPipelines);
+
                 if (typeof window.renderVirtualTable === 'function') {
                     console.log('🛑 [VIGÍA LOAD] Rehidratando UI con reglas aplicadas...');
                     window.renderVirtualTable(currentSheetData);
