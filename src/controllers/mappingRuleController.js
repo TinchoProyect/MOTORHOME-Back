@@ -20,6 +20,8 @@ exports.getRules = async (req, res) => {
 // 2. GUARDAR PIPELINE DE MAPEO (Transaccional simulado)
 exports.saveMapping = async (req, res) => {
     try {
+        console.log("🛑 [BACKEND VIGÍA SAVE] Payload recibido:\n", JSON.stringify(req.body, null, 2));
+
         const { proveedor_id, nombre_hoja, mapeos } = req.body;
 
         if (!proveedor_id) {
@@ -36,6 +38,7 @@ exports.saveMapping = async (req, res) => {
             .maybeSingle();
 
         if (formatoError && formatoError.code !== 'PGRST116') {
+            console.error("🛑 [BACKEND FATAL] Error en Supabase buscando formato:", formatoError);
             throw formatoError;
         }
 
@@ -53,7 +56,10 @@ exports.saveMapping = async (req, res) => {
                 .select('id')
                 .single();
 
-            if (insertError) throw insertError;
+            if (insertError) {
+                console.error("🛑 [BACKEND FATAL] Error en Supabase creando formato on-the-fly:", insertError);
+                throw insertError;
+            }
             formato = newFormato;
         }
 
@@ -66,7 +72,10 @@ exports.saveMapping = async (req, res) => {
             .delete()
             .eq('formato_id', formatoId);
 
-        if (deleteError) throw deleteError;
+        if (deleteError) {
+            console.error("🛑 [BACKEND FATAL] Error en Supabase eliminando mapeos previos en cascada:", deleteError);
+            throw deleteError;
+        }
 
         if (!mapeos || mapeos.length === 0) {
             return res.status(200).json({ status: 'cleared', message: "Se ha limpiado el pipeline de esa hoja." });
@@ -86,7 +95,12 @@ exports.saveMapping = async (req, res) => {
                 .select('id')
                 .single();
 
-            if (mapErr) throw mapErr;
+            console.log("SUPABASE RESPONSE MAPEO_COLUMNAS:", mapeoRow, mapErr);
+
+            if (mapErr) {
+                console.error("🛑 [BACKEND FATAL] Error en Supabase insertando mapeo de columna:", mapErr);
+                throw mapErr;
+            }
 
             // INSERT Opcional: Tubería de reglas de esta columna
             if (m.reglas && m.reglas.length > 0) {
@@ -100,7 +114,12 @@ exports.saveMapping = async (req, res) => {
                     .from('mapeo_reglas_aplicadas')
                     .insert(reglasPayload);
 
-                if (ruleErr) throw ruleErr;
+                console.log("SUPABASE RESPONSE MAPEO_REGLAS_APLICADAS:", ruleErr);
+
+                if (ruleErr) {
+                    console.error("🛑 [BACKEND FATAL] Error en Supabase insertando reglas aplicadas:", ruleErr);
+                    throw ruleErr;
+                }
             }
         }
 
@@ -108,7 +127,7 @@ exports.saveMapping = async (req, res) => {
 
     } catch (error) {
         console.error("❌ [ETL] Error guardando mapeo:", error);
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message, stack: error.stack, fullError: error });
     }
 };
 
@@ -118,14 +137,24 @@ exports.getMapping = async (req, res) => {
         const { providerId, sheetName } = req.params;
         const hojaBusqueda = sheetName || 'Sheet1';
 
+        console.log("🛑 [BACKEND VIGÍA GET] Solicitando mapeo para:", { providerId, sheetName, hojaBusqueda });
+
         const { data: formato, error: formatoError } = await supabase
             .from('proveedor_formatos_guia')
-            .select('id, hoja_excel, offset_filas')
+            .select('id, hoja_excel')
             .eq('proveedor_id', providerId)
             .eq('hoja_excel', hojaBusqueda)
             .maybeSingle();
 
-        if (formatoError || !formato) {
+        console.log("🛑 [BACKEND VIGÍA GET] Resultado Formato Base:", { formato, formatoError });
+
+        if (formatoError) {
+            console.error("🛑 [BACKEND FATAL] Error buscando formato base en GET:", formatoError);
+            throw formatoError;
+        }
+
+        if (!formato) {
+            console.log("⚠️ [BACKEND VIGÍA GET] Formato no encontrado. Devolviendo array vacío.");
             return res.status(200).json({ status: 'not_found', mapeos: [] });
         }
 
@@ -145,7 +174,12 @@ exports.getMapping = async (req, res) => {
             .eq('formato_id', formato.id)
             .order('columna_origen_index', { ascending: true });
 
-        if (mapeoError) throw mapeoError;
+        console.log("🛑 [BACKEND VIGÍA GET] Resultado Mapeos Crudos:\n", JSON.stringify({ mapeos, mapeoError }, null, 2));
+
+        if (mapeoError) {
+            console.error("🛑 [BACKEND FATAL] Error buscando mapeos anidados en GET:", mapeoError);
+            throw mapeoError;
+        }
 
         // Ordenar reglas internas por orden_ejecucion (PostgREST no siempre ordena los nested items directamente de forma limpia)
         if (mapeos) {

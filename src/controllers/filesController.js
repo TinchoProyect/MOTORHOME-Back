@@ -875,13 +875,8 @@ async function getTemplateConfig(req, res) {
         // 1. Buscamos coincidencia exacta de hoja
         let bestMatch = data.find(t => t.hoja_excel === sheetName);
 
-        // 2. Si no, buscamos una genérica (hoja_excel es null o vacía)
-        if (!bestMatch) {
-            bestMatch = data.find(t => !t.hoja_excel);
-        }
-
-        // 3. [FIX] Strict Mode: Solo devolvemos si hay coincidencia EXACTA de hoja
-        // Eliminamos el fallback "bestMatch = data[0]" para evitar confussión entre hojas.
+        // 2. [FIX] Strict Mode: Solo devolvemos si hay coincidencia EXACTA de hoja
+        // Eliminamos los fallbacks genéricos para garantizar la independencia total entre múltiples hojas (V7).
 
         if (bestMatch) {
             console.log(`   ✅ Plantilla encontrada: ${bestMatch.nombre_formato} (Offset: ${bestMatch.fila_encabezado}, ${bestMatch.columna_encabezado})`);
