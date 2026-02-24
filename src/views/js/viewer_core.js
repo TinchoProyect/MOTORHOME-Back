@@ -33,6 +33,27 @@ var simulationModeProcessed = false;
 // --- 4. SIMULATION STATE (Cache de Previsualización) ---
 var currentSimData = [];
 var currentDisplayConfig = [];
+window.isGlobalPreviewEnabled = false;
+
+window.toggleGlobalPreview = function () {
+    window.isGlobalPreviewEnabled = !window.isGlobalPreviewEnabled;
+    const btn = document.getElementById('btnGlobalPreview');
+    if (btn) {
+        if (window.isGlobalPreviewEnabled) {
+            btn.classList.add('bg-blue-600', 'text-white', 'border-blue-500');
+            btn.classList.remove('bg-slate-800', 'text-slate-400');
+        } else {
+            btn.classList.remove('bg-blue-600', 'text-white', 'border-blue-500');
+            btn.classList.add('bg-slate-800', 'text-slate-400');
+        }
+    }
+
+    // Forzar repintado si hay datos cargados
+    if (window.renderVirtualTable && currentSheetData && currentSheetData.length > 0) {
+        console.log("🔄 [ViewerCore] Repintando tabla por cambio de Modo Auditoría:", window.isGlobalPreviewEnabled);
+        window.renderVirtualTable(currentSheetData);
+    }
+};
 
 // --- 5. STATE RESET PROTOCOL ---
 window.resetViewerState = function () {

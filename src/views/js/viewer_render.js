@@ -182,28 +182,39 @@ function renderVirtualTable(originalData) {
                 if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
                 if (window.offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
 
-                // ETL Preview Injection
-                if (activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j) {
+                // ETL Preview Injection & Global Audit Mode
+                const isWorkshopOpen = activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j;
+                const savedPipeline = window.draftPipelines && window.draftPipelines[j] ? window.draftPipelines[j].rules : null;
+                const isGlobalAuditOn = window.isGlobalPreviewEnabled && savedPipeline && savedPipeline.length > 0;
 
-                    cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
+                if (isWorkshopOpen || isGlobalAuditOn) {
 
-                    if (activeEtlState.pipeline && activeEtlState.pipeline.length > 0 && window.viewerETL) {
+                    if (isWorkshopOpen) {
+                        cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
+                    } else {
+                        // Estilo sutil para auditoría global
+                        cellClass += " bg-emerald-950/20 border-x border-emerald-500/20";
+                    }
+
+                    const activePipeline = isWorkshopOpen ? activeEtlState.pipeline : savedPipeline;
+
+                    if (activePipeline && activePipeline.length > 0 && window.viewerETL) {
                         const rawVal = String(cellVal);
-                        const { result, rejected } = window.viewerETL.transformCell(rawVal, activeEtlState.pipeline);
+                        const { result, rejected } = window.viewerETL.transformCell(rawVal, activePipeline);
 
                         if (rejected) {
-                            cellClass += " opacity-30 grayscale bg-red-500/10";
+                            cellClass += " opacity-30 grayscale bg-red-500/10 text-red-400/50";
                             cellVal = `
-                                <div class="flex items-center gap-2 line-through text-red-400">
+                                <div class="flex items-center gap-2 line-through text-red-500/60">
                                     <span class="truncate" title="${rawVal}">${rawVal}</span>
-                                    <i data-lucide="ban" class="w-4 h-4 flex-shrink-0"></i>
+                                    <i data-lucide="ban" class="w-3 h-3 flex-shrink-0"></i>
                                 </div>
                             `;
                         } else if (result !== rawVal) {
                             cellVal = `
                                 <div class="flex flex-col gap-1 py-1">
                                     <span class="text-[10px] text-slate-500 line-through truncate" title="${rawVal}">${rawVal}</span>
-                                    <div class="flex items-center gap-2 text-emerald-400 font-bold bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900/50">
+                                    <div class="flex items-center gap-2 text-emerald-400 font-bold ${isWorkshopOpen ? 'bg-emerald-950/30' : 'bg-emerald-950/10'} px-2 py-0.5 rounded border ${isWorkshopOpen ? 'border-emerald-900/50' : 'border-emerald-900/20'}">
                                         <i data-lucide="arrow-down-right" class="w-3 h-3 flex-shrink-0"></i>
                                         <span class="truncate text-xs" title="${result}">${result || '<vacío>'}</span>
                                     </div>
