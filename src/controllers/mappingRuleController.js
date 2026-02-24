@@ -134,10 +134,10 @@ exports.saveMapping = async (req, res) => {
 // 3. OBTENER PIPELINE DE MAPEO (Retrieval)
 exports.getMapping = async (req, res) => {
     try {
+        console.log("🛑 [BACKEND GET VIGÍA] Parámetros de búsqueda recibidos:", req.query, req.body, req.params);
+
         const { providerId, sheetName } = req.params;
         const hojaBusqueda = sheetName || 'Sheet1';
-
-        console.log("🛑 [BACKEND VIGÍA GET] Solicitando mapeo para:", { providerId, sheetName, hojaBusqueda });
 
         const { data: formato, error: formatoError } = await supabase
             .from('proveedor_formatos_guia')
@@ -146,7 +146,7 @@ exports.getMapping = async (req, res) => {
             .eq('hoja_excel', hojaBusqueda)
             .maybeSingle();
 
-        console.log("🛑 [BACKEND VIGÍA GET] Resultado Formato Base:", { formato, formatoError });
+        console.log("🛑 [BACKEND GET VIGÍA] Resultado búsqueda Formato Base:", formato, formatoError);
 
         if (formatoError) {
             console.error("🛑 [BACKEND FATAL] Error buscando formato base en GET:", formatoError);
@@ -174,7 +174,7 @@ exports.getMapping = async (req, res) => {
             .eq('formato_id', formato.id)
             .order('columna_origen_index', { ascending: true });
 
-        console.log("🛑 [BACKEND VIGÍA GET] Resultado Mapeos Crudos:\n", JSON.stringify({ mapeos, mapeoError }, null, 2));
+        console.log("🛑 [BACKEND GET VIGÍA] Resultado búsqueda Mapeos:", mapeos, mapeoError);
 
         if (mapeoError) {
             console.error("🛑 [BACKEND FATAL] Error buscando mapeos anidados en GET:", mapeoError);
