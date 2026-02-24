@@ -16,6 +16,12 @@ export function transformCell(rawValue, pipeline) {
         if (rule.tipo_regex === 'SANITIZER_NUMERIC') {
             currentValue = currentValue.replace(/[^0-9.,-]/g, '');
         }
+        else if (rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
+            if (/[^0-9|/]/.test(currentValue)) {
+                currentValue = "";
+                isRejected = true;
+            }
+        }
         else if (rule.tipo_regex === 'FILTER_EMPTY') {
             if (currentValue === "") isRejected = true;
         }

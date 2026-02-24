@@ -341,6 +341,11 @@ function generatePreview() {
                                 if (rule.type === 'sanitize_numbers') {
                                     currentVal = strVal.replace(/[^0-9]/g, '');
                                 }
+                                else if (rule.type === 'SANITIZER_NUMERIC_PIPE' || rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
+                                    if (/[^0-9|/]/.test(strVal)) {
+                                        currentVal = "";
+                                    }
+                                }
                                 else if (rule.type === 'sanitize') {
                                     const fallback = rule.config?.replace_with || "0,00";
                                     let shouldReplace = false;
@@ -434,6 +439,11 @@ function generatePreview() {
                     // Apply Transforms
                     if (rule.type === 'sanitize_numbers') {
                         cellValue = strVal.replace(/[^0-9]/g, '');
+                    }
+                    else if (rule.type === 'SANITIZER_NUMERIC_PIPE' || rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
+                        if (/[^0-9|/]/.test(strVal)) {
+                            cellValue = "";
+                        }
                     }
                     else if (rule.type === 'sanitize') {
                         const fallback = rule.config?.replace_with || ""; // Empty string for filter check
