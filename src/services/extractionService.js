@@ -219,6 +219,8 @@ async function processFile(fileId, providerId, options = {}) {
                 });
                 return obj;
             });
+            console.log("🛑 [VIGÍA BACKEND] Filas crudas leídas del Excel (fullData):", fullData.length);
+
 
             if (existingTemplate) {
                 return {

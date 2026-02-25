@@ -164,6 +164,7 @@ async function openFileViewer(fileId, fileName, providerId = null) {
                     loader.classList.add('hidden');
                 } else if (type === 'SHEET_DATA_READY') {
                     currentSheetData = payload.data;
+                    console.log("🛑 [VIGÍA FRONTEND] Filas crudas recibidas del Worker (sheet_to_json):", currentSheetData.length);
                     renderVirtualTable(currentSheetData);
 
                     // [CORRECCIÓN FINAL] INTENTAR CARGAR MEMORIA AUTOMÁTICAMENTE
