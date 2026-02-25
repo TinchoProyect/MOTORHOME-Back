@@ -65,8 +65,9 @@ function renderVirtualTable(originalData) {
     container.appendChild(scrollerContent);
 
     const table = document.createElement('table');
-    table.className = 'w-full border-collapse text-[11px] font-mono absolute top-0 left-0';
+    table.className = 'border-collapse text-[11px] font-mono absolute top-0 left-0';
     table.style.tableLayout = 'fixed';
+    table.style.width = '0px'; // Crucial para que el contenido no impida achicar la columna
     scrollerContent.appendChild(table);
 
     const thead = document.createElement('thead');
@@ -136,13 +137,18 @@ function renderVirtualTable(originalData) {
         const isHeaderMapping = (window.mappingMode || typeof mappingMode !== 'undefined' && mappingMode);
         const clickAttr = (!isHeaderMapping && window.offsetSelectionMode) ? `onclick="handleOffsetClick(0, ${j})"` : '';
 
+        // Globals for resize parsing
+        const colWidth = window.currentColWidths && window.currentColWidths[j] ? window.currentColWidths[j] : 150;
+        const resizerHtml = `<div class="resizer-handle" onmousedown="window.initColResize(event, ${j}, this.parentElement)" style="position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:70; user-select:none; background:transparent; transition:background 0.2s;" onmouseover="this.style.background='rgba(59,130,246,0.3)'" onmouseout="this.style.background='transparent'"></div>`;
+
         // ETL Preview Injection - Elevate Active Column
         if (activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j) {
             thClass = thClass.replace(/z-20/g, ''); // Remove sticky conflict
             thClass += " relative z-[60] bg-slate-800 shadow-[0_-5px_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
         }
 
-        headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px" ${clickAttr}>${thContent}</th>`;
+        thClass += " relative"; // Add relative so the absolute resizer handles position correctly
+        headerHtml += `<th id="th-${j}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" ${clickAttr}>${thContent}${resizerHtml}</th>`;
     }
     headerHtml += '</tr>';
     thead.innerHTML = headerHtml;
@@ -619,5 +625,70 @@ function renderSimulationTable(data) {
 
 window.renderSimulationTable = renderSimulationTable;
 
+// --- COL RESIZE LOGIC (Virtual Scroller D&D) ---
+let isResizing = false;
+let resizeColIndex = -1;
+let resizeStartX = 0;
+let resizeStartWidth = 0;
+let resizeTargetTh = null;
+let resizeRAF = null;
+
+window.initColResize = function (e, colIndex, thEl) {
+    e.preventDefault();
+    e.stopPropagation(); // Avoid conflicts with other click handlers
+
+    isResizing = true;
+    resizeColIndex = colIndex;
+    resizeStartX = e.pageX;
+    resizeStartWidth = thEl.offsetWidth;
+    resizeTargetTh = thEl;
+
+    // Add visual feedback to the body (prevent selection across UI)
+    document.body.classList.add('select-none');
+    document.body.style.cursor = 'col-resize';
+
+    document.addEventListener('mousemove', onColMouseMove);
+    document.addEventListener('mouseup', onColMouseUp);
+};
+
+function onColMouseMove(e) {
+    if (!isResizing || !resizeTargetTh) return;
+
+    // Throttling with requestAnimationFrame for 60FPS DOM updates
+    if (resizeRAF) cancelAnimationFrame(resizeRAF);
+
+    resizeRAF = requestAnimationFrame(() => {
+        const diff = e.pageX - resizeStartX;
+        const newWidth = Math.max(30, resizeStartWidth + diff); // Minimum 30px
+
+        // Surgical Update on Header
+        resizeTargetTh.style.width = newWidth + 'px';
+        resizeTargetTh.style.minWidth = newWidth + 'px';
+        resizeTargetTh.style.maxWidth = newWidth + 'px';
+    });
+}
+
+function onColMouseUp(e) {
+    if (!isResizing) return;
+    isResizing = false;
+
+    if (resizeRAF) cancelAnimationFrame(resizeRAF);
+
+    document.body.classList.remove('select-none');
+    document.body.style.cursor = '';
+
+    document.removeEventListener('mousemove', onColMouseMove);
+    document.removeEventListener('mouseup', onColMouseUp);
+
+    // Save strictly to memory
+    if (!window.currentColWidths) window.currentColWidths = {};
+    window.currentColWidths[resizeColIndex] = parseInt(resizeTargetTh.style.width, 10);
+
+    // Persist to multi-sheet store safely
+    if (window.currentSheetName && window.saveSheetState) {
+        window.saveSheetState(window.currentSheetName);
+    }
+}
+
 // [VIGÍA DE CONTROL]
-console.log("🎨 [ViewerRender] Motor Gráfico Iniciado.");
+console.log("🎨 [ViewerRender] Motor Gráfico Iniciado (Con Drag & Drop Resizing v1.0).");

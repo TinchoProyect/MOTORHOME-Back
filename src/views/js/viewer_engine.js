@@ -325,7 +325,8 @@ function saveSheetState(sheetName) {
     // Guardamos el draftPipelines actual para esta hoja aislando memoria
     sheetConfigStore[sheetName] = {
         offset: window.currentOffset,
-        pipelines: window.draftPipelines ? JSON.parse(JSON.stringify(window.draftPipelines)) : {}
+        pipelines: window.draftPipelines ? JSON.parse(JSON.stringify(window.draftPipelines)) : {},
+        colWidths: window.currentColWidths ? JSON.parse(JSON.stringify(window.currentColWidths)) : {}
     };
 }
 
@@ -333,6 +334,7 @@ function loadSheetState(sheetName) {
     window.currentOffset = null;
     window.draftPipelines = {};
     window.offsetSelectionMode = false;
+    window.currentColWidths = {}; // Global para Drag&Drop Resizer
 
     // Variables legacy reset
     window.columnMapping = {};
@@ -342,6 +344,7 @@ function loadSheetState(sheetName) {
     if (config) {
         window.currentOffset = config.offset;
         window.draftPipelines = config.pipelines || {};
+        window.currentColWidths = config.colWidths || {};
     }
 }
 
