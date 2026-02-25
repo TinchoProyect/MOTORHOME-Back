@@ -173,7 +173,22 @@ function renderVirtualTable(originalData) {
 
         for (let i = startDataIndex; i < endIndex; i++) {
             const row = data[i] || [];
-            rowsHtml += `<tr style="height: ${ROW_HEIGHT}px;" class="hover:bg-slate-800/50">`;
+
+            // --- INJECTION: LIVE SEARCH FILTER FOR CUSTOM RULES ---
+            let rowStyle = `height: ${ROW_HEIGHT}px;`;
+            let rowClass = "hover:bg-slate-800/50";
+
+            if (window.activeCustomSearch && window.activeCustomSearch.text && window.activeCustomSearch.colIndex !== null) {
+                const searchTarget = String(row[window.activeCustomSearch.colIndex] || '').toLowerCase();
+                const searchQuery = window.activeCustomSearch.text.toLowerCase();
+                if (!searchTarget.includes(searchQuery)) {
+                    // Hide rows that don't match the live search
+                    rowStyle += " display: none;";
+                }
+            }
+
+            rowsHtml += `<tr style="${rowStyle}" class="${rowClass}">`;
+
             for (let j = 0; j < maxCols; j++) {
                 let cellVal = row[j] !== undefined ? row[j] : '';
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';

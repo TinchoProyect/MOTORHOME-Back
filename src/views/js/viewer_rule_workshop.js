@@ -14,6 +14,9 @@ let activeContext = {
 // Available Rules Catalog (Fetched from API)
 let catalogRules = [];
 
+// Live Search State for Custom Rules
+window.activeCustomSearch = { text: "", colIndex: null };
+
 export async function initRuleWorkshop() {
     console.log('🔗 [WORKSHOP] Inicializado');
     await loadRuleCatalog();
@@ -22,7 +25,13 @@ export async function initRuleWorkshop() {
 async function loadRuleCatalog() {
     try {
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const response = await fetch(`${backendUrl}/api/mapping/rules`);
+
+        let queryParams = "";
+        if (window.globalContext && window.globalContext.providerId && window.currentSheetName) {
+            queryParams = `?providerId=${window.globalContext.providerId}&sheetName=${encodeURIComponent(window.currentSheetName)}`;
+        }
+
+        const response = await fetch(`${backendUrl}/api/mapping/rules${queryParams}`);
         if (response.ok) {
             catalogRules = await response.json();
             console.log(`✅ [WORKSHOP] Catálogo de reglas cargado: ${catalogRules.length} reglas.`);
@@ -98,6 +107,14 @@ export function close() {
     if (panel) {
         panel.classList.add('translate-x-full', 'opacity-0');
         setTimeout(() => panel.classList.add('hidden'), 300);
+    }
+
+    // Reset live search and force clean render
+    if (window.activeCustomSearch && window.activeCustomSearch.text !== "") {
+        window.activeCustomSearch.text = "";
+        if (typeof renderVirtualTable === 'function' && window.currentSheetData) {
+            renderVirtualTable(window.currentSheetData);
+        }
     }
 
     // Restore excelContainer width
@@ -229,6 +246,52 @@ export function applyMapping() {
     }
 }
 
+export async function createLocalRule(searchStr, replaceStr, isRegex = false) {
+    if (!window.globalContext || !window.globalContext.providerId || !window.currentSheetName) {
+        alert("Falta contexto del proveedor u hoja actual.");
+        return false;
+    }
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const searchFormatted = isRegex ? searchStr : searchStr;
+
+        const payload = {
+            proveedor_id: window.globalContext.providerId,
+            nombre_hoja: window.currentSheetName,
+            nombre_regla: `Reemplazo Local: ${searchStr} -> ${replaceStr}`,
+            descripcion: 'Regla personalizada local',
+            tipo_regex: `CUSTOM_REPLACE:${searchFormatted}|||${replaceStr}`
+        };
+
+        const response = await fetch(`${backendUrl}/api/mapping/custom`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            console.log(`✅ [WORKSHOP] Regla local creada:`, data.rule);
+
+            await loadRuleCatalog();
+
+            if (data.rule) {
+                currentDraftPipeline.push({ ...data.rule });
+                renderPipeline();
+                triggerPreview();
+            }
+            return true;
+        } else {
+            console.error(`❌ [WORKSHOP] Error HTTP guardando regla custom: ${response.status}`);
+            return false;
+        }
+    } catch (err) {
+        console.error("Error creando regla local:", err);
+        return false;
+    }
+}
+
 export function getActiveState() {
     return {
         isOpen: isPanelOpen,
@@ -244,7 +307,8 @@ window.viewerRuleWorkshop = {
     addSelectedRule,
     removeRule,
     applyMapping,
-    getActiveState
+    getActiveState,
+    createLocalRule
 };
 
 // Auto-initialize on load

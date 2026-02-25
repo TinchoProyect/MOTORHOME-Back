@@ -39,6 +39,31 @@ export function transformCell(rawValue, pipeline) {
             const packageRegex = /\s+(\d+\s*x\s*\d+|x\s*\d+|por\s+\d+).*$/i;
             currentValue = currentValue.replace(packageRegex, '');
         }
+        else if (rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:')) {
+            try {
+                // Formato: CUSTOM_REPLACE:buscar|||reemplazar
+                const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
+                const parts = payload.split('|||');
+                const searchStr = parts[0] || '';
+                let replaceStr = parts[1] || '';
+
+                // Si buscar está envuelto en / /, lo tratamos como Regex, sino literal global.
+                if (searchStr.startsWith('/') && searchStr.lastIndexOf('/') > 0) {
+                    const flags = searchStr.slice(searchStr.lastIndexOf('/') + 1);
+                    const pattern = searchStr.slice(1, searchStr.lastIndexOf('/'));
+                    const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
+                    currentValue = currentValue.replace(regex, replaceStr);
+                } else {
+                    if (replaceStr === '|||SPLIT|||') {
+                        currentValue = currentValue.split(searchStr).join('');
+                    } else {
+                        currentValue = currentValue.split(searchStr).join(replaceStr);
+                    }
+                }
+            } catch (e) {
+                console.warn(`[ETL] Error procesando regla custom ${rule.nombre_regla}:`, e);
+            }
+        }
         else {
             // Regla Regex Dinámica
             try {

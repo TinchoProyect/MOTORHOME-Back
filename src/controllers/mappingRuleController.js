@@ -3,10 +3,33 @@ const supabase = require('../config/supabaseClient');
 // 1. OBTENER REGLAS DISPONIBLES (Catálogo)
 exports.getRules = async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('reglas_limpieza')
-            .select('*')
-            .order('creado_en', { ascending: true });
+        const { providerId, sheetName } = req.query;
+        let formatoId = null;
+
+        // Intentar resolver formato_id si envían context actual
+        if (providerId && sheetName) {
+            const hojaBusqueda = sheetName || 'Sheet1';
+            const { data: formato } = await supabase
+                .from('proveedor_formatos_guia')
+                .select('id')
+                .eq('proveedor_id', providerId)
+                .eq('hoja_excel', hojaBusqueda)
+                .maybeSingle();
+
+            if (formato) {
+                formatoId = formato.id;
+            }
+        }
+
+        let query = supabase.from('reglas_limpieza').select('*');
+
+        if (formatoId) {
+            query = query.or(`es_global.eq.true,formato_id.eq.${formatoId}`);
+        } else {
+            query = query.eq('es_global', true);
+        }
+
+        const { data, error } = await query.order('creado_en', { ascending: true });
 
         if (error) throw error;
 
@@ -193,6 +216,63 @@ exports.getMapping = async (req, res) => {
         return res.status(200).json({ status: 'found', formato, mapeos });
     } catch (error) {
         console.error("❌ [ETL] Error obteniendo mapeo:", error);
+        return res.status(500).json({ error: error.message });
+    }
+};
+
+// 4. CREAR REGLA PERSONALIZADA (Local)
+exports.createCustomRule = async (req, res) => {
+    try {
+        const { nombre_regla, descripcion, tipo_regex, proveedor_id, nombre_hoja } = req.body;
+
+        if (!proveedor_id || !nombre_hoja || !tipo_regex) {
+            return res.status(400).json({ error: "Faltan parámetros requeridos para crear una regla local." });
+        }
+
+        const hojaBusqueda = nombre_hoja || 'Sheet1';
+        let { data: formato, error: formatoError } = await supabase
+            .from('proveedor_formatos_guia')
+            .select('id')
+            .eq('proveedor_id', proveedor_id)
+            .eq('hoja_excel', hojaBusqueda)
+            .maybeSingle();
+
+        if (formatoError && formatoError.code !== 'PGRST116') {
+            throw formatoError;
+        }
+
+        if (!formato) {
+            const { data: newFormato, error: insertError } = await supabase
+                .from('proveedor_formatos_guia')
+                .insert({
+                    proveedor_id: proveedor_id,
+                    hoja_excel: hojaBusqueda,
+                    nombre_formato: `Formato Híbrido - ${hojaBusqueda}`
+                })
+                .select('id')
+                .single();
+
+            if (insertError) throw insertError;
+            formato = newFormato;
+        }
+
+        const { data: ruleData, error: ruleError } = await supabase
+            .from('reglas_limpieza')
+            .insert({
+                nombre_regla: nombre_regla || 'Regla Personalizada',
+                descripcion: descripcion || 'Regla local',
+                tipo_regex: tipo_regex,
+                es_global: false,
+                formato_id: formato.id
+            })
+            .select('*')
+            .single();
+
+        if (ruleError) throw ruleError;
+
+        return res.status(201).json({ status: 'created', rule: ruleData });
+    } catch (error) {
+        console.error("❌ [ETL] Error creando regla custom:", error);
         return res.status(500).json({ error: error.message });
     }
 };
