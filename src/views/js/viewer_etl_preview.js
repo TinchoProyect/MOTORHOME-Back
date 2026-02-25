@@ -35,6 +35,10 @@ export function transformCell(rawValue, pipeline) {
                 isRejected = true;
             }
         }
+        else if (rule.tipo_regex === 'EXTRACT_DESCRIPTION_PACKAGE') {
+            const packageRegex = /\s+(\d+\s*x\s*\d+|x\s*\d+|por\s+\d+).*$/i;
+            currentValue = currentValue.replace(packageRegex, '');
+        }
         else {
             // Regla Regex Dinámica
             try {
