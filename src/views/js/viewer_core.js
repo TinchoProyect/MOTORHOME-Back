@@ -23,6 +23,7 @@ window.globalContext = {
 
 // --- 3. MAPPING & RULES STATE (Lógica de Negocio) ---
 var mappingMode = false;
+window.virtualColumns = []; // V4.1 Proxy Visual
 var columnMapping = {}; // { colIndex: "TerminoID" }
 var offsetSelectionMode = false;
 var currentOffset = { row: 0, col: 0 };
@@ -65,6 +66,7 @@ window.resetViewerState = function () {
 
     // Variables de Mapeo
     mappingMode = false;
+    window.virtualColumns = [];
     columnMapping = {};
     currentOffset = { row: 0, col: 0 };
     processingRules = {};
@@ -143,10 +145,21 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
 
         if (hasPipelines) {
             const mapeosPayload = [];
-            for (const [colIndexStr, config] of Object.entries(window.draftPipelines)) {
+            for (const [vColId, config] of Object.entries(window.draftPipelines)) {
+                // Backward compatibility & Virtual Columns support
+                let dataIdx;
+                if (window.virtualColumns && window.virtualColumns.length > 0) {
+                    const vCol = window.virtualColumns.find(v => v.id === vColId);
+                    dataIdx = vCol ? vCol.dataIdx : parseInt(vColId.replace('col_', ''));
+                } else {
+                    dataIdx = parseInt(vColId.replace('col_', ''));
+                }
+
+                if (isNaN(dataIdx)) dataIdx = 0;
+
                 mapeosPayload.push({
-                    columna_origen_index: parseInt(colIndexStr),
-                    columna_origen_nombre: config.colName || `Columna ${colIndexStr}`,
+                    columna_origen_index: dataIdx, // This is the physical index for the DB
+                    columna_origen_nombre: config.colName || `Columna ${dataIdx}`,
                     campo_maestro_id: config.masterField.id,
                     reglas: (config.rules || []).map(r => r.id)
                 });
@@ -299,11 +312,19 @@ window.loadSavedConfiguration = async function () {
 
                 // Aplicar Mapping V3 Clásico (Renombrado de Columnas)
                 if (resultV3.data.reglas_mapeo) {
-                    columnMapping = resultV3.data.reglas_mapeo;
+                    columnMapping = {};
+                    Object.keys(resultV3.data.reglas_mapeo).forEach(oldKey => {
+                        const vColId = oldKey.startsWith('col_') ? oldKey : `col_${oldKey}`;
+                        columnMapping[vColId] = resultV3.data.reglas_mapeo[oldKey];
+                    });
                 }
 
                 if (resultV3.data.reglas_procesamiento) {
-                    processingRules = resultV3.data.reglas_procesamiento;
+                    processingRules = {};
+                    Object.keys(resultV3.data.reglas_procesamiento).forEach(oldKey => {
+                        const vColId = oldKey.startsWith('col_') ? oldKey : `col_${oldKey}`;
+                        processingRules[vColId] = resultV3.data.reglas_procesamiento[oldKey];
+                    });
                 }
 
                 loadedAnything = true;
@@ -341,7 +362,26 @@ window.loadSavedConfiguration = async function () {
                             descripcion: ""
                         }));
 
-                        window.draftPipelines[m.columna_origen_index] = {
+                        const vColId = `col_${m.columna_origen_index}`; // Map DB integer to valid proxy string
+
+                        // Reconstrucción inteligente de clones visuales (si hay más de 1 regla a la misma columna)
+                        let activeVColId = vColId;
+                        if (window.draftPipelines[activeVColId]) {
+                            const dataIdx = m.columna_origen_index;
+                            let cloneCounter = 1;
+                            activeVColId = `${vColId}_clone_${cloneCounter}`;
+                            while (window.draftPipelines[activeVColId] || (window.virtualColumns && window.virtualColumns.find(v => v.id === activeVColId))) {
+                                cloneCounter++;
+                                activeVColId = `${vColId}_clone_${cloneCounter}`;
+                            }
+                            // Inyectar al arreglo de columnas virtuales para que se dibuje
+                            if (window.virtualColumns) {
+                                const idx = window.virtualColumns.findIndex(v => v.id === vColId);
+                                if (idx !== -1) window.virtualColumns.splice(idx + 1, 0, { id: activeVColId, dataIdx: dataIdx });
+                            }
+                        }
+
+                        window.draftPipelines[activeVColId] = {
                             masterField: { id: m.campo_maestro_id, nombre_campo: `Campo ID ${m.campo_maestro_id.substring(0, 4)}` },
                             colName: m.columna_origen_nombre,
                             rules: rulesArr
@@ -349,7 +389,7 @@ window.loadSavedConfiguration = async function () {
 
                         // Aplicar visualmente
                         if (window.viewerETL && window.viewerETL.commitColumnMapping) {
-                            window.viewerETL.commitColumnMapping(m.columna_origen_index, window.draftPipelines[m.columna_origen_index].masterField, rulesArr);
+                            window.viewerETL.commitColumnMapping(activeVColId, window.draftPipelines[activeVColId].masterField, rulesArr);
                         }
                     }
 

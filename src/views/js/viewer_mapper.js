@@ -98,12 +98,14 @@ export function activatePointerMode(masterField) {
 
         const colIndex = Array.from(tr.children).indexOf(cell);
 
-        // Determinar nombre de la columna buscando el th
+        // Determinar nombre y vColId buscándolo en el th
+        let vColId = `col_${colIndex}`;
         let colName = `Columna ${colIndex}`;
         const thead = tableContainer.querySelector('thead');
         if (thead) {
             const th = thead.querySelectorAll('th')[colIndex];
             if (th) {
+                vColId = th.dataset.colId || vColId;
                 const spanNodes = th.querySelectorAll('span');
                 if (spanNodes.length > 0) {
                     colName = spanNodes[0].innerText || colName;
@@ -113,7 +115,7 @@ export function activatePointerMode(masterField) {
             }
         }
 
-        executeMappingPhaseTwo(colIndex, colName);
+        executeMappingPhaseTwo(vColId, colName, colIndex);
     };
 
     // Pulse effect on wrapper
@@ -121,17 +123,17 @@ export function activatePointerMode(masterField) {
 }
 
 // PHASE 2: Click on Excel Column
-function executeMappingPhaseTwo(colIndex, colName) {
+function executeMappingPhaseTwo(vColId, colName, visualColIndex) {
     if (!selectedMasterField) return;
-    console.log(`🎯 [MAPPER] Phase 2: Enlazando Columna ${colIndex} a ${selectedMasterField.nombre_campo}`);
+    console.log(`🎯 [MAPPER] Phase 2: Enlazando Columna visual ${vColId} a ${selectedMasterField.nombre_campo}`);
 
     // UI FOCUS MODE
     const tableContainer = document.getElementById('excelContainer');
-    enterFocusMode(tableContainer, colIndex);
+    enterFocusMode(tableContainer, visualColIndex);
 
     // CALL RIGHT PANEL (Taller de Reglas)
     if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.open === 'function') {
-        window.viewerRuleWorkshop.open(selectedMasterField, colIndex, colName);
+        window.viewerRuleWorkshop.open(selectedMasterField, vColId, colName);
     } else {
         console.warn("⚠️ Taller de Reglas no encontrado. Abortando Modo Foco.");
         cancelMapping();

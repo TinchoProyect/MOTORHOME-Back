@@ -480,7 +480,7 @@ window.ViewerUI = (function () {
 
   // --- [PHASE 5: RULES MANAGER POP-OVER] ---
 
-  function renderRulesManager(colIndex, anchorElement) {
+  function renderRulesManager(vColId, anchorElement) {
     // 1. Remove existing if any
     const existing = document.getElementById("rulesManagerPopover");
     if (existing) existing.remove();
@@ -524,10 +524,10 @@ window.ViewerUI = (function () {
 
     // Ensure array
     let currentRules = [];
-    if (processingRules[colIndex]) {
-      currentRules = Array.isArray(processingRules[colIndex])
-        ? processingRules[colIndex]
-        : [processingRules[colIndex]];
+    if (processingRules[vColId]) {
+      currentRules = Array.isArray(processingRules[vColId])
+        ? processingRules[vColId]
+        : [processingRules[vColId]];
     }
 
     // Helper to refresh and re-anchor
@@ -539,9 +539,9 @@ window.ViewerUI = (function () {
       // 2. Find New Anchor (The button was destroyed and recreated)
       setTimeout(() => {
         const newAnchor = document.querySelector(
-          `#simTableScrollArea button[onclick*="ViewerUI.openRulesManager(${colIndex},"]`,
+          `#simTableScrollArea button[onclick*="ViewerUI.openRulesManager('${vColId}',"]`,
         );
-        renderRulesManager(colIndex, newAnchor);
+        renderRulesManager(vColId, newAnchor);
       }, 50); // Small delay for DOM paint
     };
 
@@ -604,7 +604,7 @@ window.ViewerUI = (function () {
         btnDel.innerHTML = `<i data-lucide="trash-2" class="w-3.5 h-3.5"></i>`;
         btnDel.onclick = () => {
           currentRules.splice(idx, 1);
-          if (currentRules.length === 0) delete processingRules[colIndex];
+          if (currentRules.length === 0) delete processingRules[vColId];
           refreshAndReAnchor();
         };
 
@@ -627,11 +627,11 @@ window.ViewerUI = (function () {
         "w-full py-2 rounded-lg border border-slate-700/50 bg-slate-800/30 text-[10px] text-slate-300 hover:text-white hover:bg-blue-600 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 transition-all flex items-center justify-start px-3 gap-3 group";
       btn.innerHTML = `<i data-lucide="${icon}" class="w-3.5 h-3.5 text-slate-500 group-hover:text-white transition-colors"></i> ${label}`;
       btn.onclick = () => {
-        if (!processingRules[colIndex]) processingRules[colIndex] = [];
-        if (!Array.isArray(processingRules[colIndex]))
-          processingRules[colIndex] = [processingRules[colIndex]];
+        if (!processingRules[vColId]) processingRules[vColId] = [];
+        if (!Array.isArray(processingRules[vColId]))
+          processingRules[vColId] = [processingRules[vColId]];
 
-        processingRules[colIndex].push({
+        processingRules[vColId].push({
           type: type,
           config: config,
           disabled: false,

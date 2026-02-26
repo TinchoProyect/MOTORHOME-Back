@@ -53,6 +53,14 @@ function renderVirtualTable(originalData) {
     }
     if (maxCols === 0) maxCols = 1;
 
+    // --- VIRTUAL COLUMNS V4 PROXY ---
+    if (!window.virtualColumns || window.virtualColumns.length === 0) {
+        window.virtualColumns = [];
+        for (let idx = 0; idx < maxCols; idx++) {
+            window.virtualColumns.push({ id: `col_${idx}`, dataIdx: idx });
+        }
+    }
+
     const ROW_HEIGHT = 35;
     const HEADER_HEIGHT = 40;
     const totalRows = data.length;
@@ -84,8 +92,10 @@ function renderVirtualTable(originalData) {
         activeEtlState = window.viewerRuleWorkshop.getActiveState();
     }
 
-    for (let j = 0; j < maxCols; j++) {
-        let originalVal = headerRow[j] || (j === 0 ? '#' : `Col ${j + 1}`);
+    window.virtualColumns.forEach((vCol) => {
+        let j = vCol.id;
+        let dataIdx = vCol.dataIdx;
+        let originalVal = headerRow[dataIdx] || (dataIdx === 0 ? '#' : `Col ${dataIdx + 1}`);
         let mappedType = columnMapping[j];
 
         // Legacy toggle removed from main view
@@ -99,7 +109,7 @@ function renderVirtualTable(originalData) {
             const btnClass = isMapped ? 'bg-blue-600/10 border-blue-500/50 text-blue-300' : 'bg-slate-800/50 text-slate-500 hover:text-blue-400';
             thClass = "bg-slate-950 p-1 sticky top-0 z-20";
             thContent = `<div class="flex items-center gap-1 h-full">
-                <button onclick="openColumnMenu_v2(${j}, this)" class="flex-grow h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
+                <button onclick="openColumnMenu_v2('${j}', this)" class="flex-grow h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
                     <span class="truncate font-bold text-[10px] uppercase">${mappedType || originalVal}</span>
                     <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                 </button>
@@ -108,7 +118,7 @@ function renderVirtualTable(originalData) {
             if (window.draftPipelines && window.draftPipelines[j]) {
                 const pipe = window.draftPipelines[j];
                 thContent = `
-                    <div class="flex items-center gap-2 text-emerald-300">
+                    <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${originalVal}')">
                         <i data-lucide="link-2" class="w-3 h-3"></i>
                         <span class="truncate" title="${pipe.masterField.nombre_campo}">${pipe.masterField.nombre_campo}</span>
                         <div class="bg-emerald-800 text-emerald-200 text-[9px] px-1.5 rounded-full ml-auto">${pipe.rules ? pipe.rules.length : 0}r</div>
@@ -125,8 +135,8 @@ function renderVirtualTable(originalData) {
             // [FIX] Add Visual Feedback for Offset Mode on Headers
             if (offsetSelectionMode) {
                 thClass += " cursor-crosshair hover:bg-amber-500/30 border-amber-500/50";
-                // Add Anchor style if this is the selected offset
-                if (currentOffset && currentOffset.row === 0 && currentOffset.col === j) {
+                // Add Anchor style if this is the selected offset (uses dataIdx)
+                if (currentOffset && currentOffset.row === 0 && currentOffset.col === dataIdx) {
                     thClass += " border-2 border-amber-500 bg-amber-900/40 text-amber-400";
                 }
             }
@@ -135,11 +145,11 @@ function renderVirtualTable(originalData) {
         // [FIX] Allow clicking header to set offset (Row 0)
         // Only if NOT in mapping mode (because mapping mode uses buttons inside th)
         const isHeaderMapping = (window.mappingMode || typeof mappingMode !== 'undefined' && mappingMode);
-        const clickAttr = (!isHeaderMapping && window.offsetSelectionMode) ? `onclick="handleOffsetClick(0, ${j})"` : '';
+        const clickAttr = (!isHeaderMapping && window.offsetSelectionMode) ? `onclick="handleOffsetClick(0, ${dataIdx})"` : '';
 
         // Globals for resize parsing
         const colWidth = window.currentColWidths && window.currentColWidths[j] ? window.currentColWidths[j] : 150;
-        const resizerHtml = `<div class="resizer-handle" onmousedown="window.initColResize(event, ${j}, this.parentElement)" style="position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:70; user-select:none; background:transparent; transition:background 0.2s;" onmouseover="this.style.background='rgba(59,130,246,0.3)'" onmouseout="this.style.background='transparent'"></div>`;
+        const resizerHtml = `<div class="resizer-handle" onmousedown="window.initColResize(event, '${j}', this.parentElement)" style="position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:70; user-select:none; background:transparent; transition:background 0.2s;" onmouseover="this.style.background='rgba(59,130,246,0.3)'" onmouseout="this.style.background='transparent'"></div>`;
 
         // ETL Preview Injection - Elevate Active Column
         if (activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j) {
@@ -148,8 +158,8 @@ function renderVirtualTable(originalData) {
         }
 
         thClass += " relative"; // Add relative so the absolute resizer handles position correctly
-        headerHtml += `<th id="th-${j}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" ${clickAttr}>${thContent}${resizerHtml}</th>`;
-    }
+        headerHtml += `<th id="th-${j}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" ${clickAttr} data-col-id="${j}">${thContent}${resizerHtml}</th>`;
+    });
     headerHtml += '</tr>';
     thead.innerHTML = headerHtml;
 
@@ -189,14 +199,16 @@ function renderVirtualTable(originalData) {
 
             rowsHtml += `<tr style="${rowStyle}" class="${rowClass}">`;
 
-            for (let j = 0; j < maxCols; j++) {
-                let cellVal = row[j] !== undefined ? row[j] : '';
+            for (const vCol of window.virtualColumns) {
+                let j = vCol.id;
+                let dataIdx = vCol.dataIdx;
+                let cellVal = row[dataIdx] !== undefined ? row[dataIdx] : '';
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
 
                 const minRow = window.currentOffset ? window.currentOffset.row : 0;
                 const minCol = window.currentOffset ? window.currentOffset.col : 0;
-                const isIgnored = (i < minRow) || (j < minCol);
-                const isAnchor = (i === minRow && j === minCol);
+                const isIgnored = (i < minRow) || (dataIdx < minCol);
+                const isAnchor = (i === minRow && dataIdx === minCol);
 
                 if (isIgnored) cellClass += " opacity-25 grayscale bg-slate-950/50";
                 if (!window.offsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
@@ -245,7 +257,7 @@ function renderVirtualTable(originalData) {
                     }
                 }
 
-                rowsHtml += `<td onclick="handleOffsetClick(${i}, ${j})" class="${cellClass}">${cellVal}</td>`;
+                rowsHtml += `<td onclick="handleOffsetClick(${i}, ${dataIdx})" class="${cellClass}">${cellVal}</td>`;
             }
             rowsHtml += '</tr>';
         }
@@ -279,18 +291,20 @@ function generatePreview() {
         const displayConfig = [];
         const sourceConfig = [];
 
-        Object.keys(columnMapping).forEach(key => {
-            const colIdx = parseInt(key);
-            const termId = columnMapping[key];
+        Object.keys(columnMapping).forEach(vColId => {
+            const termId = columnMapping[vColId];
+            const vCol = window.virtualColumns.find(v => v.id === vColId);
+            if (!vCol) return;
+            const dataIdx = vCol.dataIdx;
 
             if (termId && termId !== 'Ignorar Columna') {
-                sourceConfig.push({ index: colIdx });
+                sourceConfig.push({ index: dataIdx });
 
                 const termObj = nomenclatureCache.find(t => t.id === termId);
                 const termName = termObj ? termObj.termino : termId;
 
                 // [V3] PIPELINE HANDLING
-                const rawRule = processingRules[colIdx];
+                const rawRule = processingRules[vColId];
                 // Ensure Array
                 const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
 
@@ -306,14 +320,15 @@ function generatePreview() {
                             displayConfig.push({
                                 label: fieldName,
                                 isVirtual: true,
-                                sourceIndex: colIdx,
+                                sourceIndex: dataIdx, // For reading raw value
                                 transform: (val) => {
                                     if (!val) return '';
                                     const parts = String(val).split(splitRule.delimiter);
                                     return parts[subIdx] ? parts[subIdx].trim() : '';
                                 },
                                 hasSwitch: false, // Managed via Gear
-                                switchColIdx: colIdx
+                                switchColIdx: vColId,
+                                virtualColId: vColId
                             });
                         });
                     } else if (splitRule.type === 'regex_split') {
@@ -331,7 +346,7 @@ function generatePreview() {
                             displayConfig.push({
                                 label: label,
                                 isVirtual: true,
-                                sourceIndex: colIdx,
+                                sourceIndex: dataIdx, // Read from raw data
                                 transform: (val) => {
                                     const match = String(val || "").trim().match(regex);
                                     if (match) {
@@ -342,7 +357,8 @@ function generatePreview() {
                                     return subIdx === 0 ? val : "";
                                 },
                                 hasSwitch: false,
-                                switchColIdx: colIdx
+                                switchColIdx: vColId,
+                                virtualColId: vColId
                             });
                         });
                     }
@@ -351,7 +367,7 @@ function generatePreview() {
                     displayConfig.push({
                         label: termName,
                         isVirtual: false,
-                        sourceIndex: colIdx,
+                        sourceIndex: dataIdx,
                         transform: (val) => {
                             let currentVal = val;
                             // 🔥 Apply all active rules in order
@@ -393,8 +409,9 @@ function generatePreview() {
                             return currentVal;
                         },
                         hasSwitch: false, // Legacy switch hidden, relying on Gear
-                        switchColIdx: colIdx,
-                        sourceIndex: colIdx // Important for Gear ID
+                        switchColIdx: vColId,
+                        sourceIndex: dataIdx,
+                        virtualColId: vColId // Important for Gear ID
                     });
                 }
             }
@@ -445,13 +462,16 @@ function generatePreview() {
         sanitizedData = sanitizedData.filter(row => {
             let keepRow = true;
 
-            Object.keys(columnMapping).forEach(key => {
-                const colIdx = parseInt(key);
-                const rawRule = processingRules[colIdx];
+            Object.keys(columnMapping).forEach(vColId => {
+                const vCol = window.virtualColumns.find(v => v.id === vColId);
+                if (!vCol) return;
+                const dataIdx = vCol.dataIdx;
+
+                const rawRule = processingRules[vColId];
                 const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
 
                 // 1. First, apply "Transformation" rules to get the REAL value in memory
-                let cellValue = row[colIdx];
+                let cellValue = row[dataIdx];
 
                 for (const rule of rulesStack) {
                     if (rule.disabled) continue;
@@ -602,9 +622,9 @@ function renderSimulationTable(data) {
         let actions = '';
 
         // [New] Gear Icon for Pipeline Manager
-        if (cfg.sourceIndex >= 0) {
+        if (cfg.virtualColId) {
             actions += `
-                <button onclick="window.ViewerUI.openRulesManager(${cfg.sourceIndex}, this)" class="text-slate-500 hover:text-white transition-colors p-1 rounded hover:bg-slate-800" title="Gestionar Reglas">
+                <button onclick="window.ViewerUI.openRulesManager('${cfg.virtualColId}', this)" class="text-slate-500 hover:text-white transition-colors p-1 rounded hover:bg-slate-800" title="Gestionar Reglas">
                     <i data-lucide="settings-2" class="w-3 h-3"></i>
                 </button>
             `;

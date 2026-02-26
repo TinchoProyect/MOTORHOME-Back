@@ -59,15 +59,60 @@ function renderRuleSelector() {
 }
 
 // OPEN PANEL
-export function open(masterField, colIndex, colName) {
+export function open(masterField, vColId, colName) {
     if (!masterField) return;
 
-    activeContext = { masterField, colIndex, colName };
+    // Check if we need to CLONE (Option 1 logic)
+    let activeVColId = vColId;
+    let hasConflict = false;
+
+    // V4 Conflict (Pipeline)
+    if (window.draftPipelines && window.draftPipelines[vColId] && masterField.id !== window.draftPipelines[vColId].masterField.id) {
+        hasConflict = true;
+    }
+    // V3 Conflict (Legacy Mapping)
+    else if (window.columnMapping && window.columnMapping[vColId] && window.columnMapping[vColId] !== 'Ignorar Columna') {
+        const mappedTerm = window.columnMapping[vColId];
+        if (mappedTerm.toUpperCase() !== masterField.nombre_campo.toUpperCase()) {
+            hasConflict = true;
+        }
+    }
+
+    if (hasConflict) {
+        // Validation: Cannot clone if no virtual column found
+        const vColObj = window.virtualColumns ? window.virtualColumns.find(v => v.id === vColId) : null;
+        if (!vColObj) {
+            alert("No se puede clonar: la columna virtual original no fue encontrada.");
+            return;
+        }
+
+        // Trigger cloning process
+        let cloneCounter = 1;
+        let newVColId = `${vColId}_clone_${cloneCounter}`;
+        while (window.virtualColumns.find(v => v.id === newVColId)) {
+            cloneCounter++;
+            newVColId = `${vColId}_clone_${cloneCounter}`;
+        }
+
+        // Inyectar el nuevo objeto virtualColumns justo después del original
+        const idx = window.virtualColumns.findIndex(v => v.id === vColId);
+        window.virtualColumns.splice(idx + 1, 0, { id: newVColId, dataIdx: vColObj.dataIdx });
+
+        console.log(`🪄 [WORKSHOP] Clonación Visual: Se creó ${newVColId} a partir de ${vColId}`);
+        activeVColId = newVColId;
+
+        // Forzar render de la tabla virtual para mostrar la nueva columna ahora visualmente
+        if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+            window.renderVirtualTable(window.currentSheetData);
+        }
+    }
+
+    activeContext = { masterField, colIndex: activeVColId, colName };
     isPanelOpen = true;
 
     // Retrieve draft pipeline if it already exists in memory for this column
-    if (window.draftPipelines && window.draftPipelines[colIndex]) {
-        currentDraftPipeline = [...window.draftPipelines[colIndex].rules];
+    if (window.draftPipelines && window.draftPipelines[activeVColId]) {
+        currentDraftPipeline = [...window.draftPipelines[activeVColId].rules];
     } else {
         currentDraftPipeline = [];
     }

@@ -146,19 +146,19 @@ export function previewColumn(colIndex, pipeline, skipMath = false) {
 }
 
 // COMMIT VISUALS TO HEADER
-export function commitColumnMapping(colIndex, masterField, pipeline) {
-    const tableContainer = document.getElementById('excelContainer');
-    if (!tableContainer) return;
-
-    const th = tableContainer.querySelector(`thead tr th:nth-child(${colIndex + 1})`);
+export function commitColumnMapping(vColId, masterField, pipeline) {
+    const th = document.getElementById(`th-${vColId}`);
     if (th) {
         th.innerHTML = `
-            <div class="flex items-center gap-2 text-emerald-300">
+            <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${vColId}', '${masterField.nombre_campo}')">
                 <i data-lucide="link-2" class="w-3 h-3"></i>
                 <span class="truncate" title="${masterField.nombre_campo}">${masterField.nombre_campo}</span>
                 <div class="bg-emerald-800 text-emerald-200 text-[9px] px-1.5 rounded-full ml-auto">${pipeline.length}r</div>
             </div>
+            ${th.querySelector('.resizer-handle') ? th.querySelector('.resizer-handle').outerHTML : ''}
         `;
+        // [V4] Set correct classes
+        th.className = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20 relative";
         if (window.lucide) window.lucide.createIcons();
     }
 }

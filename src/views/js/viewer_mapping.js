@@ -116,16 +116,16 @@ async function updateNomenclatureTerm(id, newTerm, newDesc, newRules, isGlobal) 
             }
 
             // Update Mappings in UI
-            Object.keys(columnMapping).forEach(colIdx => {
-                if (columnMapping[colIdx] === oldName || columnMapping[colIdx] === newTerm) {
-                    columnMapping[colIdx] = newTerm;
+            Object.keys(columnMapping).forEach(vColId => {
+                if (columnMapping[vColId] === oldName || columnMapping[vColId] === newTerm) {
+                    columnMapping[vColId] = newTerm;
                     const updatedRule = nomenclatureCache[idx].reglas_procesamiento;
                     if (updatedRule) {
-                        processingRules[colIdx] = Array.isArray(updatedRule)
+                        processingRules[vColId] = Array.isArray(updatedRule)
                             ? updatedRule
                             : [updatedRule];
                     } else {
-                        delete processingRules[colIdx];
+                        delete processingRules[vColId];
                     }
                 }
             });
@@ -153,11 +153,11 @@ async function toggleMappingMode() {
             if (window.lucide) window.lucide.createIcons();
         }
         if (columnMapping && Object.keys(columnMapping).length > 0) {
-            Object.keys(columnMapping).forEach(colIdx => {
-                const termName = columnMapping[colIdx];
+            Object.keys(columnMapping).forEach(vColId => {
+                const termName = columnMapping[vColId];
                 const term = nomenclatureCache.find(t => t.termino === termName);
                 if (term && term.reglas_procesamiento) {
-                    processingRules[colIdx] = Array.isArray(term.reglas_procesamiento)
+                    processingRules[vColId] = Array.isArray(term.reglas_procesamiento)
                         ? term.reglas_procesamiento
                         : [term.reglas_procesamiento];
                 }
@@ -173,16 +173,16 @@ async function toggleMappingMode() {
 }
 
 // [MODIFIED] Replaced inline create with Modal
-function openColumnMenu_v2(colIndex, buttonElement) {
+function openColumnMenu_v2(vColId, buttonElement) {
     const existing = document.getElementById('colMenuDropdown');
     if (existing) {
         existing.remove();
-        if (existing.dataset.colIndex === String(colIndex)) return;
+        if (existing.dataset.vColId === String(vColId)) return;
     }
 
     const menu = document.createElement('div');
     menu.id = 'colMenuDropdown';
-    menu.dataset.colIndex = colIndex;
+    menu.dataset.vColId = vColId;
     menu.className = 'fixed z-[150] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col min-w-[280px] max-h-[400px] overflow-hidden animate-in slide-in-from-top-2 duration-200';
 
     const rect = buttonElement.getBoundingClientRect();
@@ -210,11 +210,11 @@ function openColumnMenu_v2(colIndex, buttonElement) {
                 if (newTermName) {
                     // Success Callback from UI
                     // 1. Invalidate old rules if any
-                    if (processingRules[colIndex]) {
-                        delete processingRules[colIndex];
+                    if (processingRules[vColId]) {
+                        delete processingRules[vColId];
                     }
                     // 2. Map Column
-                    columnMapping[colIndex] = newTermName.toUpperCase();
+                    columnMapping[vColId] = newTermName.toUpperCase();
                     // 3. Refresh & Save
                     renderVirtualTable(currentSheetData);
                     saveSheetState(currentSheetName);
@@ -241,19 +241,19 @@ function openColumnMenu_v2(colIndex, buttonElement) {
         content.innerHTML = `<span class="text-[11px] font-mono text-slate-300 font-bold flex items-center">${globalIcon}${term.termino}</span>
                              <span class="text-[9px] text-slate-500 truncate">${term.descripcion_uso || ''}</span>`;
 
-        if (columnMapping[colIndex] === term.termino) {
+        if (columnMapping[vColId] === term.termino) {
             item.classList.add('bg-blue-900/10', 'border-blue-500');
             content.querySelector('span').classList.add('text-blue-400');
         }
 
         content.onclick = () => {
-            columnMapping[colIndex] = term.termino;
+            columnMapping[vColId] = term.termino;
             if (term.reglas_procesamiento) {
-                processingRules[colIndex] = Array.isArray(term.reglas_procesamiento)
+                processingRules[vColId] = Array.isArray(term.reglas_procesamiento)
                     ? term.reglas_procesamiento
                     : [term.reglas_procesamiento];
             } else {
-                if (processingRules[colIndex]) delete processingRules[colIndex];
+                if (processingRules[vColId]) delete processingRules[vColId];
             }
             renderVirtualTable(currentSheetData);
             saveSheetState(currentSheetName);
@@ -268,7 +268,7 @@ function openColumnMenu_v2(colIndex, buttonElement) {
             e.stopPropagation();
             // Call Modal Edit instead of inline
             menu.remove();
-            openEditTermModal(term, colIndex);
+            openEditTermModal(term, vColId);
         };
 
         item.appendChild(content);
@@ -280,7 +280,7 @@ function openColumnMenu_v2(colIndex, buttonElement) {
     ignoreBtn.className = 'w-full px-4 py-3 text-left border-t border-slate-800 text-[10px] text-slate-500 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-2';
     ignoreBtn.innerHTML = '<i data-lucide="eye-off" class="w-3 h-3"></i> Ignorar esta columna';
     ignoreBtn.onclick = () => {
-        columnMapping[colIndex] = 'Ignorar Columna';
+        columnMapping[vColId] = 'Ignorar Columna';
         renderVirtualTable(currentSheetData);
         saveSheetState(currentSheetName);
         renderSheetTabs();
@@ -335,7 +335,7 @@ function createTermSelect(currentId, placeholder, currentTermId) {
 
 // [MODIFIED] New Modal for Editing with Scope Control
 // BYPASS: Redirects to ViewerUI.renderCreateTermModal (Edit Mode)
-async function openEditTermModal(term, colIndex) {
+async function openEditTermModal(term, vColId) {
     if (window.ViewerUI && window.ViewerUI.renderCreateTermModal) {
         // [ADAPTER] Map Cache Object to UI Object
         // User confirmed: 'descripcion_uso' is the active field. 'Descripcion' is obsolete.
@@ -357,16 +357,16 @@ async function openEditTermModal(term, colIndex) {
                 if (idx !== -1) nomenclatureCache.splice(idx, 1);
 
                 // Clear mapping if it was this term
-                if (columnMapping[colIndex] === term.termino) {
-                    columnMapping[colIndex] = 'Ignorar Columna'; // Or empty
+                if (columnMapping[vColId] === term.termino) {
+                    columnMapping[vColId] = 'Ignorar Columna'; // Or empty
                     renderVirtualTable(currentSheetData);
                 }
             } else {
                 // Term Updated. Refresh Cache
                 loadNomenclature().then(() => {
                     // Update mapping if name changed
-                    if (columnMapping[colIndex] !== result) {
-                        columnMapping[colIndex] = result;
+                    if (columnMapping[vColId] !== result) {
+                        columnMapping[vColId] = result;
                         renderVirtualTable(currentSheetData);
                     }
                 });
@@ -404,8 +404,11 @@ function applyProcessingRules(originalData) {
         let row = [...originalData[i]];
         let keepRow = true;
 
-        for (const [colIdxStr, rulesStack] of activeRules) {
-            const colIdx = parseInt(colIdxStr);
+        for (const [vColId, rulesStack] of activeRules) {
+            const vCol = window.virtualColumns.find(v => v.id === vColId);
+            if (!vCol) continue;
+            const dataIdx = vCol.dataIdx;
+            const colIdx = dataIdx; // fallback to modify row
             const pipeline = Array.isArray(rulesStack) ? rulesStack : [rulesStack];
 
             for (const rule of pipeline) {
@@ -491,11 +494,11 @@ function applyProcessingRules(originalData) {
     return processedData;
 }
 
-function toggleProcessingRule(colIndex) {
-    if (processingRules[colIndex]) {
+function toggleProcessingRule(vColId) {
+    if (processingRules[vColId]) {
         // En V3 (Pipeline), deshabilitamos todo el stack o la primera regla
         // Simplificación: Toggle disable en la primera regla
-        const rules = Array.isArray(processingRules[colIndex]) ? processingRules[colIndex] : [processingRules[colIndex]];
+        const rules = Array.isArray(processingRules[vColId]) ? processingRules[vColId] : [processingRules[vColId]];
         if (rules.length > 0) {
             rules[0].disabled = !rules[0].disabled;
             renderVirtualTable(currentSheetData);
