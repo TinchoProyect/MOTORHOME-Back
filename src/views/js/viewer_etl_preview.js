@@ -39,6 +39,19 @@ export function transformCell(rawValue, pipeline) {
             const packageRegex = /\s+(\d+\s*x\s*\d+|x\s*\d+|por\s+\d+).*$/i;
             currentValue = currentValue.replace(packageRegex, '');
         }
+        else if (rule.tipo_regex === 'EXTRACT_PACKAGE_UNITS') {
+            const explicitMatch = currentValue.match(/(\d+)\s*[xX]\s*\d+/);
+            if (explicitMatch) {
+                currentValue = explicitMatch[1];
+            } else {
+                const implicitMatch = currentValue.match(/(?:\s|^)(?:[xX]|por)\s*\d+/i);
+                if (implicitMatch) {
+                    currentValue = "1";
+                } else {
+                    currentValue = "1";
+                }
+            }
+        }
         else if (rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:')) {
             try {
                 // Formato: CUSTOM_REPLACE:buscar|||reemplazar
