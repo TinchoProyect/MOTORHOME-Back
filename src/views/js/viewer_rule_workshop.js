@@ -288,6 +288,27 @@ export function removeRule(index) {
     triggerPreview();
 }
 
+// [V5.21 UX] Move Rules Up/Down
+export function moveRuleUp(index) {
+    if (index > 0) {
+        const temp = currentDraftPipeline[index];
+        currentDraftPipeline[index] = currentDraftPipeline[index - 1];
+        currentDraftPipeline[index - 1] = temp;
+        renderPipeline();
+        triggerPreview();
+    }
+}
+
+export function moveRuleDown(index) {
+    if (index < currentDraftPipeline.length - 1) {
+        const temp = currentDraftPipeline[index];
+        currentDraftPipeline[index] = currentDraftPipeline[index + 1];
+        currentDraftPipeline[index + 1] = temp;
+        renderPipeline();
+        triggerPreview();
+    }
+}
+
 // RENDER
 function renderPipeline() {
     const container = document.getElementById('vrwRulesPipeline');
@@ -324,9 +345,17 @@ function renderPipeline() {
                     <p class="text-[10px] text-slate-500 mt-0.5 leading-snug" title="${rule.descripcion || 'Regla de limpieza nativa.'}">${rule.descripcion || 'Regla de limpieza nativa.'}</p>
                 </div>
             </div>
-            <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.removeRule(${index})" class="text-slate-600 hover:text-red-400 transition-colors bg-slate-900 hover:bg-red-500/10 p-1.5 rounded-md border border-transparent hover:border-red-500/30">
-                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-            </button>
+            <div class="flex items-center gap-1">
+                <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.moveRuleUp(${index})" class="text-slate-600 hover:text-blue-400 transition-colors bg-slate-900 hover:bg-blue-500/10 p-1.5 rounded-md border border-transparent hover:border-blue-500/30 ${index === 0 ? 'opacity-30 pointer-events-none' : ''}" title="Subir Regla">
+                    <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
+                </button>
+                <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.moveRuleDown(${index})" class="text-slate-600 hover:text-blue-400 transition-colors bg-slate-900 hover:bg-blue-500/10 p-1.5 rounded-md border border-transparent hover:border-blue-500/30 ${index === currentDraftPipeline.length - 1 ? 'opacity-30 pointer-events-none' : ''}" title="Bajar Regla">
+                    <i data-lucide="arrow-down" class="w-3.5 h-3.5"></i>
+                </button>
+                <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.removeRule(${index})" class="text-slate-600 hover:text-red-400 transition-colors bg-slate-900 hover:bg-red-500/10 p-1.5 rounded-md border border-transparent hover:border-red-500/30 ml-2" title="Eliminar Regla">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
         `;
         container.appendChild(chip);
     });
@@ -471,6 +500,8 @@ window.viewerRuleWorkshop = {
     close,
     addSelectedRule,
     removeRule,
+    moveRuleUp,
+    moveRuleDown,
     applyMapping,
     getActiveState,
     createLocalRule

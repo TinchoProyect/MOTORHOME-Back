@@ -85,7 +85,7 @@ export function transformCell(rawValue, pipeline) {
                 }
             }
             else if (rule.tipo_regex === 'FILTER_EMPTY') {
-                if (currentValue === "") isRejected = true;
+                if (currentValue.trim() === "") isRejected = true;
             }
             else if (rule.tipo_regex === 'TRANSFORM_UPPERCASE') {
                 currentValue = currentValue.toUpperCase();
