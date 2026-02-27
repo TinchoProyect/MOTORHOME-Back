@@ -67,6 +67,38 @@ export function transformCell(rawValue, pipeline) {
                 currentValue = currentValue.replace(/\./g, ',');
             }
         }
+        else if (rule.tipo_regex === 'FORMAT_PRICE_AR') {
+            if (currentValue && currentValue !== "") {
+                // Remove everything except digits, dots, and commas
+                let cleanStr = currentValue.replace(/[^\d.,-]/g, '');
+                
+                if (cleanStr !== "") {
+                    // Find the last dot or comma
+                    const lastDot = cleanStr.lastIndexOf('.');
+                    const lastComma = cleanStr.lastIndexOf(',');
+                    let floatVal = 0;
+                    
+                    if (lastDot === -1 && lastComma === -1) {
+                        floatVal = parseFloat(cleanStr);
+                    } else if (lastDot > lastComma) {
+                        // Dot is the decimal separator. Remove all commas.
+                        const withoutThousandSeps = cleanStr.replace(/,/g, '');
+                        floatVal = parseFloat(withoutThousandSeps);
+                    } else {
+                        // Comma is the decimal separator. Remove all dots, replace last comma with dot.
+                        const withoutThousandSeps = cleanStr.replace(/\./g, '');
+                        const standardStr = withoutThousandSeps.replace(',', '.');
+                        floatVal = parseFloat(standardStr);
+                    }
+                    
+                    if (!isNaN(floatVal)) {
+                        currentValue = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(floatVal);
+                    } else {
+                        currentValue = "";
+                    }
+                }
+            }
+        }
         else if (rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:')) {
             try {
                 // Formato: CUSTOM_REPLACE:buscar|||reemplazar
