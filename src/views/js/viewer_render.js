@@ -98,6 +98,16 @@ function renderVirtualTable(originalData) {
         let originalVal = headerRow[dataIdx] || (dataIdx === 0 ? '#' : `Col ${dataIdx + 1}`);
         let mappedType = columnMapping[j];
 
+        // --- NAME RESOLUTION HELPER ---
+        const getHumanName = (idOrName) => {
+            if (!idOrName || idOrName === 'Ignorar Columna') return idOrName;
+            if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                const match = window.masterDictionary.find(m => String(m.id) === String(idOrName) || String(m.nombre_campo) === String(idOrName));
+                if (match) return match.nombre_campo;
+            }
+            return idOrName;
+        };
+
         // Legacy toggle removed from main view
 
         let thContent = originalVal;
@@ -108,25 +118,28 @@ function renderVirtualTable(originalData) {
             const isMapped = !!mappedType;
             const btnClass = isMapped ? 'bg-blue-600/10 border-blue-500/50 text-blue-300' : 'bg-slate-800/50 text-slate-500 hover:text-blue-400';
             thClass = "bg-slate-950 p-1 sticky top-0 z-20";
+            const displayName = isMapped ? getHumanName(mappedType) : originalVal;
             thContent = `<div class="flex items-center gap-1 h-full">
                 <button onclick="openColumnMenu_v2('${j}', this)" class="flex-grow h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
-                    <span class="truncate font-bold text-[10px] uppercase">${mappedType || originalVal}</span>
+                    <span class="truncate font-bold text-[10px] uppercase">${displayName}</span>
                     <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                 </button>
             </div>`;
         } else {
             if (window.draftPipelines && window.draftPipelines[j]) {
                 const pipe = window.draftPipelines[j];
+                const pipeName = getHumanName(pipe.masterField ? (pipe.masterField.nombre_campo || pipe.masterField.id) : mappedType);
                 thContent = `
                     <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${originalVal}')">
                         <i data-lucide="link-2" class="w-3 h-3"></i>
-                        <span class="truncate" title="${pipe.masterField.nombre_campo}">${pipe.masterField.nombre_campo}</span>
+                        <span class="truncate" title="${pipeName}">${pipeName}</span>
                         <div class="bg-emerald-800 text-emerald-200 text-[9px] px-1.5 rounded-full ml-auto">${pipe.rules ? pipe.rules.length : 0}r</div>
                     </div>
                 `;
                 thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
             } else if (mappedType && mappedType !== 'Ignorar Columna') {
-                thContent = `<span class="text-emerald-400">${mappedType}</span> <span class="text-slate-600 text-[9px] ml-1">(${originalVal})</span>`;
+                const mapName = getHumanName(mappedType);
+                thContent = `<span class="text-emerald-400" title="ID: ${mappedType}">${mapName}</span> <span class="text-slate-600 text-[9px] ml-1">(${originalVal})</span>`;
                 thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
             } else if (mappedType === 'Ignorar Columna') {
                 thClass += " opacity-40 grayscale decoration-line-through";
@@ -224,6 +237,8 @@ function renderVirtualTable(originalData) {
                 let j = vCol.id;
                 let dataIdx = vCol.dataIdx;
                 let cellVal = row[dataIdx] !== undefined ? row[dataIdx] : '';
+
+                const colWidth = window.currentColWidths && window.currentColWidths[j] ? window.currentColWidths[j] : 150;
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
 
                 const minRow = window.currentOffset ? window.currentOffset.row : 0;
@@ -287,7 +302,7 @@ function renderVirtualTable(originalData) {
                     }
                 }
 
-                rowsHtml += `<td onclick="handleOffsetClick(${i}, ${dataIdx})" class="${cellClass}"${onCtx}>${cellVal}</td>`;
+                rowsHtml += `<td onclick="handleOffsetClick(${i}, ${dataIdx})" class="${cellClass}" style="width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;"${onCtx}>${cellVal}</td>`;
             }
 
             // [V5.6] Fase 2 - Cálculo al vuelo en Virtual Scroller (Columnas Calculadas)
@@ -934,6 +949,16 @@ function onColMouseUp(e) {
     // Persist to multi-sheet store safely
     if (window.currentSheetName && window.saveSheetState) {
         window.saveSheetState(window.currentSheetName);
+    }
+
+    // Force full table re-render to propagate width to all body cells
+    if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+        window.renderVirtualTable(window.currentSheetData);
+    }
+
+    // Silent auto-save to backend
+    if (typeof window.saveSimulationConfig === 'function') {
+        window.saveSimulationConfig(null, true);
     }
 }
 

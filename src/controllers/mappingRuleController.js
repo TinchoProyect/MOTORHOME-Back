@@ -107,6 +107,8 @@ exports.saveMapping = async (req, res) => {
         // INSERT MASIVO: Mapeo Columnas
         for (const m of mapeos) {
             // Insertar PUENTE Mapeo (Retorna ID para asociar reglas)
+            let mapeoId = null;
+
             const { data: mapeoRow, error: mapErr } = await supabase
                 .from('mapeo_columnas')
                 .insert({
@@ -116,32 +118,63 @@ exports.saveMapping = async (req, res) => {
                     columna_origen_nombre: m.columna_origen_nombre
                 })
                 .select('id')
-                .single();
-
-            console.log("SUPABASE RESPONSE MAPEO_COLUMNAS:", mapeoRow, mapErr);
+                .maybeSingle();
 
             if (mapErr) {
-                console.error("🛑 [BACKEND FATAL] Error en Supabase insertando mapeo de columna:", mapErr);
-                throw mapErr;
+                // Si es un error de unicidad (Violates unique_formato_maestro_columna)
+                if (mapErr.code === '23505') {
+                    console.log(`⚠️ [BACKEND] Conflicto de unicidad detectado para columna ${m.columna_origen_index} y maestro ${m.campo_maestro_id}. Reutilizando Mapeo Existente.`);
+
+                    const { data: existingMap, error: extractErr } = await supabase
+                        .from('mapeo_columnas')
+                        .select('id')
+                        .eq('formato_id', formatoId)
+                        .eq('campo_maestro_id', m.campo_maestro_id)
+                        .eq('columna_origen_index', m.columna_origen_index)
+                        .single();
+
+                    if (extractErr || !existingMap) {
+                        console.error("🛑 [BACKEND FATAL] Error recuperando mapeo duplicado:", extractErr);
+                        throw extractErr || new Error("Duplicate mapping could not be resolved");
+                    }
+                    mapeoId = existingMap.id;
+                } else {
+                    console.error("🛑 [BACKEND FATAL] Error en Supabase insertando mapeo de columna:", mapErr);
+                    throw mapErr;
+                }
+            } else {
+                mapeoId = mapeoRow.id;
             }
 
             // INSERT Opcional: Tubería de reglas de esta columna
-            if (m.reglas && m.reglas.length > 0) {
-                const reglasPayload = m.reglas.map((reglaId, idx) => ({
-                    mapeo_id: mapeoRow.id,
-                    regla_id: reglaId,
-                    orden_ejecucion: idx + 1
-                }));
-
-                const { error: ruleErr } = await supabase
+            if (mapeoId && m.reglas && m.reglas.length > 0) {
+                // Fetch existing rules for this mapping to determine the starting execution order and avoid duplicates
+                const { data: existingRules, error: fetchRulesErr } = await supabase
                     .from('mapeo_reglas_aplicadas')
-                    .insert(reglasPayload);
+                    .select('regla_id, orden_ejecucion')
+                    .eq('mapeo_id', mapeoId)
+                    .order('orden_ejecucion', { ascending: false });
 
-                console.log("SUPABASE RESPONSE MAPEO_REGLAS_APLICADAS:", ruleErr);
+                const startOrder = (existingRules && existingRules.length > 0) ? existingRules[0].orden_ejecucion + 1 : 1;
+                const existingRuleIds = existingRules ? existingRules.map(r => r.regla_id) : [];
 
-                if (ruleErr) {
-                    console.error("🛑 [BACKEND FATAL] Error en Supabase insertando reglas aplicadas:", ruleErr);
-                    throw ruleErr;
+                const newReglas = m.reglas.filter(rId => !existingRuleIds.includes(rId));
+
+                if (newReglas.length > 0) {
+                    const reglasPayload = newReglas.map((reglaId, idx) => ({
+                        mapeo_id: mapeoId,
+                        regla_id: reglaId,
+                        orden_ejecucion: startOrder + idx
+                    }));
+
+                    const { error: ruleErr } = await supabase
+                        .from('mapeo_reglas_aplicadas')
+                        .insert(reglasPayload);
+
+                    if (ruleErr) {
+                        console.error("🛑 [BACKEND FATAL] Error en Supabase insertando reglas aplicadas:", ruleErr);
+                        throw ruleErr;
+                    }
                 }
             }
         }

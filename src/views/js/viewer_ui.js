@@ -750,67 +750,63 @@ window.ViewerUI = (function () {
   }
 
   // --- [PHASE 7: AUDIT MODE TOOLTIP (Context Menu)] ---
+  // --- [PHASE 7: AUDIT MODE CONTEXT ACTION (In-Place Edit)] ---
   function showOriginalValue(e, rawValue) {
     if (e && e.preventDefault) e.preventDefault(); // Stop standard context menu
 
-    // Remove existing if any
-    const existing = document.getElementById("auditTooltipCtx");
-    if (existing) existing.remove();
+    // [V5.15 UX] Upgrade from passive tooltip to interactive Local Rule Creator
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        title: 'Valor Original',
+        html: `
+          <div class="text-left mb-4">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Texto de Origen:</label>
+            <div class="bg-slate-900 border border-slate-700 p-2 text-white font-mono text-sm rounded mt-1 break-all mb-4 select-text">
+              ${rawValue || 'Vacío'}
+            </div>
+            <label class="text-xs font-bold text-blue-400 uppercase tracking-wider">Nuevo Valor (Reemplazo):</label>
+            <input type="text" id="swalOverrideInput" class="w-full mt-1 bg-slate-900 border border-blue-500/50 rounded p-2 text-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400" value="${rawValue || ''}" placeholder="Escribe el valor corregido...">
+          </div>
+        `,
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: 'Crear Regla de Reemplazo',
+        cancelButtonText: 'Cerrar',
+        confirmButtonColor: '#3b82f6',
+        didOpen: () => {
+          const input = document.getElementById('swalOverrideInput');
+          if (input) {
+            input.focus();
+            input.select();
+          }
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+          const input = document.getElementById('swalOverrideInput');
+          const newVal = input ? input.value : "";
 
-    // Create container
-    const popover = document.createElement("div");
-    popover.id = "auditTooltipCtx";
-    popover.className =
-      "fixed z-[600] glass-panel bg-slate-900/90 rounded-xl shadow-2xl p-4 flex flex-col min-w-[200px] max-w-[400px] animate-in zoom-in-95 duration-100 border border-indigo-500/30 backdrop-blur-xl pointer-events-auto";
+          if (newVal === rawValue) {
+            Swal.fire("Sin cambios", "El texto ingresado es idéntico al original.", "info");
+            return;
+          }
 
-    popover.innerHTML = `
-      <div class="flex items-center gap-2 mb-2 pb-2 border-b border-white/10 text-indigo-400">
-        <i data-lucide="eye" class="w-4 h-4"></i>
-        <span class="text-[10px] font-bold uppercase tracking-widest">Valor Original (Crudo)</span>
-      </div>
-      <div class="text-white font-mono text-sm break-all whitespace-pre-wrap leading-relaxed bg-black/30 p-3 rounded border border-white/5 select-text">
-        ${rawValue || '<i class="text-slate-500">Vacío o Nulo</i>'}
-      </div>
-    `;
-
-    // Try to position near mouse, ensuring it stays on screen
-    let top = e.clientY + 10;
-    let left = e.clientX + 10;
-
-    // Set position safely after appending (using temporary opacity 0)
-    popover.style.top = top + "px";
-    popover.style.left = left + "px";
-    popover.style.opacity = "0";
-
-    document.body.appendChild(popover);
-
-    if (window.lucide) window.lucide.createIcons({ root: popover });
-
-    // Adjust position if it goes off screen
-    requestAnimationFrame(() => {
-      const rect = popover.getBoundingClientRect();
-      if (rect.right > window.innerWidth) left = window.innerWidth - rect.width - 10;
-      if (rect.bottom > window.innerHeight) top = window.innerHeight - rect.height - 10;
-
-      popover.style.top = top + "px";
-      popover.style.left = left + "px";
-      popover.style.opacity = "1";
-    });
-
-    // Close on any click anywhere
-    const closeHandler = () => {
-      const current = document.getElementById("auditTooltipCtx");
-      if (current) current.remove();
-      document.removeEventListener("click", closeHandler);
-      document.removeEventListener("contextmenu", closeHandler);
-    };
-
-    // Slight delay so the immediate click doesn't trigger destruction
-    setTimeout(() => {
-      document.addEventListener("click", closeHandler);
-      // Also close if they right click anywhere else
-      document.addEventListener("contextmenu", closeHandler);
-    }, 100);
+          // Hook into the Workshop Controller to create the rule natively
+          if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
+            window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false);
+          } else {
+            Swal.fire("Error", "El Módulo de Reglas no está activo.", "error");
+          }
+        }
+      });
+    } else {
+      // Fallback (native prompt) if Swal is missing
+      const newVal = prompt("Reemplazar este valor original:\n\n" + rawValue + "\n\nPor nuevo valor:", rawValue);
+      if (newVal !== null && newVal !== rawValue) {
+        if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
+          window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false);
+        }
+      }
+    }
   }
 
   // Public API

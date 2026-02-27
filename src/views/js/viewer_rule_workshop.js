@@ -59,10 +59,18 @@ function renderRuleSelector() {
 }
 
 // OPEN PANEL
-export function open(masterField, vColId, colName) {
-    if (!masterField) return;
+export async function open(masterField, vColId, colName) {
+    if (!masterField) {
+        // [V5.14 FIX] Allow opening existing mapped columns without passing masterField
+        if (window.draftPipelines && window.draftPipelines[vColId]) {
+            masterField = window.draftPipelines[vColId].masterField;
+        } else {
+            console.warn("Workshop abierto sin masterField y sin pipeline previo.");
+            return;
+        }
+    }
 
-    // Check if we need to CLONE (Option 1 logic)
+    // Check if we need to CLONE or OVERWRITE
     let activeVColId = vColId;
     let hasConflict = false;
 
@@ -79,31 +87,107 @@ export function open(masterField, vColId, colName) {
     }
 
     if (hasConflict) {
-        // Validation: Cannot clone if no virtual column found
-        const vColObj = window.virtualColumns ? window.virtualColumns.find(v => v.id === vColId) : null;
-        if (!vColObj) {
-            alert("No se puede clonar: la columna virtual original no fue encontrada.");
-            return;
+        // [V5.16 UX] 4-Way Overwrite/Clone/Edit/Delete Dialog
+        let userAction = null;
+
+        if (typeof Swal !== 'undefined') {
+            await Swal.fire({
+                title: 'Menú de Mapeo',
+                html: `<div class="text-sm text-slate-300 mb-4">La columna visual <b>${colName}</b> ya se encuentra mapeada. ¿Qué deseas hacer con esta columna?</div>
+                    <div class="flex flex-col gap-2">
+                        <button id="btnClone" class="w-full text-left px-4 py-3 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/50 text-blue-100 rounded-lg font-bold text-sm transition-all"><i data-lucide="copy" class="w-4 h-4 inline mr-2 align-text-bottom"></i> Clonar (Extraer Paralelo)</button>
+                        <button id="btnReplace" class="w-full text-left px-4 py-3 bg-orange-600/20 hover:bg-orange-600/40 border border-orange-500/50 text-orange-100 rounded-lg font-bold text-sm transition-all"><i data-lucide="file-minus" class="w-4 h-4 inline mr-2 align-text-bottom"></i> Reemplazar (Borra reglas previas)</button>
+                        <button id="btnEdit" class="w-full text-left px-4 py-3 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-100 rounded-lg font-bold text-sm transition-all"><i data-lucide="edit-3" class="w-4 h-4 inline mr-2 align-text-bottom"></i> Editar (Abre Taller conservando reglas)</button>
+                        <button id="btnDelete" class="w-full text-left px-4 py-3 bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-100 rounded-lg font-bold text-sm transition-all"><i data-lucide="trash-2" class="w-4 h-4 inline mr-2 align-text-bottom"></i> Eliminar (Quita el mapeo sin abrir nada)</button>
+                    </div>
+                `,
+                showConfirmButton: false,
+                showCancelButton: true,
+                cancelButtonText: 'Cancelar',
+                background: '#0f172a',
+                color: '#f8fafc',
+                didOpen: () => {
+                    if (window.lucide) window.lucide.createIcons({ root: Swal.getPopup() });
+                    const popup = Swal.getPopup();
+                    popup.querySelector('#btnClone').onclick = () => { userAction = 'clone'; Swal.close(); };
+                    popup.querySelector('#btnReplace').onclick = () => { userAction = 'replace'; Swal.close(); };
+                    popup.querySelector('#btnEdit').onclick = () => { userAction = 'edit'; Swal.close(); };
+                    popup.querySelector('#btnDelete').onclick = () => { userAction = 'delete'; Swal.close(); };
+                }
+            });
+        } else {
+            // Fallback for native alerts
+            const action = prompt(`La columna ${colName} ya está mapeada. Escribe 'clonar', 'reemplazar', 'editar', o 'eliminar':`, 'editar');
+            if (action) userAction = action.toLowerCase().trim();
         }
 
-        // Trigger cloning process
-        let cloneCounter = 1;
-        let newVColId = `${vColId}_clone_${cloneCounter}`;
-        while (window.virtualColumns.find(v => v.id === newVColId)) {
-            cloneCounter++;
-            newVColId = `${vColId}_clone_${cloneCounter}`;
+        if (!userAction) return; // Cancelled completely
+
+        if (userAction === 'delete' || userAction === 'eliminar') {
+            console.log(`🗑️ [WORKSHOP] User deleted mapping on ${vColId} via 4-Way Menu`);
+            if (window.draftPipelines) delete window.draftPipelines[vColId];
+            if (window.processingRules) delete window.processingRules[vColId];
+            if (window.columnMapping) delete window.columnMapping[vColId];
+
+            // If it's a clone natively, remove the column altogether
+            if (vColId.includes('_clone_') && window.virtualColumns) {
+                const idx = window.virtualColumns.findIndex(v => v.id === vColId);
+                if (idx !== -1) window.virtualColumns.splice(idx, 1);
+            }
+
+            if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+                window.renderVirtualTable(window.currentSheetData);
+            }
+            if (typeof window.saveSheetState === 'function') {
+                window.saveSheetState(window.currentSheetName);
+            }
+
+            // Silent server save to persist deletion
+            if (typeof window.saveSimulationConfig === 'function') {
+                window.saveSimulationConfig(null, true);
+            }
+
+            return; // Abort workshop open
         }
 
-        // Inyectar el nuevo objeto virtualColumns justo después del original
-        const idx = window.virtualColumns.findIndex(v => v.id === vColId);
-        window.virtualColumns.splice(idx + 1, 0, { id: newVColId, dataIdx: vColObj.dataIdx });
+        if (userAction === 'clone' || userAction === 'clonar') {
+            // Validation: Cannot clone if no virtual column found
+            const vColObj = window.virtualColumns ? window.virtualColumns.find(v => v.id === vColId) : null;
+            if (!vColObj) {
+                alert("No se puede clonar: la columna virtual original no fue encontrada.");
+                return;
+            }
 
-        console.log(`🪄 [WORKSHOP] Clonación Visual: Se creó ${newVColId} a partir de ${vColId}`);
-        activeVColId = newVColId;
+            // Trigger cloning process
+            let cloneCounter = 1;
+            let newVColId = `${vColId}_clone_${cloneCounter}`;
+            while (window.virtualColumns.find(v => v.id === newVColId)) {
+                cloneCounter++;
+                newVColId = `${vColId}_clone_${cloneCounter}`;
+            }
 
-        // Forzar render de la tabla virtual para mostrar la nueva columna ahora visualmente
-        if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
-            window.renderVirtualTable(window.currentSheetData);
+            // Inyectar el nuevo objeto virtualColumns justo después del original
+            const idx = window.virtualColumns.findIndex(v => v.id === vColId);
+            window.virtualColumns.splice(idx + 1, 0, { id: newVColId, dataIdx: vColObj.dataIdx });
+
+            console.log(`🪄 [WORKSHOP] Clonación UX Confirmada: Se creó ${newVColId} a partir de ${vColId}`);
+            activeVColId = newVColId;
+
+            // Forzar render de la tabla virtual para mostrar la nueva columna ahora visualmente
+            if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+                window.renderVirtualTable(window.currentSheetData);
+            }
+        }
+        else if (userAction === 'replace' || userAction === 'reemplazar') {
+            // Reemplazar: Limpiar config antigua localmente antes de montar la nueva
+            console.log(`🔨 [WORKSHOP] Reemplazo UX Confirmado: Sobreescribiendo mapeo en ${vColId}`);
+            if (window.draftPipelines) delete window.draftPipelines[vColId];
+            if (window.processingRules) delete window.processingRules[vColId];
+            if (window.columnMapping) delete window.columnMapping[vColId];
+        }
+        else if (userAction === 'edit' || userAction === 'editar') {
+            console.log(`📝 [WORKSHOP] Edición UX Confirmada: Abriendo Taller conservando reglas previas en ${vColId}`);
+            // No se borran ni modifican diccionarios, así 'currentDraftPipeline' puede heredar abajo
         }
     }
 

@@ -276,17 +276,33 @@ function openColumnMenu_v2(vColId, buttonElement) {
         scrollArea.appendChild(item);
     });
 
-    const ignoreBtn = document.createElement('button');
-    ignoreBtn.className = 'w-full px-4 py-3 text-left border-t border-slate-800 text-[10px] text-slate-500 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-2';
-    ignoreBtn.innerHTML = '<i data-lucide="eye-off" class="w-3 h-3"></i> Ignorar esta columna';
-    ignoreBtn.onclick = () => {
-        columnMapping[vColId] = 'Ignorar Columna';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'w-full px-4 py-3 text-left border-t border-red-900/50 text-[10px] text-red-500 hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2';
+    deleteBtn.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3"></i> Eliminar Mapeo';
+    deleteBtn.onclick = () => {
+        // [V5.14 UX] Complete deletion logic
+        const isClone = vColId.includes('_clone_');
+
+        if (window.columnMapping) delete window.columnMapping[vColId];
+        if (window.processingRules) delete window.processingRules[vColId];
+        if (window.draftPipelines) delete window.draftPipelines[vColId];
+
+        if (isClone && window.virtualColumns) {
+            const idx = window.virtualColumns.findIndex(v => v.id === vColId);
+            if (idx !== -1) window.virtualColumns.splice(idx, 1);
+        }
+
         renderVirtualTable(currentSheetData);
         saveSheetState(currentSheetName);
         renderSheetTabs();
         menu.remove();
+
+        // Silent save to backend to persist deletion
+        if (typeof window.saveSimulationConfig === 'function') {
+            window.saveSimulationConfig(null, true);
+        }
     };
-    menu.appendChild(ignoreBtn);
+    menu.appendChild(deleteBtn);
 
     const closeHandler = (e) => {
         if (!menu.contains(e.target) && !buttonElement.contains(e.target)) {

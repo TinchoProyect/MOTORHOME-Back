@@ -124,7 +124,8 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 offset: typeof currentOffset !== 'undefined' ? currentOffset : { row: 0, col: 0 },
                 mapping: typeof columnMapping !== 'undefined' ? columnMapping : {},
                 rules: typeof processingRules !== 'undefined' ? processingRules : {},
-                computedCols: window.computedColumns || []
+                computedCols: window.computedColumns || [],
+                colWidths: window.currentColWidths || {}
             }
         };
 
@@ -338,6 +339,12 @@ window.loadSavedConfiguration = async function () {
                             : [];
                         console.log("✅ [V5] Columnas Calculadas recuperadas:", window.computedColumns.length);
                     }
+
+                    // [V5] Hydrate User Column Widths
+                    if (resultV3.data.reglas_procesamiento.colWidths) {
+                        window.currentColWidths = resultV3.data.reglas_procesamiento.colWidths;
+                        console.log("✅ [V5] Dimensiones de columnas recuperadas.");
+                    }
                 }
 
                 loadedAnything = true;
@@ -394,8 +401,19 @@ window.loadSavedConfiguration = async function () {
                             }
                         }
 
+                        // Sincronizar el clon recién reconstruido con el estado global de Mapeo (V3)
+                        // Esto garantiza que viewer_render.js detecte la columna mapeada y active la vista de Auditoría ETL.
+                        if (!window.columnMapping) window.columnMapping = {};
+                        window.columnMapping[activeVColId] = m.campo_maestro_id;
+
+                        let resolvedName = m.campo_maestro_id;
+                        if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                            const match = window.masterDictionary.find(dict => String(dict.id) === String(m.campo_maestro_id));
+                            if (match) resolvedName = match.nombre_campo;
+                        }
+
                         window.draftPipelines[activeVColId] = {
-                            masterField: { id: m.campo_maestro_id, nombre_campo: `Campo ID ${m.campo_maestro_id.substring(0, 4)}` },
+                            masterField: { id: m.campo_maestro_id, nombre_campo: resolvedName },
                             colName: m.columna_origen_nombre,
                             rules: rulesArr
                         };
