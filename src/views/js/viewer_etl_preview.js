@@ -52,6 +52,14 @@ export function transformCell(rawValue, pipeline) {
                 }
             }
         }
+        else if (rule.tipo_regex === 'EXTRACT_UNIT_SIZE') {
+            const unitMatch = currentValue.match(/(?:x|X|por)\s*(\d+(?:[.,]\d+)?)/i);
+            if (unitMatch) {
+                currentValue = unitMatch[1];
+            } else {
+                currentValue = "";
+            }
+        }
         else if (rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:')) {
             try {
                 // Formato: CUSTOM_REPLACE:buscar|||reemplazar
