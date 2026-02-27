@@ -60,6 +60,13 @@ export function transformCell(rawValue, pipeline) {
                 currentValue = "";
             }
         }
+        else if (rule.tipo_regex === 'FORMAT_DECIMAL_DISCOUNT') {
+            if (!currentValue || currentValue === "") {
+                currentValue = "0,00";
+            } else {
+                currentValue = currentValue.replace(/\./g, ',');
+            }
+        }
         else if (rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:')) {
             try {
                 // Formato: CUSTOM_REPLACE:buscar|||reemplazar
