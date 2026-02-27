@@ -117,20 +117,40 @@ export function transformCell(rawValue, pipeline) {
                 const parts = payload.split('|||');
                 const searchStr = parts[0] || '';
                 let replaceStr = parts[1] || '';
+                let matched = false;
 
                 // Si buscar está envuelto en / /, lo tratamos como Regex, sino literal global.
                 if (searchStr.startsWith('/') && searchStr.lastIndexOf('/') > 0) {
                     const flags = searchStr.slice(searchStr.lastIndexOf('/') + 1);
                     const pattern = searchStr.slice(1, searchStr.lastIndexOf('/'));
                     const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
-                    currentValue = currentValue.replace(regex, replaceStr);
+                    if (regex.test(currentValue)) {
+                        matched = true;
+                        currentValue = currentValue.replace(regex, replaceStr);
+                    }
                 } else {
-                    if (replaceStr === '|||SPLIT|||') {
-                        currentValue = currentValue.split(searchStr).join('');
-                    } else {
-                        currentValue = currentValue.split(searchStr).join(replaceStr);
+                    if (searchStr === "" && currentValue === "") {
+                        matched = true;
+                        currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
+                    }
+                    else if (searchStr !== "" && currentValue.includes(searchStr)) {
+                        matched = true;
+                        if (replaceStr === '|||SPLIT|||') {
+                            currentValue = currentValue.split(searchStr).join('');
+                        } else {
+                            currentValue = currentValue.split(searchStr).join(replaceStr);
+                        }
+                    }
+                    else if (searchStr !== "" && currentValue === searchStr) {
+                        matched = true;
+                        currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
                     }
                 }
+
+                // [V5.17 UX] Local Rules acts as absolute overrides.
+                // If this specific replacement successfully triggered, STOP the generic pipeline.
+                if (matched) break;
+
             } catch (e) {
                 console.warn(`[ETL] Error procesando regla custom ${rule.nombre_regla}:`, e);
             }

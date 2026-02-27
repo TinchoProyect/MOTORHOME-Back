@@ -785,10 +785,8 @@ window.ViewerUI = (function () {
           const input = document.getElementById('swalOverrideInput');
           const newVal = input ? input.value : "";
 
-          if (newVal === rawValue) {
-            Swal.fire("Sin cambios", "El texto ingresado es idéntico al original.", "info");
-            return;
-          }
+          // [V5.17 UX] Allow identical replacements (e.g. keeping empty cells empty or forcing a specific string to bypass other generic rules)
+          // Removed: if (newVal === rawValue) { ... return; }
 
           // Hook into the Workshop Controller to create the rule natively
           if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
@@ -801,7 +799,8 @@ window.ViewerUI = (function () {
     } else {
       // Fallback (native prompt) if Swal is missing
       const newVal = prompt("Reemplazar este valor original:\n\n" + rawValue + "\n\nPor nuevo valor:", rawValue);
-      if (newVal !== null && newVal !== rawValue) {
+      // [V5.17 UX] Allow identical values
+      if (newVal !== null) {
         if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
           window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false);
         }
