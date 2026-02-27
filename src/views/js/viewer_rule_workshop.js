@@ -375,10 +375,22 @@ export function applyMapping() {
     }
 }
 
-export async function createLocalRule(searchStr, replaceStr, isRegex = false) {
+export async function createLocalRule(searchStr, replaceStr, isRegex = false, colId = null) {
     if (!window.globalContext || !window.globalContext.providerId || !window.currentSheetName) {
         alert("Falta contexto del proveedor u hoja actual.");
         return false;
+    }
+
+    // [V5.19 UX] Rebuild Context for headless rule injection (Quick Rule Modal)
+    if (!isPanelOpen && colId) {
+        activeContext = {
+            colIndex: colId,
+            colName: colId,
+            masterField: window.draftPipelines && window.draftPipelines[colId] ? window.draftPipelines[colId].masterField : { id: 0, nombre_campo: "N/A" }
+        };
+        currentDraftPipeline = window.draftPipelines && window.draftPipelines[colId] && window.draftPipelines[colId].rules
+            ? [...window.draftPipelines[colId].rules]
+            : [];
     }
 
     try {
@@ -393,6 +405,8 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false) {
             tipo_regex: `CUSTOM_REPLACE:${searchFormatted}|||${replaceStr}`
         };
 
+        console.log(`[VIGIA AUDITOR] 2. Creando Regla Local (createLocalRule) | Payload Backend:`, { target: searchFormatted, replace: replaceStr });
+
         const response = await fetch(`${backendUrl}/api/mapping/custom`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -401,14 +415,35 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false) {
 
         if (response.ok) {
             const data = await response.json();
-            console.log(`✅ [WORKSHOP] Regla local creada:`, data.rule);
 
             await loadRuleCatalog();
 
             if (data.rule) {
+                console.log(`[VIGIA AUDITOR] 3. Regla Guardada OK. Inyectando en Pipeline RAM de la columna [${activeContext.colIndex}]`);
+
                 currentDraftPipeline.push({ ...data.rule });
                 renderPipeline();
                 triggerPreview();
+
+                // [V5.19 UX] Instantly persist the pipeline globally so the UI table updates if the workshop panel is closed
+                if (!isPanelOpen && activeContext && activeContext.colIndex) {
+                    if (!window.draftPipelines) window.draftPipelines = {};
+                    window.draftPipelines[activeContext.colIndex] = {
+                        masterField: activeContext.masterField,
+                        colName: activeContext.colName,
+                        rules: [...currentDraftPipeline]
+                    };
+                    console.log(`[VIGIA AUDITOR] 4. Disparando saveSimulationConfig() para refrescar grilla virtual.`);
+                    if (typeof window.saveSimulationConfig === 'function') {
+                        window.saveSimulationConfig(null, false);
+                    }
+
+                    // [V5.21 UX] Force a redraw of the Virtual Scroller so the newly injected RAM rule takes effect visually
+                    if (window.renderVirtualTable && window.viewerState && window.viewerState.data) {
+                        console.log(`[VIGIA AUDITOR] 5. Forzando repintado de la grilla virtual con los nuevos datos en RAM.`);
+                        window.renderVirtualTable(window.viewerState.data);
+                    }
+                }
             }
             return true;
         } else {

@@ -4,11 +4,21 @@
  */
 
 function renderVirtualTable(originalData) {
-    // 🔥 MODO MUERTITO: Tabla principal estática (RAW)
-    const data = originalData;
+    // [V5.19 UX] Global Trim for Phantom Rows (bottom-up filtering)
+    let cleanedData = [...(originalData || [])];
+    let lastRealRowIndex = cleanedData.length - 1;
+    while (lastRealRowIndex >= 0) {
+        const row = cleanedData[lastRealRowIndex];
+        const isEmptyRow = !row || row.length === 0 || row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
+        if (!isEmptyRow) break;
+        lastRealRowIndex--;
+    }
+    const data = cleanedData.slice(0, lastRealRowIndex + 1);
 
     // 🔥 STATE EXPOSURE FOR SATELLITE MODULES (v2.5)
-    window.viewerState = { mapping: columnMapping, data: currentSheetData };
+    window.viewerState = { mapping: columnMapping, data: data };
+    // [V5.19 FIX] Ensure external scripts access the purely cleaned array, overriding any previous injection.
+    if (typeof currentSheetData !== 'undefined') currentSheetData = data;
 
     const container = document.getElementById('excelContainer');
     if (container) {
@@ -265,7 +275,7 @@ function renderVirtualTable(originalData) {
                         .replace(/"/g, "&quot;")
                         .replace(/\n/g, "\\n")
                         .replace(/\r/g, "\\r");
-                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}')"`;
+                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}')"`;
 
                     if (isWorkshopOpen) {
                         cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50 cursor-context-menu";
@@ -280,6 +290,10 @@ function renderVirtualTable(originalData) {
                         const rawVal = String(cellVal);
                         const { result, rejected } = window.viewerETL.transformCell(rawVal, activePipeline);
 
+                        if (rawVal === "" && (window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1')) {
+                            console.log(`[VIGIA AUDITOR RENDER] Celda Evaluada | rawVal: '${rawVal}' -> result: '${result}' | rejected: ${rejected} | Pipeline Length: ${activePipeline.length}`);
+                        }
+
                         if (rejected) {
                             cellClass += " opacity-30 grayscale bg-red-500/10 text-red-400/50";
                             cellVal = `
@@ -288,13 +302,16 @@ function renderVirtualTable(originalData) {
                                     <i data-lucide="ban" class="w-3 h-3 flex-shrink-0"></i>
                                 </div>
                             `;
-                        } else if (result !== rawVal) {
+                        } else if (result !== rawVal || (result === "" && rawVal === "")) {
+                            // [V5.19 UX] Explicitly show when a rule CLEARS a cell to differentiate from a natural missing value
+                            const displayResult = result === "" ? '<span class="italic opacity-50 text-[10px]">[Vaciada]</span>' : result;
+
                             cellVal = `
                                 <div class="flex flex-col gap-1 py-1">
-                                    <span class="text-[10px] text-slate-500 line-through truncate">${rawVal}</span>
+                                    <span class="text-[10px] text-slate-500 line-through truncate">${rawVal === "" ? '[Vacía]' : rawVal}</span>
                                     <div class="flex items-center gap-2 text-emerald-400 font-bold ${isWorkshopOpen ? 'bg-emerald-950/30' : 'bg-emerald-950/10'} px-2 py-0.5 rounded border ${isWorkshopOpen ? 'border-emerald-900/50' : 'border-emerald-900/20'}">
                                         <i data-lucide="arrow-down-right" class="w-3 h-3 flex-shrink-0"></i>
-                                        <span class="truncate text-xs">${result || '<vacío>'}</span>
+                                        <span class="truncate text-xs leading-none">${displayResult}</span>
                                     </div>
                                 </div>
                             `;

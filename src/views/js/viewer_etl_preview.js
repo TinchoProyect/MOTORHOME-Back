@@ -12,175 +12,185 @@ export function transformCell(rawValue, pipeline) {
     // [V5] Rich Object Support
     let cleanValue = null; // Stores pure mathematical float if evaluated
 
-    for (const rule of pipeline) {
-        if (isRejected) break; // Si ya fue filtrada, saltar resto
+    // [V5.20 FIX] Absolute Overrides: Evaluate CUSTOM_REPLACE local rules FIRST against RAW value.
+    const customRules = pipeline.filter(r => r.tipo_regex && r.tipo_regex.startsWith('CUSTOM_REPLACE:'));
+    const genericRules = pipeline.filter(r => !(r.tipo_regex && r.tipo_regex.startsWith('CUSTOM_REPLACE:')));
 
-        // Reglas Nativas
-        if (rule.tipo_regex === 'SANITIZER_NUMERIC') {
-            currentValue = currentValue.replace(/[^0-9.,-]/g, '');
-        }
-        else if (rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
-            if (/[^0-9|/]/.test(currentValue)) {
-                currentValue = "";
-                isRejected = true;
-            }
-        }
-        else if (rule.tipo_regex === 'FILTER_EMPTY') {
-            if (currentValue === "") isRejected = true;
-        }
-        else if (rule.tipo_regex === 'TRANSFORM_UPPERCASE') {
-            currentValue = currentValue.toUpperCase();
-        }
-        else if (rule.tipo_regex === 'VALIDATE_NUMERIC') {
-            // Rechaza completamente si hay caracteres no numéricos
-            if (!/^\d+$/.test(currentValue)) {
-                currentValue = "";
-                isRejected = true;
-            }
-        }
-        else if (rule.tipo_regex === 'EXTRACT_DESCRIPTION_PACKAGE') {
-            const packageRegex = /\s+(\d+\s*x\s*\d+|x\s*\d+|por\s+\d+).*$/i;
-            currentValue = currentValue.replace(packageRegex, '');
-        }
-        else if (rule.tipo_regex === 'EXTRACT_PACKAGE_UNITS') {
-            const explicitMatch = currentValue.match(/(\d+)\s*[xX]\s*\d+/);
-            if (explicitMatch) {
-                currentValue = explicitMatch[1];
-            } else {
-                const implicitMatch = currentValue.match(/(?:\s|^)(?:[xX]|por)\s*\d+/i);
-                if (implicitMatch) {
-                    currentValue = "1";
-                } else {
-                    currentValue = "1";
+    let hasAbsoluteOverride = false;
+
+    for (const rule of customRules) {
+        if (isRejected) break;
+        try {
+            const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
+            const parts = payload.split('|||');
+            const searchStr = parts[0] || '';
+            let replaceStr = parts[1] || '';
+            let matched = false;
+
+            if (searchStr.startsWith('/') && searchStr.lastIndexOf('/') > 0) {
+                const flags = searchStr.slice(searchStr.lastIndexOf('/') + 1);
+                const pattern = searchStr.slice(1, searchStr.lastIndexOf('/'));
+                const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
+                if (regex.test(currentValue)) {
+                    matched = true;
+                    currentValue = currentValue.replace(regex, replaceStr);
                 }
-            }
-        }
-        else if (rule.tipo_regex === 'EXTRACT_UNIT_SIZE') {
-            const unitMatch = currentValue.match(/(?:x|X|por)\s*(\d+(?:[.,]\d+)?)/i);
-            if (unitMatch) {
-                currentValue = unitMatch[1];
             } else {
-                currentValue = "";
-            }
-        }
-        else if (rule.tipo_regex === 'FORMAT_DECIMAL_DISCOUNT') {
-            if (!currentValue || currentValue === "") {
-                currentValue = "0,00";
-                cleanValue = 0.0;
-            } else {
-                // Ensure float parsing before converting back to comma string
-                const normalized = currentValue.replace(/,/g, '.');
-                cleanValue = parseFloat(normalized);
-                if (isNaN(cleanValue)) cleanValue = 0.0;
+                const cv = String(currentValue).trim();
+                const sv = String(searchStr).trim();
 
-                currentValue = currentValue.replace(/\./g, ',');
-            }
-        }
-        else if (rule.tipo_regex === 'FORMAT_PRICE_AR') {
-            if (currentValue && currentValue !== "") {
-                // Remove everything except digits, dots, and commas
-                let cleanStr = currentValue.replace(/[^\d.,-]/g, '');
-
-                if (cleanStr !== "") {
-                    // Find the last dot or comma
-                    const lastDot = cleanStr.lastIndexOf('.');
-                    const lastComma = cleanStr.lastIndexOf(',');
-                    let floatVal = 0;
-
-                    if (lastDot === -1 && lastComma === -1) {
-                        floatVal = parseFloat(cleanStr);
-                    } else if (lastDot > lastComma) {
-                        // Dot is the decimal separator. Remove all commas.
-                        const withoutThousandSeps = cleanStr.replace(/,/g, '');
-                        floatVal = parseFloat(withoutThousandSeps);
+                if (sv === "" && cv === "") {
+                    matched = true;
+                    currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
+                }
+                else if (sv !== "" && cv === sv) {
+                    matched = true;
+                    currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
+                }
+                else if (sv !== "" && cv.includes(sv)) {
+                    matched = true;
+                    if (replaceStr === '|||SPLIT|||') {
+                        currentValue = cv.split(sv).join('');
                     } else {
-                        // Comma is the decimal separator. Remove all dots, replace last comma with dot.
-                        const withoutThousandSeps = cleanStr.replace(/\./g, '');
-                        const standardStr = withoutThousandSeps.replace(',', '.');
-                        floatVal = parseFloat(standardStr);
-                    }
-
-                    if (!isNaN(floatVal)) {
-                        cleanValue = floatVal; // [V5] Trap the actual math value
-                        currentValue = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(floatVal);
-                    } else {
-                        currentValue = "";
-                        cleanValue = null;
+                        currentValue = cv.split(sv).join(replaceStr);
                     }
                 }
             }
-        }
-        else if (rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:')) {
-            try {
-                // Formato: CUSTOM_REPLACE:buscar|||reemplazar
-                const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
-                const parts = payload.split('|||');
-                const searchStr = parts[0] || '';
-                let replaceStr = parts[1] || '';
-                let matched = false;
 
-                // Si buscar está envuelto en / /, lo tratamos como Regex, sino literal global.
-                if (searchStr.startsWith('/') && searchStr.lastIndexOf('/') > 0) {
-                    const flags = searchStr.slice(searchStr.lastIndexOf('/') + 1);
-                    const pattern = searchStr.slice(1, searchStr.lastIndexOf('/'));
-                    const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
-                    if (regex.test(currentValue)) {
-                        matched = true;
-                        currentValue = currentValue.replace(regex, replaceStr);
-                    }
-                } else {
-                    // Normalize for comparison
-                    const cv = String(currentValue).trim();
-                    const sv = String(searchStr).trim();
-
-                    if (sv === "" && cv === "") {
-                        matched = true;
-                        currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
-                    }
-                    // [V5.18 FIX] Always prefer EXACT full-string match over partial substring match
-                    else if (sv !== "" && cv === sv) {
-                        matched = true;
-                        currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
-                    }
-                    else if (sv !== "" && cv.includes(sv)) {
-                        matched = true;
-                        if (replaceStr === '|||SPLIT|||') {
-                            currentValue = cv.split(sv).join('');
-                        } else {
-                            currentValue = cv.split(sv).join(replaceStr);
-                        }
-                    }
+            if (matched) {
+                if (window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1') {
+                    console.log(`[VIGIA AUDITOR ETL] MATCH REGLA LOCAL PRE-PIPELINE | Buscar: '${searchStr}', Reemplazar: '${replaceStr}' | Celda Resultante: '${currentValue}'`);
                 }
-
-                // [V5.17 UX] Local Rules acts as absolute overrides.
-                // If this specific replacement successfully triggered, STOP the generic pipeline.
-                if (matched) break;
-
-            } catch (e) {
-                console.warn(`[ETL] Error procesando regla custom ${rule.nombre_regla}:`, e);
+                hasAbsoluteOverride = true;
+                break;
             }
-        }
-        else {
-            // Regla Regex Dinámica
-            try {
-                let patternStr = rule.tipo_regex;
-                let isGlobal = true;
-                if (patternStr.startsWith('/')) {
-                    const lastSlash = patternStr.lastIndexOf('/');
-                    const flags = patternStr.slice(lastSlash + 1);
-                    patternStr = patternStr.slice(1, lastSlash);
-                    isGlobal = flags.includes('g');
-                }
-
-                const regex = new RegExp(patternStr, isGlobal ? 'g' : '');
-                // Por defecto removemos las coincidencias (limpieza)
-                currentValue = currentValue.replace(regex, '');
-            } catch (e) {
-                console.warn(`[ETL] Regex Invalido en regla ${rule.nombre_regla}:`, e);
-            }
+        } catch (e) {
+            console.warn(`[ETL] Error procesando regla custom preliminar ${rule.nombre_regla}:`, e);
         }
         currentValue = currentValue.trim();
     }
+
+    if (!hasAbsoluteOverride) {
+        for (const rule of genericRules) {
+            if (isRejected) break; // Si ya fue filtrada, saltar resto
+
+            // Reglas Nativas
+            if (rule.tipo_regex === 'SANITIZER_NUMERIC') {
+                currentValue = currentValue.replace(/[^0-9.,-]/g, '');
+            }
+            else if (rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
+                if (/[^0-9|/]/.test(currentValue)) {
+                    currentValue = "";
+                    isRejected = true;
+                }
+            }
+            else if (rule.tipo_regex === 'FILTER_EMPTY') {
+                if (currentValue === "") isRejected = true;
+            }
+            else if (rule.tipo_regex === 'TRANSFORM_UPPERCASE') {
+                currentValue = currentValue.toUpperCase();
+            }
+            else if (rule.tipo_regex === 'VALIDATE_NUMERIC') {
+                // Rechaza completamente si hay caracteres no numéricos
+                if (!/^\d+$/.test(currentValue)) {
+                    currentValue = "";
+                    isRejected = true;
+                }
+            }
+            else if (rule.tipo_regex === 'EXTRACT_DESCRIPTION_PACKAGE') {
+                const packageRegex = /\s+(\d+\s*x\s*\d+|x\s*\d+|por\s+\d+).*$/i;
+                currentValue = currentValue.replace(packageRegex, '');
+            }
+            else if (rule.tipo_regex === 'EXTRACT_PACKAGE_UNITS') {
+                const explicitMatch = currentValue.match(/(\d+)\s*[xX]\s*\d+/);
+                if (explicitMatch) {
+                    currentValue = explicitMatch[1];
+                } else {
+                    const implicitMatch = currentValue.match(/(?:\s|^)(?:[xX]|por)\s*\d+/i);
+                    if (implicitMatch) {
+                        currentValue = "1";
+                    } else {
+                        currentValue = "1";
+                    }
+                }
+            }
+            else if (rule.tipo_regex === 'EXTRACT_UNIT_SIZE') {
+                const unitMatch = currentValue.match(/(?:x|X|por)\s*(\d+(?:[.,]\d+)?)/i);
+                if (unitMatch) {
+                    currentValue = unitMatch[1];
+                } else {
+                    currentValue = "";
+                }
+            }
+            else if (rule.tipo_regex === 'FORMAT_DECIMAL_DISCOUNT') {
+                if (!currentValue || currentValue === "") {
+                    currentValue = "0,00";
+                    cleanValue = 0.0;
+                } else {
+                    // Ensure float parsing before converting back to comma string
+                    const normalized = currentValue.replace(/,/g, '.');
+                    cleanValue = parseFloat(normalized);
+                    if (isNaN(cleanValue)) cleanValue = 0.0;
+
+                    currentValue = currentValue.replace(/\./g, ',');
+                }
+            }
+            else if (rule.tipo_regex === 'FORMAT_PRICE_AR') {
+                if (currentValue && currentValue !== "") {
+                    // Remove everything except digits, dots, and commas
+                    let cleanStr = currentValue.replace(/[^\d.,-]/g, '');
+
+                    if (cleanStr !== "") {
+                        // Find the last dot or comma
+                        const lastDot = cleanStr.lastIndexOf('.');
+                        const lastComma = cleanStr.lastIndexOf(',');
+                        let floatVal = 0;
+
+                        if (lastDot === -1 && lastComma === -1) {
+                            floatVal = parseFloat(cleanStr);
+                        } else if (lastDot > lastComma) {
+                            // Dot is the decimal separator. Remove all commas.
+                            const withoutThousandSeps = cleanStr.replace(/,/g, '');
+                            floatVal = parseFloat(withoutThousandSeps);
+                        } else {
+                            // Comma is the decimal separator. Remove all dots, replace last comma with dot.
+                            const withoutThousandSeps = cleanStr.replace(/\./g, '');
+                            const standardStr = withoutThousandSeps.replace(',', '.');
+                            floatVal = parseFloat(standardStr);
+                        }
+
+                        if (!isNaN(floatVal)) {
+                            cleanValue = floatVal; // [V5] Trap the actual math value
+                            currentValue = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(floatVal);
+                        } else {
+                            currentValue = "";
+                            cleanValue = null;
+                        }
+                    }
+                }
+            }
+            else {
+                // Regla Regex Dinámica
+                try {
+                    let patternStr = rule.tipo_regex;
+                    let isGlobal = true;
+                    if (patternStr.startsWith('/')) {
+                        const lastSlash = patternStr.lastIndexOf('/');
+                        const flags = patternStr.slice(lastSlash + 1);
+                        patternStr = patternStr.slice(1, lastSlash);
+                        isGlobal = flags.includes('g');
+                    }
+
+                    const regex = new RegExp(patternStr, isGlobal ? 'g' : '');
+                    // Por defecto removemos las coincidencias (limpieza)
+                    currentValue = currentValue.replace(regex, '');
+                } catch (e) {
+                    console.warn(`[ETL] Regex Invalido en regla ${rule.nombre_regla}:`, e);
+                }
+            }
+            currentValue = currentValue.trim();
+        }
+    } // Cierra if (!hasAbsoluteOverride)
 
     // Default cleanValue fallback: Try parse if not explicitly set by rules
     if (cleanValue === null && currentValue !== "" && !isNaN(currentValue.replace(/,/g, '.'))) {

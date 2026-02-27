@@ -163,8 +163,20 @@ async function openFileViewer(fileId, fileName, providerId = null) {
                     loadSheet(sheetNames[0]);
                     loader.classList.add('hidden');
                 } else if (type === 'SHEET_DATA_READY') {
-                    currentSheetData = payload.data;
-                    console.log("🛑 [VIGÍA FRONTEND] Filas crudas recibidas del Worker (sheet_to_json):", currentSheetData.length);
+                    // [V5.19 UX] Filter out phantom empty rows at the bottom of the Excel file
+                    let rawData = payload.data || [];
+                    let lastRealRowIndex = rawData.length - 1;
+
+                    while (lastRealRowIndex >= 0) {
+                        const row = rawData[lastRealRowIndex];
+                        const isEmptyRow = !row || row.length === 0 || row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
+                        if (!isEmptyRow) break;
+                        lastRealRowIndex--;
+                    }
+
+                    currentSheetData = rawData.slice(0, lastRealRowIndex + 1);
+
+                    console.log(`🛑 [VIGÍA FRONTEND] Filas crudas recibidas: ${rawData.length}, Filas efectivas tras limpieza de fantasmas: ${currentSheetData.length}`);
                     renderVirtualTable(currentSheetData);
 
                     // [CORRECCIÓN FINAL] INTENTAR CARGAR MEMORIA AUTOMÁTICAMENTE

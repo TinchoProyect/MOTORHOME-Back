@@ -751,21 +751,28 @@ window.ViewerUI = (function () {
 
   // --- [PHASE 7: AUDIT MODE TOOLTIP (Context Menu)] ---
   // --- [PHASE 7: AUDIT MODE CONTEXT ACTION (In-Place Edit)] ---
-  function showOriginalValue(e, rawValue) {
+  function showOriginalValue(e, rawValue, colId) {
     if (e && e.preventDefault) e.preventDefault(); // Stop standard context menu
 
     // [V5.15 UX] Upgrade from passive tooltip to interactive Local Rule Creator
     if (typeof Swal !== 'undefined') {
+      // [V5.19 UX] Ensure falsy values cleanly cast to empty strings without taking the 'Vacío' label
+      const safeRawValue = (rawValue === null || rawValue === undefined) ? "" : String(rawValue);
+
+      if (window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1') {
+        console.log(`[UX DIAGNOSTIC] Right Click on cell. Payload received: '${rawValue}', Length: ${rawValue ? rawValue.length : 0}, Parsed Safe Value: '${safeRawValue}', Length: ${safeRawValue.length}`);
+      }
+
       Swal.fire({
         title: 'Valor Original',
         html: `
           <div class="text-left mb-4">
             <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Texto de Origen:</label>
-            <div class="bg-slate-900 border border-slate-700 p-2 text-white font-mono text-sm rounded mt-1 break-all mb-4 select-text">
-              ${rawValue || 'Vacío'}
+            <div class="bg-slate-900 border border-slate-700 p-2 text-white font-italic text-sm rounded mt-1 break-all mb-4 select-text">
+              <span class="${safeRawValue === "" ? 'text-slate-500 italic' : ''}">${safeRawValue === "" ? '[Celda Vacía]' : safeRawValue}</span>
             </div>
             <label class="text-xs font-bold text-blue-400 uppercase tracking-wider">Nuevo Valor (Reemplazo):</label>
-            <input type="text" id="swalOverrideInput" class="w-full mt-1 bg-slate-900 border border-blue-500/50 rounded p-2 text-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400" value="${rawValue || ''}" placeholder="Escribe el valor corregido...">
+            <input type="text" id="swalOverrideInput" class="w-full mt-1 bg-slate-900 border border-blue-500/50 rounded p-2 text-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400" value="${safeRawValue}" placeholder="Escribe el valor corregido...">
           </div>
         `,
         icon: 'info',
@@ -785,12 +792,9 @@ window.ViewerUI = (function () {
           const input = document.getElementById('swalOverrideInput');
           const newVal = input ? input.value : "";
 
-          // [V5.17 UX] Allow identical replacements (e.g. keeping empty cells empty or forcing a specific string to bypass other generic rules)
-          // Removed: if (newVal === rawValue) { ... return; }
-
           // Hook into the Workshop Controller to create the rule natively
           if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
-            window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false);
+            window.viewerRuleWorkshop.createLocalRule(safeRawValue, newVal, false, colId);
           } else {
             Swal.fire("Error", "El Módulo de Reglas no está activo.", "error");
           }
@@ -802,7 +806,7 @@ window.ViewerUI = (function () {
       // [V5.17 UX] Allow identical values
       if (newVal !== null) {
         if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
-          window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false);
+          window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false, colId);
         }
       }
     }
