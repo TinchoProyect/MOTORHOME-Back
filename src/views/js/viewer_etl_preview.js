@@ -129,21 +129,26 @@ export function transformCell(rawValue, pipeline) {
                         currentValue = currentValue.replace(regex, replaceStr);
                     }
                 } else {
-                    if (searchStr === "" && currentValue === "") {
+                    // Normalize for comparison
+                    const cv = String(currentValue).trim();
+                    const sv = String(searchStr).trim();
+
+                    if (sv === "" && cv === "") {
                         matched = true;
                         currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
                     }
-                    else if (searchStr !== "" && currentValue.includes(searchStr)) {
+                    // [V5.18 FIX] Always prefer EXACT full-string match over partial substring match
+                    else if (sv !== "" && cv === sv) {
+                        matched = true;
+                        currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
+                    }
+                    else if (sv !== "" && cv.includes(sv)) {
                         matched = true;
                         if (replaceStr === '|||SPLIT|||') {
-                            currentValue = currentValue.split(searchStr).join('');
+                            currentValue = cv.split(sv).join('');
                         } else {
-                            currentValue = currentValue.split(searchStr).join(replaceStr);
+                            currentValue = cv.split(sv).join(replaceStr);
                         }
-                    }
-                    else if (searchStr !== "" && currentValue === searchStr) {
-                        matched = true;
-                        currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
                     }
                 }
 
