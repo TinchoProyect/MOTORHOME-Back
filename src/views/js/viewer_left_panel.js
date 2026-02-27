@@ -36,6 +36,9 @@ export async function initLeftPanel() {
         // Filtrar solo los activos
         activeFields = (result.data || []).filter(f => f.esta_activo);
 
+        // Expose globally for V5 UUID resolving
+        window.masterDictionary = activeFields;
+
         if (activeFields.length === 0) {
             header.innerHTML = '';
             content.innerHTML = `

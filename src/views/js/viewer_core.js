@@ -24,6 +24,7 @@ window.globalContext = {
 // --- 3. MAPPING & RULES STATE (Lógica de Negocio) ---
 var mappingMode = false;
 window.virtualColumns = []; // V4.1 Proxy Visual
+window.computedColumns = []; // V5 Computed Columns (Phase 2)
 var columnMapping = {}; // { colIndex: "TerminoID" }
 var offsetSelectionMode = false;
 var currentOffset = { row: 0, col: 0 };
@@ -67,6 +68,7 @@ window.resetViewerState = function () {
     // Variables de Mapeo
     mappingMode = false;
     window.virtualColumns = [];
+    window.computedColumns = []; // V5
     columnMapping = {};
     currentOffset = { row: 0, col: 0 };
     processingRules = {};
@@ -121,7 +123,8 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
             config: {
                 offset: typeof currentOffset !== 'undefined' ? currentOffset : { row: 0, col: 0 },
                 mapping: typeof columnMapping !== 'undefined' ? columnMapping : {},
-                rules: typeof processingRules !== 'undefined' ? processingRules : {}
+                rules: typeof processingRules !== 'undefined' ? processingRules : {},
+                computedCols: window.computedColumns || []
             }
         };
 
@@ -321,10 +324,20 @@ window.loadSavedConfiguration = async function () {
 
                 if (resultV3.data.reglas_procesamiento) {
                     processingRules = {};
-                    Object.keys(resultV3.data.reglas_procesamiento).forEach(oldKey => {
+                    const rawRules = resultV3.data.reglas_procesamiento.rules || resultV3.data.reglas_procesamiento;
+                    Object.keys(rawRules).forEach(oldKey => {
+                        if (oldKey === 'computedColumns') return; // Skip computed columns in processingRules
                         const vColId = oldKey.startsWith('col_') ? oldKey : `col_${oldKey}`;
-                        processingRules[vColId] = resultV3.data.reglas_procesamiento[oldKey];
+                        processingRules[vColId] = rawRules[oldKey];
                     });
+
+                    // [V5] Hydrate Computed Columns from Backend
+                    if (resultV3.data.reglas_procesamiento.computedColumns) {
+                        window.computedColumns = Array.isArray(resultV3.data.reglas_procesamiento.computedColumns)
+                            ? resultV3.data.reglas_procesamiento.computedColumns
+                            : [];
+                        console.log("✅ [V5] Columnas Calculadas recuperadas:", window.computedColumns.length);
+                    }
                 }
 
                 loadedAnything = true;

@@ -160,6 +160,27 @@ function renderVirtualTable(originalData) {
         thClass += " relative"; // Add relative so the absolute resizer handles position correctly
         headerHtml += `<th id="th-${j}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" ${clickAttr} data-col-id="${j}">${thContent}${resizerHtml}</th>`;
     });
+
+    // [V5.6] Fase 2 - Encabezados Computed en Virtual Scroller
+    if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
+        window.computedColumns.forEach((comp, idx) => {
+            const thClass = "bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20";
+            const thContent = `
+                <div class="flex items-center justify-between gap-1">
+                    <div class="flex items-center gap-1 overflow-hidden" title="${comp.masterField?.nombre_campo || 'Calculada'}">
+                        <i data-lucide="calculator" class="w-3 h-3 text-fuchsia-400 flex-shrink-0"></i>
+                        <span class="truncate text-[10px]">${comp.masterField?.nombre_campo || 'Calculada'}</span>
+                    </div>
+                    <button onclick="window.ViewerUI.deleteComputedColumn('${idx}')" class="text-fuchsia-500 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Eliminar Cálculo">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                    </button>
+                </div>
+            `;
+            const colWidth = 150;
+            headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;">${thContent}</th>`;
+        });
+    }
+
     headerHtml += '</tr>';
     thead.innerHTML = headerHtml;
 
@@ -259,6 +280,74 @@ function renderVirtualTable(originalData) {
 
                 rowsHtml += `<td onclick="handleOffsetClick(${i}, ${dataIdx})" class="${cellClass}">${cellVal}</td>`;
             }
+
+            // [V5.6] Fase 2 - Cálculo al vuelo en Virtual Scroller (Columnas Calculadas)
+            if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
+                window.computedColumns.forEach(calcConfig => {
+                    let rCtx = row._richContext || {};
+
+                    // On-the-fly calculation si no existe context (Performance Lazy Load)
+                    if (!row._richContext && window.viewerETL) {
+                        rCtx = {};
+                        if (calcConfig.operands && calcConfig.operands.length === 2) {
+                            calcConfig.operands.forEach(opColId => {
+                                const pipe = window.draftPipelines && window.draftPipelines[opColId] ? window.draftPipelines[opColId].rules : [];
+                                const vColOp = window.virtualColumns.find(v => v.id === opColId);
+                                if (vColOp && vColOp.dataIdx !== undefined) {
+                                    const raw = String(row[vColOp.dataIdx] || "");
+                                    const { clean } = window.viewerETL.transformCell(raw, pipe || []);
+                                    rCtx[opColId] = { clean };
+                                }
+                            });
+                        }
+                    }
+
+                    let resultDisplay = "";
+                    let mathResult = 0;
+                    let cellClass = 'border-r border-b border-fuchsia-900/30 p-2 whitespace-nowrap text-fuchsia-200 overflow-hidden text-ellipsis bg-fuchsia-950/20';
+
+                    try {
+                        if (calcConfig.operands && calcConfig.operands.length === 2) {
+                            const opA = rCtx[calcConfig.operands[0]];
+                            const opB = rCtx[calcConfig.operands[1]];
+
+                            if (opA && opB && opA.clean !== null && opB.clean !== null && opA.clean !== undefined) {
+                                let mathA = parseFloat(String(opA.clean).replace(',', '.'));
+                                let mathB = parseFloat(String(opB.clean).replace(',', '.'));
+
+                                if (isNaN(mathA)) mathA = 0;
+                                if (isNaN(mathB)) mathB = 0;
+
+                                if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
+                                    // Math.abs ensures we don't accidentally subtract a negative (which adds)
+                                    const discountPercent = Math.abs(mathB);
+                                    if (discountPercent === 0) {
+                                        mathResult = mathA;
+                                    } else {
+                                        // Auto-detect if it's already a decimal (e.g., 0.10 for 10%) or whole number (10 for 10%)
+                                        const actualPercentMultiplier = (discountPercent > 0 && discountPercent < 1)
+                                            ? discountPercent
+                                            : (discountPercent / 100);
+                                        mathResult = mathA * (1 - actualPercentMultiplier);
+                                    }
+                                } else if (calcConfig.macro === "MULTIPLY") {
+                                    mathResult = mathA * mathB;
+                                } else if (calcConfig.macro === "SUBTRACT") {
+                                    mathResult = mathA - mathB;
+                                }
+                                resultDisplay = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(mathResult);
+                            } else {
+                                resultDisplay = "<span class='text-slate-600 italic text-[10px]'>N/A</span>";
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error evaluando Computed Column V5", e);
+                    }
+
+                    rowsHtml += `<td class="${cellClass}">${resultDisplay}</td>`;
+                });
+            }
+
             rowsHtml += '</tr>';
         }
         tbody.innerHTML = rowsHtml;
@@ -470,8 +559,8 @@ function generatePreview() {
                 const rawRule = processingRules[vColId];
                 const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
 
-                // 1. First, apply "Transformation" rules to get the REAL value in memory
                 let cellValue = row[dataIdx];
+                let cleanValue = null; // V5 Math trap
 
                 for (const rule of rulesStack) {
                     if (rule.disabled) continue;
@@ -497,10 +586,63 @@ function generatePreview() {
                                 if (new RegExp(p, 'i').test(strVal)) shouldReplace = true;
                             } catch (e) { }
                         }
-                        if (shouldReplace) cellValue = fallback;
-                        else if (strVal.includes('.')) cellValue = strVal.replace(/\./g, ',');
+                        if (shouldReplace) {
+                            cellValue = fallback;
+                        } else if (strVal.includes('.')) {
+                            cellValue = strVal.replace(/\./g, ',');
+                        }
                     }
+                    else if (rule.type === 'FORMAT_DECIMAL_DISCOUNT' || rule.tipo_regex === 'FORMAT_DECIMAL_DISCOUNT') {
+                        if (!strVal || strVal === "") {
+                            cellValue = "0,00";
+                            cleanValue = 0.0;
+                        } else {
+                            const normalized = strVal.replace(/,/g, '.');
+                            cleanValue = parseFloat(normalized);
+                            if (isNaN(cleanValue)) cleanValue = 0.0;
+                            cellValue = strVal.replace(/\./g, ',');
+                        }
+                    }
+                    else if (rule.type === 'FORMAT_PRICE_AR' || rule.tipo_regex === 'FORMAT_PRICE_AR') {
+                        if (strVal && strVal !== "") {
+                            let cleanStr = strVal.replace(/[^\d.,-]/g, '');
+                            if (cleanStr !== "") {
+                                const lastDot = cleanStr.lastIndexOf('.');
+                                const lastComma = cleanStr.lastIndexOf(',');
+                                let floatVal = 0;
+
+                                if (lastDot === -1 && lastComma === -1) {
+                                    floatVal = parseFloat(cleanStr);
+                                } else if (lastDot > lastComma) {
+                                    const withoutThousandSeps = cleanStr.replace(/,/g, '');
+                                    floatVal = parseFloat(withoutThousandSeps);
+                                } else {
+                                    const withoutThousandSeps = cleanStr.replace(/\./g, '');
+                                    const standardStr = withoutThousandSeps.replace(',', '.');
+                                    floatVal = parseFloat(standardStr);
+                                }
+
+                                if (!isNaN(floatVal)) {
+                                    cleanValue = floatVal;
+                                    cellValue = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(floatVal);
+                                } else {
+                                    cellValue = "";
+                                    cleanValue = null;
+                                }
+                            }
+                        }
+                    }
+                } // End of rule loop
+
+                // Default fallback parser if cleanValue wasn't explicitly trapped by a rule
+                if (cleanValue === null && cellValue !== "") {
+                    const parsed = parseFloat(String(cellValue).replace(/,/g, '.'));
+                    if (!isNaN(parsed)) cleanValue = parsed;
                 }
+
+                // Save Rich Object output into row context for Phase 2
+                if (!row._richContext) row._richContext = {};
+                row._richContext[vColId] = { clean: cleanValue, display: cellValue };
 
                 // 2. Now, check "Filter" rules against the TRANSFORMED value
                 for (const rule of rulesStack) {
@@ -643,15 +785,76 @@ function renderSimulationTable(data) {
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
         html += `<th class="${thClass}">${thContent}</th>`;
     });
+
+    // Fase 2 - Headers (Computed Columns)
+    if (Array.isArray(window.computedColumns)) {
+        window.computedColumns.forEach((calcConfig, index) => {
+            let thContent = `
+                <div class="flex items-center justify-between gap-2 text-fuchsia-300">
+                    <i data-lucide="calculator" class="w-3 h-3"></i>
+                    <div class="font-bold truncate" title="${calcConfig.masterField.nombre_campo}">${calcConfig.masterField.nombre_campo}</div>
+                    <div class="flex items-center shrink-0">
+                        <button onclick="window.ViewerUI.deleteComputedColumn('${index}')" class="text-fuchsia-400 hover:text-red-400 p-1" title="Eliminar Cálculo">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            html += `<th class="p-2 border border-fuchsia-900/50 bg-fuchsia-900/20 align-middle">${thContent}</th>`;
+        });
+    }
+
     html += "</tr></thead><tbody>";
 
     data.forEach((row) => {
         html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
+
+        // Fase 1 - Render
         currentDisplayConfig.forEach(cfg => {
             const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
             const finalVal = cfg.transform(rawVal, row);
             html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${finalVal}</td>`;
         });
+
+        // Fase 2 - Cálculo al vuelo de celdas Computed
+        if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
+            window.computedColumns.forEach(calcConfig => {
+                const rCtx = row._richContext || {};
+
+                let resultDisplay = "";
+
+                try {
+                    // Solo podemos operar si tenemos ambos operandos
+                    if (calcConfig.operands && calcConfig.operands.length === 2) {
+                        const opA = rCtx[calcConfig.operands[0]];
+                        const opB = rCtx[calcConfig.operands[1]];
+
+                        // Validar que existen en la fila, y que tienen valores limpios matemáticos
+                        if (opA && opB && opA.clean !== null && opB.clean !== null) {
+                            let mathResult = 0;
+                            // Ejecutar Macro Matemática (Ej. Precio Final = Precio * (1 - Descuento/100))
+                            if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
+                                mathResult = opA.clean * (1 - (opB.clean / 100));
+                            } else if (calcConfig.macro === "MULTIPLY") {
+                                mathResult = opA.clean * opB.clean;
+                            } else if (calcConfig.macro === "SUBTRACT") {
+                                mathResult = opA.clean - opB.clean;
+                            }
+
+                            // Formatear el resultado usando el estándar local
+                            resultDisplay = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(mathResult);
+                        } else {
+                            resultDisplay = "<span class='text-slate-600 italic'>Err: N/A</span>";
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error evaluando Fase 2", e);
+                }
+
+                html += `<td class="p-2 border-r border-fuchsia-900/30 text-fuchsia-100 whitespace-nowrap bg-fuchsia-950/20">${resultDisplay}</td>`;
+            });
+        }
+
         html += "</tr>";
     });
     html += "</tbody></table>";

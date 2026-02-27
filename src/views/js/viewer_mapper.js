@@ -76,10 +76,14 @@ export function activatePointerMode(masterField) {
     // FASE 1: Floating Toast (Sin oscurecer la pantalla, sin bloquear clics)
     backdrop.className = "fixed top-24 left-1/2 -translate-x-1/2 z-50 transition-opacity duration-300 opacity-100 pointer-events-none flex items-start justify-center";
     backdrop.innerHTML = `
-        <div class="bg-blue-900/90 border border-blue-400 text-blue-100 px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl shadow-blue-500/20 animate-bounce">
+        <div class="bg-blue-900/90 border border-blue-400 text-blue-100 px-6 py-3 rounded-full flex items-center gap-4 shadow-2xl shadow-blue-500/20 animate-bounce pointer-events-auto">
             <i data-lucide="mouse-pointer-click" class="w-5 h-5"></i>
-            <span class="text-sm font-bold tracking-wide">Selecciona cualquier celda o encabezado para enlazar "${masterField.nombre_campo}"</span>
-            <button onclick="if(window.viewerMapper) window.viewerMapper.cancelMapping()" class="ml-2 text-blue-300 hover:text-white pointer-events-auto"><i data-lucide="x-circle" class="w-4 h-4"></i></button>
+            <span class="text-sm font-bold tracking-wide">Selecciona cualquier celda para enlazar "${masterField.nombre_campo}"</span>
+            <div class="w-px h-5 bg-blue-700/50 mx-1"></div>
+            <button onclick="if(window.viewerMapper) window.viewerMapper.createComputedColumn()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-md text-[11px] uppercase tracking-wider font-bold transition-all shadow-lg flex items-center gap-2 border border-purple-400 hover:scale-105">
+                <i data-lucide="calculator" class="w-3.5 h-3.5"></i> Crear Columna Calculada
+            </button>
+            <button onclick="if(window.viewerMapper) window.viewerMapper.cancelMapping()" class="ml-2 text-blue-300 hover:text-white" title="Cancelar"><i data-lucide="x-circle" class="w-5 h-5"></i></button>
         </div>
     `;
     if (window.lucide) window.lucide.createIcons({ root: backdrop });
@@ -163,6 +167,34 @@ function enterFocusMode(tableContainer, targetColIndex) {
     });
 }
 
+export function createComputedColumn() {
+    if (!selectedMasterField) return;
+
+    // 1. Create Ghost Column Instantly
+    const newVColId = 'col_calc_' + Date.now();
+    const colName = selectedMasterField.nombre_campo || 'Col. Calculada';
+
+    if (!window.virtualColumns) window.virtualColumns = [];
+
+    window.virtualColumns.push({
+        id: newVColId,
+        dataIdx: null,
+        isCalculated: true // Flag to identify it's computed
+    });
+
+    console.log(`🪄 [MAPPER] Columna Fantasma Creada: ${newVColId} destino: ${colName}`);
+
+    // Call phase 2 bypassing physical click
+    // We can't apply focus to physical table, so we just open the workshop
+    if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.open === 'function') {
+        window.viewerRuleWorkshop.open(selectedMasterField, newVColId, colName);
+    } else {
+        console.warn("⚠️ Taller de Reglas no encontrado.");
+    }
+
+    cancelMapping();
+}
+
 export function cancelMapping() {
     isMappingMode = false;
     selectedMasterField = null;
@@ -197,5 +229,6 @@ window.viewerMapper = {
     init: initMapper,
     toggleMappingState,
     activatePointerMode,
+    createComputedColumn,
     cancelMapping
 };

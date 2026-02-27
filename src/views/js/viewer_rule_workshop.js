@@ -341,6 +341,7 @@ export function getActiveState() {
     return {
         isOpen: isPanelOpen,
         colIndex: activeContext.colIndex,
+        masterField: activeContext.masterField,
         pipeline: currentDraftPipeline
     };
 }

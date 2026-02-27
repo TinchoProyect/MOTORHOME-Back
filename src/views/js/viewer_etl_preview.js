@@ -9,6 +9,9 @@ export function transformCell(rawValue, pipeline) {
     let currentValue = String(rawValue).trim();
     let isRejected = false;
 
+    // [V5] Rich Object Support
+    let cleanValue = null; // Stores pure mathematical float if evaluated
+
     for (const rule of pipeline) {
         if (isRejected) break; // Si ya fue filtrada, saltar resto
 
@@ -63,7 +66,13 @@ export function transformCell(rawValue, pipeline) {
         else if (rule.tipo_regex === 'FORMAT_DECIMAL_DISCOUNT') {
             if (!currentValue || currentValue === "") {
                 currentValue = "0,00";
+                cleanValue = 0.0;
             } else {
+                // Ensure float parsing before converting back to comma string
+                const normalized = currentValue.replace(/,/g, '.');
+                cleanValue = parseFloat(normalized);
+                if (isNaN(cleanValue)) cleanValue = 0.0;
+
                 currentValue = currentValue.replace(/\./g, ',');
             }
         }
@@ -71,13 +80,13 @@ export function transformCell(rawValue, pipeline) {
             if (currentValue && currentValue !== "") {
                 // Remove everything except digits, dots, and commas
                 let cleanStr = currentValue.replace(/[^\d.,-]/g, '');
-                
+
                 if (cleanStr !== "") {
                     // Find the last dot or comma
                     const lastDot = cleanStr.lastIndexOf('.');
                     const lastComma = cleanStr.lastIndexOf(',');
                     let floatVal = 0;
-                    
+
                     if (lastDot === -1 && lastComma === -1) {
                         floatVal = parseFloat(cleanStr);
                     } else if (lastDot > lastComma) {
@@ -90,11 +99,13 @@ export function transformCell(rawValue, pipeline) {
                         const standardStr = withoutThousandSeps.replace(',', '.');
                         floatVal = parseFloat(standardStr);
                     }
-                    
+
                     if (!isNaN(floatVal)) {
+                        cleanValue = floatVal; // [V5] Trap the actual math value
                         currentValue = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(floatVal);
                     } else {
                         currentValue = "";
+                        cleanValue = null;
                     }
                 }
             }
@@ -146,7 +157,17 @@ export function transformCell(rawValue, pipeline) {
         currentValue = currentValue.trim();
     }
 
-    return { result: currentValue, rejected: isRejected };
+    // Default cleanValue fallback: Try parse if not explicitly set by rules
+    if (cleanValue === null && currentValue !== "" && !isNaN(currentValue.replace(/,/g, '.'))) {
+        cleanValue = parseFloat(currentValue.replace(/,/g, '.'));
+    }
+
+    return {
+        result: currentValue, // [Legacy compatibility] Target string representation
+        display: currentValue, // [V5] explicit display 
+        clean: cleanValue,     // [V5] Mathematical reality 
+        rejected: isRejected
+    };
 }
 
 // SIMULATE CHANGES IN DOM

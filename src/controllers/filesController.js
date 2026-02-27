@@ -799,7 +799,10 @@ async function saveTemplateConfig(req, res) {
             fila_encabezado: config.offset?.row || 0,
             columna_encabezado: config.offset?.col || 0,
             reglas_mapeo: config.mapping,
-            reglas_procesamiento: config.rules || {},
+            reglas_procesamiento: {
+                rules: config.rules || {},
+                computedColumns: config.computedCols || []
+            },
             ultima_deteccion: new Date()
         };
 

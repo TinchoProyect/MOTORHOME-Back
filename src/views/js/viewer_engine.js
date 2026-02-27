@@ -327,7 +327,8 @@ function saveSheetState(sheetName) {
         offset: window.currentOffset,
         pipelines: window.draftPipelines ? JSON.parse(JSON.stringify(window.draftPipelines)) : {},
         colWidths: window.currentColWidths ? JSON.parse(JSON.stringify(window.currentColWidths)) : {},
-        virtualCols: window.virtualColumns ? JSON.parse(JSON.stringify(window.virtualColumns)) : []
+        virtualCols: window.virtualColumns ? JSON.parse(JSON.stringify(window.virtualColumns)) : [],
+        computedCols: window.computedColumns ? JSON.parse(JSON.stringify(window.computedColumns)) : []
     };
 }
 
@@ -337,6 +338,7 @@ function loadSheetState(sheetName) {
     window.offsetSelectionMode = false;
     window.currentColWidths = {}; // Global para Drag&Drop Resizer
     window.virtualColumns = []; // Reset V4 Proxy
+    window.computedColumns = []; // Reset V5 Computed Cols
 
     // Variables legacy reset
     window.columnMapping = {};
@@ -348,6 +350,7 @@ function loadSheetState(sheetName) {
         window.draftPipelines = config.pipelines || {};
         window.currentColWidths = config.colWidths || {};
         window.virtualColumns = config.virtualCols || [];
+        window.computedColumns = config.computedCols || [];
     }
 }
 
