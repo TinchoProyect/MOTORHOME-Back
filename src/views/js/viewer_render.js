@@ -241,13 +241,22 @@ function renderVirtualTable(originalData) {
                 const savedPipeline = window.draftPipelines && window.draftPipelines[j] ? window.draftPipelines[j].rules : null;
                 const isGlobalAuditOn = window.isGlobalPreviewEnabled && savedPipeline && savedPipeline.length > 0;
 
+                let onCtx = "";
+
                 if (isWorkshopOpen || isGlobalAuditOn) {
+                    const safeRawVal = String(cellVal)
+                        .replace(/\\/g, "\\\\")
+                        .replace(/'/g, "\\'")
+                        .replace(/"/g, "&quot;")
+                        .replace(/\n/g, "\\n")
+                        .replace(/\r/g, "\\r");
+                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}')"`;
 
                     if (isWorkshopOpen) {
-                        cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
+                        cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50 cursor-context-menu";
                     } else {
                         // Estilo sutil para auditoría global
-                        cellClass += " bg-emerald-950/20 border-x border-emerald-500/20";
+                        cellClass += " relative bg-emerald-950/20 border-x border-emerald-500/20 cursor-context-menu";
                     }
 
                     const activePipeline = isWorkshopOpen ? activeEtlState.pipeline : savedPipeline;
@@ -267,10 +276,10 @@ function renderVirtualTable(originalData) {
                         } else if (result !== rawVal) {
                             cellVal = `
                                 <div class="flex flex-col gap-1 py-1">
-                                    <span class="text-[10px] text-slate-500 line-through truncate" title="${rawVal}">${rawVal}</span>
+                                    <span class="text-[10px] text-slate-500 line-through truncate">${rawVal}</span>
                                     <div class="flex items-center gap-2 text-emerald-400 font-bold ${isWorkshopOpen ? 'bg-emerald-950/30' : 'bg-emerald-950/10'} px-2 py-0.5 rounded border ${isWorkshopOpen ? 'border-emerald-900/50' : 'border-emerald-900/20'}">
                                         <i data-lucide="arrow-down-right" class="w-3 h-3 flex-shrink-0"></i>
-                                        <span class="truncate text-xs" title="${result}">${result || '<vacío>'}</span>
+                                        <span class="truncate text-xs">${result || '<vacío>'}</span>
                                     </div>
                                 </div>
                             `;
@@ -278,7 +287,7 @@ function renderVirtualTable(originalData) {
                     }
                 }
 
-                rowsHtml += `<td onclick="handleOffsetClick(${i}, ${dataIdx})" class="${cellClass}">${cellVal}</td>`;
+                rowsHtml += `<td onclick="handleOffsetClick(${i}, ${dataIdx})" class="${cellClass}"${onCtx}>${cellVal}</td>`;
             }
 
             // [V5.6] Fase 2 - Cálculo al vuelo en Virtual Scroller (Columnas Calculadas)

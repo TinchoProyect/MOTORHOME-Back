@@ -749,6 +749,70 @@ window.ViewerUI = (function () {
     if (window.lucide) window.lucide.createIcons({ root: panel });
   }
 
+  // --- [PHASE 7: AUDIT MODE TOOLTIP (Context Menu)] ---
+  function showOriginalValue(e, rawValue) {
+    if (e && e.preventDefault) e.preventDefault(); // Stop standard context menu
+
+    // Remove existing if any
+    const existing = document.getElementById("auditTooltipCtx");
+    if (existing) existing.remove();
+
+    // Create container
+    const popover = document.createElement("div");
+    popover.id = "auditTooltipCtx";
+    popover.className =
+      "fixed z-[600] glass-panel bg-slate-900/90 rounded-xl shadow-2xl p-4 flex flex-col min-w-[200px] max-w-[400px] animate-in zoom-in-95 duration-100 border border-indigo-500/30 backdrop-blur-xl pointer-events-auto";
+
+    popover.innerHTML = `
+      <div class="flex items-center gap-2 mb-2 pb-2 border-b border-white/10 text-indigo-400">
+        <i data-lucide="eye" class="w-4 h-4"></i>
+        <span class="text-[10px] font-bold uppercase tracking-widest">Valor Original (Crudo)</span>
+      </div>
+      <div class="text-white font-mono text-sm break-all whitespace-pre-wrap leading-relaxed bg-black/30 p-3 rounded border border-white/5 select-text">
+        ${rawValue || '<i class="text-slate-500">Vacío o Nulo</i>'}
+      </div>
+    `;
+
+    // Try to position near mouse, ensuring it stays on screen
+    let top = e.clientY + 10;
+    let left = e.clientX + 10;
+
+    // Set position safely after appending (using temporary opacity 0)
+    popover.style.top = top + "px";
+    popover.style.left = left + "px";
+    popover.style.opacity = "0";
+
+    document.body.appendChild(popover);
+
+    if (window.lucide) window.lucide.createIcons({ root: popover });
+
+    // Adjust position if it goes off screen
+    requestAnimationFrame(() => {
+      const rect = popover.getBoundingClientRect();
+      if (rect.right > window.innerWidth) left = window.innerWidth - rect.width - 10;
+      if (rect.bottom > window.innerHeight) top = window.innerHeight - rect.height - 10;
+
+      popover.style.top = top + "px";
+      popover.style.left = left + "px";
+      popover.style.opacity = "1";
+    });
+
+    // Close on any click anywhere
+    const closeHandler = () => {
+      const current = document.getElementById("auditTooltipCtx");
+      if (current) current.remove();
+      document.removeEventListener("click", closeHandler);
+      document.removeEventListener("contextmenu", closeHandler);
+    };
+
+    // Slight delay so the immediate click doesn't trigger destruction
+    setTimeout(() => {
+      document.addEventListener("click", closeHandler);
+      // Also close if they right click anywhere else
+      document.addEventListener("contextmenu", closeHandler);
+    }, 100);
+  }
+
   // Public API
   return {
     updateHeader,
@@ -761,7 +825,8 @@ window.ViewerUI = (function () {
     toggleTools,
     renderCreateTermModal,
     openRulesManager: renderRulesManager,
-    renderDeleteConfirmation: renderDeleteConfirmation, // <-- EXPOSED
+    renderDeleteConfirmation: renderDeleteConfirmation,
+    showOriginalValue: showOriginalValue, // <-- EXPOSED
   };
 })();
 
