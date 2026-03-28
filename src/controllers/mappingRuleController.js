@@ -33,7 +33,17 @@ exports.getRules = async (req, res) => {
 
         if (error) throw error;
 
-        return res.status(200).json(data || []);
+        // [V5.22 FIX] Sanitizar catálogo para evitar fugas de reglas locales de otros mapeos si es_global quedó mal guardado:
+        let safeRules = data || [];
+        safeRules = safeRules.filter(rule => {
+            // Si es un Reemplazo Local explícito, SÓLO mandarlo si pertenece a ESTE formato_id
+            if (rule.nombre_regla && rule.nombre_regla.startsWith('Reemplazo Local:')) {
+                return rule.formato_id === formatoId;
+            }
+            return true;
+        });
+
+        return res.status(200).json(safeRules);
     } catch (error) {
         console.error("❌ [ETL] Error obteniendo reglas:", error);
         return res.status(500).json({ error: error.message });
