@@ -430,8 +430,16 @@ function generatePreview() {
             if (termId && termId !== 'Ignorar Columna') {
                 sourceConfig.push({ index: dataIdx });
 
+                let termName = termId;
                 const termObj = nomenclatureCache.find(t => t.id === termId);
-                const termName = termObj ? termObj.termino : termId;
+                if (termObj) {
+                    termName = termObj.termino;
+                } else if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                    const masterObj = window.masterDictionary.find(m => m.id === termId);
+                    if (masterObj) {
+                        termName = masterObj.nombre_campo;
+                    }
+                }
 
                 // [V3] PIPELINE HANDLING
                 const rawRule = processingRules[vColId];
@@ -445,8 +453,14 @@ function generatePreview() {
                     // --- SPLIT LOGIC ---
                     if (splitRule.type === 'split') {
                         splitRule.fields.forEach((fieldId, subIdx) => {
+                            let fieldName = fieldId;
                             const fieldObj = nomenclatureCache.find(t => t.id === fieldId);
-                            const fieldName = fieldObj ? fieldObj.termino : fieldId;
+                            if (fieldObj) {
+                                fieldName = fieldObj.termino;
+                            } else if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                                const mObj = window.masterDictionary.find(m => m.id === fieldId);
+                                if (mObj) fieldName = mObj.nombre_campo;
+                            }
                             displayConfig.push({
                                 label: fieldName,
                                 isVirtual: true,
@@ -464,8 +478,15 @@ function generatePreview() {
                     } else if (splitRule.type === 'regex_split') {
                         const targets = [];
                         if (splitRule.fields) splitRule.fields.forEach(fid => {
+                            let fName = "Campo Dinámico";
                             const t = nomenclatureCache.find(x => x.id === fid);
-                            targets.push(t ? t.termino : "Campo Dinámico");
+                            if (t) {
+                                fName = t.termino;
+                            } else if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                                const mT = window.masterDictionary.find(m => m.id === fid);
+                                if (mT) fName = mT.nombre_campo;
+                            }
+                            targets.push(fName);
                         });
                         let patternStr = splitRule.pattern.replace(/\\\\/g, '\\');
                         if (patternStr.startsWith('/')) patternStr = patternStr.slice(1);
@@ -803,26 +824,55 @@ function renderSimulationTable(data) {
     currentDisplayConfig.forEach(cfg => {
         let content = `<span>${cfg.label}</span>`;
         let actions = '';
+        let rulesBadgesHtml = '';
 
-        // [New] Gear Icon for Pipeline Manager
+        // [New] Gear Icon & Pipeline Quick Toggles
         if (cfg.virtualColId) {
             actions += `
                 <button onclick="window.ViewerUI.openRulesManager('${cfg.virtualColId}', this)" class="text-slate-500 hover:text-white transition-colors p-1 rounded hover:bg-slate-800" title="Gestionar Reglas">
                     <i data-lucide="settings-2" class="w-3 h-3"></i>
                 </button>
             `;
+            
+            // Generate Interactive Badges for Applied Rules
+            if (window.processingRules && window.processingRules[cfg.virtualColId]) {
+                let rulesStack = window.processingRules[cfg.virtualColId];
+                if (!Array.isArray(rulesStack)) rulesStack = [rulesStack];
+                
+                rulesStack.forEach((r, idx) => {
+                    const isOff = r.disabled;
+                    const badgeColor = isOff 
+                        ? 'bg-slate-800 text-slate-500 border-slate-700 line-through grayscale opacity-50' 
+                        : 'bg-emerald-900/40 text-emerald-400 border-emerald-500/30 font-bold';
+                    const iconType = isOff ? 'zap-off' : 'zap';
+                    
+                    const displayType = (r.type === 'split' || r.type === 'regex_split') ? 'Split' : (r.type || 'Regla');
+                    
+                    rulesBadgesHtml += `
+                        <button onclick="window.ViewerUI.toggleRuleInSimulation('${cfg.virtualColId}', ${idx})" 
+                                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] border ${badgeColor} hover:brightness-125 hover:-translate-y-px transition-all text-left max-w-[120px] shadow-sm shadow-black/20"
+                                title="${isOff ? 'Regla Inactiva (clic para Encender)' : 'Regla Activa (clic para Apagar)'}">
+                            <i data-lucide="${iconType}" class="w-2.5 h-2.5 shrink-0"></i>
+                            <span class="truncate">${displayType}</span>
+                        </button>
+                    `;
+                });
+            }
         }
 
         let thContent = `
-            <div class="flex items-center justify-between gap-2">
-                <div class="font-bold truncate">${cfg.label}</div>
-                <div class="flex items-center shrink-0">
-                    ${actions}
+            <div class="flex flex-col gap-1.5 min-h-[40px]">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="font-bold truncate" title="${cfg.label}">${cfg.label}</div>
+                    <div class="flex items-center shrink-0">
+                        ${actions}
+                    </div>
                 </div>
+                ${rulesBadgesHtml ? `<div class="flex flex-wrap gap-1 mt-1 border-t border-slate-800 pt-1.5">${rulesBadgesHtml}</div>` : ''}
             </div>
         `;
 
-        let thClass = "p-2 border border-slate-700 text-left align-middle ";
+        let thClass = "p-2 border border-slate-700 text-left align-top ";
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
         html += `<th class="${thClass}">${thContent}</th>`;
     });
@@ -903,6 +953,29 @@ function renderSimulationTable(data) {
 }
 
 window.renderSimulationTable = renderSimulationTable;
+
+// --- DYNAMIC SIMULATION TOGGLES ---
+window.ViewerUI = window.ViewerUI || {};
+window.ViewerUI.toggleRuleInSimulation = function(vColId, ruleIndex) {
+    if (!window.processingRules || !window.processingRules[vColId]) return;
+    let rules = window.processingRules[vColId];
+    if (!Array.isArray(rules)) rules = [rules];
+    if (rules[ruleIndex]) {
+        // Toggle the explicit disabled flag
+        rules[ruleIndex].disabled = !rules[ruleIndex].disabled;
+        window.processingRules[vColId] = rules;
+        
+        // Retrigger the simulation modal processing directly
+        if (typeof window.generatePreview === 'function') {
+            window.generatePreview();
+        }
+        
+        // Sync the workshop left panel UI implicitly if it's currently showing that column
+        if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncVisuals === 'function') {
+            window.viewerRuleWorkshop.syncVisuals();
+        }
+    }
+};
 
 // --- COL RESIZE LOGIC (Virtual Scroller D&D) ---
 let isResizing = false;
