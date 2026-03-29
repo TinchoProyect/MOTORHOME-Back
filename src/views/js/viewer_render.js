@@ -421,13 +421,13 @@ function generatePreview() {
         const displayConfig = [];
         const sourceConfig = [];
 
-        Object.keys(columnMapping).forEach(vColId => {
+        window.virtualColumns.forEach(vCol => {
+            const vColId = vCol.id;
             const termId = columnMapping[vColId];
-            const vCol = window.virtualColumns.find(v => v.id === vColId);
-            if (!vCol) return;
+            if (!termId || termId === 'Ignorar Columna') return;
             const dataIdx = vCol.dataIdx;
 
-            if (termId && termId !== 'Ignorar Columna') {
+            if (termId) {
                 sourceConfig.push({ index: dataIdx });
 
                 let termName = termId;
@@ -465,7 +465,7 @@ function generatePreview() {
                                 isVirtual: true,
                                 sourceIndex: dataIdx, // For reading raw value
                                 transform: (val) => {
-                                    if (!val) return '';
+                                    if (val === null || val === undefined || val === '') return '';
                                     const parts = String(val).split(splitRule.delimiter);
                                     return parts[subIdx] ? parts[subIdx].trim() : '';
                                 },
@@ -498,7 +498,8 @@ function generatePreview() {
                                 isVirtual: true,
                                 sourceIndex: dataIdx, // Read from raw data
                                 transform: (val) => {
-                                    const match = String(val || "").trim().match(regex);
+                                    const stringVal = (val !== null && val !== undefined) ? String(val) : "";
+                                    const match = stringVal.trim().match(regex);
                                     if (match) {
                                         const pPres = match[0].trim();
                                         const pDesc = String(val).replace(match[0], "").trim();
@@ -523,7 +524,7 @@ function generatePreview() {
                             // 🔥 Apply all active rules in order
                             for (const rule of rulesStack) {
                                 if (rule.disabled) continue;
-                                const strVal = String(currentVal || "").trim();
+                                const strVal = (currentVal !== null && currentVal !== undefined) ? String(currentVal).trim() : "";
 
                                 if (rule.type === 'sanitize_numbers') {
                                     currentVal = strVal.replace(/[^0-9]/g, '');
@@ -599,7 +600,7 @@ function generatePreview() {
 
                 let cellValue = row[dataIdx];
                 
-                let display = String(cellValue || "");
+                let display = (cellValue !== null && cellValue !== undefined) ? String(cellValue) : "";
                 let clean = null;
                 let rejected = false;
 
@@ -642,8 +643,8 @@ function generatePreview() {
 
         // Contabilizar rechazos transparentes
         const validRowsCount = sanitizedData.filter(r => !r._rejectedSim).length;
-        currentSimData = sanitizedData;
-        currentDisplayConfig = displayConfig;
+        window.currentSimData = sanitizedData;
+        window.currentDisplayConfig = displayConfig;
 
         const container = document.getElementById('simulationTableContainer');
         if (!container) return;
@@ -701,22 +702,22 @@ function filterSimulationData() {
     const countEl = document.getElementById('simFilteredCount');
 
     if (!rawQuery) {
-        renderSimulationTable(currentSimData);
-        if (countEl) countEl.innerText = currentSimData.length;
+        renderSimulationTable(window.currentSimData);
+        if (countEl) countEl.innerText = window.currentSimData.length;
         return;
     }
 
     const terms = rawQuery.split(/\s+/).filter(t => t.length > 0);
 
-    const filtered = currentSimData.filter(row => {
+    const filtered = window.currentSimData.filter(row => {
         return terms.every(term => {
             if (fieldIdx === "ALL") {
-                return currentDisplayConfig.some(cfg => {
+                return window.currentDisplayConfig.some(cfg => {
                     const val = cfg.transform(row[cfg.sourceIndex], row);
                     return String(val).toLowerCase().includes(term);
                 });
             } else {
-                const cfg = currentDisplayConfig[parseInt(fieldIdx)];
+                const cfg = window.currentDisplayConfig[parseInt(fieldIdx)];
                 if (!cfg) return false;
                 const val = cfg.transform(row[cfg.sourceIndex], row);
                 return String(val).toLowerCase().includes(term);
@@ -732,7 +733,7 @@ function renderSimulationTable(data) {
     const scrollArea = document.getElementById('simTableScrollArea');
     if (!scrollArea) return;
 
-    let html = "<table class='min-w-full table-fixed text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
+    let html = "<table class='min-w-full table-fixed text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0 z-[100] border-b border-slate-700'>";
 
     const getRuleName = (type) => {
         switch(type) {
@@ -757,14 +758,8 @@ function renderSimulationTable(data) {
         let actions = '';
         let rulesDropdownHtml = '';
 
-        // [New] Gear Icon & Pipeline Quick Toggles
+        // [New] Pipeline Quick Toggles
         if (cfg.virtualColId) {
-            actions += `
-                <button onclick="window.ViewerUI.openRulesManager('${cfg.virtualColId}', this)" class="text-slate-500 hover:text-white transition-colors p-1 rounded hover:bg-slate-800" title="Gestionar Reglas">
-                    <i data-lucide="settings-2" class="w-3 h-3"></i>
-                </button>
-            `;
-            
             // Generate Interactive Dropdown for Applied Rules
             if (window.draftPipelines && window.draftPipelines[cfg.virtualColId] && window.draftPipelines[cfg.virtualColId].rules) {
                 let rulesStack = window.draftPipelines[cfg.virtualColId].rules;
@@ -796,21 +791,23 @@ function renderSimulationTable(data) {
                     // Logic to force the dropdown open if it was the last toggled
                     const isForcedOpen = (window.ViewerUI && window.ViewerUI._keepDropdownOpen === cfg.virtualColId);
                     const dropdownClasses = isForcedOpen 
-                        ? 'opacity-100 visible'
-                        : 'opacity-0 invisible group-hover:opacity-100 group-hover:visible';
+                        ? 'opacity-100 visible pointer-events-auto scale-100'
+                        : 'opacity-0 invisible pointer-events-none scale-95';
 
                     rulesDropdownHtml = `
-                        <div class="relative group mt-1" onmouseleave="if(window.ViewerUI) window.ViewerUI._keepDropdownOpen = null;">
-                            <button class="flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-1 bg-emerald-900/40 text-emerald-400 border border-emerald-500/30 rounded shadow-sm hover:brightness-125 transition-all w-full justify-between">
-                                <span><i data-lucide="filter" class="w-3 h-3 inline mr-1"></i> ${activeCount} / ${rulesStack.length}</span> <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                        <div class="relative group pb-1">
+                            <button onclick="window.ViewerUI.toggleRulesMenu(event, '${cfg.virtualColId}')" class="flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-1 bg-emerald-900/40 text-emerald-400 border border-emerald-500/30 rounded shadow-sm hover:brightness-125 transition-all w-full justify-between focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                                <span><i data-lucide="filter" class="w-3 h-3 inline mr-1"></i> ${activeCount} / ${rulesStack.length}</span> <i data-lucide="${isForcedOpen ? 'chevron-up' : 'chevron-down'}" class="w-3 h-3"></i>
                             </button>
-                            <div class="absolute left-0 top-full mt-1 w-52 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl transition-all z-[300] py-1 ${dropdownClasses}">
-                                <div class="px-2 pb-1 border-b border-slate-800 flex gap-1 mb-1">
-                                    <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', true); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 rounded py-1 transition-colors pointer-events-auto" title="Prender Todo">ON</button>
-                                    <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', false); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded py-1 transition-colors pointer-events-auto" title="Apagar Todo">OFF</button>
-                                </div>
-                                <div class="max-h-[300px] overflow-y-auto custom-scrollbar">
-                                    ${dropdownItems}
+                            <div class="absolute left-0 top-full pt-1 w-52 z-[300] transition-all duration-200 transform origin-top ${dropdownClasses}" onmousedown="event.stopPropagation()" draggable="false">
+                                <div class="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl py-1">
+                                    <div class="px-2 pb-1 border-b border-slate-800 flex gap-1 mb-1">
+                                        <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', true); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 rounded py-1 transition-colors pointer-events-auto" title="Prender Todo">ON</button>
+                                        <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', false); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded py-1 transition-colors pointer-events-auto" title="Apagar Todo">OFF</button>
+                                    </div>
+                                    <div class="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                        ${dropdownItems}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -839,7 +836,9 @@ function renderSimulationTable(data) {
         // Recover persisted width
         let restoredWidth = window.simColWidthPersist && window.simColWidthPersist[fieldIdx] ? window.simColWidthPersist[fieldIdx] + "px" : "150px";
         
-        html += `<th class="${thClass}" style="width: ${restoredWidth}; min-width: ${restoredWidth}; max-width: ${restoredWidth};">${thContent}${resizeHandle}</th>`;
+        let draggableConfig = `draggable="true" ondragstart="window.ViewerUI.handleDragStart(event, ${fieldIdx})" ondragover="window.ViewerUI.handleDragOver(event)" ondragenter="window.ViewerUI.handleDragEnter(event)" ondragleave="window.ViewerUI.handleDragLeave(event)" ondrop="window.ViewerUI.handleDrop(event, ${fieldIdx})" ondragend="window.ViewerUI.handleDragEnd(event)"`;
+
+        html += `<th ${draggableConfig} class="cursor-grab active:cursor-grabbing ${thClass}" style="width: ${restoredWidth}; min-width: ${restoredWidth}; max-width: ${restoredWidth};">${thContent}${resizeHandle}</th>`;
     });
 
     // Fase 2 - Headers (Computed Columns) PURGADO - Solo V5 pipeline oficial.
@@ -912,6 +911,101 @@ window.ViewerUI.toggleAllRulesInSimulation = function(vColId, forceEnable) {
     if (typeof window.generatePreview === 'function') {
         window.generatePreview();
     }
+};
+
+window.ViewerUI.toggleRulesMenu = function(e, vColId) {
+    if (e) e.stopPropagation();
+    if (window.ViewerUI._keepDropdownOpen === vColId) {
+        window.ViewerUI._keepDropdownOpen = null;
+    } else {
+        window.ViewerUI._keepDropdownOpen = vColId;
+    }
+    // Forzamos un redibujado local reactivo súper rápido para aplicar las clases y reflejar CSS de "menú activo" sin romper funcionalidad
+    if (typeof window.generatePreview === 'function') {
+        window.generatePreview();
+    }
+};
+
+// --- DRAG AND DROP COLUMNS ---
+window.ViewerUI.draggedSimColIndex = null;
+
+window.ViewerUI.handleDragStart = function(e, index) {
+    if (e.target.tagName !== 'TH') return;
+    window.ViewerUI.draggedSimColIndex = index;
+    // Efecto de movimiento
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => {
+        e.target.classList.add('opacity-40');
+    }, 10);
+};
+
+window.ViewerUI.handleDragOver = function(e) {
+    e.preventDefault(); 
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+};
+
+window.ViewerUI.handleDragEnter = function(e) {
+    e.preventDefault();
+    let th = e.target.closest('th');
+    if (th) {
+        th.classList.add('bg-emerald-900/40', 'border-emerald-500', 'border-l-4');
+    }
+};
+
+window.ViewerUI.handleDragLeave = function(e) {
+    let th = e.target.closest('th');
+    if (th) {
+        th.classList.remove('bg-emerald-900/40', 'border-emerald-500', 'border-l-4');
+    }
+};
+
+window.ViewerUI.handleDrop = function(e, dropColIndex) {
+    e.stopPropagation();
+    let th = e.target.closest('th');
+    if (th) th.classList.remove('bg-emerald-900/40', 'border-emerald-500', 'border-l-4');
+    
+    let dragColIndex = window.ViewerUI.draggedSimColIndex;
+    if (dragColIndex === null || dragColIndex === dropColIndex) return false;
+    
+    // Obtenemos las configuraciones de columnas en la matriz virtual
+    let draggedConfig = window.currentDisplayConfig[dragColIndex];
+    let droppedConfig = window.currentDisplayConfig[dropColIndex];
+    
+    if (!draggedConfig || !droppedConfig) return false;
+    
+    let vColArray = window.virtualColumns;
+    let fromIdx = vColArray.findIndex(v => v.id === draggedConfig.virtualColId);
+    let toIdx = vColArray.findIndex(v => v.id === droppedConfig.virtualColId);
+    
+    if (fromIdx !== -1 && toIdx !== -1) {
+        // Ejecutar desplazamiento (Splice Transaccional)
+        const element = vColArray.splice(fromIdx, 1)[0];
+        vColArray.splice(toIdx, 0, element);
+        
+        // Guardar estado master hacia el servidor si es posible
+        if (typeof window.saveSimulationConfig === 'function') {
+            window.saveSimulationConfig(null, true);
+        }
+        
+        // Reconstruir interfaz completa reflejando nueva posición
+        if (typeof window.generatePreview === 'function') {
+            window.generatePreview();
+        }
+        
+        // Disparar redibujado táctico del layout de Workshop (Opcional si conviven)
+        if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncVisuals === 'function') {
+            setTimeout(() => window.viewerRuleWorkshop.syncVisuals(), 100);
+        }
+    }
+    return false;
+};
+
+window.ViewerUI.handleDragEnd = function(e) {
+    if (e.target.tagName === 'TH') {
+        e.target.classList.remove('opacity-40');
+    }
+    window.ViewerUI.draggedSimColIndex = null;
     
     if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncVisuals === 'function') {
         window.viewerRuleWorkshop.syncVisuals();

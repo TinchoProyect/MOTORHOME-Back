@@ -74,7 +74,7 @@ export function activatePointerMode(masterField) {
         tableContainer.appendChild(backdrop);
     }
     // FASE 1: Floating Toast (Sin oscurecer la pantalla, sin bloquear clics)
-    backdrop.className = "fixed top-24 left-1/2 -translate-x-1/2 z-50 transition-opacity duration-300 opacity-100 pointer-events-none flex items-start justify-center";
+    backdrop.className = "fixed bottom-8 right-8 z-[100] transition-opacity duration-300 opacity-100 pointer-events-none flex items-end justify-end";
     backdrop.innerHTML = `
         <div class="bg-blue-900/90 border border-blue-400 text-blue-100 px-6 py-3 rounded-full flex items-center gap-4 shadow-2xl shadow-blue-500/20 animate-bounce pointer-events-auto">
             <i data-lucide="mouse-pointer-click" class="w-5 h-5"></i>

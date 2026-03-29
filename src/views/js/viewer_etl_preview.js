@@ -19,6 +19,7 @@ export function transformCell(rawValue, pipeline) {
     let hasAbsoluteOverride = false;
 
     for (const rule of customRules) {
+        if (rule.disabled) continue;
         if (isRejected) break;
         try {
             const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
@@ -72,6 +73,7 @@ export function transformCell(rawValue, pipeline) {
 
     if (!hasAbsoluteOverride) {
         for (const rule of genericRules) {
+            if (rule.disabled) continue;
             if (isRejected) break; // Si ya fue filtrada, saltar resto
 
             // Reglas Nativas

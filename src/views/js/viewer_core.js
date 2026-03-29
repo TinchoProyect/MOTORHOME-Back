@@ -94,8 +94,15 @@ window.resetViewerState = function () {
  * Se invoca desde el botón "Guardar Configuración" en el Simulador.
  */
 window.saveSimulationConfig = async function (config = null, silent = false) {
+    if (window._isSavingSimulationLock) {
+        console.warn("⏳ [V4] Save already in progress, queuing or ignoring to prevent race conditions.");
+        return;
+    }
+    window._isSavingSimulationLock = true;
+
     // 1. Validaciones Básicas
     if (!window.globalContext || !window.globalContext.providerId) {
+        window._isSavingSimulationLock = false;
         alert("Error Crítico: No se ha identificado el proveedor en el contexto global.");
         return;
     }
@@ -165,7 +172,7 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                     columna_origen_index: dataIdx, // This is the physical index for the DB
                     columna_origen_nombre: config.colName || `Columna ${dataIdx}`,
                     campo_maestro_id: config.masterField.id,
-                    reglas: (config.rules || []).map(r => r.id)
+                    reglas: (config.rules || []).filter(r => r && r.id).map(r => r.id)
                 });
             }
 
@@ -219,6 +226,7 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
             btn.innerHTML = `<i data-lucide="save" class="w-3 h-3"></i> Guardar`;
             if (window.lucide) window.lucide.createIcons();
         }
+        window._isSavingSimulationLock = false;
     }
 };
 
