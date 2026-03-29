@@ -660,10 +660,16 @@
                         <p class="text-[10px] text-slate-400 font-mono" id="simMeta">ESPERANDO DATOS...</p>
                     </div>
                 </div>
-                <button onclick="closeSimulationModal()"
-                    class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="window.ViewerUI.toggleFullscreenSimulation(this)"
+                        class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors" title="Limpieza Visual (Pantalla Completa)">
+                        <i id="simFullscreenIcon" data-lucide="maximize" class="w-5 h-5"></i>
+                    </button>
+                    <button onclick="closeSimulationModal()"
+                        class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
             </div>
             <div id="simulationTableContainer" class="flex-1 overflow-auto bg-slate-900 p-0 custom-scrollbar">
                 <div class="flex flex-col items-center justify-center h-full text-slate-600">

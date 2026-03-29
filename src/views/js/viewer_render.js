@@ -441,10 +441,9 @@ function generatePreview() {
                     }
                 }
 
-                // [V3] PIPELINE HANDLING
-                const rawRule = processingRules[vColId];
-                // Ensure Array
-                const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
+                // [V4/V5] PIPELINE HANDLING (Uses draft pipelines instead of legacy processingRules)
+                const pipelineData = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
+                const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
 
                 // Check for Structure Modifying Rules (Split) - Toma prioridad
                 const splitRule = rulesStack.find(r => !r.disabled && (r.type === 'split' || r.type === 'regex_split'));
@@ -618,8 +617,8 @@ function generatePreview() {
                 if (!vCol) return;
                 const dataIdx = vCol.dataIdx;
 
-                const rawRule = processingRules[vColId];
-                const rulesStack = rawRule ? (Array.isArray(rawRule) ? rawRule : [rawRule]) : [];
+                const pipelineData = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
+                const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
 
                 let cellValue = row[dataIdx];
                 let cleanValue = null; // V5 Math trap
@@ -821,10 +820,10 @@ function renderSimulationTable(data) {
 
     let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
 
-    currentDisplayConfig.forEach(cfg => {
+    currentDisplayConfig.forEach((cfg, fieldIdx) => {
         let content = `<span>${cfg.label}</span>`;
         let actions = '';
-        let rulesBadgesHtml = '';
+        let rulesDropdownHtml = '';
 
         // [New] Gear Icon & Pipeline Quick Toggles
         if (cfg.virtualColId) {
@@ -834,47 +833,66 @@ function renderSimulationTable(data) {
                 </button>
             `;
             
-            // Generate Interactive Badges for Applied Rules
-            if (window.processingRules && window.processingRules[cfg.virtualColId]) {
-                let rulesStack = window.processingRules[cfg.virtualColId];
+            // Generate Interactive Dropdown for Applied Rules
+            if (window.draftPipelines && window.draftPipelines[cfg.virtualColId] && window.draftPipelines[cfg.virtualColId].rules) {
+                let rulesStack = window.draftPipelines[cfg.virtualColId].rules;
                 if (!Array.isArray(rulesStack)) rulesStack = [rulesStack];
                 
-                rulesStack.forEach((r, idx) => {
-                    const isOff = r.disabled;
-                    const badgeColor = isOff 
-                        ? 'bg-slate-800 text-slate-500 border-slate-700 line-through grayscale opacity-50' 
-                        : 'bg-emerald-900/40 text-emerald-400 border-emerald-500/30 font-bold';
-                    const iconType = isOff ? 'zap-off' : 'zap';
-                    
-                    const displayType = (r.type === 'split' || r.type === 'regex_split') ? 'Split' : (r.type || 'Regla');
-                    
-                    rulesBadgesHtml += `
-                        <button onclick="window.ViewerUI.toggleRuleInSimulation('${cfg.virtualColId}', ${idx})" 
-                                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] border ${badgeColor} hover:brightness-125 hover:-translate-y-px transition-all text-left max-w-[120px] shadow-sm shadow-black/20"
-                                title="${isOff ? 'Regla Inactiva (clic para Encender)' : 'Regla Activa (clic para Apagar)'}">
-                            <i data-lucide="${iconType}" class="w-2.5 h-2.5 shrink-0"></i>
-                            <span class="truncate">${displayType}</span>
-                        </button>
+                if (rulesStack.length > 0) {
+                    let dropdownItems = '';
+                    let activeCount = 0;
+                    rulesStack.forEach((r, idx) => {
+                        const isOff = r.disabled;
+                        if (!isOff) activeCount++;
+                        const badgeColor = isOff 
+                            ? 'text-slate-500 line-through grayscale opacity-50' 
+                            : 'text-emerald-400 font-bold';
+                        const iconType = isOff ? 'zap-off' : 'zap';
+                        
+                        const displayType = (r.type === 'split' || r.type === 'regex_split') ? 'Split' : (r.type || 'Regla');
+                        
+                        dropdownItems += `
+                            <button onclick="window.ViewerUI.toggleRuleInSimulation('${cfg.virtualColId}', ${idx}); event.stopPropagation();" 
+                                    class="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800 transition-colors border-b border-slate-800/50 last:border-0 ${badgeColor}"
+                                    title="${isOff ? 'Regla Inactiva (clic para Encender)' : 'Regla Activa (clic para Apagar)'}">
+                                <i data-lucide="${iconType}" class="w-3 h-3 shrink-0"></i>
+                                <span class="truncate">${displayType}</span>
+                            </button>
+                        `;
+                    });
+
+                    rulesDropdownHtml = `
+                        <div class="relative group mt-1">
+                            <button class="flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-1 bg-emerald-900/40 text-emerald-400 border border-emerald-500/30 rounded shadow-sm hover:brightness-125 transition-all">
+                                ${activeCount} Reglas <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                            </button>
+                            <div class="absolute left-0 top-full mt-1 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[300] py-1">
+                                ${dropdownItems}
+                            </div>
+                        </div>
                     `;
-                });
+                }
             }
         }
 
         let thContent = `
-            <div class="flex flex-col gap-1.5 min-h-[40px]">
-                <div class="flex items-center justify-between gap-2">
+            <div class="flex flex-col gap-1 min-h-[40px] relative w-full h-full justify-center">
+                <div class="flex items-center justify-between gap-2 pr-2">
                     <div class="font-bold truncate" title="${cfg.label}">${cfg.label}</div>
                     <div class="flex items-center shrink-0">
                         ${actions}
                     </div>
                 </div>
-                ${rulesBadgesHtml ? `<div class="flex flex-wrap gap-1 mt-1 border-t border-slate-800 pt-1.5">${rulesBadgesHtml}</div>` : ''}
+                ${rulesDropdownHtml ? `<div>${rulesDropdownHtml}</div>` : ''}
             </div>
         `;
 
-        let thClass = "p-2 border border-slate-700 text-left align-top ";
+        let thClass = "p-2 border border-slate-700 text-left align-top relative group ";
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
-        html += `<th class="${thClass}">${thContent}</th>`;
+        
+        let resizeHandle = `<div onmousedown="window.initSimColResize(event, this.parentElement)" class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 z-20 transition-colors"></div>`;
+        
+        html += `<th class="${thClass}" style="min-width: 150px;">${thContent}${resizeHandle}</th>`;
     });
 
     // Fase 2 - Headers (Computed Columns)
@@ -904,7 +922,8 @@ function renderSimulationTable(data) {
         currentDisplayConfig.forEach(cfg => {
             const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
             const finalVal = cfg.transform(rawVal, row);
-            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">${finalVal}</td>`;
+            // Limit text properly so resizing behaves like excel truncating long strings
+            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis">${finalVal}</td>`;
         });
 
         // Fase 2 - Cálculo al vuelo de celdas Computed
@@ -957,13 +976,13 @@ window.renderSimulationTable = renderSimulationTable;
 // --- DYNAMIC SIMULATION TOGGLES ---
 window.ViewerUI = window.ViewerUI || {};
 window.ViewerUI.toggleRuleInSimulation = function(vColId, ruleIndex) {
-    if (!window.processingRules || !window.processingRules[vColId]) return;
-    let rules = window.processingRules[vColId];
+    if (!window.draftPipelines || !window.draftPipelines[vColId] || !window.draftPipelines[vColId].rules) return;
+    let rules = window.draftPipelines[vColId].rules;
     if (!Array.isArray(rules)) rules = [rules];
     if (rules[ruleIndex]) {
         // Toggle the explicit disabled flag
         rules[ruleIndex].disabled = !rules[ruleIndex].disabled;
-        window.processingRules[vColId] = rules;
+        window.draftPipelines[vColId].rules = rules;
         
         // Retrigger the simulation modal processing directly
         if (typeof window.generatePreview === 'function') {
@@ -976,6 +995,82 @@ window.ViewerUI.toggleRuleInSimulation = function(vColId, ruleIndex) {
         }
     }
 };
+
+window.ViewerUI.toggleFullscreenSimulation = function(btn) {
+    const modal = document.querySelector('#simulationModal .glass-panel');
+    if (!modal) return;
+    
+    const isFullscreen = modal.classList.contains('w-screen');
+    
+    if (isFullscreen) {
+        modal.classList.remove('w-screen', 'h-screen', 'max-w-none', 'max-h-screen', 'rounded-none', 'border-0');
+        modal.classList.add('max-w-4xl', 'max-h-[90vh]', 'rounded-2xl', 'border', 'border-emerald-500/30');
+        
+        const icon = btn.querySelector('i');
+        if(icon) {
+            icon.setAttribute('data-lucide', 'maximize');
+            if (window.lucide) window.lucide.createIcons({ root: btn });
+        }
+    } else {
+        modal.classList.remove('max-w-4xl', 'max-h-[90vh]', 'rounded-2xl', 'border', 'border-emerald-500/30');
+        modal.classList.add('w-screen', 'h-screen', 'max-w-none', 'max-h-screen', 'rounded-none', 'border-0');
+        
+        const icon = btn.querySelector('i');
+        if(icon) {
+            icon.setAttribute('data-lucide', 'minimize');
+            if (window.lucide) window.lucide.createIcons({ root: btn });
+        }
+    }
+    
+    // Force redraw icons of full document just in case
+    setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 10);
+};
+
+// --- SIMULATION COL RESIZE LOGIC ---
+let isSimResizing = false;
+let simResizeStartX = 0;
+let simResizeStartWidth = 0;
+let simResizeTargetTh = null;
+let simResizeRAF = null;
+
+window.initSimColResize = function(e, thEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    isSimResizing = true;
+    simResizeStartX = e.pageX;
+    simResizeStartWidth = thEl.offsetWidth;
+    simResizeTargetTh = thEl;
+
+    // Fix absolute CSS widths to prevent auto flex-resizing from table siblings
+    if (!thEl.style.width) thEl.style.width = thEl.offsetWidth + 'px';
+
+    document.body.classList.add('select-none');
+    document.body.style.cursor = 'col-resize';
+    document.addEventListener('mousemove', onSimColMouseMove);
+    document.addEventListener('mouseup', onSimColMouseUp);
+};
+
+function onSimColMouseMove(e) {
+    if (!isSimResizing || !simResizeTargetTh) return;
+    if (simResizeRAF) cancelAnimationFrame(simResizeRAF);
+    simResizeRAF = requestAnimationFrame(() => {
+        const diff = e.pageX - simResizeStartX;
+        const newWidth = Math.max(50, simResizeStartWidth + diff); // At least 50px wide
+        simResizeTargetTh.style.width = newWidth + 'px';
+        simResizeTargetTh.style.minWidth = newWidth + 'px';
+        simResizeTargetTh.style.maxWidth = newWidth + 'px';
+    });
+}
+
+function onSimColMouseUp(e) {
+    if (!isSimResizing) return;
+    isSimResizing = false;
+    if (simResizeRAF) cancelAnimationFrame(simResizeRAF);
+    document.body.classList.remove('select-none');
+    document.body.style.cursor = '';
+    document.removeEventListener('mousemove', onSimColMouseMove);
+    document.removeEventListener('mouseup', onSimColMouseUp);
+}
 
 // --- COL RESIZE LOGIC (Virtual Scroller D&D) ---
 let isResizing = false;
