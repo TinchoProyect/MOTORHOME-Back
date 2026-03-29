@@ -568,31 +568,8 @@ function generatePreview() {
         });
 
         // --- F. COMPUTED COLUMNS LOGIC ---
-        if (window.computedColumns && window.computedColumns.length > 0) {
-            window.computedColumns.forEach(comp => {
-                displayConfig.push({
-                    label: comp.name,
-                    isVirtual: true,
-                    transform: (val, row) => {
-                        try {
-                            const parseVal = (v) => {
-                                if (!v) return 0;
-                                let s = String(v).trim().replace(/[^0-9,.-]/g, '');
-                                if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
-                                else if (s.includes(',')) s = s.replace(',', '.');
-                                return parseFloat(s) || 0;
-                            };
-                            const valA = parseVal(row[comp.sourceA]);
-                            const valB = parseVal(row[comp.sourceB]);
-                            const result = valA * (1 - valB);
-                            return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(result);
-                        } catch (e) { return "ERR"; }
-                    },
-                    hasSwitch: false,
-                    switchColIdx: -1
-                });
-            });
-        }
+        // Purgado intencionalmente: La vieja logica pre-Taller de calculos fue erradicada.
+        // Ahora todo debe cruzar por el pipeline de V5 oficial.
 
         if (displayConfig.length === 0) {
             alert("Primero debes mapear al menos una columna.");
@@ -621,114 +598,50 @@ function generatePreview() {
                 const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
 
                 let cellValue = row[dataIdx];
-                let cleanValue = null; // V5 Math trap
+                
+                let display = String(cellValue || "");
+                let clean = null;
+                let rejected = false;
 
-                for (const rule of rulesStack) {
-                    if (rule.disabled) continue;
-                    const strVal = String(cellValue || "").trim();
-
-                    // Apply Transforms
-                    if (rule.type === 'sanitize_numbers') {
-                        cellValue = strVal.replace(/[^0-9]/g, '');
-                    }
-                    else if (rule.type === 'SANITIZER_NUMERIC_PIPE' || rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
-                        if (/[^0-9|/]/.test(strVal)) {
-                            cellValue = "";
-                        }
-                    }
-                    else if (rule.type === 'sanitize') {
-                        const fallback = rule.config?.replace_with || ""; // Empty string for filter check
-                        let shouldReplace = false;
-                        if (!strVal || strVal === "undefined" || strVal === "null") shouldReplace = true;
-                        if (!shouldReplace && rule.config?.match_regex) {
-                            try {
-                                let p = rule.config.match_regex.replace(/\\\\/g, '\\');
-                                if (p.startsWith('/')) p = p.slice(1, -1);
-                                if (new RegExp(p, 'i').test(strVal)) shouldReplace = true;
-                            } catch (e) { }
-                        }
-                        if (shouldReplace) {
-                            cellValue = fallback;
-                        } else if (strVal.includes('.')) {
-                            cellValue = strVal.replace(/\./g, ',');
-                        }
-                    }
-                    else if (rule.type === 'FORMAT_DECIMAL_DISCOUNT' || rule.tipo_regex === 'FORMAT_DECIMAL_DISCOUNT') {
-                        if (!strVal || strVal === "") {
-                            cellValue = "0,00";
-                            cleanValue = 0.0;
-                        } else {
-                            const normalized = strVal.replace(/,/g, '.');
-                            cleanValue = parseFloat(normalized);
-                            if (isNaN(cleanValue)) cleanValue = 0.0;
-                            cellValue = strVal.replace(/\./g, ',');
-                        }
-                    }
-                    else if (rule.type === 'FORMAT_PRICE_AR' || rule.tipo_regex === 'FORMAT_PRICE_AR') {
-                        if (strVal && strVal !== "") {
-                            let cleanStr = strVal.replace(/[^\d.,-]/g, '');
-                            if (cleanStr !== "") {
-                                const lastDot = cleanStr.lastIndexOf('.');
-                                const lastComma = cleanStr.lastIndexOf(',');
-                                let floatVal = 0;
-
-                                if (lastDot === -1 && lastComma === -1) {
-                                    floatVal = parseFloat(cleanStr);
-                                } else if (lastDot > lastComma) {
-                                    const withoutThousandSeps = cleanStr.replace(/,/g, '');
-                                    floatVal = parseFloat(withoutThousandSeps);
-                                } else {
-                                    const withoutThousandSeps = cleanStr.replace(/\./g, '');
-                                    const standardStr = withoutThousandSeps.replace(',', '.');
-                                    floatVal = parseFloat(standardStr);
-                                }
-
-                                if (!isNaN(floatVal)) {
-                                    cleanValue = floatVal;
-                                    cellValue = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(floatVal);
-                                } else {
-                                    cellValue = "";
-                                    cleanValue = null;
-                                }
-                            }
-                        }
-                    }
-                } // End of rule loop
-
-                // Default fallback parser if cleanValue wasn't explicitly trapped by a rule
-                if (cleanValue === null && cellValue !== "") {
-                    const parsed = parseFloat(String(cellValue).replace(/,/g, '.'));
-                    if (!isNaN(parsed)) cleanValue = parsed;
+                // 1. Core V5 Mega-Pipeline Transformation
+                if (window.viewerETL && typeof window.viewerETL.transformCell === 'function') {
+                    const result = window.viewerETL.transformCell(cellValue, rulesStack);
+                    display = result.display;
+                    clean = result.clean;
+                    rejected = result.rejected;
+                } else {
+                    console.warn("[Simulador] window.viewerETL no está listo. Ignorando transformaciones.");
                 }
-
-                // Save Rich Object output into row context for Phase 2
+                
+                // Save Rich Object output into row context for Phase 2 
                 if (!row._richContext) row._richContext = {};
-                row._richContext[vColId] = { clean: cleanValue, display: cellValue };
+                row._richContext[vColId] = { clean: clean, display: display };
 
-                // 2. Now, check "Filter" rules against the TRANSFORMED value
+                // 2. Reject Validation (V5 + Legacy V4 Fallback)
+                // 2. Reject Validation (V5 + Legacy V4 Fallback)
+                let localReject = rejected;
+                
                 for (const rule of rulesStack) {
-                    if (!keepRow) break;
                     if (rule.disabled) continue;
-
-                    const strVal = String(cellValue || "").trim(); // Use transformed value
-
                     if (rule.type === 'row_filter' || rule.type === 'filter') {
-                        if (rule.config?.exclude_empty && strVal === "") {
-                            keepRow = false;
-                        }
-                        if (keepRow && rule.config?.exclude_regex) {
+                        if (rule.config?.exclude_empty && String(display).trim() === "") localReject = true;
+                        if (!localReject && rule.config?.exclude_regex) {
                             try {
                                 let p = rule.config.exclude_regex.replace(/\\\\/g, '\\');
                                 if (p.startsWith('/')) p = p.slice(1, -1);
-                                if (new RegExp(p, 'i').test(strVal)) keepRow = false;
+                                if (new RegExp(p, 'i').test(String(display))) localReject = true;
                             } catch (e) { }
                         }
                     }
                 }
+                
+                if (localReject) row._rejectedSim = true;
             });
-            return keepRow;
+            return true; // We never drop rows mathematically anymore, we just paint them red!
         });
 
+        // Contabilizar rechazos transparentes
+        const validRowsCount = sanitizedData.filter(r => !r._rejectedSim).length;
         currentSimData = sanitizedData;
         currentDisplayConfig = displayConfig;
 
@@ -759,7 +672,7 @@ function generatePreview() {
                     <span id="simFilteredCount">${sanitizedData.length}</span> / ${sanitizedData.length}
                 </div>
             </div>
-            <div id="simTableScrollArea" class="overflow-auto max-h-[60vh]">
+            <div id="simTableScrollArea" class="flex-1 w-full min-h-[300px] overflow-auto custom-scrollbar relative p-0 m-0 bg-slate-900">
             </div>
         `;
 
@@ -770,9 +683,10 @@ function generatePreview() {
         if (window.lucide) window.lucide.createIcons({ root: container });
 
         document.getElementById('simMeta').innerHTML = `
-            <span class="text-slate-400">Total Filas Útiles:</span> <span class="text-white font-bold">${sanitizedData.length}</span> 
+            <span class="text-slate-400">Filas Válidas:</span> <span class="text-emerald-400 font-bold">${validRowsCount}</span> 
+            <span class="text-red-400 font-bold ml-2">(Filas Descartadas: ${sanitizedData.length - validRowsCount})</span>  
             <span class="text-slate-600 mx-2">|</span> 
-            <span class="text-slate-400">Columnas:</span> <span class="text-white font-bold">${displayConfig.length}</span>
+            <span class="text-slate-400">Columnas Master:</span> <span class="text-white font-bold">${displayConfig.length}</span>
         `;
 
     } catch (error) {
@@ -818,7 +732,25 @@ function renderSimulationTable(data) {
     const scrollArea = document.getElementById('simTableScrollArea');
     if (!scrollArea) return;
 
-    let html = "<table class='min-w-full text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
+    let html = "<table class='min-w-full table-fixed text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0'>";
+
+    const getRuleName = (type) => {
+        switch(type) {
+            case 'split': case 'regex_split': return 'Dividir Texto';
+            case 'sanitize_numbers': return 'Extraer Numéricos';
+            case 'remove_zeros': return 'Quitar Ceros Iniciales';
+            case 'uppercase': return 'Mayúsculas';
+            case 'lowercase': return 'Minúsculas';
+            case 'replace': return 'Reemplazo Textual';
+            case 'format_number': return 'Formato ARS Simple';
+            case 'SANITIZE_NUMERIC_PIPE': return 'Extractor Numérico Agresivo';
+            case 'FORMAT_DECIMAL_DISCOUNT': return 'Parser Decimal / Descuento';
+            case 'FORMAT_PRICE_AR': return 'Conversión Monetaria ARS';
+            case 'sanitize': return 'Saneamiento / Regex';
+            case 'row_filter': case 'filter': return 'Filtro Condicional';
+            default: return type || 'Regla de Transformación';
+        }
+    };
 
     currentDisplayConfig.forEach((cfg, fieldIdx) => {
         let content = `<span>${cfg.label}</span>`;
@@ -849,25 +781,37 @@ function renderSimulationTable(data) {
                             : 'text-emerald-400 font-bold';
                         const iconType = isOff ? 'zap-off' : 'zap';
                         
-                        const displayType = (r.type === 'split' || r.type === 'regex_split') ? 'Split' : (r.type || 'Regla');
+                        const displayType = getRuleName(r.type || r.tipo_regex);
                         
                         dropdownItems += `
                             <button onclick="window.ViewerUI.toggleRuleInSimulation('${cfg.virtualColId}', ${idx}); event.stopPropagation();" 
                                     class="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800 transition-colors border-b border-slate-800/50 last:border-0 ${badgeColor}"
                                     title="${isOff ? 'Regla Inactiva (clic para Encender)' : 'Regla Activa (clic para Apagar)'}">
                                 <i data-lucide="${iconType}" class="w-3 h-3 shrink-0"></i>
-                                <span class="truncate">${displayType}</span>
+                                <span class="truncate text-[10px] text-left">${displayType}</span>
                             </button>
                         `;
                     });
 
+                    // Logic to force the dropdown open if it was the last toggled
+                    const isForcedOpen = (window.ViewerUI && window.ViewerUI._keepDropdownOpen === cfg.virtualColId);
+                    const dropdownClasses = isForcedOpen 
+                        ? 'opacity-100 visible'
+                        : 'opacity-0 invisible group-hover:opacity-100 group-hover:visible';
+
                     rulesDropdownHtml = `
-                        <div class="relative group mt-1">
-                            <button class="flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-1 bg-emerald-900/40 text-emerald-400 border border-emerald-500/30 rounded shadow-sm hover:brightness-125 transition-all">
-                                ${activeCount} Reglas <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                        <div class="relative group mt-1" onmouseleave="if(window.ViewerUI) window.ViewerUI._keepDropdownOpen = null;">
+                            <button class="flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-1 bg-emerald-900/40 text-emerald-400 border border-emerald-500/30 rounded shadow-sm hover:brightness-125 transition-all w-full justify-between">
+                                <span><i data-lucide="filter" class="w-3 h-3 inline mr-1"></i> ${activeCount} / ${rulesStack.length}</span> <i data-lucide="chevron-down" class="w-3 h-3"></i>
                             </button>
-                            <div class="absolute left-0 top-full mt-1 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[300] py-1">
-                                ${dropdownItems}
+                            <div class="absolute left-0 top-full mt-1 w-52 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl transition-all z-[300] py-1 ${dropdownClasses}">
+                                <div class="px-2 pb-1 border-b border-slate-800 flex gap-1 mb-1">
+                                    <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', true); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 rounded py-1 transition-colors pointer-events-auto" title="Prender Todo">ON</button>
+                                    <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', false); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded py-1 transition-colors pointer-events-auto" title="Apagar Todo">OFF</button>
+                                </div>
+                                <div class="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                    ${dropdownItems}
+                                </div>
                             </div>
                         </div>
                     `;
@@ -890,80 +834,34 @@ function renderSimulationTable(data) {
         let thClass = "p-2 border border-slate-700 text-left align-top relative group ";
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
         
-        let resizeHandle = `<div onmousedown="window.initSimColResize(event, this.parentElement)" class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 z-20 transition-colors"></div>`;
+        let resizeHandle = `<div onmousedown="window.initSimColResize(event, this.parentElement, ${fieldIdx})" class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 z-20 transition-colors"></div>`;
         
-        html += `<th class="${thClass}" style="min-width: 150px;">${thContent}${resizeHandle}</th>`;
+        // Recover persisted width
+        let restoredWidth = window.simColWidthPersist && window.simColWidthPersist[fieldIdx] ? window.simColWidthPersist[fieldIdx] + "px" : "150px";
+        
+        html += `<th class="${thClass}" style="width: ${restoredWidth}; min-width: ${restoredWidth}; max-width: ${restoredWidth};">${thContent}${resizeHandle}</th>`;
     });
 
-    // Fase 2 - Headers (Computed Columns)
-    if (Array.isArray(window.computedColumns)) {
-        window.computedColumns.forEach((calcConfig, index) => {
-            let thContent = `
-                <div class="flex items-center justify-between gap-2 text-fuchsia-300">
-                    <i data-lucide="calculator" class="w-3 h-3"></i>
-                    <div class="font-bold truncate" title="${calcConfig.masterField.nombre_campo}">${calcConfig.masterField.nombre_campo}</div>
-                    <div class="flex items-center shrink-0">
-                        <button onclick="window.ViewerUI.deleteComputedColumn('${index}')" class="text-fuchsia-400 hover:text-red-400 p-1" title="Eliminar Cálculo">
-                            <i data-lucide="trash-2" class="w-3 h-3"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-            html += `<th class="p-2 border border-fuchsia-900/50 bg-fuchsia-900/20 align-middle">${thContent}</th>`;
-        });
-    }
+    // Fase 2 - Headers (Computed Columns) PURGADO - Solo V5 pipeline oficial.
 
     html += "</tr></thead><tbody>";
 
     data.forEach((row) => {
-        html += "<tr class='hover:bg-slate-800/50 border-b border-slate-800'>";
+        const isRejected = row._rejectedSim;
+        const rowClass = isRejected ? "opacity-60 bg-red-950/20 grayscale" : "hover:bg-slate-800/50";
+        
+        html += `<tr class='transition-colors border-b border-slate-800 ${rowClass}'>`;
 
-        // Fase 1 - Render
+        // Fase 1 - Render V5
         currentDisplayConfig.forEach(cfg => {
             const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
-            const finalVal = cfg.transform(rawVal, row);
+            let finalVal = row._richContext && row._richContext[cfg.virtualColId] ? row._richContext[cfg.virtualColId].display : null;
+            if(finalVal === null || finalVal === undefined) finalVal = cfg.transform(rawVal, row);
+            
             // Limit text properly so resizing behaves like excel truncating long strings
-            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis">${finalVal}</td>`;
+            // We use max-w-0 on td with table-fixed to force truncation instead of expanding grid
+            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-0 ${isRejected ? 'text-red-400' : ''}" title="${String(finalVal).replace(/"/g, '&quot;')}">${finalVal}</td>`;
         });
-
-        // Fase 2 - Cálculo al vuelo de celdas Computed
-        if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
-            window.computedColumns.forEach(calcConfig => {
-                const rCtx = row._richContext || {};
-
-                let resultDisplay = "";
-
-                try {
-                    // Solo podemos operar si tenemos ambos operandos
-                    if (calcConfig.operands && calcConfig.operands.length === 2) {
-                        const opA = rCtx[calcConfig.operands[0]];
-                        const opB = rCtx[calcConfig.operands[1]];
-
-                        // Validar que existen en la fila, y que tienen valores limpios matemáticos
-                        if (opA && opB && opA.clean !== null && opB.clean !== null) {
-                            let mathResult = 0;
-                            // Ejecutar Macro Matemática (Ej. Precio Final = Precio * (1 - Descuento/100))
-                            if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
-                                mathResult = opA.clean * (1 - (opB.clean / 100));
-                            } else if (calcConfig.macro === "MULTIPLY") {
-                                mathResult = opA.clean * opB.clean;
-                            } else if (calcConfig.macro === "SUBTRACT") {
-                                mathResult = opA.clean - opB.clean;
-                            }
-
-                            // Formatear el resultado usando el estándar local
-                            resultDisplay = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(mathResult);
-                        } else {
-                            resultDisplay = "<span class='text-slate-600 italic'>Err: N/A</span>";
-                        }
-                    }
-                } catch (e) {
-                    console.error("Error evaluando Fase 2", e);
-                }
-
-                html += `<td class="p-2 border-r border-fuchsia-900/30 text-fuchsia-100 whitespace-nowrap bg-fuchsia-950/20">${resultDisplay}</td>`;
-            });
-        }
 
         html += "</tr>";
     });
@@ -984,6 +882,9 @@ window.ViewerUI.toggleRuleInSimulation = function(vColId, ruleIndex) {
         rules[ruleIndex].disabled = !rules[ruleIndex].disabled;
         window.draftPipelines[vColId].rules = rules;
         
+        // PRESERVE DROPDOWN OPEN STATE
+        window.ViewerUI._keepDropdownOpen = vColId;
+        
         // Retrigger the simulation modal processing directly
         if (typeof window.generatePreview === 'function') {
             window.generatePreview();
@@ -996,14 +897,39 @@ window.ViewerUI.toggleRuleInSimulation = function(vColId, ruleIndex) {
     }
 };
 
-window.ViewerUI.toggleFullscreenSimulation = function(btn) {
-    const modal = document.querySelector('#simulationModal .glass-panel');
-    if (!modal) return;
+window.ViewerUI.toggleAllRulesInSimulation = function(vColId, forceEnable) {
+    if (!window.draftPipelines || !window.draftPipelines[vColId] || !window.draftPipelines[vColId].rules) return;
+    let rules = window.draftPipelines[vColId].rules;
+    if (!Array.isArray(rules)) rules = [rules];
     
-    const isFullscreen = modal.classList.contains('w-screen');
+    rules.forEach(r => {
+        r.disabled = !forceEnable;
+    });
+    window.draftPipelines[vColId].rules = rules;
+    
+    window.ViewerUI._keepDropdownOpen = vColId;
+    
+    if (typeof window.generatePreview === 'function') {
+        window.generatePreview();
+    }
+    
+    if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncVisuals === 'function') {
+        window.viewerRuleWorkshop.syncVisuals();
+    }
+};
+
+window.ViewerUI.toggleFullscreenSimulation = function(btn) {
+    const modalWrapper = document.getElementById('simulationModal');
+    const modal = document.querySelector('#simulationModal .glass-panel');
+    if (!modalWrapper || !modal) return;
+    
+    // Support transitioning from w-screen (legacy code iteration padding) and new h-full logic
+    const isFullscreen = modal.classList.contains('w-full') || modal.classList.contains('w-screen');
     
     if (isFullscreen) {
-        modal.classList.remove('w-screen', 'h-screen', 'max-w-none', 'max-h-screen', 'rounded-none', 'border-0');
+        modalWrapper.classList.remove('p-0');
+        modalWrapper.classList.add('p-4');
+        modal.classList.remove('w-screen', 'h-screen', 'w-full', 'h-full', 'max-w-none', 'max-h-none', 'max-h-screen', 'rounded-none', 'border-0');
         modal.classList.add('max-w-4xl', 'max-h-[90vh]', 'rounded-2xl', 'border', 'border-emerald-500/30');
         
         const icon = btn.querySelector('i');
@@ -1012,8 +938,10 @@ window.ViewerUI.toggleFullscreenSimulation = function(btn) {
             if (window.lucide) window.lucide.createIcons({ root: btn });
         }
     } else {
+        modalWrapper.classList.remove('p-4');
+        modalWrapper.classList.add('p-0');
         modal.classList.remove('max-w-4xl', 'max-h-[90vh]', 'rounded-2xl', 'border', 'border-emerald-500/30');
-        modal.classList.add('w-screen', 'h-screen', 'max-w-none', 'max-h-screen', 'rounded-none', 'border-0');
+        modal.classList.add('w-full', 'h-full', 'max-w-none', 'max-h-none', 'rounded-none', 'border-0');
         
         const icon = btn.querySelector('i');
         if(icon) {
@@ -1032,14 +960,18 @@ let simResizeStartX = 0;
 let simResizeStartWidth = 0;
 let simResizeTargetTh = null;
 let simResizeRAF = null;
+let simResizeColIndex = -1;
 
-window.initSimColResize = function(e, thEl) {
+window.simColWidthPersist = window.simColWidthPersist || {};
+
+window.initSimColResize = function(e, thEl, colIdx) {
     e.preventDefault();
     e.stopPropagation();
     isSimResizing = true;
     simResizeStartX = e.pageX;
     simResizeStartWidth = thEl.offsetWidth;
     simResizeTargetTh = thEl;
+    simResizeColIndex = colIdx;
 
     // Fix absolute CSS widths to prevent auto flex-resizing from table siblings
     if (!thEl.style.width) thEl.style.width = thEl.offsetWidth + 'px';
@@ -1064,6 +996,12 @@ function onSimColMouseMove(e) {
 
 function onSimColMouseUp(e) {
     if (!isSimResizing) return;
+    
+    // Save to persistence memory
+    if (simResizeTargetTh && simResizeColIndex >= 0) {
+        window.simColWidthPersist[simResizeColIndex] = parseInt(simResizeTargetTh.style.width, 10);
+    }
+    
     isSimResizing = false;
     if (simResizeRAF) cancelAnimationFrame(simResizeRAF);
     document.body.classList.remove('select-none');
