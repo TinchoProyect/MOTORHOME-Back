@@ -803,6 +803,7 @@ async function saveTemplateConfig(req, res) {
                 rules: config.rules || {},
                 computedColumns: config.computedCols || []
             },
+            config_visual: config.config_visual || {},
             ultima_deteccion: new Date()
         };
 

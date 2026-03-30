@@ -136,21 +136,9 @@ function renderVirtualTable(originalData) {
         }
     }
     
-    // [V5 UX] Auto-Restore UI Order Preference from LocalStorage
-    if (window.globalContext && window.globalContext.providerId && window.virtualColumns) {
-        const storedOrderStr = localStorage.getItem('lamda_sim_order_' + window.globalContext.providerId);
-        if (storedOrderStr) {
-            try {
-                const orderArr = JSON.parse(storedOrderStr);
-                window.virtualColumns.sort((a, b) => {
-                    let idxA = orderArr.indexOf(a.id);
-                    let idxB = orderArr.indexOf(b.id);
-                    if (idxA === -1) idxA = 9999;
-                    if (idxB === -1) idxB = 9999;
-                    return idxA - idxB;
-                });
-            } catch (e) {}
-        }
+    // [V5 UX] Auto-Restore UI Order Preference via Layout Manager
+    if (window.virtualColumns && window.LayoutManager) {
+        window.virtualColumns = window.LayoutManager.applyOrder(window.virtualColumns);
     }
 
     const ROW_HEIGHT = 35;
@@ -473,14 +461,6 @@ function renderVirtualTable(originalData) {
 function generatePreview() {
     try {
         if (!currentSheetData || currentSheetData.length === 0) return;
-
-        // [V5 UX] Restore Widths Persist
-        if (window.globalContext && window.globalContext.providerId && Object.keys(window.simColWidthPersist || {}).length === 0) {
-            const storedWStr = localStorage.getItem('lamda_sim_width_' + window.globalContext.providerId);
-            if (storedWStr) {
-                try { window.simColWidthPersist = JSON.parse(storedWStr); } catch (e) {}
-            }
-        }
 
         const pName = window.globalContext.providerName || "DESCONOCIDO";
         const fType = window.globalContext.fileType || "GENERAL";
@@ -981,10 +961,10 @@ function renderSimulationTable(data) {
         let thClass = "p-2 border border-slate-700 text-left align-top relative group ";
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
         
-        let resizeHandle = `<div onmousedown="window.initSimColResize(event, this.parentElement, ${fieldIdx})" class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 z-20 transition-colors"></div>`;
+        let resizeHandle = `<div onmousedown="window.initSimColResize(event, this.parentElement, ${fieldIdx}, '${cfg.virtualColId}')" class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 z-20 transition-colors"></div>`;
         
-        // Recover persisted width
-        let restoredWidth = window.simColWidthPersist && window.simColWidthPersist[fieldIdx] ? window.simColWidthPersist[fieldIdx] + "px" : "150px";
+        // Recover persisted width via Manager
+        let restoredWidth = window.LayoutManager ? window.LayoutManager.getWidthCSS(cfg.virtualColId, '150px') : "150px";
         
         let draggableConfig = `draggable="true" ondragstart="window.ViewerUI.handleDragStart(event, ${fieldIdx})" ondragover="window.ViewerUI.handleDragOver(event)" ondragenter="window.ViewerUI.handleDragEnter(event)" ondragleave="window.ViewerUI.handleDragLeave(event)" ondrop="window.ViewerUI.handleDrop(event, ${fieldIdx})" ondragend="window.ViewerUI.handleDragEnd(event)"`;
 
@@ -1135,9 +1115,9 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
         const element = vColArray.splice(fromIdx, 1)[0];
         vColArray.splice(toIdx, 0, element);
         
-        // V5 UX: Guardar reordenamiento en LocalStorage persistente
-        if (window.globalContext && window.globalContext.providerId) {
-            localStorage.setItem('lamda_sim_order_' + window.globalContext.providerId, JSON.stringify(vColArray.map(v => v.id)));
+        // V5 UX: Guardar reordenamiento delegando al LayoutManager
+        if (window.LayoutManager) {
+            window.LayoutManager.recordOrder(vColArray);
         }
 
         // Guardar estado master hacia el servidor si es posible
@@ -1174,8 +1154,8 @@ window.ViewerUI.toggleFullscreenSimulation = function(btn) {
     const modal = document.querySelector('#simulationModal .glass-panel');
     if (!modalWrapper || !modal) return;
     
-    // Support transitioning from w-screen (legacy code iteration padding) and new h-full logic
-    const isFullscreen = modal.classList.contains('w-full') || modal.classList.contains('w-screen');
+    // El panel inicia con 'w-full max-w-4xl', por ende usar w-full como flag de fullscreen es erróneo.
+    const isFullscreen = modal.classList.contains('max-w-none') || modal.classList.contains('w-screen');
     
     if (isFullscreen) {
         modalWrapper.classList.remove('p-0');
@@ -1212,10 +1192,11 @@ let simResizeStartWidth = 0;
 let simResizeTargetTh = null;
 let simResizeRAF = null;
 let simResizeColIndex = -1;
+let simResizeColVirtualId = null;
 
-window.simColWidthPersist = window.simColWidthPersist || {};
+// window.simColWidthPersist was deleted
 
-window.initSimColResize = function(e, thEl, colIdx) {
+window.initSimColResize = function(e, thEl, colIdx, virtualColId) {
     e.preventDefault();
     e.stopPropagation();
     isSimResizing = true;
@@ -1223,6 +1204,7 @@ window.initSimColResize = function(e, thEl, colIdx) {
     simResizeStartWidth = thEl.offsetWidth;
     simResizeTargetTh = thEl;
     simResizeColIndex = colIdx;
+    simResizeColVirtualId = virtualColId;
 
     // Fix absolute CSS widths to prevent auto flex-resizing from table siblings
     if (!thEl.style.width) thEl.style.width = thEl.offsetWidth + 'px';
@@ -1248,13 +1230,16 @@ function onSimColMouseMove(e) {
 function onSimColMouseUp(e) {
     if (!isSimResizing) return;
     
-    // Save to persistence memory
-    if (simResizeTargetTh && simResizeColIndex >= 0) {
-        window.simColWidthPersist[simResizeColIndex] = parseInt(simResizeTargetTh.style.width, 10);
+    // Save strictly to robust LayoutManager Memory
+    if (simResizeTargetTh && simResizeColVirtualId) {
+        const pixelVal = parseInt(simResizeTargetTh.style.width, 10);
+        if (window.LayoutManager) {
+            window.LayoutManager.recordWidth(simResizeColVirtualId, pixelVal);
+        }
         
-        // V5 UX: Almacenamiento Local (LocalStorage)
-        if (window.globalContext && window.globalContext.providerId) {
-            localStorage.setItem('lamda_sim_width_' + window.globalContext.providerId, JSON.stringify(window.simColWidthPersist));
+        // Guardar estado master hacia el servidor si es posible
+        if (typeof window.saveSimulationConfig === 'function') {
+            window.saveSimulationConfig(null, true);
         }
     }
     

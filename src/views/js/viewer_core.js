@@ -132,7 +132,8 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 mapping: typeof columnMapping !== 'undefined' ? columnMapping : {},
                 rules: typeof processingRules !== 'undefined' ? processingRules : {},
                 computedCols: window.computedColumns || [],
-                colWidths: window.currentColWidths || {}
+                colWidths: window.currentColWidths || {},
+                config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {}
             }
         };
 
@@ -353,6 +354,11 @@ window.loadSavedConfiguration = async function () {
                         window.currentColWidths = resultV3.data.reglas_procesamiento.colWidths;
                         console.log("✅ [V5] Dimensiones de columnas recuperadas.");
                     }
+                }
+                
+                // [V5 UX] Hydrate Visual Configuration
+                if (resultV3.data.config_visual && window.LayoutManager) {
+                    window.LayoutManager.hydrateSettings(resultV3.data.config_visual);
                 }
 
                 loadedAnything = true;
