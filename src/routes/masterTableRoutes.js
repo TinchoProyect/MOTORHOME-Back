@@ -14,4 +14,12 @@ router.put('/dictionary/:id', masterTableController.updateMasterField);
 // Apagar/Encender lógicamente ("Zero-Drop")
 router.patch('/dictionary/:id/toggle', masterTableController.toggleMasterFieldStatus);
 
+// ==========================================
+// V5: CRUD DE CATEGORÍAS (Solapas Dinámicas)
+// ==========================================
+router.get('/categories', masterTableController.getCategories);
+router.post('/categories', masterTableController.createCategory);
+router.put('/categories/:id', masterTableController.updateCategory);
+router.delete('/categories/:id', masterTableController.deleteCategory);
+
 module.exports = router;

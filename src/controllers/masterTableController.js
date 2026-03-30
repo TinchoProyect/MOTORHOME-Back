@@ -7,7 +7,8 @@ async function getMasterFields(req, res) {
 
         const { data, error } = await supabase
             .from('diccionario_campos_maestros')
-            .select('*')
+            .select('*, diccionario_categorias(nombre, orden_visual)')
+            // Mantenimiento de legacy (pero las categorias usan orden_visual propio)
             .order('orden', { ascending: true })
             .order('nombre_campo', { ascending: true });
 
@@ -43,7 +44,8 @@ async function createMasterField(req, res) {
 
         const payload = {
             nombre_campo: finalName,
-            tipo_dato: finalTipoDato,
+            tipo_dato: req.body.categoria_id ? null : finalTipoDato, // Si mandan UUID, ignoramos el texto legado
+            categoria_id: req.body.categoria_id || null, // Nueva relación FK
             es_requerido: es_requerido === true || es_requerido === 'true',
             es_identificador: es_identificador === true || es_identificador === 'true'
         };
@@ -90,9 +92,14 @@ async function updateMasterField(req, res) {
         if (nombre_campo !== undefined && nombre_campo.trim() !== '') {
             updatePayload.nombre_campo = nombre_campo.trim().toUpperCase();
         }
-        if (tipo_dato !== undefined) {
+        if (req.body.categoria_id !== undefined) {
+            updatePayload.categoria_id = req.body.categoria_id || null;
+            // Clean legacy text string on successful FK assignment
+            if (req.body.categoria_id) updatePayload.tipo_dato = null;
+        } else if (tipo_dato !== undefined) {
             updatePayload.tipo_dato = (tipo_dato.trim() !== '') ? tipo_dato.trim() : 'texto';
         }
+        
         if (es_requerido !== undefined) {
             updatePayload.es_requerido = es_requerido === true || es_requerido === 'true';
         }
@@ -169,9 +176,108 @@ async function toggleMasterFieldStatus(req, res) {
     }
 }
 
+// ==========================================
+// V5 CATEGORÍAS (Solapas Dinámicas) CRUD
+// ==========================================
+
+// GET /api/master-table/categories
+async function getCategories(req, res) {
+    try {
+        const { data, error } = await supabase
+            .from('diccionario_categorias')
+            .select('*')
+            .order('orden_visual', { ascending: true })
+            .order('nombre', { ascending: true });
+
+        if (error) throw error;
+        return res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error("[MasterTableController] getCategories error:", error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+// POST /api/master-table/categories
+async function createCategory(req, res) {
+    try {
+        let { nombre, orden_visual } = req.body;
+        if (!nombre || !nombre.trim()) return res.status(400).json({ success: false, error: "Nombre obligatorio" });
+        
+        nombre = nombre.trim();
+        orden_visual = parseInt(orden_visual) || 99;
+
+        const { data, error } = await supabase
+            .from('diccionario_categorias')
+            .insert({ nombre, orden_visual })
+            .select()
+            .single();
+
+        if (error) {
+            if (error.code === '23505') return res.status(409).json({ success: false, error: "Ya existe una solapa con ese nombre." });
+            throw error;
+        }
+        return res.json({ success: true, data });
+    } catch (error) {
+        console.error("[MasterTableController] createCategory error:", error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+// PUT /api/master-table/categories/:id
+async function updateCategory(req, res) {
+    try {
+        const { id } = req.params;
+        let { nombre, orden_visual } = req.body;
+        
+        const payload = {};
+        if (nombre && nombre.trim() !== '') payload.nombre = nombre.trim();
+        if (orden_visual !== undefined) payload.orden_visual = parseInt(orden_visual) || 99;
+
+        if (Object.keys(payload).length === 0) return res.status(400).json({ success: false, error: "Nada para actualizar" });
+
+        const { data, error } = await supabase
+            .from('diccionario_categorias')
+            .update(payload)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            if (error.code === '23505') return res.status(409).json({ success: false, error: "Ya existe una solapa con ese nombre." });
+            throw error;
+        }
+        if (!data) return res.status(404).json({ success: false, error: "No encontrada" });
+        return res.json({ success: true, data });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+// DELETE /api/master-table/categories/:id
+async function deleteCategory(req, res) {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabase
+            .from('diccionario_categorias')
+            .delete()
+            .eq('id', id);
+
+        // Supabase Postgres DELETE with ON DELETE SET NULL on the foreign key automatically nullifies the relations.
+        if (error) throw error;
+        return res.json({ success: true });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+
 module.exports = {
     getMasterFields,
     createMasterField,
     updateMasterField,
-    toggleMasterFieldStatus
+    toggleMasterFieldStatus,
+    getCategories,
+    createCategory,
+    updateCategory,
+    deleteCategory
 };

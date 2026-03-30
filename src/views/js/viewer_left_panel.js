@@ -71,15 +71,27 @@ export async function initLeftPanel() {
 function buildTabs() {
     const header = document.getElementById('vlpTabsHeader');
 
-    // Agrupar por tipo_dato
+    // Mapeo Inteligente (Nombre -> Orden Visual)
+    const categoryMetadata = {};
     groupedFields = {};
+
     activeFields.forEach(field => {
-        const tipo = field.tipo_dato || 'Otros';
-        if (!groupedFields[tipo]) groupedFields[tipo] = [];
-        groupedFields[tipo].push(field);
+        // Soporte de transición y fallbacks (Usa diccionario_categorias desde el JOIN)
+        const catName = field.diccionario_categorias?.nombre || field.tipo_dato || 'Otros';
+        const catOrder = field.diccionario_categorias?.orden_visual ?? 99; // 99 si no hay orden explícito
+
+        if (!groupedFields[catName]) {
+            groupedFields[catName] = [];
+            categoryMetadata[catName] = catOrder;
+        }
+        groupedFields[catName].push(field);
     });
 
-    const categories = Object.keys(groupedFields).sort();
+    // Ordenamiento Numérico Posicional
+    const sortedCategoryPairs = Object.entries(categoryMetadata)
+        .sort((a, b) => a[1] - b[1]); // Compara el 'orden_visual' (indice 1 del par)
+
+    const categories = sortedCategoryPairs.map(pair => pair[0]); // Extrae solo los nombres
 
     // Crear la UI de las Tabs
     header.innerHTML = '';

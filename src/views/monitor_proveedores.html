@@ -741,6 +741,10 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-3">
+                    <button onclick="window.openCategoryManagerModal()"
+                        class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-all border border-slate-700">
+                        <i data-lucide="folder-kanban" class="w-4 h-4"></i> Solapas
+                    </button>
                     <button onclick="window.promptCreateMasterField()"
                         class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-blue-900/30">
                         <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Campo
@@ -839,25 +843,16 @@
                 </div>
 
                 <div class="space-y-1">
-                    <label
-                        class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block flex items-center justify-between">
-                        Tipo de Dato (Libre) *
-                        <span class="text-xs text-slate-500 font-normal normal-case">Ej: fecha, float, texto...</span>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center justify-between">
+                        Categoría (Solapa) *
+                        <button type="button" onclick="window.openCategoryManagerModal()" class="text-blue-400 hover:text-blue-300 text-[9px] underline">Administrar</button>
                     </label>
                     <div class="relative w-full" id="mfmTypeContainer">
-                        <input type="text" id="mfmType"
-                            class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none pr-10"
-                            placeholder="Ingresa texto, numérico (por defecto es texto)" autocomplete="off"
-                            onfocus="window.openDataTypeDropdown()" oninput="window.filterDataTypeDropdown()">
-                        <div
-                            class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-500">
+                        <select id="mfmType" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none appearance-none cursor-pointer">
+                            <option value="">Seleccionar solapa...</option>
+                        </select>
+                        <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-500">
                             <i data-lucide="chevron-down" class="w-4 h-4"></i>
-                        </div>
-
-                        <!-- Custom Dropdown Menu -->
-                        <div id="mfmTypeDropdown"
-                            class="hidden absolute z-[300] w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl max-h-48 overflow-y-auto custom-scrollbar">
-                            <!-- JS Render Options -->
                         </div>
                     </div>
                 </div>
@@ -892,6 +887,55 @@
                     class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-blue-900/20 flex items-center gap-2 transition-colors">
                     <i data-lucide="save" class="w-4 h-4"></i> Guardar
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CATEGORY MANAGER MODAL [V5] -->
+    <div id="categoryManagerModal" class="hidden fixed inset-0 z-[300] flex items-center justify-center p-4 modal-blur overflow-y-auto">
+        <div class="glass-panel w-full max-w-2xl max-h-[90vh] rounded-2xl border border-purple-500/30 flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <div class="p-6 border-b border-slate-700 bg-slate-950/50 flex justify-between items-center rounded-t-2xl shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                        <i data-lucide="folder-tree" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center">Gestor de Solapas</h2>
+                        <p class="text-[10px] text-slate-400 font-mono tracking-widest mt-1">CATEGORÍAS Y ORDEN POSICIONAL</p>
+                    </div>
+                </div>
+                <button onclick="window.closeCategoryManagerModal()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 flex flex-col overflow-hidden bg-slate-900 border-b border-slate-800">
+                <!-- Create Category Form -->
+                <div class="p-4 bg-slate-950/70 border-b border-slate-800 flex items-end gap-3 shrink-0">
+                    <div class="flex-grow space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nombre de Solapa</label>
+                        <input type="text" id="catNewName" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none" placeholder="Ej: Comercial">
+                    </div>
+                    <div class="w-24 space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Orden</label>
+                        <input type="number" id="catNewOrder" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none text-center" value="99" min="1">
+                    </div>
+                    <button onclick="window.createCategoryFromUI()" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 h-[42px]">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Crear
+                    </button>
+                </div>
+                
+                <p id="catErrorMsg" class="hidden px-4 py-2 bg-red-500/10 text-red-400 text-xs text-center border-b border-red-500/20 m-0"></p>
+
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-4">
+                    <div id="catListLoading" class="flex flex-col items-center justify-center text-slate-500 py-8 hidden">
+                        <i data-lucide="loader-2" class="w-6 h-6 animate-spin mb-2 text-purple-500"></i>
+                        <span class="text-[10px] font-mono tracking-widest">CARGANDO...</span>
+                    </div>
+                    <div id="catListContainer" class="space-y-2">
+                        <!-- JS injected rows -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>

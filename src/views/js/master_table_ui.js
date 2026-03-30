@@ -2,6 +2,7 @@
 import { masterTableService } from './services/master_table_service.js';
 
 let masterTableFieldsLocal = []; // State for Table Sync
+let masterTableCategoriesLocal = []; // State for Categories
 let currentEditId = null;        // State for active Form
 
 // =========================================================================
@@ -21,6 +22,7 @@ export function closeMasterTableModal() {
 }
 
 async function loadMasterFields() {
+    await loadCategories(); // Load dependencies first
     const tbody = document.getElementById('masterTableBody');
     const emptyState = document.getElementById('masterTableEmpty');
     const loadingState = document.getElementById('masterTableLoading');
@@ -74,7 +76,7 @@ function renderMasterTableRows(fields) {
                     </div>
                     <div>
                         <p class="text-sm font-bold text-slate-200 flex items-center">${field.nombre_campo} ${idBadge}</p>
-                        <p class="text-[10px] text-slate-500 font-mono tracking-wider">TIPO: ${field.tipo_dato}</p>
+                        <p class="text-[10px] text-slate-500 font-mono tracking-wider">SOLAPA: ${field.diccionario_categorias?.nombre || field.tipo_dato || 'N/A'} (Cat ID: ${field.categoria_id ? field.categoria_id.split('-')[0]+'...' : 'Legacy'})</p>
                     </div>
                 </div>
             </td>
@@ -100,72 +102,29 @@ function renderMasterTableRows(fields) {
 }
 
 // =========================================================================
-// 2. FORM MODAL (CREATE / EDIT) & DROPDOWN LOGIC
+// 2. FORM MODAL (CREATE / EDIT) & CATEGORY INTEGRATION
 // =========================================================================
 
-function getUniqueDataTypes() {
-    return [...new Set(masterTableFieldsLocal
-        .map(field => field.tipo_dato)
-        .filter(tipo => tipo && tipo.trim() !== '')
-    )].sort();
-}
-
-export function openDataTypeDropdown() {
-    const dropdown = document.getElementById('mfmTypeDropdown');
-    const input = document.getElementById('mfmType');
-    if (!dropdown || !input) return;
-
-    dropdown.classList.remove('hidden');
-    renderDropdownOptions(getUniqueDataTypes(), input.value);
-}
-
-export function filterDataTypeDropdown() {
-    const input = document.getElementById('mfmType');
-    const dropdown = document.getElementById('mfmTypeDropdown');
-    if (!dropdown || !input) return;
-
-    // Si el usuario escribe algo, mostramos el menú y filtramos.
-    dropdown.classList.remove('hidden');
-
-    const term = input.value.toLowerCase().trim();
-    const allTypes = getUniqueDataTypes();
-
-    const filtered = allTypes.filter(t => t.toLowerCase().includes(term));
-    renderDropdownOptions(filtered, input.value);
-}
-
-function renderDropdownOptions(options, currentInput) {
-    const dropdown = document.getElementById('mfmTypeDropdown');
-    dropdown.innerHTML = '';
-
-    if (options.length === 0) {
-        dropdown.innerHTML = `<div class="p-3 text-xs text-slate-500 italic text-center">Sin sugerencias previas</div>`;
-        return;
+async function loadCategories() {
+    try {
+        const result = await masterTableService.fetchCategories();
+        masterTableCategoriesLocal = result.data || [];
+        
+        // Populate the `<select>` in the Create Field modal
+        const select = document.getElementById('mfmType');
+        if (select) {
+            select.innerHTML = '<option value="">Seleccionar solapa...</option>';
+            masterTableCategoriesLocal.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.id; // We use UUID as value
+                opt.innerText = cat.nombre;
+                select.appendChild(opt);
+            });
+        }
+    } catch (e) {
+        console.error("Error loading categories", e);
     }
-
-    options.forEach(tipo => {
-        const div = document.createElement('div');
-        div.className = "px-4 py-3 text-sm text-slate-300 hover:bg-blue-600 hover:text-white cursor-pointer transition-colors border-b border-slate-700/50 last:border-0";
-        div.innerText = tipo;
-
-        div.onclick = (e) => {
-            e.stopPropagation();
-            document.getElementById('mfmType').value = tipo;
-            dropdown.classList.add('hidden');
-        };
-
-        dropdown.appendChild(div);
-    });
 }
-
-// Global click event to close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-    const container = document.getElementById('mfmTypeContainer');
-    const dropdown = document.getElementById('mfmTypeDropdown');
-    if (container && dropdown && !container.contains(e.target)) {
-        dropdown.classList.add('hidden');
-    }
-});
 
 export function promptCreateMasterField() {
     currentEditId = null;
@@ -178,7 +137,6 @@ export function promptCreateMasterField() {
     document.getElementById('mfmTitle').innerText = 'Nuevo Campo';
     document.getElementById('mfmWarning').classList.add('hidden');
     document.getElementById('mfmError').classList.add('hidden');
-    document.getElementById('mfmTypeDropdown')?.classList.add('hidden');
     document.getElementById('masterFieldModal').classList.remove('hidden');
 }
 
@@ -189,14 +147,21 @@ export function editMasterField(id) {
     currentEditId = id;
     document.getElementById('mfmId').value = id;
     document.getElementById('mfmName').value = field.nombre_campo;
-    document.getElementById('mfmType').value = field.tipo_dato;
+    
+    // Select the right category UUID or leave empty if legacy
+    const select = document.getElementById('mfmType');
+    if (field.categoria_id) {
+        select.value = field.categoria_id;
+    } else {
+        select.value = "";
+    }
+    
     document.getElementById('mfmReq').checked = field.es_requerido;
     document.getElementById('mfmIsId').checked = field.es_identificador || false;
 
     document.getElementById('mfmTitle').innerText = 'Editar Campo';
     document.getElementById('mfmWarning').classList.remove('hidden');
     document.getElementById('mfmError').classList.add('hidden');
-    document.getElementById('mfmTypeDropdown')?.classList.add('hidden');
     document.getElementById('masterFieldModal').classList.remove('hidden');
 }
 
@@ -210,7 +175,7 @@ export async function saveMasterFieldModal() {
 
     const id = document.getElementById('mfmId').value;
     const name = document.getElementById('mfmName').value.trim();
-    const type = document.getElementById('mfmType').value.trim();
+    const catId = document.getElementById('mfmType').value;
     const isReq = document.getElementById('mfmReq').checked;
     const isId = document.getElementById('mfmIsId').checked;
 
@@ -222,18 +187,24 @@ export async function saveMasterFieldModal() {
         return;
     }
 
+    if (!catId) {
+        errText.innerText = "Error: Es obligatorio seleccionar una solapa (Categoría).";
+        errText.classList.remove('hidden');
+        return;
+    }
+
     try {
         btn.disabled = true;
         btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
         if (window.lucide) window.lucide.createIcons();
 
-        const payload = { nombre_campo: name, tipo_dato: type, es_requerido: isReq, es_identificador: isId };
+        const payload = { nombre_campo: name, categoria_id: catId, es_requerido: isReq, es_identificador: isId };
 
         if (id) {
             // EDIT MODE
             const originalField = masterTableFieldsLocal.find(f => f.id === id);
             // Skip network if identical
-            if (originalField && originalField.nombre_campo === name && originalField.tipo_dato === type && originalField.es_requerido === isReq && !!originalField.es_identificador === isId) {
+            if (originalField && originalField.nombre_campo === name && originalField.categoria_id === catId && originalField.es_requerido === isReq && !!originalField.es_identificador === isId) {
                 closeMasterFieldModal();
                 return;
             }
@@ -318,6 +289,124 @@ export function closeMasterConfirmModal() {
 }
 
 // =========================================================================
+// 4. CATEGORY MANAGER MODAL CRUD
+// =========================================================================
+export async function openCategoryManagerModal() {
+    document.getElementById('categoryManagerModal').classList.remove('hidden');
+    await loadCategoryListRender();
+}
+
+export function closeCategoryManagerModal() {
+    document.getElementById('categoryManagerModal').classList.add('hidden');
+}
+
+async function loadCategoryListRender() {
+    const listContainer = document.getElementById('catListContainer');
+    const errP = document.getElementById('catErrorMsg');
+    const loading = document.getElementById('catListLoading');
+    
+    errP.classList.add('hidden');
+    listContainer.innerHTML = '';
+    loading.classList.remove('hidden');
+
+    await loadCategories(); // Refresca desde BD
+    loading.classList.add('hidden');
+
+    if (masterTableCategoriesLocal.length === 0) {
+        listContainer.innerHTML = '<div class="text-[10px] text-slate-500 italic text-center py-4">No hay solapas registradas.</div>';
+        return;
+    }
+
+    masterTableCategoriesLocal.forEach(cat => {
+        const item = document.createElement('div');
+        item.className = "flex items-center gap-3 bg-slate-900 border border-slate-700/50 p-3 rounded-lg";
+        item.innerHTML = `
+            <div class="bg-purple-500/10 text-purple-400 font-mono text-[9px] px-2 py-1 rounded w-10 text-center font-bold">#${cat.orden_visual}</div>
+            <div class="flex-grow min-w-0">
+                <input type="text" id="cat_name_${cat.id}" value="${cat.nombre}" class="w-full bg-transparent border-b border-transparent focus:border-purple-500 outline-none text-xs text-slate-200 font-bold">
+            </div>
+            <div class="w-16">
+                 <input type="number" id="cat_ord_${cat.id}" value="${cat.orden_visual}" class="w-full bg-transparent border-b border-transparent focus:border-purple-500 outline-none text-xs text-slate-400 text-center">
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+                <button onclick="window.updateCategoryFromUI('${cat.id}')" title="Guardar cambios" class="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded">
+                    <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                </button>
+                <button onclick="window.deleteCategoryFromUI('${cat.id}')" title="Eliminar (No borra los campos maestros)" class="p-1.5 text-red-400 hover:bg-red-500/20 rounded">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        `;
+        listContainer.appendChild(item);
+    });
+    if (window.lucide) window.lucide.createIcons();
+}
+
+export async function createCategoryFromUI() {
+    const errText = document.getElementById('catErrorMsg');
+    const nameInput = document.getElementById('catNewName');
+    const ordInput = document.getElementById('catNewOrder');
+
+    errText.classList.add('hidden');
+    
+    if(!nameInput.value.trim()) {
+        errText.innerText = "Error: El nombre es obligatorio.";
+        errText.classList.remove('hidden');
+        return;
+    }
+
+    try {
+        await masterTableService.createCategory({
+            nombre: nameInput.value.trim(),
+            orden_visual: ordInput.value
+        });
+        nameInput.value = '';
+        ordInput.value = '99';
+        await loadCategoryListRender();
+        loadMasterFields(); // Refresca dropdown
+    } catch(err) {
+        errText.innerText = `Error: ${err.message}`;
+        errText.classList.remove('hidden');
+    }
+}
+
+export async function updateCategoryFromUI(id) {
+    const errText = document.getElementById('catErrorMsg');
+    errText.classList.add('hidden');
+
+    const name = document.getElementById(`cat_name_${id}`).value;
+    const ord = document.getElementById(`cat_ord_${id}`).value;
+
+    try {
+        await masterTableService.updateCategory(id, {
+            nombre: name,
+            orden_visual: ord
+        });
+        await loadCategoryListRender();
+        loadMasterFields(); 
+    } catch(err) {
+        errText.innerText = `Error: ${err.message}`;
+        errText.classList.remove('hidden');
+    }
+}
+
+export async function deleteCategoryFromUI(id) {
+    if(!confirm("¿Seguro que deseas eliminar esta Solapa? Los campos que dependan de ella quedarán libres y pueden no renderizarse en el visor hasta que les asignes una nueva solapa.")) return;
+    
+    const errText = document.getElementById('catErrorMsg');
+    errText.classList.add('hidden');
+
+    try {
+        await masterTableService.deleteCategory(id);
+        await loadCategoryListRender();
+        loadMasterFields(); 
+    } catch(err) {
+        errText.innerText = `Error: ${err.message}`;
+        errText.classList.remove('hidden');
+    }
+}
+
+// =========================================================================
 // WIRING GLOBAL CONTEXT FOR HTML onClick
 // =========================================================================
 window.openMasterTableModal = openMasterTableModal;
@@ -331,5 +420,8 @@ window.closeMasterFieldModal = closeMasterFieldModal;
 window.promptToggleField = promptToggleField;
 window.closeMasterConfirmModal = closeMasterConfirmModal;
 
-window.openDataTypeDropdown = openDataTypeDropdown;
-window.filterDataTypeDropdown = filterDataTypeDropdown;
+window.openCategoryManagerModal = openCategoryManagerModal;
+window.closeCategoryManagerModal = closeCategoryManagerModal;
+window.createCategoryFromUI = createCategoryFromUI;
+window.updateCategoryFromUI = updateCategoryFromUI;
+window.deleteCategoryFromUI = deleteCategoryFromUI;

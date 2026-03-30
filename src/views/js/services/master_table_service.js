@@ -88,5 +88,68 @@ export const masterTableService = {
             console.error("[MasterTableService] toggleMasterFieldStatus error:", error);
             throw error;
         }
+    },
+
+    // ==========================================
+    // V5: CATEGORÍAS (Solapas Posicionales)
+    // ==========================================
+    async fetchCategories() {
+        try {
+            const response = await fetch(`${backendUrl}/api/master-table/categories`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP Error ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error("[MasterTableService] fetchCategories error:", error);
+            throw error;
+        }
+    },
+
+    async createCategory(payload) {
+        try {
+            const response = await fetch(`${backendUrl}/api/master-table/categories`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => { throw new Error("No JSON"); });
+            if (!response.ok) throw new Error(data.error || `HTTP Error ${response.status}`);
+            return data;
+        } catch (error) {
+            console.error("[MasterTableService] createCategory error:", error);
+            throw error;
+        }
+    },
+
+    async updateCategory(id, payload) {
+        try {
+            const response = await fetch(`${backendUrl}/api/master-table/categories/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => { throw new Error("No JSON"); });
+            if (!response.ok) throw new Error(data.error || `HTTP Error ${response.status}`);
+            return data;
+        } catch (error) {
+            console.error("[MasterTableService] updateCategory error:", error);
+            throw error;
+        }
+    },
+
+    async deleteCategory(id) {
+        try {
+            const response = await fetch(`${backendUrl}/api/master-table/categories/${id}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json().catch(() => { throw new Error("No JSON"); });
+            if (!response.ok) throw new Error(data.error || `HTTP Error ${response.status}`);
+            return data;
+        } catch (error) {
+            console.error("[MasterTableService] deleteCategory error:", error);
+            throw error;
+        }
     }
 };
