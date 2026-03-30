@@ -89,6 +89,12 @@ export function transformCell(rawValue, pipeline) {
             else if (rule.tipo_regex === 'FILTER_EMPTY') {
                 if (currentValue.trim() === "") isRejected = true;
             }
+            else if (rule.tipo_regex === 'CLEAR_ZERO_VALUES') {
+                const tv = currentValue.trim();
+                if (tv === '0' || tv === '0,00' || tv === '0.00' || tv === '$0,00' || tv === '$ 0,00' || tv === '0,0') {
+                    currentValue = "";
+                }
+            }
             else if (rule.tipo_regex === 'TRANSFORM_UPPERCASE') {
                 currentValue = currentValue.toUpperCase();
             }

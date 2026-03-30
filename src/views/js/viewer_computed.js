@@ -10,7 +10,6 @@ window.computedColumns = [];
 
 // --- ABRIR MODAL Y CARGAR OPCIONES ---
 function openCalculationModal(fromRuleWorkshop = false) {
-    const modal = document.getElementById('calculationModal');
     const selectA = document.getElementById('calcFieldA');
     const selectB = document.getElementById('calcFieldB');
 
@@ -66,17 +65,7 @@ function openCalculationModal(fromRuleWorkshop = false) {
     }
 
     if (!hasOptions) {
-        alert("⚠️ Primero debés mapear variables (ej: 'Precio Base' y 'Descuento') en el visor para usarlas como operandos.");
-        return;
-    }
-
-    modal.classList.remove('hidden');
-
-    if (fromRuleWorkshop && window.viewerRuleWorkshop) {
-        // En V5 un cálculo se añade en el contexto de una columna maestra destino activa en el Workshop
-        window._activeComputedContext = window.viewerRuleWorkshop.getActiveState();
-    } else {
-        window._activeComputedContext = null;
+        console.warn("⚠️ Primero debés mapear variables (ej: 'Precio Base' y 'Descuento') en el visor para usarlas como operandos.");
     }
 }
 
@@ -86,6 +75,7 @@ function saveComputedColumn() {
     const op = document.getElementById('calcOperation').value;
     const vColIdA = document.getElementById('calcFieldA').value;
     const vColIdB = document.getElementById('calcFieldB').value;
+    const tolerateEmpty = document.getElementById('calcTolerateEmpty').checked;
 
     if (!vColIdA || !vColIdB) {
         alert("Por favor completá todos los operandos.");
@@ -97,34 +87,37 @@ function saveComputedColumn() {
         return;
     }
 
-    let targetMasterField = null;
-
-    if (window._activeComputedContext) {
-        targetMasterField = window._activeComputedContext.masterField;
-    } else {
-        // Fallback for V3 (not strictly needed in V5)
-        targetMasterField = { nombre_campo: nameInput || "Columna Calculada" };
-    }
+    const targetMasterField = { ...window._activeComputedContext.masterField };
+    if (nameInput) targetMasterField.nombre_campo = nameInput;
 
     if (!Array.isArray(window.computedColumns)) {
         window.computedColumns = [];
     }
 
-    // Ajouter en memoria
-    window.computedColumns.push({
-        id: 'comp_' + Date.now(),
-        masterField: targetMasterField, // Destination
-        macro: 'PRICE_MINUS_DISCOUNT_PERCENT', // V5 Rule constant for now (hardcoded map to UI Operation)
-        operands: [vColIdA, vColIdB]
-    });
+    // Actualizar en memoria
+    if (window._activeComputedContext.originalCompId) {
+        const idx = window.computedColumns.findIndex(c => c.id === window._activeComputedContext.originalCompId);
+        if (idx !== -1) {
+            window.computedColumns[idx].masterField = targetMasterField;
+            window.computedColumns[idx].macro = op || 'PRICE_MINUS_DISCOUNT_PERCENT';
+            window.computedColumns[idx].operands = [vColIdA, vColIdB];
+            window.computedColumns[idx].tolerateEmpty = tolerateEmpty;
+            console.log("✅ Columna Calculada Actualizada:", window.computedColumns[idx]);
+        }
+    } else {
+        // Ajouter en memoria
+        window.computedColumns.push({
+            id: 'comp_' + Date.now(),
+            masterField: targetMasterField, // Destination
+            macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT', // V5 Rule constant for now (hardcoded map to UI Operation)
+            operands: [vColIdA, vColIdB],
+            tolerateEmpty: tolerateEmpty
+        });
+        console.log("✅ Columna Calculada Añadida al V5 Engine:", window.computedColumns);
+    }
 
-    console.log("✅ Columna Calculada Añadida al V5 Engine:", window.computedColumns);
-
-    // Cerrar modal
-    document.getElementById('calculationModal').classList.add('hidden');
-
-    // Cerrar el Workshop si venimos de ahi
-    if (window._activeComputedContext && window.viewerRuleWorkshop) {
+    // Cerrar el Workshop
+    if (window.viewerRuleWorkshop) {
         window.viewerRuleWorkshop.close();
     }
 
@@ -159,6 +152,30 @@ function deleteComputedColumn(indexStr) {
     }
 }
 
+function editComputedColumn(vColId) {
+    if (!window.computedColumns) return;
+    
+    // Buscar la configuración de esta columna en nuestros registros
+    const compConfig = window.computedColumns.find(c => c.id === vColId || c.masterField?.nombre_campo === vColId);
+    if (!compConfig) {
+        console.warn("⚠️ [EDIT.COMPUTED] Columna calculada no encontrada en engine.", vColId);
+        return;
+    }
+
+    // Inyectar el estado antes de abrir la UI para que la UX sepa re-hidratarse
+    window._activeComputedContext = {
+        masterField: compConfig.masterField,
+        colName: compConfig.masterField?.nombre_campo || "Edición V5",
+        colIndex: compConfig.id,
+        originalCompId: compConfig.id // Fundamental para que el setTimeout sepa a quien pertenece
+    };
+
+    // Delegation to Workshop UX
+    if (window.viewerRuleWorkshop) {
+        window.viewerRuleWorkshop.open(compConfig.masterField, compConfig.id, compConfig.masterField?.nombre_campo || "Edición V5");
+    }
+}
+
 // --- EXPOSICIÓN GLOBAL ---
 window.ViewerUI = window.ViewerUI || {};
 window.ViewerUI.deleteComputedColumn = deleteComputedColumn;
@@ -166,3 +183,4 @@ window.ViewerUI.deleteComputedColumn = deleteComputedColumn;
 // Exponemos las funciones para que el HTML pueda llamarlas (onclick)
 window.openCalculationModal = openCalculationModal;
 window.saveComputedColumn = saveComputedColumn;
+window.editComputedColumn = editComputedColumn;

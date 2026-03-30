@@ -3,6 +3,71 @@
  * Extracted from viewer_engine_rescatado.js
  */
 
+function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, activeEtlStateVar) {
+    let resultDisplay = "";
+    let rejected = false;
+    let mathResult = 0;
+    
+    let rawA = String(opA.clean).trim();
+    let isOpBEmpty = (opB.clean === null || opB.clean === undefined || String(opB.clean).trim() === "");
+    let rawB = "0";
+
+    let shouldTolerateEmpty = calcConfig.tolerateEmpty !== false;
+    if (!isOpBEmpty) {
+        rawB = String(opB.clean).trim();
+    } else if (!shouldTolerateEmpty) {
+        return { resultDisplay: "<span class='text-slate-600 italic text-[10px]'>N/A</span>", rejected: true };
+    }
+
+    const safeParseFn = (strVal) => {
+        if (!strVal || strVal === "") return 0;
+        if (strVal.includes(',') && strVal.includes('.')) {
+            const lastComma = strVal.lastIndexOf(',');
+            const lastDot = strVal.lastIndexOf('.');
+            if (lastComma > lastDot) return parseFloat(strVal.replace(/\./g, '').replace(',', '.'));
+            else return parseFloat(strVal.replace(/,/g, ''));
+        } else if (strVal.includes(',')) {
+            return parseFloat(strVal.replace(',', '.'));
+        }
+        return parseFloat(strVal);
+    };
+
+    let mathA = safeParseFn(rawA);
+    let mathB = safeParseFn(rawB);
+
+    if (isNaN(mathA)) mathA = 0;
+    if (isNaN(mathB)) mathB = 0;
+
+    if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
+        const discountPercent = Math.abs(mathB);
+        if (discountPercent === 0) mathResult = mathA;
+        else {
+            const actualPercentMultiplier = (discountPercent > 0 && discountPercent < 1) ? discountPercent : (discountPercent / 100);
+            mathResult = mathA * (1 - actualPercentMultiplier);
+        }
+    } else if (calcConfig.macro === "MULTIPLY") {
+        mathResult = mathA * mathB;
+    } else if (calcConfig.macro === "SUBTRACT") {
+        mathResult = mathA - mathB;
+    }
+
+    let rawFormatted = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(mathResult);
+    
+    const savedPipeline = draftPipelinesVar && draftPipelinesVar[calcConfig.id] ? draftPipelinesVar[calcConfig.id].rules : null;
+    const activePipeline = (activeEtlStateVar && activeEtlStateVar.isOpen && activeEtlStateVar.colIndex === calcConfig.id) 
+                            ? activeEtlStateVar.pipeline : savedPipeline;
+
+    if (activePipeline && activePipeline.length > 0 && window.viewerETL) {
+        const { result, rejected: wasRejected } = window.viewerETL.transformCell(String(mathResult).replace('.', ','), activePipeline);
+        if (wasRejected) rejected = true;
+        resultDisplay = result;
+    } else {
+        resultDisplay = rawFormatted;
+    }
+    
+    return { resultDisplay, mathResult, rejected };
+}
+
 function renderVirtualTable(originalData) {
     // [V5.19 UX] Global Trim for Phantom Rows (bottom-up filtering)
     let cleanedData = [...(originalData || [])];
@@ -103,6 +168,7 @@ function renderVirtualTable(originalData) {
     }
 
     window.virtualColumns.forEach((vCol) => {
+        if (vCol.isCalculated) return; // Bug Fix N°5: Ignorar la columna fantasma en el DOM de pre-render físico
         let j = vCol.id;
         let dataIdx = vCol.dataIdx;
         let originalVal = headerRow[dataIdx] || (dataIdx === 0 ? '#' : `Col ${dataIdx + 1}`);
@@ -187,10 +253,10 @@ function renderVirtualTable(originalData) {
     // [V5.6] Fase 2 - Encabezados Computed en Virtual Scroller
     if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
         window.computedColumns.forEach((comp, idx) => {
-            const thClass = "bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20";
+            const thClass = "bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20 transition-colors";
             const thContent = `
                 <div class="flex items-center justify-between gap-1">
-                    <div class="flex items-center gap-1 overflow-hidden" title="${comp.masterField?.nombre_campo || 'Calculada'}">
+                    <div class="flex items-center gap-1 overflow-hidden cursor-pointer hover:bg-fuchsia-500/20 px-1 py-0.5 rounded transition-colors w-full" title="Editar ${comp.masterField?.nombre_campo || 'Calculada'}" onclick="if(window.editComputedColumn) window.editComputedColumn('${comp.id}')">
                         <i data-lucide="calculator" class="w-3 h-3 text-fuchsia-400 flex-shrink-0"></i>
                         <span class="truncate text-[10px]">${comp.masterField?.nombre_campo || 'Calculada'}</span>
                     </div>
@@ -244,6 +310,7 @@ function renderVirtualTable(originalData) {
             rowsHtml += `<tr style="${rowStyle}" class="${rowClass}">`;
 
             for (const vCol of window.virtualColumns) {
+                if (vCol.isCalculated) continue; // Bug Fix N°5: Ignorar la celda física fantasma
                 let j = vCol.id;
                 let dataIdx = vCol.dataIdx;
                 let cellVal = row[dataIdx] !== undefined ? row[dataIdx] : '';
@@ -352,31 +419,18 @@ function renderVirtualTable(originalData) {
                             const opA = rCtx[calcConfig.operands[0]];
                             const opB = rCtx[calcConfig.operands[1]];
 
-                            if (opA && opB && opA.clean !== null && opB.clean !== null && opA.clean !== undefined) {
-                                let mathA = parseFloat(String(opA.clean).replace(',', '.'));
-                                let mathB = parseFloat(String(opB.clean).replace(',', '.'));
-
-                                if (isNaN(mathA)) mathA = 0;
-                                if (isNaN(mathB)) mathB = 0;
-
-                                if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
-                                    // Math.abs ensures we don't accidentally subtract a negative (which adds)
-                                    const discountPercent = Math.abs(mathB);
-                                    if (discountPercent === 0) {
-                                        mathResult = mathA;
-                                    } else {
-                                        // Auto-detect if it's already a decimal (e.g., 0.10 for 10%) or whole number (10 for 10%)
-                                        const actualPercentMultiplier = (discountPercent > 0 && discountPercent < 1)
-                                            ? discountPercent
-                                            : (discountPercent / 100);
-                                        mathResult = mathA * (1 - actualPercentMultiplier);
+                            if (opA && opB) {
+                                // Bug Fix N°2: Check strict condition. If Preis Base is empty, Math FAILS (Returns NULL/Empty).
+                                const isOpAEmpty = (opA.clean === null || opA.clean === undefined || String(opA.clean).trim() === "");
+                                if (isOpAEmpty) {
+                                    resultDisplay = "";
+                                } else {
+                                    const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState);
+                                    resultDisplay = evalres.resultDisplay;
+                                    if (evalres.rejected) {
+                                        cellClass += " opacity-30 grayscale bg-red-500/10 text-red-400/50";
                                     }
-                                } else if (calcConfig.macro === "MULTIPLY") {
-                                    mathResult = mathA * mathB;
-                                } else if (calcConfig.macro === "SUBTRACT") {
-                                    mathResult = mathA - mathB;
                                 }
-                                resultDisplay = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(mathResult);
                             } else {
                                 resultDisplay = "<span class='text-slate-600 italic text-[10px]'>N/A</span>";
                             }
@@ -569,8 +623,37 @@ function generatePreview() {
         });
 
         // --- F. COMPUTED COLUMNS LOGIC ---
-        // Purgado intencionalmente: La vieja logica pre-Taller de calculos fue erradicada.
-        // Ahora todo debe cruzar por el pipeline de V5 oficial.
+        if (window.computedColumns && Array.isArray(window.computedColumns)) {
+            window.computedColumns.forEach(calcConfig => {
+                displayConfig.push({
+                    label: calcConfig.masterField?.nombre_campo || 'Calculada',
+                    isVirtual: true,
+                    isComputed: true, // Custom flag
+                    virtualColId: calcConfig.id,
+                    sourceIndex: -1, // No lee del slice crudo
+                    transform: (val, row) => {
+                        let resultDisplay = "";
+                        try {
+                            if (calcConfig.operands && calcConfig.operands.length === 2) {
+                                // Obtener los datos previamente transformados por sus columnas base de row._richContext
+                                const cA = row._richContext && row._richContext[calcConfig.operands[0]];
+                                const cB = row._richContext && row._richContext[calcConfig.operands[1]];
+                                if (cA && cB) {
+                                    // Utilizar la función unificada de matemáticas
+                                    const res = evaluateComputedColumnMath(calcConfig, cA, cB, window.draftPipelines);
+                                    resultDisplay = res.resultDisplay;
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Error Simulator Math:", e);
+                        }
+                        return resultDisplay;
+                    },
+                    hasSwitch: false,
+                    switchColIdx: calcConfig.id
+                });
+            });
+        }
 
         if (displayConfig.length === 0) {
             alert("Primero debes mapear al menos una columna.");
@@ -636,7 +719,23 @@ function generatePreview() {
                     }
                 }
                 
-                if (localReject) row._rejectedSim = true;
+                if (localReject) {
+                    let isRequired = false;
+                    const termId = columnMapping[vColId];
+                    if (termId && termId !== 'Ignorar Columna' && window.masterDictionary) {
+                        const mObj = window.masterDictionary.find(m => m.id === termId);
+                        if (mObj && mObj.es_requerido) isRequired = true;
+                    }
+
+                    const isCellEmpty = (display === null || display === undefined || String(display).trim() === "");
+                    
+                    // Bug Fix: Perdonar vacios (Nulos automáticos) en columnas No Obligatorias
+                    if (isCellEmpty && !isRequired) {
+                        // Rescatamos la fila entera, permitiendo que la celda viaje vacía.
+                    } else {
+                        row._rejectedSim = true;
+                    }
+                }
             });
             return true; // We never drop rows mathematically anymore, we just paint them red!
         });
@@ -816,10 +915,18 @@ function renderSimulationTable(data) {
             }
         }
 
+        const isComputed = window.computedColumns && window.computedColumns.find(c => c.id === cfg.virtualColId);
+        
+        // Define click handler for the label area (Bug Fix N°2)
+        const safeLabel = cfg.label ? cfg.label.replace(/'/g, "\\'") : '';
+        const clickHandler = isComputed 
+            ? `onclick="if(window.editComputedColumn) window.editComputedColumn('${cfg.virtualColId}')"` 
+            : `onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${cfg.virtualColId}', '${safeLabel}')"`;
+
         let thContent = `
             <div class="flex flex-col gap-1 min-h-[40px] relative w-full h-full justify-center">
-                <div class="flex items-center justify-between gap-2 pr-2">
-                    <div class="font-bold truncate" title="${cfg.label}">${cfg.label}</div>
+                <div class="flex items-center justify-between gap-2 pr-2 cursor-pointer hover:bg-white/5 rounded px-1 -ml-1 transition-colors" ${clickHandler} title="Haz clic para editar cabecera/reglas">
+                    <div class="font-bold truncate">${cfg.label}</div>
                     <div class="flex items-center shrink-0">
                         ${actions}
                     </div>
@@ -847,7 +954,9 @@ function renderSimulationTable(data) {
 
     data.forEach((row) => {
         const isRejected = row._rejectedSim;
-        const rowClass = isRejected ? "opacity-60 bg-red-950/20 grayscale" : "hover:bg-slate-800/50";
+        if (isRejected) return; // FIX Bug 2: Ocultar completamente filas descartadas
+
+        const rowClass = "hover:bg-slate-800/50";
         
         html += `<tr class='transition-colors border-b border-slate-800 ${rowClass}'>`;
 

@@ -220,10 +220,94 @@ export async function open(masterField, vColId, colName) {
     }
 
     if (window.lucide) window.lucide.createIcons();
+    
+    // Validar en que modo corre: ¿Es una Columna Calculada existente o un Fantasma recién inyectado?
+    const isEditingComputed = window.computedColumns && window.computedColumns.find(c => c.id === activeVColId);
+    const isNewGhostComputed = window.virtualColumns && window.virtualColumns.find(c => c.id === activeVColId && c.isCalculated === true);
+    
+    if (isEditingComputed || isNewGhostComputed || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId)) {
+        switchToComputedMode();
+    } else {
+        switchToStandardMode();
+    }
+    
     renderPipeline();
 
     // Trigger Preview Immediately
     triggerPreview();
+}
+
+/**
+ * Switches the Workshop Panel visual state to Computed Editor 
+ */
+export function switchToComputedMode() {
+    // BUG FIX Nº3: Mantenemos visible el modo estándar de reglas por debajo del panel matemático
+    document.getElementById('vrwStandardMode').classList.remove('hidden');
+    document.getElementById('vrwComputedMode').classList.remove('hidden');
+    
+    const applyBtnTxt = document.getElementById('vrwBtnApplyText');
+    if (applyBtnTxt) applyBtnTxt.innerText = "Guardar Ecuación";
+
+    const applyBtn = document.getElementById('vrwBtnApply');
+    if (applyBtn) {
+        applyBtn.onclick = () => { if(window.saveComputedColumn) window.saveComputedColumn(); };
+        applyBtn.className = "flex-grow py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(168,85,247,0.3)] border border-purple-400/20 flex items-center justify-center gap-2";
+    }
+
+    // Purgar / Configurar contexto
+    if (!window._activeComputedContext) {
+        window._activeComputedContext = {
+            masterField: activeContext.masterField,
+            colName: activeContext.colName || "Columna Fantasma",
+            colIndex: activeContext.colIndex,
+            originalCompId: null
+        };
+        // Reset inputs since it's a new calc
+        if (document.getElementById('calcColName')) document.getElementById('calcColName').value = activeContext.masterField?.nombre_campo || "Descuento";
+    }
+
+    // Poblar options
+    if (window.openCalculationModal) window.openCalculationModal(true);
+    
+    // BUG FIX Nº1: Rehidratar el estado guardado si estamos editando
+    if (window._activeComputedContext && window._activeComputedContext.originalCompId) {
+        setTimeout(() => {
+            const cId = window._activeComputedContext.originalCompId;
+            const compConfig = window.computedColumns ? window.computedColumns.find(c => c.id === cId) : null;
+            if (compConfig && compConfig.operands && compConfig.operands.length === 2) {
+                const elA = document.getElementById('calcFieldA');
+                const elB = document.getElementById('calcFieldB');
+                const elOp = document.getElementById('calcOperation');
+                const elColName = document.getElementById('calcColName');
+                const elTol = document.getElementById('calcTolerateEmpty');
+                
+                if (elA) elA.value = compConfig.operands[0];
+                if (elB) elB.value = compConfig.operands[1];
+                if (elOp) elOp.value = compConfig.macro;
+                if (elColName) elColName.value = compConfig.masterField?.nombre_campo || "";
+                if (elTol) elTol.checked = compConfig.tolerateEmpty !== false;
+            }
+        }, 50);
+    }
+}
+
+/**
+ * Switches the Workshop Panel back to Standard ETL Rules
+ */
+export function switchToStandardMode() {
+    window._activeComputedContext = null;
+
+    document.getElementById('vrwStandardMode').classList.remove('hidden');
+    document.getElementById('vrwComputedMode').classList.add('hidden');
+
+    const applyBtnTxt = document.getElementById('vrwBtnApplyText');
+    if (applyBtnTxt) applyBtnTxt.innerText = "Enlazar Columna";
+
+    const applyBtn = document.getElementById('vrwBtnApply');
+    if (applyBtn) {
+        applyBtn.onclick = () => { window.viewerRuleWorkshop.applyMapping(); };
+        applyBtn.className = "flex-grow py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.3)] border border-emerald-400/20 flex items-center justify-center gap-2";
+    }
 }
 
 // CLOSE PANEL
@@ -231,6 +315,7 @@ export function close() {
     isPanelOpen = false;
     currentDraftPipeline = [];
     activeContext = { masterField: null, colIndex: null, colName: null };
+    window._activeComputedContext = null; // Bug Fix N°1: Resetear contexto de calculadora para no contaminar próximos clicks
 
     const panel = document.getElementById('viewerRightPanel');
     if (panel) {
@@ -504,7 +589,9 @@ window.viewerRuleWorkshop = {
     moveRuleDown,
     applyMapping,
     getActiveState,
-    createLocalRule
+    createLocalRule,
+    switchToComputedMode,
+    switchToStandardMode
 };
 
 // Auto-initialize on load
