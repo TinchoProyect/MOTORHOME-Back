@@ -50,10 +50,32 @@ function renderRuleSelector() {
 
     selector.innerHTML = '<option value="">Seleccionar transformación...</option>';
 
-    catalogRules.forEach(rule => {
+    const currentMasterId = activeContext.masterField ? activeContext.masterField.id : null;
+
+    // Filtrar aislando el scope y luego ordenar dando prioridad a las reglas estrella
+    const filteredRules = catalogRules.filter(rule => {
+        if (rule.campo_maestro_id && rule.campo_maestro_id !== currentMasterId) {
+            return false; 
+        }
+        return true;
+    });
+
+    filteredRules.sort((a, b) => {
+        const aIsSpecific = (a.campo_maestro_id === currentMasterId && currentMasterId);
+        const bIsSpecific = (b.campo_maestro_id === currentMasterId && currentMasterId);
+        if (aIsSpecific && !bIsSpecific) return -1;
+        if (!aIsSpecific && bIsSpecific) return 1;
+        return 0; // Mantiene el orden original si ambas son (o no son) especificas
+    });
+
+    filteredRules.forEach(rule => {
         const option = document.createElement('option');
         option.value = rule.id;
         option.textContent = rule.nombre_regla;
+        if (rule.campo_maestro_id === currentMasterId && currentMasterId) {
+            option.textContent = `★ ${rule.nombre_regla}`; // Destacar regla particular
+        }
+        
         selector.appendChild(option);
     });
 }
@@ -231,6 +253,9 @@ export async function open(masterField, vColId, colName) {
         switchToStandardMode();
     }
     
+    // [V5.x FIX] Repintar combobox filtrado por Scope (campo_maestro_id) para el campo abierto
+    renderRuleSelector();
+
     renderPipeline();
 
     // Trigger Preview Immediately

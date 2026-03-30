@@ -130,6 +130,22 @@ export function transformCell(rawValue, pipeline) {
                     currentValue = "";
                 }
             }
+            else if (rule.tipo_regex === 'EXTRACT_WEIGHT_UNIT') {
+                const weightMatch = currentValue.match(/(\d+(?:[.,]\d+)?)\s*(kg|kilos?|k|grs?|gramos?|g)\b/i);
+                if (weightMatch) {
+                    let unit = weightMatch[2].toLowerCase();
+                    
+                    if (['gr', 'grs', 'gramo', 'gramos', 'g'].includes(unit)) {
+                        currentValue = 'GRAMOS';
+                    } else if (['kilo', 'kilos', 'k', 'kg'].includes(unit)) {
+                        currentValue = 'KILOGRAMOS';
+                    } else {
+                        currentValue = "";
+                    }
+                } else {
+                    currentValue = "";
+                }
+            }
             else if (rule.tipo_regex === 'FORMAT_DECIMAL_DISCOUNT') {
                 if (!currentValue || currentValue === "") {
                     currentValue = "0,00";
@@ -225,10 +241,23 @@ export function previewColumn(colIndex, pipeline, skipMath = false) {
 
         // Attempt to read from global Viewer State
         const realData = (window.viewerState && window.viewerState.data) ? window.viewerState.data : null;
+        
+        // [HOTFIX] Traducir Proxy vColId -> dataIdx para el arreglo 2D físico
+        let dataIdx = colIndex;
+        if (typeof colIndex === 'string') {
+            if (window.virtualColumns && window.virtualColumns.length > 0) {
+                const vCol = window.virtualColumns.find(v => v.id === colIndex);
+                dataIdx = vCol ? vCol.dataIdx : parseInt(colIndex.replace('col_', ''), 10);
+            } else {
+                dataIdx = parseInt(colIndex.replace('col_', ''), 10);
+            }
+        }
+        if (isNaN(dataIdx)) dataIdx = 0;
+
         if (realData && realData.length > 1) { // >1 to have rows beyond header
             countTotal = realData.length - 1; // exclude header
             for (let i = 1; i < realData.length; i++) {
-                const rawVal = (realData[i][colIndex] !== undefined && realData[i][colIndex] !== null) ? String(realData[i][colIndex]) : "";
+                const rawVal = (realData[i][dataIdx] !== undefined && realData[i][dataIdx] !== null) ? String(realData[i][dataIdx]) : "";
                 const { rejected } = transformCell(rawVal, pipeline);
                 if (rejected) countRejected++;
             }

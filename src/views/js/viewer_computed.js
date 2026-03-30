@@ -116,9 +116,13 @@ function saveComputedColumn() {
         console.log("✅ Columna Calculada Añadida al V5 Engine:", window.computedColumns);
     }
 
-    // Cerrar el Workshop
+    // Cerrar el Workshop y forzar el volcado de reglas del Pipeline (si es que se asignaron reglas extra)
     if (window.viewerRuleWorkshop) {
-        window.viewerRuleWorkshop.close();
+        if (typeof window.viewerRuleWorkshop.applyMapping === 'function') {
+            window.viewerRuleWorkshop.applyMapping(); // Automáticamente cierra el panel
+        } else {
+            window.viewerRuleWorkshop.close();
+        }
     }
 
     // Limpiar busqueda

@@ -135,6 +135,23 @@ function renderVirtualTable(originalData) {
             window.virtualColumns.push({ id: `col_${idx}`, dataIdx: idx });
         }
     }
+    
+    // [V5 UX] Auto-Restore UI Order Preference from LocalStorage
+    if (window.globalContext && window.globalContext.providerId && window.virtualColumns) {
+        const storedOrderStr = localStorage.getItem('lamda_sim_order_' + window.globalContext.providerId);
+        if (storedOrderStr) {
+            try {
+                const orderArr = JSON.parse(storedOrderStr);
+                window.virtualColumns.sort((a, b) => {
+                    let idxA = orderArr.indexOf(a.id);
+                    let idxB = orderArr.indexOf(b.id);
+                    if (idxA === -1) idxA = 9999;
+                    if (idxB === -1) idxB = 9999;
+                    return idxA - idxB;
+                });
+            } catch (e) {}
+        }
+    }
 
     const ROW_HEIGHT = 35;
     const HEADER_HEIGHT = 40;
@@ -457,6 +474,14 @@ function generatePreview() {
     try {
         if (!currentSheetData || currentSheetData.length === 0) return;
 
+        // [V5 UX] Restore Widths Persist
+        if (window.globalContext && window.globalContext.providerId && Object.keys(window.simColWidthPersist || {}).length === 0) {
+            const storedWStr = localStorage.getItem('lamda_sim_width_' + window.globalContext.providerId);
+            if (storedWStr) {
+                try { window.simColWidthPersist = JSON.parse(storedWStr); } catch (e) {}
+            }
+        }
+
         const pName = window.globalContext.providerName || "DESCONOCIDO";
         const fType = window.globalContext.fileType || "GENERAL";
         const modalTitle = document.getElementById('simModalTitle');
@@ -777,7 +802,22 @@ function generatePreview() {
         `;
 
         container.innerHTML = toolbar;
-        renderSimulationTable(sanitizedData);
+        
+        // Recover Search Filter Memory state before redrawing items
+        if (window._activeSimSearchQuery !== undefined && window._activeSimSearchQuery !== "") {
+            const searchInp = document.getElementById('simSearchInput');
+            if (searchInp) searchInp.value = window._activeSimSearchQuery;
+        }
+        if (window._activeSimSearchField !== undefined && window._activeSimSearchField !== "") {
+            const searchField = document.getElementById('simSearchField');
+            if (searchField) searchField.value = window._activeSimSearchField;
+        }
+
+        if (window._activeSimSearchQuery && window._activeSimSearchQuery !== "") {
+            filterSimulationData();
+        } else {
+            renderSimulationTable(sanitizedData);
+        }
 
         document.getElementById('simulationModal').classList.remove('hidden');
         if (window.lucide) window.lucide.createIcons({ root: container });
@@ -799,6 +839,9 @@ function filterSimulationData() {
     const rawQuery = document.getElementById('simSearchInput').value.toLowerCase().trim();
     const fieldIdx = document.getElementById('simSearchField').value;
     const countEl = document.getElementById('simFilteredCount');
+
+    window._activeSimSearchQuery = document.getElementById('simSearchInput').value;
+    window._activeSimSearchField = fieldIdx;
 
     if (!rawQuery) {
         renderSimulationTable(window.currentSimData);
@@ -832,7 +875,7 @@ function renderSimulationTable(data) {
     const scrollArea = document.getElementById('simTableScrollArea');
     if (!scrollArea) return;
 
-    let html = "<table class='min-w-full table-fixed text-xs text-slate-300 font-mono'><thead><tr class='bg-slate-950 sticky top-0 z-[100] border-b border-slate-700'>";
+    let html = "<table class='table-fixed text-xs text-slate-300 font-mono' style='width: max-content;'><thead><tr class='bg-slate-950 sticky top-0 z-[100] border-b border-slate-700'>";
 
     const getRuleName = (type) => {
         switch(type) {
@@ -1058,21 +1101,21 @@ window.ViewerUI.handleDragEnter = function(e) {
     e.preventDefault();
     let th = e.target.closest('th');
     if (th) {
-        th.classList.add('bg-emerald-900/40', 'border-emerald-500', 'border-l-4');
+        th.classList.add('border-emerald-400', 'border-l-[4px]', 'bg-gradient-to-r', 'from-emerald-900/60', 'to-transparent');
     }
 };
 
 window.ViewerUI.handleDragLeave = function(e) {
     let th = e.target.closest('th');
     if (th) {
-        th.classList.remove('bg-emerald-900/40', 'border-emerald-500', 'border-l-4');
+        th.classList.remove('border-emerald-400', 'border-l-[4px]', 'bg-gradient-to-r', 'from-emerald-900/60', 'to-transparent');
     }
 };
 
 window.ViewerUI.handleDrop = function(e, dropColIndex) {
     e.stopPropagation();
     let th = e.target.closest('th');
-    if (th) th.classList.remove('bg-emerald-900/40', 'border-emerald-500', 'border-l-4');
+    if (th) th.classList.remove('border-emerald-400', 'border-l-[4px]', 'bg-gradient-to-r', 'from-emerald-900/60', 'to-transparent');
     
     let dragColIndex = window.ViewerUI.draggedSimColIndex;
     if (dragColIndex === null || dragColIndex === dropColIndex) return false;
@@ -1087,11 +1130,16 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
     let fromIdx = vColArray.findIndex(v => v.id === draggedConfig.virtualColId);
     let toIdx = vColArray.findIndex(v => v.id === droppedConfig.virtualColId);
     
-    if (fromIdx !== -1 && toIdx !== -1) {
+        if (fromIdx !== -1 && toIdx !== -1) {
         // Ejecutar desplazamiento (Splice Transaccional)
         const element = vColArray.splice(fromIdx, 1)[0];
         vColArray.splice(toIdx, 0, element);
         
+        // V5 UX: Guardar reordenamiento en LocalStorage persistente
+        if (window.globalContext && window.globalContext.providerId) {
+            localStorage.setItem('lamda_sim_order_' + window.globalContext.providerId, JSON.stringify(vColArray.map(v => v.id)));
+        }
+
         // Guardar estado master hacia el servidor si es posible
         if (typeof window.saveSimulationConfig === 'function') {
             window.saveSimulationConfig(null, true);
@@ -1203,6 +1251,11 @@ function onSimColMouseUp(e) {
     // Save to persistence memory
     if (simResizeTargetTh && simResizeColIndex >= 0) {
         window.simColWidthPersist[simResizeColIndex] = parseInt(simResizeTargetTh.style.width, 10);
+        
+        // V5 UX: Almacenamiento Local (LocalStorage)
+        if (window.globalContext && window.globalContext.providerId) {
+            localStorage.setItem('lamda_sim_width_' + window.globalContext.providerId, JSON.stringify(window.simColWidthPersist));
+        }
     }
     
     isSimResizing = false;
