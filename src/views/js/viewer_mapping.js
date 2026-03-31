@@ -247,6 +247,34 @@ function openColumnMenu_v2(vColId, buttonElement) {
         }
 
         content.onclick = () => {
+            // [NEW] Strict 1-to-1 mapping validation
+            let isAlreadyMapped = false;
+            
+            if (window.columnMapping) {
+                for (const [id, assignedTerm] of Object.entries(window.columnMapping)) {
+                    if (id !== vColId && assignedTerm === term.termino) {
+                        isAlreadyMapped = true;
+                        break;
+                    }
+                }
+            }
+
+            if (isAlreadyMapped) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        title: 'Mapeo Duplicado Detectado',
+                        text: `El campo orgánico "${term.termino}" ya se encuentra asignado a otra columna. Desvincúlalo primero antes de asignarlo aquí.`,
+                        icon: 'warning',
+                        background: '#0f172a',
+                        color: '#f8fafc'
+                    });
+                } else {
+                    alert(`El campo "${term.termino}" ya está asignado. Desvincúlalo primero.`);
+                }
+                menu.remove();
+                return;
+            }
+
             columnMapping[vColId] = term.termino;
             if (term.reglas_procesamiento) {
                 processingRules[vColId] = Array.isArray(term.reglas_procesamiento)

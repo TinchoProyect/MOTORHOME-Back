@@ -120,6 +120,16 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
         const providerId = window.globalContext.providerId;
         const sheetName = currentSheetName || 'Sheet1';
 
+        // [NEW] Persistir reglas ETL (V4) dentro del Config (V3) para las Columnas Calculadas
+        if (window.computedColumns && window.draftPipelines) {
+            window.computedColumns.forEach(c => {
+                const pipe = window.draftPipelines[c.id];
+                if (pipe && pipe.rules) {
+                    c.rules = pipe.rules;
+                }
+            });
+        }
+
         // ==========================================
         // GUARDADO V3: FORMATOS BÁSICOS (Offset, Encabezados Locales)
         // ==========================================
@@ -133,7 +143,8 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 rules: typeof processingRules !== 'undefined' ? processingRules : {},
                 computedCols: window.computedColumns || [],
                 colWidths: window.currentColWidths || {},
-                config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {}
+                config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
+                hiddenColumns: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {}
             }
         };
 
@@ -160,8 +171,15 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
             for (const [vColId, config] of Object.entries(window.draftPipelines)) {
                 // Backward compatibility & Virtual Columns support
                 let dataIdx;
+                
+                // [NEW] Omitir guardado en DB origen físico para Columnas Calculadas:
+                if (vColId.startsWith('comp_') || vColId.startsWith('col_calc_')) continue;
+
                 if (window.virtualColumns && window.virtualColumns.length > 0) {
                     const vCol = window.virtualColumns.find(v => v.id === vColId);
+                    
+                    if (vCol && vCol.isCalculated) continue; // Por seguridad doble comprobación
+                    
                     dataIdx = vCol ? vCol.dataIdx : parseInt(vColId.replace('col_', ''));
                 } else {
                     dataIdx = parseInt(vColId.replace('col_', ''));
@@ -360,6 +378,11 @@ window.loadSavedConfiguration = async function () {
                 if (resultV3.data.config_visual && window.LayoutManager) {
                     window.LayoutManager.hydrateSettings(resultV3.data.config_visual);
                 }
+                
+                // [V6 UX] Hydrate Hidden Columns
+                if (resultV3.data.hiddenColumns && window.ViewerVisibilityManager) {
+                    window.ViewerVisibilityManager.hydrateSettings(resultV3.data.hiddenColumns);
+                }
 
                 loadedAnything = true;
             }
@@ -454,6 +477,35 @@ window.loadSavedConfiguration = async function () {
         }
     } catch (error) {
         console.warn("⚠️ [V4] No se pudo cargar la configuración V4 guardada (normal si es nuevo):", error);
+    }
+
+    // [NEW] 3. Rehidratar el Taller de Reglas para las Columnas Calculadas desde JSON (V3)
+    if (window.computedColumns && window.computedColumns.length > 0) {
+        if (!window.draftPipelines) window.draftPipelines = {};
+        let computedHydrated = false;
+        
+        window.computedColumns.forEach(c => {
+            if (c.rules && c.rules.length > 0) {
+                window.draftPipelines[c.id] = {
+                    masterField: c.masterField,
+                    colName: c.masterField.nombre_campo || 'Calculada',
+                    rules: c.rules
+                };
+                
+                if (!window.columnMapping) window.columnMapping = {};
+                window.columnMapping[c.id] = c.masterField.id;
+                
+                computedHydrated = true;
+            }
+        });
+        
+        if (computedHydrated) {
+            console.log("✅ [V5] Pipeline de Reglas restaurado para Columnas Calculadas.");
+            if (typeof window.renderVirtualTable === 'function') {
+                window.renderVirtualTable(currentSheetData);
+            }
+            loadedAnything = true;
+        }
     }
 
     // Retorna true si encontró algo para disparar UI re-renders masivos si aplica

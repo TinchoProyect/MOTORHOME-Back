@@ -44,7 +44,7 @@ async function createMasterField(req, res) {
 
         const payload = {
             nombre_campo: finalName,
-            tipo_dato: req.body.categoria_id ? null : finalTipoDato, // Si mandan UUID, ignoramos el texto legado
+            tipo_dato: finalTipoDato, // Respetamos el string fallback ('texto') para evitar 'null constraint' 
             categoria_id: req.body.categoria_id || null, // Nueva relación FK
             es_requerido: es_requerido === true || es_requerido === 'true',
             es_identificador: es_identificador === true || es_identificador === 'true'
@@ -94,8 +94,7 @@ async function updateMasterField(req, res) {
         }
         if (req.body.categoria_id !== undefined) {
             updatePayload.categoria_id = req.body.categoria_id || null;
-            // Clean legacy text string on successful FK assignment
-            if (req.body.categoria_id) updatePayload.tipo_dato = null;
+            // Ya no forzamos tipo_dato = null para no romper constraints, el engine usa la FK si existe.
         } else if (tipo_dato !== undefined) {
             updatePayload.tipo_dato = (tipo_dato.trim() !== '') ? tipo_dato.trim() : 'texto';
         }

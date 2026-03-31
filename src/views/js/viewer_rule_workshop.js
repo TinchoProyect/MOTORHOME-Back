@@ -82,12 +82,63 @@ function renderRuleSelector() {
 
 // OPEN PANEL
 export async function open(masterField, vColId, colName) {
+    // Normalización Urgente (Bug Mapeo Duplicado)
+    if (vColId !== null && vColId !== undefined) {
+        let strId = String(vColId);
+        if (!isNaN(strId) && strId.trim() !== '') {
+            vColId = 'col_' + strId;
+        } else {
+            vColId = strId;
+        }
+    }
+
     if (!masterField) {
         // [V5.14 FIX] Allow opening existing mapped columns without passing masterField
         if (window.draftPipelines && window.draftPipelines[vColId]) {
             masterField = window.draftPipelines[vColId].masterField;
         } else {
             console.warn("Workshop abierto sin masterField y sin pipeline previo.");
+            return;
+        }
+    }
+
+    // [NEW] Prevención Estricta de Doble Mapeo (Validación 1 a 1)
+    if (masterField) {
+        let isAlreadyMapped = false;
+        
+        if (window.draftPipelines) {
+            for (const [id, pipe] of Object.entries(window.draftPipelines)) {
+                if (id !== vColId && pipe.masterField && pipe.masterField.id === masterField.id) {
+                    isAlreadyMapped = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!isAlreadyMapped && window.columnMapping) {
+            for (const [id, term] of Object.entries(window.columnMapping)) {
+                if (id !== vColId && (term === masterField.nombre_campo || term === masterField.id)) {
+                    isAlreadyMapped = true;
+                    break;
+                }
+            }
+        }
+
+        if (isAlreadyMapped) {
+            if (window.viewerMapper && typeof window.viewerMapper.cancelMapping === 'function') {
+                window.viewerMapper.cancelMapping();
+            }
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: 'Mapeo Duplicado Detectado',
+                    text: `El campo orgánico "${masterField.nombre_campo}" ya se encuentra asignado a otra columna. Por favor, desvincúlalo de su columna origen antes de asignarlo aquí.`,
+                    icon: 'warning',
+                    background: '#0f172a',
+                    color: '#f8fafc'
+                });
+            } else {
+                alert(`El campo "${masterField.nombre_campo}" ya está asignado a otra columna. Desvincúlalo primero.`);
+            }
             return;
         }
     }

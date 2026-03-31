@@ -146,6 +146,11 @@ function renderVirtualTable(originalData) {
     const totalRows = data.length;
     const totalHeight = (totalRows * ROW_HEIGHT) + HEADER_HEIGHT;
 
+    // [V6] Gestor de Visibilidad (Renderizado de Píldoras Externo)
+    if (window.ViewerVisibilityManager && typeof window.ViewerVisibilityManager.renderHiddenPills === 'function') {
+        window.ViewerVisibilityManager.renderHiddenPills();
+    }
+
     container.innerHTML = '';
     const scrollerContent = document.createElement('div');
     scrollerContent.style.height = `${totalHeight}px`;
@@ -175,6 +180,10 @@ function renderVirtualTable(originalData) {
     window.virtualColumns.forEach((vCol) => {
         if (vCol.isCalculated) return; // Bug Fix N°5: Ignorar la columna fantasma en el DOM de pre-render físico
         let j = vCol.id;
+        
+        // [V6] Control de Visibilidad
+        if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(j)) return;
+        
         let dataIdx = vCol.dataIdx;
         let originalVal = headerRow[dataIdx] || (dataIdx === 0 ? '#' : `Col ${dataIdx + 1}`);
         let mappedType = columnMapping[j];
@@ -211,10 +220,13 @@ function renderVirtualTable(originalData) {
                 const pipe = window.draftPipelines[j];
                 const pipeName = getHumanName(pipe.masterField ? (pipe.masterField.nombre_campo || pipe.masterField.id) : mappedType);
                 thContent = `
-                    <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${originalVal}')">
+                    <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors group" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${originalVal}')">
                         <i data-lucide="link-2" class="w-3 h-3"></i>
                         <span class="truncate" title="${pipeName}">${pipeName}</span>
                         <div class="bg-emerald-800 text-emerald-200 text-[9px] px-1.5 rounded-full ml-auto">${pipe.rules ? pipe.rules.length : 0}r</div>
+                        <button onclick="event.stopPropagation(); window.ViewerVisibilityManager.hideColumn('${j}')" class="opacity-0 group-hover:opacity-100 text-emerald-500 hover:text-red-400 p-0.5 ml-1 transition-all" title="Ocultar Variable">
+                             <i data-lucide="eye-off" class="w-3 h-3"></i>
+                        </button>
                     </div>
                 `;
                 thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
@@ -258,6 +270,9 @@ function renderVirtualTable(originalData) {
     // [V5.6] Fase 2 - Encabezados Computed en Virtual Scroller
     if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
         window.computedColumns.forEach((comp, idx) => {
+            // [V6] Control de Visibilidad para Columnas Calculadas
+            if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(comp.id)) return;
+
             const thClass = "bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20 transition-colors";
             const thContent = `
                 <div class="flex items-center justify-between gap-1">
@@ -265,9 +280,14 @@ function renderVirtualTable(originalData) {
                         <i data-lucide="calculator" class="w-3 h-3 text-fuchsia-400 flex-shrink-0"></i>
                         <span class="truncate text-[10px]">${comp.masterField?.nombre_campo || 'Calculada'}</span>
                     </div>
-                    <button onclick="window.ViewerUI.deleteComputedColumn('${idx}')" class="text-fuchsia-500 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Eliminar Cálculo">
-                        <i data-lucide="trash-2" class="w-3 h-3"></i>
-                    </button>
+                    <div class="flex" style="flex-shrink: 0">
+                        <button onclick="window.ViewerVisibilityManager.hideColumn('${comp.id}')" class="text-fuchsia-600 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Ocultar Variable">
+                            <i data-lucide="eye-off" class="w-3 h-3"></i>
+                        </button>
+                        <button onclick="window.ViewerUI.deleteComputedColumn('${idx}')" class="text-fuchsia-500 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Eliminar Cálculo">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
+                    </div>
                 </div>
             `;
             const colWidth = 150;
@@ -317,6 +337,10 @@ function renderVirtualTable(originalData) {
             for (const vCol of window.virtualColumns) {
                 if (vCol.isCalculated) continue; // Bug Fix N°5: Ignorar la celda física fantasma
                 let j = vCol.id;
+                
+                // [V6] Salto Lógico Celda - Visibilidad
+                if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(j)) continue;
+                
                 let dataIdx = vCol.dataIdx;
                 let cellVal = row[dataIdx] !== undefined ? row[dataIdx] : '';
 
@@ -397,6 +421,9 @@ function renderVirtualTable(originalData) {
             // [V5.6] Fase 2 - Cálculo al vuelo en Virtual Scroller (Columnas Calculadas)
             if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
                 window.computedColumns.forEach(calcConfig => {
+                    // [V6] Control de Visibilidad en Celdas Calculadas
+                    if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(calcConfig.id)) return;
+                    
                     let rCtx = row._richContext || {};
 
                     // On-the-fly calculation si no existe context (Performance Lazy Load)
