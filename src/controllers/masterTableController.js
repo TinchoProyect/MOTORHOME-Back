@@ -42,10 +42,29 @@ async function createMasterField(req, res) {
 
         console.log(`[MasterTableController] ➕ Intentando crear: ${finalName} (${finalTipoDato})`);
 
+        let resolvedCategoryId = req.body.categoria_id || null;
+        
+        // [V5 ROBUSTNESS] Si el frontend accidentalmente envía un texto en lugar de un UUID (ej por caché desactualizado)
+        if (resolvedCategoryId && !resolvedCategoryId.includes('-')) {
+            console.warn(`[MasterTableController] ⚠️ Se recibió el texto "${resolvedCategoryId}" como categoria_id. Intentando resolver UUID dinámicamente...`);
+            const { data: catLookup } = await supabase
+                .from('diccionario_categorias')
+                .select('id')
+                .ilike('nombre', resolvedCategoryId)
+                .single();
+            if (catLookup && catLookup.id) {
+                resolvedCategoryId = catLookup.id;
+                console.log(`[MasterTableController] ✅ UUID resuelto dinámicamente: ${resolvedCategoryId}`);
+            } else {
+                console.warn(`[MasterTableController] ❌ Falla resolviendo el nombre. Se omitirá id_categoria para prevenir constraint errors.`);
+                resolvedCategoryId = null; // Prevent FK Exception
+            }
+        }
+
         const payload = {
             nombre_campo: finalName,
             tipo_dato: finalTipoDato, // Respetamos el string fallback ('texto') para evitar 'null constraint' 
-            categoria_id: req.body.categoria_id || null, // Nueva relación FK
+            categoria_id: resolvedCategoryId, // Nueva relación FK corregida/resuelta
             es_requerido: es_requerido === true || es_requerido === 'true',
             es_identificador: es_identificador === true || es_identificador === 'true'
         };
@@ -92,8 +111,24 @@ async function updateMasterField(req, res) {
         if (nombre_campo !== undefined && nombre_campo.trim() !== '') {
             updatePayload.nombre_campo = nombre_campo.trim().toUpperCase();
         }
-        if (req.body.categoria_id !== undefined) {
-            updatePayload.categoria_id = req.body.categoria_id || null;
+        
+        let resolvedCategoryId = req.body.categoria_id;
+        if (resolvedCategoryId && !resolvedCategoryId.includes('-')) {
+            console.warn(`[MasterTableController] ⚠️ Actualización con texto libre "${resolvedCategoryId}". Resolviendo UUID...`);
+            const { data: catLookup } = await supabase
+                .from('diccionario_categorias')
+                .select('id')
+                .ilike('nombre', resolvedCategoryId)
+                .single();
+            if (catLookup && catLookup.id) {
+                resolvedCategoryId = catLookup.id;
+            } else {
+                resolvedCategoryId = null;
+            }
+        }
+
+        if (resolvedCategoryId !== undefined) {
+            updatePayload.categoria_id = resolvedCategoryId || null;
             // Ya no forzamos tipo_dato = null para no romper constraints, el engine usa la FK si existe.
         } else if (tipo_dato !== undefined) {
             updatePayload.tipo_dato = (tipo_dato.trim() !== '') ? tipo_dato.trim() : 'texto';

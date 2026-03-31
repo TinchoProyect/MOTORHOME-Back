@@ -156,12 +156,12 @@ window.ViewerUI = (function () {
   function toggleTools(show) {
     const btnMap = document.getElementById("btnMappingMode");
     const btnOff = document.getElementById("btnOffsetMode");
-    const btnCalc = document.getElementById("btnCalcMode");
+    const btnInyect = document.getElementById("btnInjectColumn");
     // [NEW]
     const btnSave = document.getElementById("btnSaveConfig");
     const btnReset = document.getElementById("btnResetConfig");
 
-    const tools = [btnMap, btnOff, btnCalc, btnSave, btnReset];
+    const tools = [btnMap, btnOff, btnInyect, btnSave, btnReset];
 
     tools.forEach((btn) => {
       if (btn) {

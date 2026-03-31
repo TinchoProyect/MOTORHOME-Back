@@ -55,6 +55,10 @@ function renderRuleSelector() {
     // Filtrar aislando el scope y luego ordenar dando prioridad a las reglas estrella
     const filteredRules = catalogRules.filter(rule => {
         if (rule.campo_maestro_id && rule.campo_maestro_id !== currentMasterId) {
+            // [V5.20 UX] Excepción: Hacemos que la regla de Formato (Ej. format_number) sea Universal
+            if (rule.tipo === 'format_number' || String(rule.nombre_regla).toLowerCase().includes('formato')) {
+                return true;
+            }
             return false; 
         }
         return true;
@@ -106,40 +110,47 @@ export async function open(masterField, vColId, colName) {
     if (masterField) {
         let isAlreadyMapped = false;
         
-        if (window.draftPipelines) {
-            for (const [id, pipe] of Object.entries(window.draftPipelines)) {
-                if (id !== vColId && pipe.masterField && pipe.masterField.id === masterField.id) {
-                    isAlreadyMapped = true;
-                    break;
-                }
-            }
-        }
-        
-        if (!isAlreadyMapped && window.columnMapping) {
-            for (const [id, term] of Object.entries(window.columnMapping)) {
-                if (id !== vColId && (term === masterField.nombre_campo || term === masterField.id)) {
-                    isAlreadyMapped = true;
-                    break;
-                }
-            }
-        }
+        // [FIX] Validar si la edición viene del propio dueño de la columna
+        const isSelfEdit = (window.draftPipelines && window.draftPipelines[vColId] && window.draftPipelines[vColId].masterField?.id === masterField.id) || 
+                           (window.columnMapping && window.columnMapping[vColId] && (window.columnMapping[vColId] === masterField.id || window.columnMapping[vColId] === masterField.nombre_campo)) ||
+                           (window.computedColumns && window.computedColumns.find(c => c.id === vColId && c.masterField?.id === masterField.id));
 
-        if (isAlreadyMapped) {
-            if (window.viewerMapper && typeof window.viewerMapper.cancelMapping === 'function') {
-                window.viewerMapper.cancelMapping();
+        if (!isSelfEdit) {
+            if (window.draftPipelines) {
+                for (const [id, pipe] of Object.entries(window.draftPipelines)) {
+                    if (id !== vColId && pipe.masterField && pipe.masterField.id === masterField.id) {
+                        isAlreadyMapped = true;
+                        break;
+                    }
+                }
             }
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    title: 'Mapeo Duplicado Detectado',
-                    text: `El campo orgánico "${masterField.nombre_campo}" ya se encuentra asignado a otra columna. Por favor, desvincúlalo de su columna origen antes de asignarlo aquí.`,
-                    icon: 'warning',
-                    background: '#0f172a',
-                    color: '#f8fafc'
-                });
-            } else {
-                alert(`El campo "${masterField.nombre_campo}" ya está asignado a otra columna. Desvincúlalo primero.`);
+            
+            if (!isAlreadyMapped && window.columnMapping) {
+                for (const [id, term] of Object.entries(window.columnMapping)) {
+                    if (id !== vColId && (term === masterField.nombre_campo || term === masterField.id)) {
+                        isAlreadyMapped = true;
+                        break;
+                    }
+                }
             }
-            return;
+    
+            if (isAlreadyMapped) {
+                if (window.viewerMapper && typeof window.viewerMapper.cancelMapping === 'function') {
+                    window.viewerMapper.cancelMapping();
+                }
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        title: 'Mapeo Duplicado Detectado',
+                        text: `El campo orgánico "${masterField.nombre_campo}" ya se encuentra asignado a otra columna. Por favor, desvincúlalo de su columna origen antes de asignarlo aquí.`,
+                        icon: 'warning',
+                        background: '#0f172a',
+                        color: '#f8fafc'
+                    });
+                } else {
+                    alert(`El campo "${masterField.nombre_campo}" ya está asignado a otra columna. Desvincúlalo primero.`);
+                }
+                return;
+            }
         }
     }
 
@@ -296,7 +307,7 @@ export async function open(masterField, vColId, colName) {
     
     // Validar en que modo corre: ¿Es una Columna Calculada existente o un Fantasma recién inyectado?
     const isEditingComputed = window.computedColumns && window.computedColumns.find(c => c.id === activeVColId);
-    const isNewGhostComputed = window.virtualColumns && window.virtualColumns.find(c => c.id === activeVColId && c.isCalculated === true);
+    const isNewGhostComputed = window.virtualColumns && window.virtualColumns.find(c => c.id === activeVColId && c.isGhostPlaceholder === true);
     
     if (isEditingComputed || isNewGhostComputed || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId)) {
         switchToComputedMode();
@@ -336,7 +347,7 @@ export function switchToComputedMode() {
             masterField: activeContext.masterField,
             colName: activeContext.colName || "Columna Fantasma",
             colIndex: activeContext.colIndex,
-            originalCompId: null
+            originalCompId: (activeContext.colIndex && activeContext.colIndex.startsWith('col_ph_')) ? activeContext.colIndex : null
         };
         // Reset inputs since it's a new calc
         if (document.getElementById('calcColName')) document.getElementById('calcColName').value = activeContext.masterField?.nombre_campo || "Descuento";

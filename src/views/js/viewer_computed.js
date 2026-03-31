@@ -96,13 +96,31 @@ function saveComputedColumn() {
 
     // Actualizar en memoria
     if (window._activeComputedContext.originalCompId) {
-        const idx = window.computedColumns.findIndex(c => c.id === window._activeComputedContext.originalCompId);
+        const id = window._activeComputedContext.originalCompId;
+        const idx = window.computedColumns.findIndex(c => c.id === id);
         if (idx !== -1) {
             window.computedColumns[idx].masterField = targetMasterField;
             window.computedColumns[idx].macro = op || 'PRICE_MINUS_DISCOUNT_PERCENT';
             window.computedColumns[idx].operands = [vColIdA, vColIdB];
             window.computedColumns[idx].tolerateEmpty = tolerateEmpty;
             console.log("✅ Columna Calculada Actualizada:", window.computedColumns[idx]);
+        } else if (id.startsWith('col_ph_')) {
+            // [V5.20 FIX UX] Convert Ghost Placeholder natively into a Computed Column
+            // Remove from virtualColumns so it doesn't render as physical anymore
+            const ghostIdx = window.virtualColumns.findIndex(c => c.id === id);
+            if (ghostIdx !== -1) {
+                window.virtualColumns.splice(ghostIdx, 1);
+            }
+            
+            // Push to computed array
+            window.computedColumns.push({
+                id: id,
+                masterField: targetMasterField,
+                macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT',
+                operands: [vColIdA, vColIdB],
+                tolerateEmpty: tolerateEmpty
+            });
+            console.log("✅ Ghost Column convertido exitosamente a Columna Calculada!");
         }
     } else {
         // Ajouter en memoria

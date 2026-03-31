@@ -144,7 +144,8 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 computedCols: window.computedColumns || [],
                 colWidths: window.currentColWidths || {},
                 config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
-                hiddenColumns: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {}
+                hiddenColumns: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {},
+                ghostCols: window.virtualColumns ? window.virtualColumns.filter(c => c.isGhostPlaceholder) : []
             }
         };
 
@@ -366,13 +367,17 @@ window.loadSavedConfiguration = async function () {
                             : [];
                         console.log("✅ [V5] Columnas Calculadas recuperadas:", window.computedColumns.length);
                     }
-
-                    // [V5] Hydrate User Column Widths
-                    if (resultV3.data.reglas_procesamiento.colWidths) {
-                        window.currentColWidths = resultV3.data.reglas_procesamiento.colWidths;
-                        console.log("✅ [V5] Dimensiones de columnas recuperadas.");
-                    }
                 }
+
+                // [V5] Hydrate User Column Widths
+                if (resultV3.data.colWidths) {
+                    window.currentColWidths = resultV3.data.colWidths;
+                    console.log("✅ [V5] Dimensiones de columnas recuperadas.", window.currentColWidths);
+                } else if (resultV3.data.reglas_procesamiento && resultV3.data.reglas_procesamiento.colWidths) {
+                    window.currentColWidths = resultV3.data.reglas_procesamiento.colWidths;
+                    console.log("✅ [V5] Dimensiones de columnas recuperadas (Legacy).");
+                }
+                
                 
                 // [V5 UX] Hydrate Visual Configuration
                 if (resultV3.data.config_visual && window.LayoutManager) {
@@ -382,6 +387,16 @@ window.loadSavedConfiguration = async function () {
                 // [V6 UX] Hydrate Hidden Columns
                 if (resultV3.data.hiddenColumns && window.ViewerVisibilityManager) {
                     window.ViewerVisibilityManager.hydrateSettings(resultV3.data.hiddenColumns);
+                }
+
+                // [V5.20] Hydrate Ghost Placeholder Columns
+                if (resultV3.data.ghostCols && Array.isArray(resultV3.data.ghostCols)) {
+                    // Solo agregarlas si no están ya en config
+                    resultV3.data.ghostCols.forEach(ghost => {
+                        if (!window.virtualColumns.find(v => v.id === ghost.id)) {
+                            window.virtualColumns.push(ghost);
+                        }
+                    });
                 }
 
                 loadedAnything = true;

@@ -220,13 +220,10 @@ function renderVirtualTable(originalData) {
                 const pipe = window.draftPipelines[j];
                 const pipeName = getHumanName(pipe.masterField ? (pipe.masterField.nombre_campo || pipe.masterField.id) : mappedType);
                 thContent = `
-                    <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors group" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${originalVal}')">
+                    <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${originalVal}')">
                         <i data-lucide="link-2" class="w-3 h-3"></i>
                         <span class="truncate" title="${pipeName}">${pipeName}</span>
                         <div class="bg-emerald-800 text-emerald-200 text-[9px] px-1.5 rounded-full ml-auto">${pipe.rules ? pipe.rules.length : 0}r</div>
-                        <button onclick="event.stopPropagation(); window.ViewerVisibilityManager.hideColumn('${j}')" class="opacity-0 group-hover:opacity-100 text-emerald-500 hover:text-red-400 p-0.5 ml-1 transition-all" title="Ocultar Variable">
-                             <i data-lucide="eye-off" class="w-3 h-3"></i>
-                        </button>
                     </div>
                 `;
                 thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
@@ -236,6 +233,16 @@ function renderVirtualTable(originalData) {
                 thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
             } else if (mappedType === 'Ignorar Columna') {
                 thClass += " opacity-40 grayscale decoration-line-through";
+            } else {
+                // [V6] Unmapped column gets the hide button
+                thContent = `
+                    <div class="flex items-center justify-between group h-full">
+                        <span class="truncate pr-2">${originalVal}</span>
+                        <button onclick="event.stopPropagation(); window.ViewerVisibilityManager.hideColumn('${j}')" class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 p-0.5 transition-all w-5 h-5 flex items-center justify-center shrink-0 bg-slate-900/80 rounded" title="Ocultar Variable">
+                             <i data-lucide="eye-off" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                `;
             }
 
             // [FIX] Add Visual Feedback for Offset Mode on Headers
@@ -281,9 +288,6 @@ function renderVirtualTable(originalData) {
                         <span class="truncate text-[10px]">${comp.masterField?.nombre_campo || 'Calculada'}</span>
                     </div>
                     <div class="flex" style="flex-shrink: 0">
-                        <button onclick="window.ViewerVisibilityManager.hideColumn('${comp.id}')" class="text-fuchsia-600 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Ocultar Variable">
-                            <i data-lucide="eye-off" class="w-3 h-3"></i>
-                        </button>
                         <button onclick="window.ViewerUI.deleteComputedColumn('${idx}')" class="text-fuchsia-500 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Eliminar Cálculo">
                             <i data-lucide="trash-2" class="w-3 h-3"></i>
                         </button>

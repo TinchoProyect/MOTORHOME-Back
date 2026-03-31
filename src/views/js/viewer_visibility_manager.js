@@ -66,6 +66,7 @@ const VisibilityManager = {
         parent.innerHTML = '';
         const hiddenKeys = Object.keys(window.hiddenColumns || {});
         
+        // Ocultar individual (Solo si hay ocultas)
         if (hiddenKeys.length > 0) {
             const btnAll = document.createElement('button');
             btnAll.className = "text-[10px] bg-slate-800 border border-slate-600 hover:bg-slate-700 text-slate-300 px-2 py-1.5 rounded shadow-sm flex items-center transition-colors";
@@ -73,9 +74,43 @@ const VisibilityManager = {
             btnAll.innerHTML = `<i data-lucide="eye" class="w-3.5 h-3.5 mr-1.5 inline"></i> Mostrar Ocultas (${hiddenKeys.length})`;
             btnAll.onclick = () => this.showColumn('all');
             parent.appendChild(btnAll);
-
-            if (window.lucide) window.lucide.createIcons({ root: parent });
         }
+
+        // [FIX] Función global: Ocultar todas las no mapeadas (Siempre visible)
+        const btnHideUnmapped = document.createElement('button');
+        btnHideUnmapped.className = "text-[10px] bg-slate-800/80 border border-slate-700 hover:bg-slate-700 hover:text-red-300 text-slate-400 px-2 py-1.5 rounded shadow-sm flex items-center transition-colors ml-auto";
+        btnHideUnmapped.title = "Esconder las columnas que no estás usando";
+        btnHideUnmapped.innerHTML = `<i data-lucide="eye-off" class="w-3.5 h-3.5 mr-1.5 inline"></i> Ocultar Basura (No Mapeadas)`;
+        btnHideUnmapped.onclick = () => this.hideAllUnmapped();
+        parent.appendChild(btnHideUnmapped);
+
+        if (window.lucide) window.lucide.createIcons({ root: parent });
+    },
+
+    /**
+     * Oculta todas las variables físicas que no tengan Field Maestro asignado.
+     */
+    hideAllUnmapped() {
+        if (!window.virtualColumns) return;
+        if (!window.hiddenColumns) window.hiddenColumns = {};
+        
+        // Iteramos las físicas
+        window.virtualColumns.forEach(vCol => {
+            if (vCol.isCalculated) return;
+            const j = vCol.id;
+            
+            // Check mapping
+            const isMappedV4 = (window.draftPipelines && window.draftPipelines[j]);
+            const isMappedV3 = (window.columnMapping && window.columnMapping[j] && window.columnMapping[j] !== 'Ignorar Columna');
+            
+            if (!isMappedV4 && !isMappedV3) {
+                window.hiddenColumns[j] = true;
+            }
+        });
+        
+        console.log(`👁️ [VISIBILIDAD] Limpieza de Variables No Mapeadas completada.`);
+        this._triggerReRender();
+        this._autoSave();
     },
 
     /**
@@ -112,7 +147,7 @@ const VisibilityManager = {
     
     _autoSave() {
         if (typeof window.saveSimulationConfig === 'function') {
-            window.saveSimulationConfig(null, false);
+            window.saveSimulationConfig(null, true);
         }
     }
 };
