@@ -67,6 +67,28 @@ function openCalculationModal(fromRuleWorkshop = false) {
     if (!hasOptions) {
         console.warn("⚠️ Primero debés mapear variables (ej: 'Precio Base' y 'Descuento') en el visor para usarlas como operandos.");
     }
+
+    // [New] Dynamic UI For Operations
+    const selOp = document.getElementById('calcOperation');
+    if (selOp) {
+        selOp.onchange = (e) => {
+            const labelA = document.getElementById('calcFieldA').previousElementSibling;
+            const containerB = document.getElementById('calcFieldB').parentElement;
+            const containerTol = document.getElementById('calcTolerateEmpty').parentElement;
+            
+            if (e.target.value === 'CLONE') {
+                if(labelA) labelA.innerText = "Columna Origen (Clonada)";
+                if(containerB) containerB.style.display = 'none';
+                if(containerTol) containerTol.style.display = 'none';
+            } else {
+                if(labelA) labelA.innerText = "Precio Base (A)";
+                if(containerB) containerB.style.display = 'block';
+                if(containerTol) containerTol.style.display = 'flex';
+            }
+        };
+        // Trigger manual for init state
+        setTimeout(() => selOp.dispatchEvent(new Event('change')), 50);
+    }
 }
 
 // --- GUARDAR LA NUEVA COLUMNA ---
@@ -77,14 +99,20 @@ function saveComputedColumn() {
     const vColIdB = document.getElementById('calcFieldB').value;
     const tolerateEmpty = document.getElementById('calcTolerateEmpty').checked;
 
-    if (!vColIdA || !vColIdB) {
-        alert("Por favor completá todos los operandos.");
-        return;
-    }
-
-    if (vColIdA === vColIdB) {
-        alert("Elegí columnas distintas para el cálculo.");
-        return;
+    if (op === 'CLONE') {
+        if (!vColIdA) {
+            alert("Por favor completá la Columna Origen a Clonar.");
+            return;
+        }
+    } else {
+        if (!vColIdA || !vColIdB) {
+            alert("Por favor completá todos los operandos.");
+            return;
+        }
+        if (vColIdA === vColIdB) {
+            alert("Elegí columnas distintas para el cálculo.");
+            return;
+        }
     }
 
     const targetMasterField = { ...window._activeComputedContext.masterField };

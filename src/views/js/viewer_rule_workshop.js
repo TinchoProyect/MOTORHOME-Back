@@ -139,17 +139,55 @@ export async function open(masterField, vColId, colName) {
                     window.viewerMapper.cancelMapping();
                 }
                 if (typeof Swal !== 'undefined') {
-                    Swal.fire({
+                    const result = await Swal.fire({
                         title: 'Mapeo Duplicado Detectado',
-                        text: `El campo orgánico "${masterField.nombre_campo}" ya se encuentra asignado a otra columna. Por favor, desvincúlalo de su columna origen antes de asignarlo aquí.`,
+                        text: `El campo orgánico "${masterField.nombre_campo}" ya se encuentra asignado a otra columna oculta o existente.`,
                         icon: 'warning',
                         background: '#0f172a',
-                        color: '#f8fafc'
+                        color: '#f8fafc',
+                        showCancelButton: true,
+                        confirmButtonText: 'Forzar reasignación',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#2563eb',
+                        cancelButtonColor: '#334155'
                     });
+                    
+                    if (!result.isConfirmed) return;
+
+                    // Limpieza Forzada de Mapeos Ocultos/Anteriores
+                    if (window.draftPipelines) {
+                        for (const k of Object.keys(window.draftPipelines)) {
+                            if (window.draftPipelines[k].masterField?.id === masterField.id) {
+                                delete window.draftPipelines[k];
+                            }
+                        }
+                    }
+                    if (window.columnMapping) {
+                        for (const k of Object.keys(window.columnMapping)) {
+                            if (window.columnMapping[k] === masterField.nombre_campo || window.columnMapping[k] === masterField.id) {
+                                delete window.columnMapping[k];
+                            }
+                        }
+                    }
+                    if (window.computedColumns) {
+                        const idx = window.computedColumns.findIndex(c => c.masterField?.id === masterField.id);
+                        if (idx !== -1) window.computedColumns.splice(idx, 1);
+                    }
+
+                    // Se limpió correctamente, continuamos a montar el taller
+                    if (window.viewerRender && window.viewerRender.updateHeaders) window.viewerRender.updateHeaders();
+                    
+                    // [Fix N° 1] Eliminar Estado Fantasma Inmortal en DB
+                    if (typeof window.saveSheetState === 'function') {
+                        window.saveSheetState(window.currentSheetName || null, false);
+                    }
+                    if (window.VigiaLogger) {
+                        window.VigiaLogger.success("STATE", "Mapeos Fantasmas pre-existentes purgados de la memoria y validados en Base de Datos.", { field: masterField.nombre_campo });
+                    }
                 } else {
                     alert(`El campo "${masterField.nombre_campo}" ya está asignado a otra columna. Desvincúlalo primero.`);
+                    return;
                 }
-                return;
             }
         }
     }

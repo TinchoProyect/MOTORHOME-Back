@@ -246,7 +246,7 @@ function openColumnMenu_v2(vColId, buttonElement) {
             content.querySelector('span').classList.add('text-blue-400');
         }
 
-        content.onclick = () => {
+        content.onclick = async () => {
             // [NEW] Strict 1-to-1 mapping validation
             let isAlreadyMapped = false;
             
@@ -261,18 +261,35 @@ function openColumnMenu_v2(vColId, buttonElement) {
 
             if (isAlreadyMapped) {
                 if (typeof Swal !== 'undefined') {
-                    Swal.fire({
+                    const result = await Swal.fire({
                         title: 'Mapeo Duplicado Detectado',
-                        text: `El campo orgánico "${term.termino}" ya se encuentra asignado a otra columna. Desvincúlalo primero antes de asignarlo aquí.`,
+                        text: `El campo orgánico "${term.termino}" ya se encuentra asignado a otra columna oculta o existente.`,
                         icon: 'warning',
                         background: '#0f172a',
-                        color: '#f8fafc'
+                        color: '#f8fafc',
+                        showCancelButton: true,
+                        confirmButtonText: 'Forzar reasignación aquí',
+                        cancelButtonText: 'Mantener bloqueado',
+                        confirmButtonColor: '#2563eb', // blue-600
+                        cancelButtonColor: '#334155'  // slate-700
                     });
+
+                    if (!result.isConfirmed) {
+                        menu.remove();
+                        return; // Usuario canceló
+                    }
+
+                    // Forzar reasignación: Limpiamos los mapeos viejos de este término
+                    for (const k of Object.keys(window.columnMapping)) {
+                        if (window.columnMapping[k] === term.termino) {
+                            delete window.columnMapping[k];
+                        }
+                    }
                 } else {
                     alert(`El campo "${term.termino}" ya está asignado. Desvincúlalo primero.`);
+                    menu.remove();
+                    return;
                 }
-                menu.remove();
-                return;
             }
 
             columnMapping[vColId] = term.termino;

@@ -8,8 +8,34 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
     let rejected = false;
     let mathResult = 0;
     
-    let rawA = String(opA.clean).trim();
-    let isOpBEmpty = (opB.clean === null || opB.clean === undefined || String(opB.clean).trim() === "");
+    // [NUEVO CASO CLON] Manejo puramente de String, no matemático
+    if (calcConfig.macro === "CLONE") {
+        // [HOTFIX V5.22] Extraer dato crudo (raw) para CLONE para preservar la información oculta antes de filtros de la Columna A
+        const txtA = opA?.raw !== undefined ? opA.raw : (opA?.display !== undefined ? opA.display : (opA?.clean !== undefined && opA?.clean !== null ? opA.clean : ""));
+        const rawStringA = String(txtA).trim();
+        
+        const savedPipeline = draftPipelinesVar && draftPipelinesVar[calcConfig.id] ? draftPipelinesVar[calcConfig.id].rules : null;
+        const activePipeline = (activeEtlStateVar && activeEtlStateVar.isOpen && activeEtlStateVar.colIndex === calcConfig.id) 
+                                ? activeEtlStateVar.pipeline : savedPipeline;
+
+        if (window.VigiaLogger) window.VigiaLogger.log("CLONE_OP", `Evaluando Clone: input='${rawStringA}', pipeline=${activePipeline?activePipeline.length:0}`, { opA, calcConfigId: calcConfig.id, opA_ID: calcConfig.operands?.[0] });
+
+        if (activePipeline && activePipeline.length > 0 && window.viewerETL) {
+            const { result, rejected: wasRejected } = window.viewerETL.transformCell(rawStringA, activePipeline);
+            if (wasRejected) rejected = true;
+            resultDisplay = result;
+        } else {
+            resultDisplay = rawStringA;
+        }
+        
+        if (window.VigiaLogger) window.VigiaLogger.log("CLONE_RES", `Resultado Clone: '${resultDisplay}'`);
+        
+        return { resultDisplay, mathResult: rawStringA, rejected };
+    }
+
+    // --- Flujo matemático Clásico ---
+    let rawA = String(opA?.clean !== undefined && opA?.clean !== null ? opA.clean : "").trim();
+    let isOpBEmpty = (opB?.clean === null || opB?.clean === undefined || String(opB.clean).trim() === "");
     let rawB = "0";
 
     let shouldTolerateEmpty = calcConfig.tolerateEmpty !== false;
@@ -280,10 +306,10 @@ function renderVirtualTable(originalData) {
             // [V6] Control de Visibilidad para Columnas Calculadas
             if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(comp.id)) return;
 
-            const thClass = "bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20 transition-colors";
+            const thClass = "relative bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20 transition-colors";
             const thContent = `
-                <div class="flex items-center justify-between gap-1">
-                    <div class="flex items-center gap-1 overflow-hidden cursor-pointer hover:bg-fuchsia-500/20 px-1 py-0.5 rounded transition-colors w-full" title="Editar ${comp.masterField?.nombre_campo || 'Calculada'}" onclick="if(window.editComputedColumn) window.editComputedColumn('${comp.id}')">
+                <div class="flex items-center justify-between gap-1 h-full relative">
+                    <div class="flex items-center gap-1 overflow-hidden cursor-pointer hover:bg-fuchsia-500/20 px-1 py-0.5 rounded transition-colors w-full h-full" title="Editar ${comp.masterField?.nombre_campo || 'Calculada'}" onclick="if(window.editComputedColumn) window.editComputedColumn('${comp.id}')">
                         <i data-lucide="calculator" class="w-3 h-3 text-fuchsia-400 flex-shrink-0"></i>
                         <span class="truncate text-[10px]">${comp.masterField?.nombre_campo || 'Calculada'}</span>
                     </div>
@@ -294,8 +320,9 @@ function renderVirtualTable(originalData) {
                     </div>
                 </div>
             `;
-            const colWidth = 150;
-            headerHtml += `<th class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;">${thContent}</th>`;
+            const colWidth = window.currentColWidths && window.currentColWidths[comp.id] ? window.currentColWidths[comp.id] : 150;
+            const resizerHtml = `<div class="resizer-handle" onmousedown="window.initColResize(event, '${comp.id}', this.parentElement)" style="position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:70; user-select:none; background:transparent; transition:background 0.2s;" onmouseover="this.style.background='rgba(59,130,246,0.3)'" onmouseout="this.style.background='transparent'"></div>`;
+            headerHtml += `<th id="th-${comp.id}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" data-col-id="${comp.id}">${thContent}${resizerHtml}</th>`;
         });
     }
 
@@ -430,52 +457,64 @@ function renderVirtualTable(originalData) {
                     
                     let rCtx = row._richContext || {};
 
-                    // On-the-fly calculation si no existe context (Performance Lazy Load)
-                    if (!row._richContext && window.viewerETL) {
-                        rCtx = {};
-                        if (calcConfig.operands && calcConfig.operands.length === 2) {
+                    // On-the-fly calculation: Si falta ALGÚN operando en el contexto rápido, lo cargamos (Lazy Load)
+                    if (window.viewerETL) {
+                        let rCtx = row._richContext || {};
+                        if (calcConfig.operands && calcConfig.operands.length >= 1) {
                             calcConfig.operands.forEach(opColId => {
-                                const pipe = window.draftPipelines && window.draftPipelines[opColId] ? window.draftPipelines[opColId].rules : [];
-                                const vColOp = window.virtualColumns.find(v => v.id === opColId);
-                                if (vColOp && vColOp.dataIdx !== undefined) {
-                                    const raw = String(row[vColOp.dataIdx] || "");
-                                    const { clean } = window.viewerETL.transformCell(raw, pipe || []);
-                                    rCtx[opColId] = { clean };
+                                if (!opColId) return; // Ignore empty operand B in CLONE mode
+                                // Lazy Evaluate solo si no existe
+                                if (rCtx[opColId] === undefined) {
+                                    if (window.VigiaLogger) window.VigiaLogger.log("ENGINE", `Tratando de inyectar Lazy Context para celda no-mapeada: ${opColId}`);
+                                    const pipe = window.draftPipelines && window.draftPipelines[opColId] ? window.draftPipelines[opColId].rules : [];
+                                    const vColOp = window.virtualColumns.find(v => v.id === opColId);
+                                    if (vColOp && vColOp.dataIdx !== undefined) {
+                                        const raw = String(row[vColOp.dataIdx] || "");
+                                        const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || []);
+                                        rCtx[opColId] = { clean, display: display !== undefined ? display : result, raw: raw };
+                                    } else {
+                                        // Prevents undefined crash
+                                        rCtx[opColId] = { clean: "", display: "", raw: "" };
+                                    }
                                 }
                             });
                         }
+                        // Mutate strict back to avoid repeating lazy loads per row if shared
+                        row._richContext = rCtx;
                     }
-
+                    
+                    let rCtxFinal = row._richContext || {};
                     let resultDisplay = "";
                     let mathResult = 0;
                     let cellClass = 'border-r border-b border-fuchsia-900/30 p-2 whitespace-nowrap text-fuchsia-200 overflow-hidden text-ellipsis bg-fuchsia-950/20';
 
                     try {
-                        if (calcConfig.operands && calcConfig.operands.length === 2) {
-                            const opA = rCtx[calcConfig.operands[0]];
-                            const opB = rCtx[calcConfig.operands[1]];
+                        if (calcConfig.operands && calcConfig.operands.length >= 1) {
+                            const opA = rCtxFinal[calcConfig.operands[0]];
+                            const opB = calcConfig.operands[1] ? rCtxFinal[calcConfig.operands[1]] : null;
 
-                            if (opA && opB) {
+                            // Allow processing if at least opA exists
+                            if (opA) {
                                 // Bug Fix N°2: Check strict condition. If Preis Base is empty, Math FAILS (Returns NULL/Empty).
                                 const isOpAEmpty = (opA.clean === null || opA.clean === undefined || String(opA.clean).trim() === "");
-                                if (isOpAEmpty) {
-                                    resultDisplay = "";
+                                
+                                if (isOpAEmpty && calcConfig.macro !== "CLONE") {
+                                    resultDisplay = "<span class='text-fuchsia-500/50 italic text-[10px]'>Sin Base A</span>";
+                                    cellClass += ' text-center';
                                 } else {
                                     const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState);
                                     resultDisplay = evalres.resultDisplay;
-                                    if (evalres.rejected) {
-                                        cellClass += " opacity-30 grayscale bg-red-500/10 text-red-400/50";
-                                    }
+                                    mathResult = evalres.mathResult;
+                                    if(evalres.rejected) cellClass += ' bg-red-900/30 text-red-400 border border-red-500/50';
                                 }
-                            } else {
-                                resultDisplay = "<span class='text-slate-600 italic text-[10px]'>N/A</span>";
                             }
                         }
                     } catch (e) {
                         console.error("Error evaluando Computed Column V5", e);
                     }
 
-                    rowsHtml += `<td class="${cellClass}">${resultDisplay}</td>`;
+                    const colWidth = window.currentColWidths && window.currentColWidths[calcConfig.id] ? window.currentColWidths[calcConfig.id] : 150;
+                    rowsHtml += `<td class="${cellClass}" style="width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;">${resultDisplay}</td>`;
                 });
             }
 
@@ -670,12 +709,35 @@ function generatePreview() {
                     transform: (val, row) => {
                         let resultDisplay = "";
                         try {
-                            if (calcConfig.operands && calcConfig.operands.length === 2) {
+                            if (calcConfig.operands && calcConfig.operands.length >= 1) {
+                                // [NEW] Lazy load para Simulador si la columna operando no fue mapeada oficialmente
+                                let rCtx = row._richContext || {};
+                                if (window.viewerETL) {
+                                    calcConfig.operands.forEach(opColId => {
+                                        if (!opColId) return;
+                                        if (rCtx[opColId] === undefined) {
+                                            if (window.VigiaLogger) window.VigiaLogger.log("SIMULATOR", `Inyectando Lazy Context para Preview: ${opColId}`);
+                                            const pipe = window.draftPipelines && window.draftPipelines[opColId] ? window.draftPipelines[opColId].rules : [];
+                                            const vColOp = window.virtualColumns.find(v => v.id === opColId);
+                                            if (vColOp && vColOp.dataIdx !== undefined) {
+                                                const raw = String(row[vColOp.dataIdx] || "");
+                                                const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || []);
+                                                rCtx[opColId] = { clean, display: display !== undefined ? display : result, raw: raw };
+                                            } else {
+                                                rCtx[opColId] = { clean: "", display: "", raw: "" };
+                                            }
+                                        }
+                                    });
+                                    row._richContext = rCtx;
+                                }
+
                                 // Obtener los datos previamente transformados por sus columnas base de row._richContext
-                                const cA = row._richContext && row._richContext[calcConfig.operands[0]];
-                                const cB = row._richContext && row._richContext[calcConfig.operands[1]];
-                                if (cA && cB) {
-                                    // Utilizar la función unificada de matemáticas
+                                const cA = calcConfig.operands[0] ? rCtx[calcConfig.operands[0]] : null;
+                                const cB = calcConfig.operands[1] ? rCtx[calcConfig.operands[1]] : null;
+                                
+                                // Permite calcular si al menos cA existe (necesario para CLONE)
+                                if (cA) {
+                                    // Utilizar la función unificada de matemáticas / clonación
                                     const res = evaluateComputedColumnMath(calcConfig, cA, cB, window.draftPipelines);
                                     resultDisplay = res.resultDisplay;
                                 }
@@ -735,7 +797,7 @@ function generatePreview() {
                 
                 // Save Rich Object output into row context for Phase 2 
                 if (!row._richContext) row._richContext = {};
-                row._richContext[vColId] = { clean: clean, display: display };
+                row._richContext[vColId] = { clean: clean, display: display, raw: cellValue };
 
                 // 2. Reject Validation (V5 + Legacy V4 Fallback)
                 // 2. Reject Validation (V5 + Legacy V4 Fallback)

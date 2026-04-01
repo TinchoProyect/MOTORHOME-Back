@@ -173,8 +173,8 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 // Backward compatibility & Virtual Columns support
                 let dataIdx;
                 
-                // [NEW] Omitir guardado en DB origen físico para Columnas Calculadas:
-                if (vColId.startsWith('comp_') || vColId.startsWith('col_calc_')) continue;
+                // [NEW] Omitir guardado en DB origen físico para Columnas Calculadas y Fantasmas:
+                if (vColId.startsWith('comp_') || vColId.startsWith('col_calc_') || vColId.startsWith('col_ph_')) continue;
 
                 if (window.virtualColumns && window.virtualColumns.length > 0) {
                     const vCol = window.virtualColumns.find(v => v.id === vColId);

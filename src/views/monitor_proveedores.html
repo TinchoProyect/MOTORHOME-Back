@@ -579,8 +579,9 @@
                                     <div class="space-y-1">
                                         <label class="text-[10px] font-bold text-slate-500 uppercase">Operación</label>
                                         <select id="calcOperation"
-                                            class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none">
+                                            class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-colors">
                                             <option value="PRICE_MINUS_DISCOUNT_PERCENT">Descuento (A - B%)</option>
+                                            <option value="CLONE">Obtener de otra columna (Clonar A)</option>
                                         </select>
                                     </div>
                     
@@ -1005,6 +1006,9 @@
             }
         };
     </script>
+
+    <!-- Diagnostic Logger Service -->
+    <script src="js/services/diagnostic_logger.js"></script>
 
     <!-- Viewer Modules -->
     <script type="module" src="./js/viewer_left_panel.js?v=4"></script>
