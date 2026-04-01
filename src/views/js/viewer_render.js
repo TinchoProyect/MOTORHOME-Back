@@ -753,6 +753,18 @@ function generatePreview() {
             });
         }
 
+        // --- G. UNIFIED VISUAL ORDERING ---
+        // V6 UX: The simulator now properly renders columns in the exact global dragged layout
+        if (window.LayoutManager && window.LayoutManager.state.order && window.LayoutManager.state.order.length > 0) {
+            displayConfig.sort((a, b) => {
+                let idxA = window.LayoutManager.state.order.indexOf(a.virtualColId);
+                let idxB = window.LayoutManager.state.order.indexOf(b.virtualColId);
+                if (idxA === -1) idxA = 9999;
+                if (idxB === -1) idxB = 9999;
+                return idxA - idxB;
+            });
+        }
+
         if (displayConfig.length === 0) {
             alert("Primero debes mapear al menos una columna.");
             return;
@@ -1199,20 +1211,19 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
     
     if (!draggedConfig || !droppedConfig) return false;
     
-    let vColArray = window.virtualColumns;
-    let fromIdx = vColArray.findIndex(v => v.id === draggedConfig.virtualColId);
-    let toIdx = vColArray.findIndex(v => v.id === droppedConfig.virtualColId);
-    
-        if (fromIdx !== -1 && toIdx !== -1) {
-        // Ejecutar desplazamiento (Splice Transaccional)
-        const element = vColArray.splice(fromIdx, 1)[0];
-        vColArray.splice(toIdx, 0, element);
+    // V6 Fix: Las columnas calculadas no existen en vColArray, sino en computedColumns.
+    // El orden global se unifica operando sobre el 'currentDisplayConfig'
+    if (window.LayoutManager) {
+        // Inicializar track list desde el currentDisplayConfig visual original
+        let unifiedOrderList = window.currentDisplayConfig.map(cfg => cfg.virtualColId);
         
-        // V5 UX: Guardar reordenamiento delegando al LayoutManager
-        if (window.LayoutManager) {
-            window.LayoutManager.recordOrder(vColArray);
-        }
-
+        // Efectuar Desplazamiento Transaccional in-place
+        const elementId = unifiedOrderList.splice(dragColIndex, 1)[0];
+        unifiedOrderList.splice(dropColIndex, 0, elementId);
+        
+        // Guardar el estado unificado maestramente en LayoutManager (array de id dict)
+        window.LayoutManager.recordOrder(unifiedOrderList.map(id => ({ id })));
+        
         // Guardar estado master hacia el servidor si es posible
         if (typeof window.saveSimulationConfig === 'function') {
             window.saveSimulationConfig(null, true);
@@ -1227,6 +1238,8 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
         if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncVisuals === 'function') {
             setTimeout(() => window.viewerRuleWorkshop.syncVisuals(), 100);
         }
+    } else {
+        console.error("Layout Manager not loaded, skipping universal Drag&Drop reorder.");
     }
     return false;
 };
