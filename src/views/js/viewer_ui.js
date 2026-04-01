@@ -159,9 +159,10 @@ window.ViewerUI = (function () {
     const btnInyect = document.getElementById("btnInjectColumn");
     // [NEW]
     const btnSave = document.getElementById("btnSaveConfig");
+    const btnSaveFlujo = document.getElementById("btnSaveFlujo");
     const btnReset = document.getElementById("btnResetConfig");
 
-    const tools = [btnMap, btnOff, btnInyect, btnSave, btnReset];
+    const tools = [btnMap, btnOff, btnInyect, btnSave, btnSaveFlujo, btnReset];
 
     tools.forEach((btn) => {
       if (btn) {

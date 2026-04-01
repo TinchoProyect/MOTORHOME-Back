@@ -19,6 +19,7 @@ app.use((req, res, next) => {
 app.use('/api/files', require('./routes/filesRoutes'));
 app.use('/api/master-table', require('./routes/masterTableRoutes'));
 app.use('/api/mapping', require('./routes/mappingRuleRoutes'));
+app.use('/api/flujos', require('./routes/flujosRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {

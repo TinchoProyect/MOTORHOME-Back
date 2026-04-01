@@ -16,9 +16,10 @@ console.log("%c 🚀 VIEWER ENGINE: v2.7 - READY ", "background: #8b5cf6; color:
 
 // --- 3. FUNCIONES CORE DEL VISOR ---
 
-async function openFileViewer(fileId, fileName, providerId = null) {
+async function openFileViewer(fileId, fileName, providerId = null, flujoId = null) {
     window.globalContext.fileId = fileId;
     window.globalContext.providerId = providerId; // [V2] PRIVATE CONTEXT INJECTION
+    window.globalContext.flujoId = flujoId; // [FLUJOS] Rehydration Trigger
 
     // [FIX] Resolve Provider Name if not set
     if (providerId && window.currentSuppliers) {
@@ -69,9 +70,10 @@ async function openFileViewer(fileId, fileName, providerId = null) {
     const btnOffset = document.getElementById('btnOffsetMode');
     const btnCalc = document.getElementById('btnCalcMode');
     const btnSave = document.getElementById('btnSaveConfig');
+    const btnSaveFlujo = document.getElementById('btnSaveFlujo');
     const btnReset = document.getElementById('btnResetConfig');
 
-    [btnMap, btnOffset, btnCalc, btnSave, btnReset].forEach(btn => {
+    [btnMap, btnOffset, btnCalc, btnSave, btnSaveFlujo, btnReset].forEach(btn => {
         if (btn) btn.classList.add('hidden');
     });
 
@@ -428,7 +430,7 @@ function closeViewerModal() {
 }
 
 // --- 4. EXPOSICIÓN GLOBAL (Bindings) ---
-window.openFileViewer = (fileId, fileName, providerId) => openFileViewer(fileId, fileName, providerId);
+window.openFileViewer = (fileId, fileName, providerId, flujoId) => openFileViewer(fileId, fileName, providerId, flujoId);
 window.loadSheet = (sheetName) => loadSheet(sheetName);
 
 

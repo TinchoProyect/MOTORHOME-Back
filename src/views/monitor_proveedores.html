@@ -445,7 +445,12 @@
                     <!-- [NEW] Persistence Tools -->
                     <button id="btnSaveConfig" onclick="saveSimulationConfig()"
                         class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-emerald-500/50">
-                        <i data-lucide="save" class="w-3 h-3"></i> Guardar Config
+                        <i data-lucide="database" class="w-3 h-3"></i> Guardar DB
+                    </button>
+                    <!-- [NEW] Plantillas / Flujos -->
+                     <button id="btnSaveFlujo" onclick="window.solicitarGuardadoFlujo && window.solicitarGuardadoFlujo()"
+                        class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-fuchsia-400 hover:text-fuchsia-300 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-fuchsia-500/50 shadow-lg shadow-fuchsia-900/10">
+                        <i data-lucide="workflow" class="w-3 h-3"></i> Guardar Flujo
                     </button>
                     <button id="btnResetConfig" onclick="deleteSimulationConfig()"
                         class="hidden px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 mr-2 border border-slate-700 hover:border-red-500/50">

@@ -343,15 +343,95 @@ function renderFileGrid(files, folderId) {
 
 async function handleFileClick(fileId, fileName) {
     console.log("Abriendo visor para:", fileName);
-    // Bridge to Global openFileViewer (defined in HTML)
-    // 3. Abrir Visor
-    if (window.openFileViewer) {
-        // [V2] Pass current provider ID for Private Headers
-        console.log(`[AppCore] Opening viewer for ${fileName} with Provider Context: ${window.currentActiveProviderId}`);
-        window.openFileViewer(fileId, fileName, window.currentActiveProviderId);
-    } else {
+    if (!window.openFileViewer) {
         console.error("Módulo ViewerEngine no cargado");
+        return;
     }
+
+    const providerId = window.currentActiveProviderId;
+    
+    // [FLUJOS] Interceptar apertura para consultar si existen plantillas
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendUrl}/api/flujos/${providerId}`);
+        const flujos = await res.json();
+
+        if (flujos && flujos.length > 0) {
+            // Mostrar modal inyectado al vuelo
+            mostrarModalSelectorFlujos(fileId, fileName, providerId, flujos);
+        } else {
+            // No hay flujos, Blank Slate directo
+            window.openFileViewer(fileId, fileName, providerId, null);
+        }
+    } catch (e) {
+        console.error("Error consultando flujos, se abre en crudo:", e);
+        window.openFileViewer(fileId, fileName, providerId, null);
+    }
+}
+
+// [FLUJOS UI] Generador del Modal de Selector de Plantillas
+function mostrarModalSelectorFlujos(fileId, fileName, providerId, flujos) {
+    // 1. Limpiar mallas si quedó alguna
+    const existing = document.getElementById('flujoSelectorOverlay');
+    if (existing) existing.remove();
+
+    // 2. Construir HTML
+    const overlay = document.createElement('div');
+    overlay.id = 'flujoSelectorOverlay';
+    overlay.className = "fixed inset-0 z-[6000] bg-slate-950/80 backdrop-blur-sm flex py-20 px-4 justify-center overflow-y-auto animate-in fade-in duration-200";
+    
+    let flujosHtml = '';
+    flujos.forEach(f => {
+        flujosHtml += `
+            <button onclick="ejecutarAperturaConFlujo('${fileId}', '${fileName}', '${providerId}', '${f.id_flujo}')" class="w-full text-left p-4 mb-3 border border-slate-700 bg-slate-800/50 hover:bg-emerald-900/30 hover:border-emerald-500 rounded-lg transition-all group">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-slate-800 group-hover:bg-emerald-500/20 rounded shadow">
+                        <i data-lucide="layers" class="w-5 h-5 text-slate-400 group-hover:text-emerald-400"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-bold text-slate-200 group-hover:text-white">${f.nombre_flujo}</h4>
+                        <p class="text-[10px] text-slate-500 font-mono mt-1">Actualizado: ${new Date(f.fecha_actualizacion).toLocaleString()}</p>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-emerald-500 opacity-0 group-hover:opacity-100 ml-auto transition-opacity"></i>
+                </div>
+            </button>
+        `;
+    });
+
+    overlay.innerHTML = `
+        <div class="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-emerald-900/20 w-full max-w-md h-fit overflow-hidden animate-in zoom-in-95 duration-300">
+            <div class="p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+                <div class="flex items-center gap-2 text-white">
+                    <i data-lucide="workflow" class="w-4 h-4 text-emerald-400"></i>
+                    <h3 class="font-bold text-sm tracking-wide">Seleccionar Plantilla</h3>
+                </div>
+                <button onclick="document.getElementById('flujoSelectorOverlay').remove()" class="text-slate-500 hover:text-red-400 P-1">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-5">
+                <p class="text-xs text-slate-400 mb-4">Se detectaron flujos pre-configurados para este proveedor. ¿Deseas aplicar alguno al archivo <b>${fileName}</b>?</p>
+                <div class="max-h-[40vh] overflow-y-auto mb-4 custom-scrollbar pr-2">
+                    ${flujosHtml}
+                </div>
+                <div class="pt-4 border-t border-slate-800 flex justify-between items-center">
+                    <button onclick="ejecutarAperturaConFlujo('${fileId}', '${fileName}', '${providerId}', null)" class="text-[11px] text-slate-400 hover:text-blue-400 font-medium px-2 py-1 flex items-center gap-1 transition-colors">
+                        <i data-lucide="file-plus-2" class="w-3 h-3"></i> Omitir e Iniciar Vacío
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    if (window.lucide) window.lucide.createIcons({ root: overlay });
+}
+
+window.ejecutarAperturaConFlujo = function(fileId, fileName, providerId, idFlujo) {
+    const overlay = document.getElementById('flujoSelectorOverlay');
+    if (overlay) overlay.remove();
+    console.log("[Flujos] Apertura decidida. Flujo asociado:", idFlujo || "N/A (Blank Slate)");
+    window.openFileViewer(fileId, fileName, providerId, idFlujo);
 }
 
 

@@ -250,6 +250,87 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
     }
 };
 
+// =============================================================================
+// --- 6.C. PERSISTENCIA DE FLUJOS (PLANTILLAS V8) ---
+// =============================================================================
+window.solicitarGuardadoFlujo = async function () {
+    const providerId = window.globalContext.providerId;
+    if (!providerId) {
+        alert("Falta el Provider ID. No se puede guardar la plantilla.");
+        return;
+    }
+
+    // Modal sencillo para pedir el nombre
+    let nombreFlujo = prompt("🏁 Ingrese un nombre único para esta Plantilla:", "P. Ej: Lista Precios Mayorista");
+    if (!nombreFlujo || nombreFlujo.trim() === '') return;
+
+    // Construcción del config_payload
+    const payload = {
+        offset: typeof currentOffset !== 'undefined' ? currentOffset : { row: 0, col: 0 },
+        virtualColumns: window.virtualColumns || [],
+        computedColumns: window.computedColumns || [],
+        columnMapping: window.columnMapping || {},
+        draftPipelines: window.draftPipelines || {},
+        layoutConfig: {
+            colWidths: window.currentColWidths || {},
+            config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
+            hiddenColumns: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {}
+        }
+    };
+
+    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+    
+    // UI Botón
+    const btn = document.getElementById('btnSaveFlujo');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Guardando...`;
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    try {
+        const bodyReq = {
+            id_flujo: window.globalContext.flujoId || null, 
+            proveedor_id: providerId,
+            nombre_flujo: nombreFlujo,
+            config_payload: payload
+        };
+
+        const res = await fetch(`${backendUrl}/api/flujos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyReq)
+        });
+
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Fallo en API /flujos");
+
+        window.globalContext.flujoId = result.flujo.id_flujo;
+
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'success',
+                title: 'Flujo Guardado',
+                text: 'La plantilla quedó sellada existosamente.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } else {
+            alert("Flujo Guardado exitosamente!");
+        }
+
+    } catch(e) {
+        console.error("❌ Error guardando flujo:", e);
+        if (typeof Swal !== 'undefined') Swal.fire("Error", "Error al guardar plantilla: " + e.message, "error");
+        else alert("Error al guardar plantilla: " + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="workflow" class="w-3 h-3"></i> Guardar Flujo`;
+            if (window.lucide) window.lucide.createIcons();
+        }
+    }
+};
 
 // --- 6.1. PERSISTENCE LOGIC (Reset/Delete) ---
 /**
@@ -321,7 +402,55 @@ window.loadSavedConfiguration = async function () {
     let loadedAnything = false;
 
     // ==========================================
-    // 1. CARGA V3 (Offset y Formatos Básicos)
+    // [NUEVO] CARGA DE FLUJO/PLANTILLA (Sobrescribe modo tradicional)
+    // ==========================================
+    if (window.globalContext.flujoId) {
+        try {
+            console.log(`🧠 [FLUJOS] Hidratando Visor desde Flujo ID: ${window.globalContext.flujoId}...`);
+            const resFlujo = await fetch(`${backendUrl}/api/flujos/detalle/${window.globalContext.flujoId}`);
+            if (resFlujo.ok) {
+                const resultFlujo = await resFlujo.json();
+                if (resultFlujo && resultFlujo.config_payload) {
+                    const payload = resultFlujo.config_payload;
+
+                    // 1. Offset
+                    if (payload.offset) {
+                        currentOffset = payload.offset;
+                        offsetSelectionMode = false;
+                    }
+
+                    // 2. Arrays Virtuales y Calculados
+                    if (payload.virtualColumns) window.virtualColumns = payload.virtualColumns;
+                    if (payload.computedColumns) window.computedColumns = payload.computedColumns;
+
+                    // 3. Mapping
+                    if (payload.columnMapping) columnMapping = payload.columnMapping;
+
+                    // 4. Pipelines ETL
+                    if (payload.draftPipelines) window.draftPipelines = payload.draftPipelines;
+
+                    // 5. Layout (Anchos y Orden)
+                    if (payload.layoutConfig) {
+                        if (payload.layoutConfig.colWidths) window.currentColWidths = payload.layoutConfig.colWidths;
+                        if (payload.layoutConfig.config_visual && window.LayoutManager) {
+                            window.LayoutManager.hydrateSettings(payload.layoutConfig.config_visual);
+                        }
+                        if (payload.layoutConfig.hiddenColumns && window.ViewerVisibilityManager) {
+                            window.ViewerVisibilityManager.hydrateSettings(payload.layoutConfig.hiddenColumns);
+                        }
+                    }
+
+                    console.log("✅ [FLUJOS] Hidratación 100% Completada");
+                    return true; // Bypass del viejo V3/V4 setup
+                }
+            }
+        } catch (e) {
+            console.error("❌ [FLUJOS] Error hidratando plantilla:", e);
+        }
+    }
+
+    // ==========================================
+    // 1. CARGA V3 (Offset y Formatos Básicos - Old Logic)
     // ==========================================
     try {
         console.log(`🧠 [V3] Buscando Formato Base para Proveedor ${providerId} (Hoja: ${sheetName})...`);
