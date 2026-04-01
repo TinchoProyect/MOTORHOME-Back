@@ -3,14 +3,21 @@ const supabase = require('../config/supabaseClient');
 // GET /api/master-table/dictionary
 async function getMasterFields(req, res) {
     try {
-        console.log(`[MasterTableController] 🔍 Solicitando catálogo maestro (diccionario).`);
+        console.log(`[MasterTableController] 🔍 Solicitando catálogo maestro (diccionario). query:`, req.query);
+        const { activeOnly } = req.query;
 
-        const { data, error } = await supabase
+        let query = supabase
             .from('diccionario_campos_maestros')
             .select('*, diccionario_categorias(nombre, orden_visual)')
             // Mantenimiento de legacy (pero las categorias usan orden_visual propio)
             .order('orden', { ascending: true })
             .order('nombre_campo', { ascending: true });
+
+        if (activeOnly === 'true') {
+            query = query.eq('esta_activo', true);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
             console.error("[MasterTableController] Error DB:", error);
@@ -210,6 +217,39 @@ async function toggleMasterFieldStatus(req, res) {
     }
 }
 
+// DELETE /api/master-table/dictionary/:id
+async function deleteMasterField(req, res) {
+    try {
+        const { id } = req.params;
+        if (!id) return res.status(400).json({ success: false, error: "ID de campo requerido" });
+
+        console.log(`[MasterTableController] 🗑️ Intentando borrar físicamente el campo ID: ${id}`);
+
+        const { data, error } = await supabase
+            .from('diccionario_campos_maestros')
+            .delete()
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error("[MasterTableController] Error borrando campo:", error);
+            // Si el error es constraint (ej: fk usada), lo atrapamos
+            if (error.code === '23503') {
+               return res.status(409).json({ success: false, error: "No se puede borrar este campo porque está mapeado en alguna vista guardada." });
+            }
+            return res.status(500).json({ success: false, error: "Error de BD borrando campo", details: error.message });
+        }
+
+        console.log(`[MasterTableController] ✅ Campo borrado con éxito Opcion:`, data);
+        return res.json({ success: true, data });
+
+    } catch (error) {
+        console.error("[MasterTableController] Catch Error deleteting field:", error);
+        return res.status(500).json({ success: false, error: "Error interno en el borrado" });
+    }
+}
+
 // ==========================================
 // V5 CATEGORÍAS (Solapas Dinámicas) CRUD
 // ==========================================
@@ -310,6 +350,7 @@ module.exports = {
     createMasterField,
     updateMasterField,
     toggleMasterFieldStatus,
+    deleteMasterField,
     getCategories,
     createCategory,
     updateCategory,

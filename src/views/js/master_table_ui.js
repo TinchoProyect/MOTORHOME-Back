@@ -140,6 +140,7 @@ export function promptCreateMasterField() {
     document.getElementById('mfmTitle').innerText = 'Nuevo Campo';
     document.getElementById('mfmWarning').classList.add('hidden');
     document.getElementById('mfmError').classList.add('hidden');
+    document.getElementById('mfmDeleteBtn').classList.add('hidden');
     document.getElementById('masterFieldModal').classList.remove('hidden');
 }
 
@@ -165,7 +166,41 @@ export function editMasterField(id) {
     document.getElementById('mfmTitle').innerText = 'Editar Campo';
     document.getElementById('mfmWarning').classList.remove('hidden');
     document.getElementById('mfmError').classList.add('hidden');
+    document.getElementById('mfmDeleteBtn').classList.remove('hidden'); // Mostrar btn Eliminar
     document.getElementById('masterFieldModal').classList.remove('hidden');
+}
+
+export function promptDeleteMasterField() {
+    if (!currentEditId) return;
+    
+    // Podemos reusar alert / confirm basico para no crear otro modal (o si hay MCM usarlo)
+    if(confirm("¿Estás 100% seguro de que querés ELIMINAR FÍSICAMENTE este campo?\nSi el campo ya está mapeado en configuraciones guardadas, la base de datos no te dejará borrarlo por integridad.")) {
+        executeDeleteMasterField();
+    }
+}
+
+async function executeDeleteMasterField() {
+    const errText = document.getElementById('mfmError');
+    const deleteBtn = document.getElementById('mfmDeleteBtn');
+    errText.classList.add('hidden');
+
+    try {
+        deleteBtn.disabled = true;
+        deleteBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 inline-block mr-1 flex-shrink-0 animate-spin"></i> Borrando...`;
+        if (window.lucide) window.lucide.createIcons();
+
+        await masterTableService.deleteMasterField(currentEditId);
+        
+        closeMasterFieldModal();
+        await loadMasterFields();
+    } catch(err) {
+        errText.innerText = `Error: ${err.message}`;
+        errText.classList.remove('hidden');
+    } finally {
+        deleteBtn.disabled = false;
+        deleteBtn.innerHTML = `<i data-lucide="trash-2" class="w-4 h-4 inline-block mr-1"></i> Eliminar`;
+        if (window.lucide) window.lucide.createIcons();
+    }
 }
 
 export function closeMasterFieldModal() {
@@ -301,6 +336,7 @@ window.promptCreateMasterField = promptCreateMasterField;
 window.editMasterField = editMasterField;
 window.saveMasterFieldModal = saveMasterFieldModal;
 window.closeMasterFieldModal = closeMasterFieldModal;
+window.promptDeleteMasterField = promptDeleteMasterField;
 
 window.promptToggleField = promptToggleField;
 window.closeMasterConfirmModal = closeMasterConfirmModal;

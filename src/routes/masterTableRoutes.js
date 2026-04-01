@@ -14,6 +14,9 @@ router.put('/dictionary/:id', masterTableController.updateMasterField);
 // Apagar/Encender lógicamente ("Zero-Drop")
 router.patch('/dictionary/:id/toggle', masterTableController.toggleMasterFieldStatus);
 
+// Borrado Físico (Descartar Registros Basura)
+router.delete('/dictionary/:id', masterTableController.deleteMasterField);
+
 // ==========================================
 // V5: CRUD DE CATEGORÍAS (Solapas Dinámicas)
 // ==========================================

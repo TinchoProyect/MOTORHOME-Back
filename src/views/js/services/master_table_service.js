@@ -10,9 +10,10 @@ export const masterTableService = {
     /**
      * Fetch all fields from the master dictionary
      */
-    async fetchMasterFields() {
+    async fetchMasterFields(activeOnly = false) {
         try {
-            const response = await fetch(`${backendUrl}/api/master-table/dictionary`);
+            const url = activeOnly ? `${backendUrl}/api/master-table/dictionary?activeOnly=true&_t=${new Date().getTime()}` : `${backendUrl}/api/master-table/dictionary?_t=${new Date().getTime()}`;
+            const response = await fetch(url, { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' } });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.error || `HTTP Error ${response.status}`);
@@ -69,6 +70,26 @@ export const masterTableService = {
     },
 
     /**
+     * Delete a field physically from the master dictionary
+     */
+    async deleteMasterField(id) {
+        try {
+            const response = await fetch(`${backendUrl}/api/master-table/dictionary/${id}`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json().catch(() => { throw new Error("Respuesta inválida del servidor (No JSON)"); });
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP Error ${response.status}`);
+            }
+            return data;
+        } catch (error) {
+            console.error("[MasterTableService] deleteMasterField error:", error);
+            throw error;
+        }
+    },
+
+    /**
      * Toggle the active status of a master field (Soft Delete)
      */
     async toggleMasterFieldStatus(id, isActive) {
@@ -95,7 +116,8 @@ export const masterTableService = {
     // ==========================================
     async fetchCategories() {
         try {
-            const response = await fetch(`${backendUrl}/api/master-table/categories`);
+            const url = `${backendUrl}/api/master-table/categories?_t=${new Date().getTime()}`;
+            const response = await fetch(url, { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' } });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.error || `HTTP Error ${response.status}`);

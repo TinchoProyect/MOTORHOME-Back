@@ -30,10 +30,24 @@ export async function initLeftPanel() {
     content.innerHTML = '';
 
     try {
-        const result = await masterTableService.fetchMasterFields();
+        // Cargar Diccionario y Categorías Reales en paralelo
+        const [result, catResult] = await Promise.all([
+            masterTableService.fetchMasterFields(true),
+            masterTableService.fetchCategories()
+        ]);
+        
         if (!result.success) throw new Error("Fallo la carga de campos maestros");
 
-        // Filtrar solo los activos
+        // Construir mapa maestro de orden visual y nombres canónicos
+        const categoriesOrderMap = {};
+        const categoriesNameMap = {};
+        (catResult.data || []).forEach(cat => {
+            const normalizedMapKey = (cat.nombre || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+            categoriesOrderMap[normalizedMapKey] = cat.orden_visual;
+            categoriesNameMap[normalizedMapKey] = cat.nombre; // Guardamos el nombre "oficial" (ej: "presentación")
+        });
+
+        // Filtrar solo los activos (Validación extra por seguridad en UI)
         activeFields = (result.data || []).filter(f => f.esta_activo);
 
         // Expose globally for V5 UUID resolving
@@ -52,7 +66,7 @@ export async function initLeftPanel() {
             return;
         }
 
-        buildTabs();
+        buildTabs(categoriesOrderMap, categoriesNameMap);
     } catch (error) {
         console.error("[ViewerLeftPanel] Error:", error);
         header.innerHTML = '';
@@ -65,10 +79,13 @@ export async function initLeftPanel() {
     }
 }
 
+// Helper robusto para comparación sin acentos ni keys extras
+const normalizeKey = (str) => (str || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
 // =========================================================================
 // 2. TAB BUILDING & LOGIC
 // =========================================================================
-function buildTabs() {
+function buildTabs(categoriesOrderMap, categoriesNameMap) {
     const header = document.getElementById('vlpTabsHeader');
 
     // Mapeo Inteligente (Nombre -> Orden Visual)
@@ -76,9 +93,17 @@ function buildTabs() {
     groupedFields = {};
 
     activeFields.forEach(field => {
-        // Soporte de transición y fallbacks (Usa diccionario_categorias desde el JOIN)
-        const catName = field.diccionario_categorias?.nombre || field.tipo_dato || 'Otros';
-        const catOrder = field.diccionario_categorias?.orden_visual ?? 99; // 99 si no hay orden explícito
+        // [FIX V5.2 y Tildes] Obtenemos el originario
+        const rawCategoryStr = field.diccionario_categorias?.nombre || field.tipo_dato || 'Otros';
+        const normalizedName = normalizeKey(rawCategoryStr);
+        
+        // Resolución Semántica: Si el string heredado ('Presentacion') coincide conceptualmente con 
+        // una categoría oficial de la base ('presentación'), usamos ESTRICTAMENTE la oficial.
+        // Esto previene que se abran 2 solapas distintas por culpa de un acento.
+        const catName = categoriesNameMap[normalizedName] || rawCategoryStr;
+        
+        // El orden prioritario es la tabla de referencias, luego el devuelto por la fila, y sino 99.
+        const catOrder = categoriesOrderMap[normalizedName] ?? (field.diccionario_categorias?.orden_visual ?? 99);
 
         if (!groupedFields[catName]) {
             groupedFields[catName] = [];

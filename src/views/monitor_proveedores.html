@@ -882,13 +882,20 @@
                 <p id="mfmError" class="text-xs text-red-400 hidden mt-2"></p>
             </div>
 
-            <div class="p-6 bg-slate-950/50 flex justify-end gap-3 rounded-b-2xl">
-                <button onclick="window.closeMasterFieldModal()"
-                    class="px-5 py-2 text-xs text-slate-400 hover:text-white font-bold uppercase tracking-widest transition-colors">Cancelar</button>
-                <button id="mfmSaveBtn" onclick="window.saveMasterFieldModal()"
-                    class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-blue-900/20 flex items-center gap-2 transition-colors">
-                    <i data-lucide="save" class="w-4 h-4"></i> Guardar
-                </button>
+            <div class="p-6 bg-slate-950/50 flex justify-between gap-3 rounded-b-2xl">
+                <div>
+                    <button id="mfmDeleteBtn" onclick="window.promptDeleteMasterField()" class="hidden px-4 py-2 border border-red-500/20 hover:border-red-500/50 bg-red-500/10 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors">
+                        <i data-lucide="trash-2" class="w-4 h-4 inline-block mr-1"></i> Eliminar
+                    </button>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="window.closeMasterFieldModal()"
+                        class="px-5 py-2 text-xs text-slate-400 hover:text-white font-bold uppercase tracking-widest transition-colors">Cancelar</button>
+                    <button id="mfmSaveBtn" onclick="window.saveMasterFieldModal()"
+                        class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-blue-900/20 flex items-center gap-2 transition-colors">
+                        <i data-lucide="save" class="w-4 h-4"></i> Guardar
+                    </button>
+                </div>
             </div>
         </div>
     </div>
