@@ -614,7 +614,7 @@ async function listProcessedFiles(req, res) {
 
         const { data, error } = await supabase
             .from('proveedor_listas_raw')
-            .select('id, nombre_archivo, created_at, status_global')
+            .select('id, nombre_archivo, created_at, status_global, flujo_asignado_id')
             .eq('proveedor_id', providerId)
             .eq('status_global', 'CONFIRMED')
             .order('created_at', { ascending: false });
@@ -651,6 +651,27 @@ async function getProcessedFileContent(req, res) {
 
     } catch (error) {
         console.error("[FilesController] Error fetching content:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+async function assignFlujoToFile(req, res) {
+    const { id } = req.params;
+    const { flujo_id } = req.body;
+
+    try {
+        const { data, error } = await supabase
+            .from('proveedor_listas_raw')
+            .update({ flujo_asignado_id: flujo_id || null })
+            .eq('id', id)
+            .select()
+            .single();
+        
+        if (error) throw error;
+
+        res.json({ success: true, message: "Flujo asignado actualizado", data });
+    } catch (error) {
+        console.error("[FilesController] Error assigning flujo:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 }
@@ -948,7 +969,8 @@ module.exports = {
     listProcessedFiles,
     getProcessedFileContent,
     rollbackFiles,
-    saveTemplateConfig, // [NEW EXPORT]
+    saveTemplateConfig,
     getTemplateConfig,
-    deleteTemplateConfig // [NEW]
+    deleteTemplateConfig,
+    assignFlujoToFile
 };

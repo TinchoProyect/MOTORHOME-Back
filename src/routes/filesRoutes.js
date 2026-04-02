@@ -33,6 +33,7 @@ router.post('/drive/provision-vendor', filesController.provisionVendorFolders);
 // [PHASE 5] Processed Files
 router.get('/processed-list', filesController.listProcessedFiles);
 router.get('/processed-content/:rawListId', filesController.getProcessedFileContent);
+router.patch('/processed/:id/flujo', filesController.assignFlujoToFile);
 
 // [PHASE 5] Rollback / Delete
 router.post('/rollback', filesController.rollbackFiles);
