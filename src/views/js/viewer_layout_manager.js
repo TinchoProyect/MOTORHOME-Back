@@ -24,6 +24,15 @@ window.LayoutManager = {
     },
 
     /**
+     * Borra el estado visual a valores por defecto (Crudo)
+     */
+    reset() {
+        this.state.widths = {};
+        this.state.order = [];
+        console.log("📐 [LayoutManager] Estado visual formateado a cero (Crudo).");
+    },
+
+    /**
      * Serializa las preferencias actuales para enviarlas por red a Supabase.
      */
     serializeSettings() {

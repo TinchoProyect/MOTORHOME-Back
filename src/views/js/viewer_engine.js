@@ -57,6 +57,11 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
     }
     if (window.lucide) window.lucide.createIcons();
 
+    // [QA-3] Inicializar desplegable Header Flujos Activos
+    if (window.initViewerFlujosContext && providerId) {
+        window.initViewerFlujosContext(providerId, flujoId);
+    }
+
     // Reset Containers
     const excelContainer = document.getElementById('excelContainer');
     const sheetTabs = document.getElementById('sheetTabs');
@@ -456,11 +461,14 @@ window.getViewerSnapshot = function () {
 };
 
 // [PHASE 5] Virtual Workbook Loader (Multi-Sheet DB Recovery)
-window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DATO HISTÓRICO") {
-    console.log("[ViewerEngine] Loading Virtual Workbook:", fileName, Object.keys(workbookMap));
+window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DATO HISTÓRICO", flujoId = null) {
+    console.log("[ViewerEngine] Loading Virtual Workbook:", fileName, Object.keys(workbookMap), "con Flujo:", flujoId || "N/A");
 
     // 1. Reset State
     window.resetViewerState();
+    
+    // [FLUJOS] Asignar identificador a global context post-reset
+    window.globalContext.flujoId = flujoId;
 
     // 2. Load Data Cache
     const sheetNames = Object.keys(workbookMap);
@@ -502,6 +510,12 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
             </span>
         `;
         if (window.lucide) window.lucide.createIcons();
+    }
+
+    // [QA-3] Inicializar desplegable Header Flujos Activos en Visor Virtual
+    const currentProviderId = window.globalContext.providerId || window.currentActiveProviderId;
+    if (window.initViewerFlujosContext && currentProviderId) {
+        window.initViewerFlujosContext(currentProviderId, flujoId);
     }
 
     // 6. Render Tabs

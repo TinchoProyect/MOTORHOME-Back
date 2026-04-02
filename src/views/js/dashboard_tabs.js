@@ -110,13 +110,24 @@ async function loadProcessedFiles() {
 
         // Cache Busting
         const ts = new Date().getTime();
-        const res = await fetch(`${backendUrl}/api/files/processed-list?providerId=${providerId}&_t=${ts}`);
+        
+        // Carga Concurrente de Archivos y Flujos (Evita Waterfall / Bloqueo)
+        const [resParams, resFlujos] = await Promise.all([
+            fetch(`${backendUrl}/api/files/processed-list?providerId=${providerId}&_t=${ts}`),
+            fetch(`${backendUrl}/api/flujos/${providerId}`).catch(e => ({ ok: false }))
+        ]);
 
-        const result = await res.json();
-
+        const result = await resParams.json();
         if (!result.success) throw new Error(result.error);
 
-        renderProcessedGrid(result.files);
+        let flujosDisponibles = [];
+        if (resFlujos.ok) {
+            flujosDisponibles = await resFlujos.json();
+            window.cachedFlujosProviderId = providerId;
+            window.cachedFlujos = flujosDisponibles;
+        }
+
+        renderProcessedGrid(result.files, flujosDisponibles);
 
     } catch (error) {
         console.error("Error loading processed:", error);
@@ -124,7 +135,7 @@ async function loadProcessedFiles() {
     }
 }
 
-function renderProcessedGrid(files) {
+function renderProcessedGrid(files, flujosDisponibles = []) {
     const container = document.getElementById('fileListDB');
     if (!container) return;
 
@@ -142,40 +153,59 @@ function renderProcessedGrid(files) {
     // Ordenar archivos por fecha más reciente primero
     const sortedFiles = [...files].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    // Se agrega pt-6 para que el hover y la etiqueta superior no se corten con el contenedor padre
-    let html = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 pr-2 pb-10 pt-6">`;
+    let html = `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pr-2 pb-10 pt-6">`;
+
+    // Preparar opciones del select
+    let flujosOptionsHtml = `<option value="">-- Sin Flujo (Crudo) --</option>`;
+    if (flujosDisponibles && flujosDisponibles.length > 0) {
+        flujosDisponibles.forEach(f => {
+            flujosOptionsHtml += `<option value="${f.id_flujo}">${f.nombre_flujo}</option>`;
+        });
+    }
 
     sortedFiles.forEach((file, index) => {
         const isNewest = index === 0;
         const currentBorderClass = isNewest ? 'border-emerald-500/60 shadow-lg shadow-emerald-900/30' : 'border-slate-800';
-        const badgeHtml = isNewest ? `<div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white font-bold text-[9px] px-3 py-0.5 rounded-full shadow-lg shadow-emerald-900/50 border border-emerald-400/50 z-20 whitespace-nowrap">NUEVO</div>` : '';
+        const badgeHtml = isNewest ? `<div class="absolute -top-3 left-6 bg-emerald-600 text-white font-bold text-[9px] px-3 py-0.5 rounded-full shadow-lg shadow-emerald-900/50 border border-emerald-400/50 z-20 whitespace-nowrap tracking-wider">RECIENTE</div>` : '';
 
         html += `
-            <div onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')" 
-                class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border ${currentBorderClass} hover:border-emerald-400 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-900/40">
+            <div class="group relative bg-slate-900/60 hover:bg-slate-900/90 border ${currentBorderClass} hover:border-emerald-400/80 rounded-2xl p-5 flex flex-col justify-between transition-all shadow-xl hover:-translate-y-1 hover:shadow-emerald-900/30 min-h-[160px]">
                 
                 ${badgeHtml}
 
-                <div class="absolute top-2 left-2 z-10" onclick="event.stopPropagation()">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-lg shadow-emerald-500/10">
+                        <i data-lucide="file-check" class="w-6 h-6 text-emerald-400"></i>
+                    </div>
+                    
+                    <div class="flex-1 min-w-0 pr-8">
+                        <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide group-hover:text-emerald-400 transition-colors" title="${file.nombre_archivo}">${file.nombre_archivo}</p>
+                        <div class="flex items-center gap-4 mt-2">
+                            <span class="text-[10px] text-emerald-500 font-mono font-bold flex items-center gap-1.5"><i data-lucide="layers" class="w-3 h-3"></i> ${file.items_count || 0} ITEMS</span>
+                            <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
                     <input type="checkbox" 
-                        class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                        class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer transition-colors"
                         onchange="toggleSelection('${file.id}', this)"
                     >
                 </div>
 
-                <div class="absolute top-2 right-2 text-emerald-500">
-                    <i data-lucide="check-circle-2" class="w-3 h-3"></i>
-                </div>
-
-                <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg shadow-emerald-500/10">
-                    <i data-lucide="file-check" class="w-6 h-6 text-emerald-400"></i>
-                </div>
-                
-                <p class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors">${file.nombre_archivo}</p>
-                
-                <div class="mt-auto flex flex-col items-center">
-                    <span class="text-[9px] text-emerald-600/80 font-mono font-bold">${file.items_count || 0} ITEMS</span>
-                    <span class="text-[10px] text-slate-400 font-mono mt-0.5">${new Date(file.created_at).toLocaleDateString()}</span>
+                <div class="mt-5 pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
+                    <div class="flex-1 relative" onclick="event.stopPropagation()">
+                        <i data-lucide="workflow" class="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
+                        <select id="flujo_select_${file.id}" class="w-full bg-slate-950 border border-slate-800 text-slate-300 text-[11px] font-medium rounded-xl pl-9 pr-3 py-2 focus:ring-emerald-500 focus:border-emerald-500 appearance-none cursor-pointer hover:border-slate-600 transition-colors shadow-inner">
+                            ${flujosOptionsHtml}
+                        </select>
+                        <i data-lucide="chevron-down" class="absolute right-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
+                    </div>
+                    
+                    <button class="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-lg hover:shadow-emerald-600/40" onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')">
+                        Abrir <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                    </button>
                 </div>
             </div>
         `;
@@ -189,6 +219,20 @@ function renderProcessedGrid(files) {
 // Logic: Open Processed File (Content Fetch + Adapter)
 window.openProcessedFile = async function (rawListId, fileName) {
     console.log(`[Dashboard] Opening processed file ${rawListId}...`);
+
+    // [QA-2] Obtener flujo seleccionado del combobox si existe
+    let selectedFlujoId = null;
+    const selectEl = document.getElementById(`flujo_select_${rawListId}`);
+    if (selectEl) {
+        if (selectEl.value !== "") {
+            selectedFlujoId = selectEl.value;
+            console.log(`[Dashboard] Se aplicará Flujo ID: ${selectedFlujoId}`);
+        } else {
+            // [QA-3] Bug 3: Fuerza estado sin hidratación
+            selectedFlujoId = "CRUDO";
+            console.log(`[Dashboard] Se aplicará modo puro CRUDO sin plantillas V3/V4 pre-existentes.`);
+        }
+    }
 
     // 1. UI Loading
     // [TABULA RASA] - Ensure Start Clean for Reader Mode
@@ -226,15 +270,13 @@ window.openProcessedFile = async function (rawListId, fileName) {
         const workbookMap = window.adaptJsonToWorkbook(result.items);
 
         // 4. INJECT into Viewer Engine
-        // 🔥 CORRECCIÓN CRÍTICA: Recuperar nombre del proveedor de forma robusta
-        // 4. INJECT into Viewer Engine
         // [REFACTOR] Use Centralized Provider Resolver
         const providerContext = window.resolveProviderContext(window.currentActiveProviderId);
         const providerName = providerContext.nombre;
 
         if (window.loadVirtualWorkbook) {
-            // Pasamos el providerName como 3er argumento
-            window.loadVirtualWorkbook(workbookMap, fileName, providerName);
+            // Pasamos el providerName como 3er argumento y selectedFlujoId
+            window.loadVirtualWorkbook(workbookMap, fileName, providerName, selectedFlujoId);
         } else {
             console.warn("Viewer Engine does not support external loading yet.");
             alert("Error: El motor del visor no admite carga externa. Actualizar viewer_engine.");

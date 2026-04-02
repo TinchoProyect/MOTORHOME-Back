@@ -423,6 +423,15 @@
                         <div class="flex items-center gap-3">
                             <h2 id="viewerTitle" class="text-sm font-bold text-white tracking-wide">Documento</h2>
                             <div id="viewerBadges" class="flex items-center gap-2"></div>
+                            
+                            <!-- [QA-3] Flujo Activo Selector -->
+                            <div id="activeFlujoContainer" class="hidden items-center ml-4 border-l border-slate-700 pl-4 transition-all">
+                                <span class="text-[9px] text-fuchsia-400 font-mono font-bold mr-2 uppercase tracking-widest flex items-center gap-1"><i data-lucide="workflow" class="w-3 h-3"></i> Flujo Actual:</span>
+                                <select id="headerFlujoSelect" class="bg-slate-900 border border-fuchsia-500/30 text-white font-medium text-[10px] rounded px-2 py-1 shadow-lg shadow-fuchsia-900/20 focus:ring-fuchsia-500 focus:border-fuchsia-500" onchange="window.cambiarFlujoActivo && window.cambiarFlujoActivo(this.value)">
+                                    <option value="">-- Sin Flujo (Blanc Slate) --</option>
+                                </select>
+                            </div>
+
                         </div>
                         <p class="text-[10px] text-slate-500 font-mono tracking-wider">MODO LECTURA</p>
                     </div>

@@ -133,6 +133,14 @@ const VisibilityManager = {
     },
     
     /**
+     * Resetea la memoria de ocultamiento al formato nativo (vacio/crudo)
+     */
+    reset() {
+        window.hiddenColumns = {};
+        console.log("👁️ [VISIBILIDAD] Menú de ocultamiento formateado a cero (Crudo).");
+    },
+    
+    /**
      * Recovery V3 (Save)
      */
     serializeSettings() {

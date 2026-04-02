@@ -58,20 +58,28 @@ window.toggleGlobalPreview = function () {
 };
 
 // --- 5. STATE RESET PROTOCOL ---
-window.resetViewerState = function () {
-    console.log("🧹 Resetting Viewer State...");
+window.resetViewerState = function (preserveData = false) {
+    console.log("🧹 Resetting Viewer State...", preserveData ? "(Preserving Data)" : "");
 
     // Variables de Datos
-    currentSheetData = [];
-    currentSheetName = null;
+    if (!preserveData) {
+        currentSheetData = [];
+        currentSheetName = null;
+        currentFileBuffer = null;
+        workbook = null;
+    }
 
     // Variables de Mapeo
     mappingMode = false;
     window.virtualColumns = [];
     window.computedColumns = []; // V5
     columnMapping = {};
+    window.draftPipelines = {}; // V8
     currentOffset = { row: 0, col: 0 };
     processingRules = {};
+
+    if (window.LayoutManager) window.LayoutManager.reset();
+    if (window.ViewerVisibilityManager) window.ViewerVisibilityManager.reset();
 
     // CORRECCIÓN: Limpiar la caché de términos para evitar fugas entre proveedores
     nomenclatureCache = [];
@@ -84,7 +92,7 @@ window.resetViewerState = function () {
     // UI Reset
     if (window.ViewerUI) {
         window.ViewerUI.resetView();
-        window.ViewerUI.updateHeader("", {});
+        if (!preserveData) window.ViewerUI.updateHeader("", {});
     }
 };
 
@@ -332,6 +340,98 @@ window.solicitarGuardadoFlujo = async function () {
     }
 };
 
+// =============================================================================
+// --- 6.D. UI DE CONTEXTO Y CAMBIO DE FLUJO (QA-3) ---
+// =============================================================================
+window.initViewerFlujosContext = async function (providerId, activeFlujoId) {
+    const container = document.getElementById('activeFlujoContainer');
+    const selectEl = document.getElementById('headerFlujoSelect');
+    if (!container || !selectEl || !providerId) return;
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        
+        // Optimización: Si ya los descargó el dashboard, los rehúsa.
+        let flujos = window.cachedFlujos || [];
+        if (!window.cachedFlujosProviderId || window.cachedFlujosProviderId !== providerId) {
+            const res = await fetch(`${backendUrl}/api/flujos/${providerId}`);
+            if (res.ok) {
+                flujos = await res.json();
+            }
+        }
+
+        if (flujos && flujos.length > 0) {
+            let optionsHtml = `<option value="">-- Sin Flujo (Blanc Slate) --</option>`;
+            flujos.forEach(f => {
+                const selected = (f.id_flujo === activeFlujoId) ? 'selected' : '';
+                optionsHtml += `<option value="${f.id_flujo}" ${selected}>${f.nombre_flujo}</option>`;
+            });
+            selectEl.innerHTML = optionsHtml;
+            container.classList.remove('hidden');
+            container.classList.add('flex');
+        } else {
+            container.classList.add('hidden');
+            container.classList.remove('flex');
+        }
+
+    } catch (e) {
+        console.error("Error inicializando Header Flujos Context:", e);
+    }
+};
+
+window.cambiarFlujoActivo = async function(flujoId) {
+    console.log(`[ViewerCore] Cambiando Flujo al vuelo a ID: ${flujoId}`);
+    
+    // Validar si hay datos en pantalla
+    if (!window.currentSheetData) {
+        alert("Primero debe cargar una hoja de datos.");
+        return;
+    }
+
+    if (!flujoId || flujoId === "") {
+        if (!confirm("¿Está seguro de limpiar todo y volver al formato en crudo?")) return;
+        window.resetViewerState(true);
+        window.globalContext.flujoId = null;
+        if (currentSheetName) window.loadSheet(currentSheetName);
+        return;
+    }
+
+    // Modal de confirmación (Pisar cambios)
+    if (!confirm("¿Desea aplicar este flujo? Esto sobreescribirá todas las columnas y fórmulas actuales.")) return;
+
+    // Actualizar global context y forzar carga
+    window.globalContext.flujoId = flujoId;
+    
+    const uiBtn = document.getElementById('headerFlujoSelect');
+    if(uiBtn) uiBtn.disabled = true;
+
+    try {
+        // [TABULA RASA] Limpiar estado previo preservando DATA
+        window.resetViewerState(true);
+        window.globalContext.flujoId = flujoId; // Restaurar el flujoId porque el reset lo borra
+
+        // Relanzar la carga de la configuración que hidratará todo mágicamente
+        const loaded = await window.loadSavedConfiguration();
+        
+        if (loaded) {
+            // Re-render
+            if (window.currentSheetData) {
+                window.renderVirtualTable(window.currentSheetData);
+            }
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({ icon: 'success', title: 'Flujo Aplicado', timer: 1500, showConfirmButton: false });
+            }
+        } else {
+            alert("No se pudo cargar el flujo seleccionado.");
+        }
+    } catch (error) {
+        console.error("Error cambiando de flujo al vuelo:", error);
+        alert("Ocurrió un error al aplicar el flujo.");
+    } finally {
+        if(uiBtn) uiBtn.disabled = false;
+    }
+};
+
 // --- 6.1. PERSISTENCE LOGIC (Reset/Delete) ---
 /**
  * Elimina la configuración guardada y resetea el visor.
@@ -397,6 +497,12 @@ window.loadSavedConfiguration = async function () {
     const sheetName = currentSheetName || 'Sheet1';
 
     if (!providerId) return false;
+
+    // [Bug 3 - QA] Si es un modo CRUDO forzado, detener inmediatamente.
+    if (window.globalContext.flujoId === "CRUDO" || window.globalContext.flujoId === "") {
+        console.log("🛑 Modos CRUDO explícitos: abortando hidrataciones V3/V4 de legado.");
+        return false;
+    }
 
     const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
     let loadedAnything = false;
