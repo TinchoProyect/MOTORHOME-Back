@@ -186,9 +186,11 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
 
         // Preparar opciones para este archivo (evaluando selección)
         let currentOptionsHtml = `<option value="">-- Sin Flujo (Crudo) --</option>`;
+        let asignadoName = "Sin asignar";
         if (flujosDisponibles && flujosDisponibles.length > 0) {
             flujosDisponibles.forEach(f => {
                 const isSelected = file.flujo_asignado_id === f.id_flujo ? 'selected' : '';
+                if (file.flujo_asignado_id === f.id_flujo) asignadoName = f.nombre_flujo;
                 currentOptionsHtml += `<option value="${f.id_flujo}" ${isSelected}>${f.nombre_flujo}</option>`;
             });
         }
@@ -209,6 +211,15 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                             <span class="text-[10px] text-emerald-500 font-mono font-bold flex items-center gap-1.5"><i data-lucide="layers" class="w-3 h-3"></i> ${file.items_count || 0} ITEMS</span>
                             <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()}</span>
                         </div>
+                        <div id="status_label_${file.id}">
+                            <div class="mt-3 flex items-center gap-2 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
+                                <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${file.flujo_asignado_id ? 'bg-fuchsia-900/30 text-fuchsia-400 border border-fuchsia-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700'}">
+                                    <i data-lucide="${file.flujo_asignado_id ? 'pin' : 'circle-dashed'}" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i>
+                                    ${file.flujo_asignado_id ? 'Fijado' : 'Sin fijar'}
+                                </span>
+                                <span class="text-[10px] font-medium text-slate-300 truncate" title="${asignadoName}">${asignadoName}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -219,8 +230,9 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                     >
                 </div>
 
-                <div class="mt-5 pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
-                    <div class="flex-1 flex gap-2" onclick="event.stopPropagation()">
+                <div class="mt-5 pt-4 border-t border-slate-800 flex flex-col gap-3">
+                    <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest pl-1">Asignación de Flujo (Plantilla)</label>
+                    <div class="flex items-center gap-2" onclick="event.stopPropagation()">
                         <div class="relative flex-1">
                             <i data-lucide="workflow" class="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
                             <select id="flujo_select_${file.id}" class="w-full bg-slate-950 border border-slate-800 text-slate-300 text-[11px] font-medium rounded-xl pl-9 pr-8 py-2 focus:ring-emerald-500 focus:border-emerald-500 appearance-none cursor-pointer hover:border-slate-600 transition-colors shadow-inner truncate">
@@ -233,8 +245,8 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                         </button>
                     </div>
                     
-                    <button class="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-lg hover:shadow-emerald-600/40" onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')">
-                        Abrir <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                    <button class="w-full bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-emerald-600/40" onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')">
+                        Abrir Documento <i data-lucide="arrow-right" class="w-3.5 h-3.5 relative top-px"></i>
                     </button>
                 </div>
             </div>
@@ -272,6 +284,26 @@ window.pinFlujo = async function(fileId) {
         btn.innerHTML = `<i data-lucide="${flujo_id ? 'check' : 'check-circle'}" class="w-4 h-4 text-emerald-400"></i>`;
         if (window.lucide) window.lucide.createIcons();
         
+        // Update Asignado Label UI
+        const isFijado = flujo_id !== null;
+        let asignadoName = "Sin asignar";
+        if (isFijado && selectEl.options[selectEl.selectedIndex]) {
+            asignadoName = selectEl.options[selectEl.selectedIndex].text;
+        }
+
+        const labelContainer = document.getElementById(`status_label_${fileId}`);
+        if(labelContainer) {
+            labelContainer.innerHTML = `
+                <div class="mt-3 flex items-center gap-2 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50 animate-in fade-in zoom-in-95 duration-200">
+                    <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${isFijado ? 'bg-fuchsia-900/30 text-fuchsia-400 border border-fuchsia-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700'}">
+                        <i data-lucide="${isFijado ? 'pin' : 'circle-dashed'}" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i>
+                        ${isFijado ? 'Fijado' : 'Sin fijar'}
+                    </span>
+                    <span class="text-[10px] font-medium text-slate-300 truncate" title="${asignadoName}">${asignadoName}</span>
+                </div>
+            `;
+        }
+
         setTimeout(() => {
             if (flujo_id) {
                 btn.className = "p-2 shrink-0 border rounded-xl transition-all flex items-center justify-center text-fuchsia-400 bg-fuchsia-900/20 border-fuchsia-500/30 hover:border-fuchsia-500/50";
