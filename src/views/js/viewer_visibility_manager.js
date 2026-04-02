@@ -54,8 +54,32 @@ const VisibilityManager = {
                 if (excel && excel.parentNode) {
                     pillsCont = document.createElement('div');
                     pillsCont.id = 'visibilityPillsContainer';
-                    pillsCont.className = 'flex flex-wrap gap-2 mb-2 w-full min-h-[5px]';
+                    // Nuevo Diseño: Fila oscura, al ras, con padding
+                    pillsCont.className = 'flex items-center justify-between px-3 py-2 w-full bg-slate-900 border-b border-t border-slate-800 shadow-sm shrink-0 z-10';
                     excel.parentNode.insertBefore(pillsCont, excel);
+                    
+                    // Asegurar que el contenedor padre no tenga fondo blanco resplandeciente
+                    const vc = document.getElementById('viewerContent');
+                    if (vc) {
+                        vc.classList.remove('bg-slate-100');
+                        vc.classList.add('bg-slate-950');
+                    }
+                    
+                    // --- INITIALIZE STRUCTURE ONCE ---
+                    const leftWrap = document.createElement('div');
+                    leftWrap.id = 'vmpLeftWrap';
+                    leftWrap.className = 'flex items-center gap-3 flex-grow';
+                    pillsCont.appendChild(leftWrap);
+
+                    const rightWrap = document.createElement('div');
+                    rightWrap.id = 'vmpRightWrap';
+                    rightWrap.className = 'flex items-center gap-2';
+                    pillsCont.appendChild(rightWrap);
+                    
+                    // Inyectar Filtro Universal Solo una Vez
+                    if (window.GlobalSearchFilter) {
+                        leftWrap.innerHTML = window.GlobalSearchFilter.render('visor', 'filterVisorData');
+                    }
                 }
             }
             parent = pillsCont;
@@ -63,7 +87,13 @@ const VisibilityManager = {
 
         if (!parent) return;
 
-        parent.innerHTML = '';
+        // --- SECCIÓN DERECHA: Visibilidad (ACTUALIZACIÓN DINÁMICA) ---
+        const rightWrap = document.getElementById('vmpRightWrap');
+        if (!rightWrap) return;
+        
+        // Limpiamos SOLO el panel derecho con los botones
+        rightWrap.innerHTML = ''; 
+
         const hiddenKeys = Object.keys(window.hiddenColumns || {});
         
         // Ocultar individual (Solo si hay ocultas)
@@ -73,18 +103,24 @@ const VisibilityManager = {
             btnAll.title = "Restaurar todo el espacio de trabajo";
             btnAll.innerHTML = `<i data-lucide="eye" class="w-3.5 h-3.5 mr-1.5 inline"></i> Mostrar Ocultas (${hiddenKeys.length})`;
             btnAll.onclick = () => this.showColumn('all');
-            parent.appendChild(btnAll);
+            rightWrap.appendChild(btnAll);
         }
 
-        // [FIX] Función global: Ocultar todas las no mapeadas (Siempre visible)
+        // Función global: Ocultar todas las no mapeadas (Siempre visible)
         const btnHideUnmapped = document.createElement('button');
-        btnHideUnmapped.className = "text-[10px] bg-slate-800/80 border border-slate-700 hover:bg-slate-700 hover:text-red-300 text-slate-400 px-2 py-1.5 rounded shadow-sm flex items-center transition-colors ml-auto";
+        btnHideUnmapped.className = "text-[10px] bg-slate-800/80 border border-slate-700 hover:bg-slate-700 hover:text-red-300 text-slate-400 px-2 py-1.5 rounded shadow-sm flex items-center transition-colors";
         btnHideUnmapped.title = "Esconder las columnas que no estás usando";
         btnHideUnmapped.innerHTML = `<i data-lucide="eye-off" class="w-3.5 h-3.5 mr-1.5 inline"></i> Ocultar Basura (No Mapeadas)`;
         btnHideUnmapped.onclick = () => this.hideAllUnmapped();
-        parent.appendChild(btnHideUnmapped);
+        rightWrap.appendChild(btnHideUnmapped);
 
         if (window.lucide) window.lucide.createIcons({ root: parent });
+        
+        // Actualizar Select de Opciones (NO ROMPE FOCO)
+        if (window.GlobalSearchFilter && window.buildVisorFilterOptions) {
+            const options = window.buildVisorFilterOptions();
+            window.GlobalSearchFilter.updateOptions('visor', options);
+        }
     },
 
     /**

@@ -350,18 +350,8 @@ function renderVirtualTable(originalData) {
         for (let i = startDataIndex; i < endIndex; i++) {
             const row = data[i] || [];
 
-            // --- INJECTION: LIVE SEARCH FILTER FOR CUSTOM RULES ---
             let rowStyle = `height: ${ROW_HEIGHT}px;`;
             let rowClass = "hover:bg-slate-800/50";
-
-            if (window.activeCustomSearch && window.activeCustomSearch.text && window.activeCustomSearch.colIndex !== null) {
-                const searchTarget = String(row[window.activeCustomSearch.colIndex] || '').toLowerCase();
-                const searchQuery = window.activeCustomSearch.text.toLowerCase();
-                if (!searchTarget.includes(searchQuery)) {
-                    // Hide rows that don't match the live search
-                    rowStyle += " display: none;";
-                }
-            }
 
             rowsHtml += `<tr style="${rowStyle}" class="${rowClass}">`;
 
@@ -858,27 +848,19 @@ function generatePreview() {
         const container = document.getElementById('simulationTableContainer');
         if (!container) return;
 
-        let optionsHtml = '<option value="ALL">Todos los Campos</option>';
+        // Reuse GlobalSearchFilter component
+        let simOptions = [];
         displayConfig.forEach((cfg, idx) => {
-            optionsHtml += `<option value="${idx}">${cfg.label}</option>`;
+            simOptions.push({ label: cfg.label, value: idx });
         });
 
-        const toolbar = `
-            <div class="flex items-center gap-3 mb-2 p-2 bg-slate-900 border-b border-slate-700 sticky top-0 z-10">
-                <div class="relative flex-grow">
-                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"></i>
-                    <input type="text" id="simSearchInput" placeholder="Filtrar datos..." oninput="filterSimulationData()" 
-                        class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none">
-                </div>
-                <select id="simSearchField" onchange="filterSimulationData()" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 outline-none focus:border-emerald-500 max-w-[150px]">
-                    ${optionsHtml}
-                </select>
-                
-                <button onclick="saveSimulationConfig()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-blue-900/20 transition-all flex items-center gap-2">
-                    <i data-lucide="save" class="w-3 h-3"></i> Guardar
-                </button>
+        const filterHTML = window.GlobalSearchFilter ? window.GlobalSearchFilter.render('sim', 'filterSimulationData') : '<span class="text-slate-500">Search Loader Failed</span>';
 
-                <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700">
+        const toolbar = `
+            <div class="flex items-center gap-3 mb-2 p-2 bg-slate-900 border-b border-slate-700 sticky top-0 z-10 w-full">
+                ${filterHTML}
+                
+                <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700 ml-auto">
                     <span id="simFilteredCount">${sanitizedData.length}</span> / ${sanitizedData.length}
                 </div>
             </div>
@@ -888,18 +870,18 @@ function generatePreview() {
 
         container.innerHTML = toolbar;
         
-        // Recover Search Filter Memory state before redrawing items
-        if (window._activeSimSearchQuery !== undefined && window._activeSimSearchQuery !== "") {
+        if (window.GlobalSearchFilter) {
+            window.GlobalSearchFilter.updateOptions('sim', simOptions);
+            const state = window.GlobalSearchFilter.getState('sim');
+            
             const searchInp = document.getElementById('simSearchInput');
-            if (searchInp) searchInp.value = window._activeSimSearchQuery;
-        }
-        if (window._activeSimSearchField !== undefined && window._activeSimSearchField !== "") {
-            const searchField = document.getElementById('simSearchField');
-            if (searchField) searchField.value = window._activeSimSearchField;
-        }
-
-        if (window._activeSimSearchQuery && window._activeSimSearchQuery !== "") {
-            filterSimulationData();
+            if (searchInp && state.query) searchInp.value = state.query;
+            
+            if (state.query && state.query !== "") {
+                filterSimulationData();
+            } else {
+                renderSimulationTable(sanitizedData);
+            }
         } else {
             renderSimulationTable(sanitizedData);
         }
@@ -921,33 +903,33 @@ function generatePreview() {
 }
 
 function filterSimulationData() {
-    const rawQuery = document.getElementById('simSearchInput').value.toLowerCase().trim();
-    const fieldIdx = document.getElementById('simSearchField').value;
+    if (!window.GlobalSearchFilter) return;
+    window.GlobalSearchFilter.saveState('sim');
+    const state = window.GlobalSearchFilter.getState('sim');
+    
     const countEl = document.getElementById('simFilteredCount');
-
-    window._activeSimSearchQuery = document.getElementById('simSearchInput').value;
-    window._activeSimSearchField = fieldIdx;
-
-    if (!rawQuery) {
+    
+    if (!state.query) {
         renderSimulationTable(window.currentSimData);
         if (countEl) countEl.innerText = window.currentSimData.length;
         return;
     }
 
-    const terms = rawQuery.split(/\s+/).filter(t => t.length > 0);
+    const normString = (s) => s != null ? String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
+    const terms = normString(state.query).split(/\s+/).filter(t => t.length > 0);
 
     const filtered = window.currentSimData.filter(row => {
         return terms.every(term => {
-            if (fieldIdx === "ALL") {
+            if (state.field === "ALL") {
                 return window.currentDisplayConfig.some(cfg => {
                     const val = cfg.transform(row[cfg.sourceIndex], row);
-                    return String(val).toLowerCase().includes(term);
+                    return normString(val).includes(term);
                 });
             } else {
-                const cfg = window.currentDisplayConfig[parseInt(fieldIdx)];
+                const cfg = window.currentDisplayConfig[parseInt(state.field)];
                 if (!cfg) return false;
                 const val = cfg.transform(row[cfg.sourceIndex], row);
-                return String(val).toLowerCase().includes(term);
+                return normString(val).includes(term);
             }
         });
     });

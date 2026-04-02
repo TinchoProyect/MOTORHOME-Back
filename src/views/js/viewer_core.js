@@ -37,9 +37,85 @@ var currentSimData = [];
 var currentDisplayConfig = [];
 window.isGlobalPreviewEnabled = false;
 
+window.buildVisorFilterOptions = function() {
+    let options = [];
+    if (!window.virtualColumns) return options;
+    
+    const getHumanName = (idOrName) => {
+        if (!idOrName || idOrName === 'Ignorar Columna') return idOrName;
+        if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+            const match = window.masterDictionary.find(m => String(m.id) === String(idOrName) || String(m.nombre_campo) === String(idOrName));
+            if (match) return match.nombre_campo;
+        }
+        return idOrName;
+    };
+
+    window.virtualColumns.forEach(vCol => {
+        const j = vCol.id;
+        let pName = window.currentSheetData && window.currentSheetData[0] && window.currentSheetData[0][vCol.dataIdx] 
+            ? window.currentSheetData[0][vCol.dataIdx] 
+            : `Columna ${vCol.dataIdx + 1}`;
+            
+        if (window.draftPipelines && window.draftPipelines[j]) {
+            pName = getHumanName(window.draftPipelines[j].masterField?.nombre_campo || window.draftPipelines[j].masterField?.id);
+        } else if (window.columnMapping && window.columnMapping[j] && window.columnMapping[j] !== 'Ignorar Columna') {
+            pName = getHumanName(window.columnMapping[j]);
+        }
+        
+        // Agregar Columnas Calculadas Visibles
+        if (vCol.isCalculated && window.computedColumns) {
+            const comp = window.computedColumns.find(c => c.id === j);
+            if (comp) pName = `[Calc] ${comp.masterField?.nombre_campo || 'Calculada'}`;
+        }
+        
+        options.push({ label: pName, value: j });
+    });
+    return options;
+};
+
+window.filterVisorData = function() {
+    if (!window.GlobalSearchFilter) return;
+    window.GlobalSearchFilter.saveState('visor');
+    const state = window.GlobalSearchFilter.getState('visor');
+
+    if (!state.query) {
+        if (window.renderVirtualTable && currentSheetData) window.renderVirtualTable(currentSheetData);
+        return;
+    }
+
+    const normString = (s) => s != null ? String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
+    const qterms = normString(state.query).split(/\s+/).filter(x => x.length > 0);
+
+    const filtered = currentSheetData.map((row, index) => ({ row, index })) // Mantenemos el índice original si hace falta, aunque el scroller se come el obj. Mejor filtrar crudos
+        .filter(({row}) => {
+            return qterms.every(term => {
+                if (state.field === "ALL") {
+                    // Buscar en todas las columnas físicas
+                    return window.virtualColumns.some(v => {
+                        if (v.isCalculated) return false;
+                        return normString(row[v.dataIdx]).includes(term);
+                    });
+                } else {
+                    // Buscar en la columna específica
+                    const vTarget = window.virtualColumns.find(col => col.id === state.field);
+                    if (vTarget && !vTarget.isCalculated && vTarget.dataIdx !== undefined) {
+                        return normString(row[vTarget.dataIdx]).includes(term);
+                    }
+                    return false;
+                }
+            });
+    }).map(obj => obj.row);
+    
+    // IMPORTANTE: Al virtual scroller en renderVirtualTable(data) le setearemos la 'data' reducida.
+    if (window.renderVirtualTable) {
+        window.renderVirtualTable(filtered);
+    }
+};
+
 window.toggleGlobalPreview = function () {
     window.isGlobalPreviewEnabled = !window.isGlobalPreviewEnabled;
     const btn = document.getElementById('btnGlobalPreview');
+
     if (btn) {
         if (window.isGlobalPreviewEnabled) {
             btn.classList.add('bg-blue-600', 'text-white', 'border-blue-500');
@@ -815,3 +891,52 @@ window.loadSavedConfiguration = async function () {
 };
 
 console.log("🧠 [ViewerCore] Estado Global Inicializado (+Persistencia +CacheFix)");
+
+// =============================================================================
+// --- 8. REUSABLE SEARCH COMPONENT (Auditoría ETL & Simulador) ---
+// =============================================================================
+window.GlobalSearchFilter = {
+    render: function(targetIdPrefix, onSearchCallbackName) {
+        return `
+            <div class="flex items-center gap-2">
+                <div class="relative w-48">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"></i>
+                    <input type="text" id="${targetIdPrefix}SearchInput" placeholder="Filtrar datos..." oninput="${onSearchCallbackName}()" 
+                        class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1 text-[11px] text-white focus:border-emerald-500 outline-none shadow-inner">
+                </div>
+                <select id="${targetIdPrefix}SearchField" onchange="${onSearchCallbackName}()" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-emerald-500 max-w-[130px] w-auto">
+                    <!-- Inyectado dinámicamente -->
+                </select>
+            </div>
+        `;
+    },
+    
+    updateOptions: function(targetIdPrefix, optionsList) {
+        const sel = document.getElementById(`${targetIdPrefix}SearchField`);
+        if (!sel) return;
+        let html = '<option value="ALL">Todo</option>';
+        optionsList.forEach((opt, idx) => {
+            html += `<option value="${opt.value !== undefined ? opt.value : idx}">${opt.label}</option>`;
+        });
+        sel.innerHTML = html;
+        
+        if (this.state[targetIdPrefix]) {
+            sel.value = this.state[targetIdPrefix].field || "ALL";
+        }
+    },
+    
+    state: {},
+    
+    saveState: function(targetIdPrefix) {
+        const inp = document.getElementById(`${targetIdPrefix}SearchInput`);
+        const sel = document.getElementById(`${targetIdPrefix}SearchField`);
+        this.state[targetIdPrefix] = {
+            query: inp ? inp.value.toLowerCase().trim() : '',
+            field: sel ? sel.value : 'ALL'
+        };
+    },
+    
+    getState: function(targetIdPrefix) {
+        return this.state[targetIdPrefix] || { query: '', field: 'ALL' };
+    }
+};
