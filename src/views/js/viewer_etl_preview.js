@@ -4,6 +4,8 @@
  */
 
 // CORE ALGORITHM: Apply pipeline sequentially
+import astParser from "./viewer_etl_ast_parser.js";
+
 export function transformCell(rawValue, pipeline) {
     if (rawValue === undefined || rawValue === null) rawValue = "";
     let currentValue = String(rawValue).trim();
@@ -19,7 +21,16 @@ export function transformCell(rawValue, pipeline) {
 
         const isCustomReplace = rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:');
 
-        if (isCustomReplace) {
+        if (rule.tipo === 'ast_conditional') {
+            // Evaluador JSON AST (Zero RCE)
+            const astData = rule.ast || rule; 
+            const execution = astParser.executeAST(currentValue, astData);
+            if (execution.handled) {
+                currentValue = execution.result;
+                if (execution.rejected) isRejected = true;
+                continue;
+            }
+        } else if (isCustomReplace) {
             try {
                 const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
                 const parts = payload.split('|||');

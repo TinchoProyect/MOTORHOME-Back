@@ -355,6 +355,11 @@ export async function open(masterField, vColId, colName) {
 
     renderPipeline();
 
+    // Init AI Copilot UI dynamically (Cero Totem UI Injection)
+    if (window.viewerAiUi && typeof window.viewerAiUi.init === 'function') {
+        window.viewerAiUi.init();
+    }
+
     // Trigger Preview Immediately
     triggerPreview();
 }
@@ -691,6 +696,28 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false, co
     }
 }
 
+// [V5.22 UI] Direct Injection API from AI Copilot (Headless)
+export async function createLocalRuleDirect(ruleObj) {
+    if (!ruleObj) return false;
+    
+    console.log(`🤖 [WORKSHOP] Chofer IA Inyectando regla generada:`, ruleObj);
+    currentDraftPipeline.push({ ...ruleObj });
+    renderPipeline();
+    triggerPreview();
+    
+    // Si la consola está abierta, se ve visualmente. Si estuviese cerrada (modal inyección rápida), se forzaría guardado
+    if (!isPanelOpen && activeContext && activeContext.colIndex) {
+        if (!window.draftPipelines) window.draftPipelines = {};
+        window.draftPipelines[activeContext.colIndex] = {
+            masterField: activeContext.masterField,
+            colName: activeContext.colName,
+            rules: [...currentDraftPipeline]
+        };
+        if (typeof window.triggerSafeRender === 'function') window.triggerSafeRender();
+    }
+    return true;
+}
+
 export function getActiveState() {
     return {
         isOpen: isPanelOpen,
@@ -711,6 +738,7 @@ window.viewerRuleWorkshop = {
     applyMapping,
     getActiveState,
     createLocalRule,
+    createLocalRuleDirect,
     switchToComputedMode,
     switchToStandardMode
 };
