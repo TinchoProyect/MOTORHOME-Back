@@ -261,16 +261,62 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
 // =============================================================================
 // --- 6.C. PERSISTENCIA DE FLUJOS (PLANTILLAS V8) ---
 // =============================================================================
-window.solicitarGuardadoFlujo = async function () {
+window.unifiedSaveAction = async function() {
+    const activeFlujoId = window.globalContext.flujoId;
+    const isCrudo = !activeFlujoId || activeFlujoId === "CRUDO";
+
+    if (isCrudo) {
+        let nombreFlujo = prompt("🏁 Ingrese un nombre único para esta Plantilla:", "P. Ej: Lista Precios Mayorista");
+        if (!nombreFlujo || nombreFlujo.trim() === '') return;
+        window._executeFlujoSave(null, nombreFlujo);
+    } else {
+        const selectEl = document.getElementById('headerFlujoSelect');
+        let currentName = "Plantilla Activa";
+        if (selectEl && selectEl.options[selectEl.selectedIndex]) {
+            currentName = selectEl.options[selectEl.selectedIndex].text;
+        }
+
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Opciones de Guardado',
+                html: `Estás trabajando sobre el flujo <b>${currentName}</b>.<br><br>¿Deseas actualizarlo y sobreescribir los cambios, o crear un flujo nuevo?`,
+                icon: 'question',
+                showCancelButton: true,
+                showDenyButton: true,
+                confirmButtonText: '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Actualizar actual',
+                confirmButtonColor: '#10b981',
+                denyButtonText: '<i data-lucide="copy" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Guardar como nuevo',
+                denyButtonColor: '#d65ce6',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window._executeFlujoSave(activeFlujoId, currentName);
+                } else if (result.isDenied) {
+                    let nombreFlujo = prompt("🏁 Ingrese un nombre para la nueva Plantilla:", `${currentName} (Copia)`);
+                    if (!nombreFlujo || nombreFlujo.trim() === '') return;
+                    window._executeFlujoSave(null, nombreFlujo);
+                }
+            });
+            if (window.lucide) window.lucide.createIcons();
+        } else {
+            const op = confirm(`OK = Actualizar plantilla actual (${currentName})\nCANCEL = Crear plantilla nueva.`);
+            if (op) {
+                window._executeFlujoSave(activeFlujoId, currentName);
+            } else {
+                let nombreFlujo = prompt("🏁 Ingrese un nombre único para la nueva Plantilla:", `${currentName} (Copia)`);
+                if (!nombreFlujo || nombreFlujo.trim() === '') return;
+                window._executeFlujoSave(null, nombreFlujo);
+            }
+        }
+    }
+};
+
+window._executeFlujoSave = async function (id_flujo, nombreFlujo) {
     const providerId = window.globalContext.providerId;
     if (!providerId) {
         alert("Falta el Provider ID. No se puede guardar la plantilla.");
         return;
     }
-
-    // Modal sencillo para pedir el nombre
-    let nombreFlujo = prompt("🏁 Ingrese un nombre único para esta Plantilla:", "P. Ej: Lista Precios Mayorista");
-    if (!nombreFlujo || nombreFlujo.trim() === '') return;
 
     // Construcción del config_payload
     const payload = {
@@ -289,7 +335,7 @@ window.solicitarGuardadoFlujo = async function () {
     const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
     
     // UI Botón
-    const btn = document.getElementById('btnSaveFlujo');
+    const btn = document.getElementById('btnSaveConfig');
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Guardando...`;
@@ -298,7 +344,7 @@ window.solicitarGuardadoFlujo = async function () {
 
     try {
         const bodyReq = {
-            id_flujo: window.globalContext.flujoId || null, 
+            id_flujo: id_flujo,
             proveedor_id: providerId,
             nombre_flujo: nombreFlujo,
             config_payload: payload
@@ -313,13 +359,19 @@ window.solicitarGuardadoFlujo = async function () {
         const result = await res.json();
         if (!res.ok) throw new Error(result.error || "Fallo en API /flujos");
 
-        window.globalContext.flujoId = result.flujo.id_flujo;
+        // Si se creó uno nuevo, actualizar el contexto con su ID
+        if (!id_flujo || window.globalContext.flujoId !== result.flujo.id_flujo) {
+            window.globalContext.flujoId = result.flujo.id_flujo;
+            if (window.initViewerFlujosContext) {
+                await window.initViewerFlujosContext(providerId, result.flujo.id_flujo);
+            }
+        }
 
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 icon: 'success',
                 title: 'Flujo Guardado',
-                text: 'La plantilla quedó sellada existosamente.',
+                text: id_flujo ? 'El flujo fue actualizado exitosamente.' : 'Nuevo flujo creado exitosamente.',
                 timer: 2000,
                 showConfirmButton: false
             });
@@ -334,7 +386,7 @@ window.solicitarGuardadoFlujo = async function () {
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = `<i data-lucide="workflow" class="w-3 h-3"></i> Guardar Flujo`;
+            btn.innerHTML = `<i data-lucide="save" class="w-3 h-3"></i> Guardar`;
             if (window.lucide) window.lucide.createIcons();
         }
     }
