@@ -257,7 +257,9 @@ export async function open(masterField, vColId, colName) {
                 if (idx !== -1) window.virtualColumns.splice(idx, 1);
             }
 
-            if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+            if (typeof window.triggerSafeRender === 'function') {
+                window.triggerSafeRender();
+            } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
                 window.renderVirtualTable(window.currentSheetData);
             }
             if (typeof window.saveSheetState === 'function') {
@@ -296,7 +298,9 @@ export async function open(masterField, vColId, colName) {
             activeVColId = newVColId;
 
             // Forzar render de la tabla virtual para mostrar la nueva columna ahora visualmente
-            if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+            if (typeof window.triggerSafeRender === 'function') {
+                window.triggerSafeRender();
+            } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
                 window.renderVirtualTable(window.currentSheetData);
             }
         }
@@ -332,13 +336,6 @@ export async function open(masterField, vColId, colName) {
     const panel = document.getElementById('viewerRightPanel');
     if (panel) {
         panel.classList.remove('hidden', 'translate-x-full', 'opacity-0');
-    }
-
-    // Shrink excelContainer so scrollbar is visible
-    const excelContainer = document.getElementById('excelContainer');
-    if (excelContainer) {
-        excelContainer.style.paddingRight = '400px'; // Panel width + margin
-        excelContainer.style.transition = 'padding-right 0.3s ease-in-out';
     }
 
     if (window.lucide) window.lucide.createIcons();
@@ -451,15 +448,11 @@ export function close() {
     // Reset live search and force clean render
     if (window.activeCustomSearch && window.activeCustomSearch.text !== "") {
         window.activeCustomSearch.text = "";
-        if (typeof renderVirtualTable === 'function' && window.currentSheetData) {
+        if (typeof window.triggerSafeRender === 'function') {
+            window.triggerSafeRender();
+        } else if (typeof renderVirtualTable === 'function' && window.currentSheetData) {
             renderVirtualTable(window.currentSheetData);
         }
-    }
-
-    // Restore excelContainer width
-    const excelContainer = document.getElementById('excelContainer');
-    if (excelContainer) {
-        excelContainer.style.paddingRight = '0px';
     }
 
     if (window.viewerMapper) {
@@ -678,7 +671,10 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false, co
                     }
 
                     // [V5.21 UX] Force a redraw of the Virtual Scroller so the newly injected RAM rule takes effect visually
-                    if (window.renderVirtualTable && window.viewerState && window.viewerState.data) {
+                    if (typeof window.triggerSafeRender === 'function') {
+                        console.log(`[VIGIA AUDITOR] 5. Forzando repintado seguro de la grilla virtual con los nuevos datos en RAM.`);
+                        window.triggerSafeRender();
+                    } else if (window.renderVirtualTable && window.viewerState && window.viewerState.data) {
                         console.log(`[VIGIA AUDITOR] 5. Forzando repintado de la grilla virtual con los nuevos datos en RAM.`);
                         window.renderVirtualTable(window.viewerState.data);
                     }

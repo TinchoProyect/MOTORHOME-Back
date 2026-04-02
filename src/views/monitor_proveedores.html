@@ -550,54 +550,55 @@
                         <i data-lucide="alert-triangle" class="w-12 h-12 mb-4"></i>
                         <p id="viewerErrorMessage" class="text-sm font-bold">Error al cargar archivo</p>
                     </div>
+                </div> <!-- FIN DE VIEWER CONTENT -->
 
-                    <!-- PANEL LATERAL DERECHO (Taller de Reglas) - POSICIÓN ABSOLUTA -->
-                    <aside id="viewerRightPanel"
-                        class="absolute right-0 top-0 bottom-0 bg-slate-950/95 backdrop-blur-xl border-l border-slate-800 flex flex-col hidden z-50 shadow-2xl transition-[transform,opacity] duration-300 ease-in-out w-96 transform translate-x-full opacity-0">
-                        <div class="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col shrink-0">
-                            <div class="flex items-center justify-between mb-3">
-                                <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                                    <i data-lucide="wrench" class="w-4 h-4 text-emerald-400"></i> Taller de
-                                    Transformación
-                                </h3>
-                                <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.close()"
-                                    class="text-slate-500 hover:text-white transition-colors bg-slate-800 p-1.5 rounded-lg"><i
-                                        data-lucide="x" class="w-4 h-4"></i></button>
-                            </div>
-                            <p class="text-[10px] text-slate-500 font-mono tracking-wider">MAPEO DE DATOS EN CURSO</p>
-                            <div class="mt-2 text-[11px] text-blue-300 font-bold bg-blue-900/20 p-2.5 rounded-lg border border-blue-500/30 flex flex-col gap-1 shadow-inner"
-                                id="vrwCurrentMappingInfo">
-                                Cargando contexto...
-                            </div>
+                <!-- PANEL LATERAL DERECHO (Taller de Reglas) - LADO A LADO -->
+                <aside id="viewerRightPanel"
+                    class="bg-slate-950 border-l border-slate-800 flex flex-col hidden shadow-xl transition-[width,transform,opacity] duration-300 ease-in-out w-[430px] flex-shrink-0 relative transform translate-x-full opacity-0">
+                    <div class="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col shrink-0">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                <i data-lucide="wrench" class="w-4 h-4 text-emerald-400"></i> Taller de
+                                Transformación
+                            </h3>
+                            <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.close()"
+                                class="text-slate-500 hover:text-white transition-colors bg-slate-800 p-1.5 rounded-lg"><i
+                                    data-lucide="x" class="w-4 h-4"></i></button>
                         </div>
+                        <p class="text-[10px] text-slate-500 font-mono tracking-wider">MAPEO DE DATOS EN CURSO</p>
+                        <div class="mt-2 text-[11px] text-blue-300 font-bold bg-blue-900/20 p-2.5 rounded-lg border border-blue-500/30 flex flex-col gap-1 shadow-inner"
+                            id="vrwCurrentMappingInfo">
+                            Cargando contexto...
+                        </div>
+                    </div>
 
-                        <div class="flex flex-col flex-grow overflow-y-auto custom-scrollbar w-full p-4 space-y-6">
-                            <!-- CONTROLES MODO CALCULADORA (V5 Computed) -->
-                            <div id="vrwComputedMode" class="hidden shrink-0 flex flex-col space-y-4">
-                                <div class="bg-purple-900/10 p-4 rounded-xl border border-purple-500/30 flex flex-col gap-3">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <i data-lucide="calculator" class="w-4 h-4 text-purple-400"></i>
-                                        <label class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Editor de Fórmula Matemática</label>
-                                    </div>
-                                    
+                    <div class="flex flex-col flex-grow overflow-y-auto custom-scrollbar w-full p-4 space-y-6">
+                        <!-- CONTROLES MODO CALCULADORA (V5 Computed) -->
+                        <div id="vrwComputedMode" class="hidden shrink-0 flex flex-col space-y-4">
+                            <div class="bg-purple-900/10 p-4 rounded-xl border border-purple-500/30 flex flex-col gap-3">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <i data-lucide="calculator" class="w-4 h-4 text-purple-400"></i>
+                                    <label class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Editor de Fórmula Matemática</label>
+                                </div>
+                                
+                                <div class="space-y-1">
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase">Nombre de la Columna</label>
+                                    <input type="text" id="calcColName" value="Precio Final"
+                                        class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500/50 shadow-inner">
+                                </div>
+                
+                                <div class="space-y-1">
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase">Operación</label>
+                                    <select id="calcOperation"
+                                        class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-colors">
+                                        <option value="PRICE_MINUS_DISCOUNT_PERCENT">Descuento (A - B%)</option>
+                                        <option value="CLONE">Obtener de otra columna (Clonar A)</option>
+                                    </select>
+                                </div>
+                
+                                <div class="grid grid-cols-2 gap-3 mt-2">
                                     <div class="space-y-1">
-                                        <label class="text-[10px] font-bold text-slate-500 uppercase">Nombre de la Columna</label>
-                                        <input type="text" id="calcColName" value="Precio Final"
-                                            class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500/50 shadow-inner">
-                                    </div>
-                    
-                                    <div class="space-y-1">
-                                        <label class="text-[10px] font-bold text-slate-500 uppercase">Operación</label>
-                                        <select id="calcOperation"
-                                            class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-colors">
-                                            <option value="PRICE_MINUS_DISCOUNT_PERCENT">Descuento (A - B%)</option>
-                                            <option value="CLONE">Obtener de otra columna (Clonar A)</option>
-                                        </select>
-                                    </div>
-                    
-                                    <div class="grid grid-cols-2 gap-3 mt-2">
-                                        <div class="space-y-1">
-                                            <label class="text-[10px] font-bold text-slate-500 uppercase">Precio Base (A)</label>
+                                        <label class="text-[10px] font-bold text-slate-500 uppercase">Precio Base (A)</label>
                                             <select id="calcFieldA"
                                                 class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none">
                                             </select>

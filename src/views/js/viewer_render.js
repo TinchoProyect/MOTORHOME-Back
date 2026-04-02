@@ -108,8 +108,9 @@ function renderVirtualTable(originalData) {
 
     // 🔥 STATE EXPOSURE FOR SATELLITE MODULES (v2.5)
     window.viewerState = { mapping: columnMapping, data: data };
-    // [V5.19 FIX] Ensure external scripts access the purely cleaned array, overriding any previous injection.
-    if (typeof currentSheetData !== 'undefined') currentSheetData = data;
+    // [V5.19 FIX REVERTED] Ya no sobreescribimos currentSheetData aquí, 
+    // porque si 'data' es un subconjunto filtrado por el buscador, 
+    // destruiríamos el dataset global maestro irreversíblemente.
 
     const container = document.getElementById('excelContainer');
     if (container) {
@@ -370,8 +371,13 @@ function renderVirtualTable(originalData) {
 
                 const minRow = window.currentOffset ? window.currentOffset.row : 0;
                 const minCol = window.currentOffset ? window.currentOffset.col : 0;
-                const isIgnored = (i < minRow) || (dataIdx < minCol);
-                const isAnchor = (i === minRow && dataIdx === minCol);
+                
+                // Evitar bloqueo (isIgnored) en filas filtradas dinámicamente si el buscador está activo
+                const searchState = window.GlobalSearchFilter ? window.GlobalSearchFilter.getState('visor') : null;
+                const isSearchActive = searchState && searchState.query && searchState.query.trim().length > 0;
+                
+                const isIgnored = (!isSearchActive) && ((i < minRow) || (dataIdx < minCol));
+                const isAnchor = (!isSearchActive) && (i === minRow && dataIdx === minCol);
 
                 if (isIgnored) cellClass += " opacity-25 grayscale bg-slate-950/50";
                 if (!window.offsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
@@ -383,22 +389,23 @@ function renderVirtualTable(originalData) {
                 const savedPipeline = window.draftPipelines && window.draftPipelines[j] ? window.draftPipelines[j].rules : null;
                 const isGlobalAuditOn = window.isGlobalPreviewEnabled && savedPipeline && savedPipeline.length > 0;
 
-                let onCtx = "";
+                const safeRawVal = String(cellVal)
+                    .replace(/\\/g, "\\\\")
+                    .replace(/'/g, "\\'")
+                    .replace(/"/g, "&quot;")
+                    .replace(/\n/g, "\\n")
+                    .replace(/\r/g, "\\r");
+
+                // EXCEPCIONES: Bindear click derecho para TODAS las columnas renderizadas, sin importar si el ETL o Taller están en foco
+                let onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}')"`;
+                cellClass += " cursor-context-menu";
 
                 if (isWorkshopOpen || isGlobalAuditOn) {
-                    const safeRawVal = String(cellVal)
-                        .replace(/\\/g, "\\\\")
-                        .replace(/'/g, "\\'")
-                        .replace(/"/g, "&quot;")
-                        .replace(/\n/g, "\\n")
-                        .replace(/\r/g, "\\r");
-                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}')"`;
-
                     if (isWorkshopOpen) {
-                        cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50 cursor-context-menu";
+                        cellClass += " relative z-[60] bg-slate-800 shadow-[0_0_15px_rgba(59,130,246,0.3)] border-x border-blue-500/50";
                     } else {
                         // Estilo sutil para auditoría global
-                        cellClass += " relative bg-emerald-950/20 border-x border-emerald-500/20 cursor-context-menu";
+                        cellClass += " relative bg-emerald-950/20 border-x border-emerald-500/20";
                     }
 
                     const activePipeline = isWorkshopOpen ? activeEtlState.pipeline : savedPipeline;
@@ -503,8 +510,20 @@ function renderVirtualTable(originalData) {
                         console.error("Error evaluando Computed Column V5", e);
                     }
 
+                    // EXCEPCIONES: Binding click derecho también para columnas generadas matemáticamente en el vuelo
+                    let safeResultDisplay = String(resultDisplay).replace(/<[^>]*>?/gm, ''); // Quitar etiquetas html de advertencia si las hay
+                    safeResultDisplay = safeResultDisplay
+                        .replace(/\\/g, "\\\\")
+                        .replace(/'/g, "\\'")
+                        .replace(/"/g, "&quot;")
+                        .replace(/\n/g, "\\n")
+                        .replace(/\r/g, "\\r");
+                    let onCtxComputed = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeResultDisplay}', '${calcConfig.id}')"`;
+                    
+                    cellClass += " cursor-context-menu";
+
                     const colWidth = window.currentColWidths && window.currentColWidths[calcConfig.id] ? window.currentColWidths[calcConfig.id] : 150;
-                    rowsHtml += `<td class="${cellClass}" style="width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;">${resultDisplay}</td>`;
+                    rowsHtml += `<td class="${cellClass}"${onCtxComputed} style="width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;">${resultDisplay}</td>`;
                 });
             }
 
@@ -639,44 +658,9 @@ function generatePreview() {
                         isVirtual: false,
                         sourceIndex: dataIdx,
                         transform: (val) => {
-                            let currentVal = val;
-                            // 🔥 Apply all active rules in order
-                            for (const rule of rulesStack) {
-                                if (rule.disabled) continue;
-                                const strVal = (currentVal !== null && currentVal !== undefined) ? String(currentVal).trim() : "";
-
-                                if (rule.type === 'sanitize_numbers') {
-                                    currentVal = strVal.replace(/[^0-9]/g, '');
-                                }
-                                else if (rule.type === 'SANITIZER_NUMERIC_PIPE' || rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
-                                    if (/[^0-9|/]/.test(strVal)) {
-                                        currentVal = "";
-                                    }
-                                }
-                                else if (rule.type === 'sanitize') {
-                                    const fallback = rule.config?.replace_with || "0,00";
-                                    let shouldReplace = false;
-                                    if (!strVal || strVal === "undefined" || strVal === "null") shouldReplace = true;
-                                    if (!shouldReplace && rule.config?.match_regex) {
-                                        try {
-                                            let p = rule.config.match_regex.replace(/\\\\/g, '\\');
-                                            if (p.startsWith('/')) p = p.slice(1, -1);
-                                            if (new RegExp(p, 'i').test(strVal)) shouldReplace = true;
-                                        } catch (e) { }
-                                    }
-                                    if (shouldReplace) currentVal = fallback;
-                                    else if (strVal.includes('.')) currentVal = strVal.replace(/\./g, ',');
-                                }
-                                else if (rule.type === 'format_number') {
-                                    let num = parseFloat(strVal.replace(/[^0-9.-]/g, ''));
-                                    if (!isNaN(num)) {
-                                        currentVal = new Intl.NumberFormat('es-AR', {
-                                            minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true
-                                        }).format(num);
-                                    }
-                                }
-                            }
-                            return currentVal;
+                            if (!window.viewerETL) return val;
+                            const res = window.viewerETL.transformCell(String(val || ""), rulesStack);
+                            return res.resultDisplay || res.result || res.display;
                         },
                         hasSwitch: false, // Legacy switch hidden, relying on Gear
                         switchColIdx: vColId,
@@ -1403,8 +1387,10 @@ function onColMouseUp(e) {
         window.saveSheetState(window.currentSheetName);
     }
 
-    // Force full table re-render to propagate width to all body cells
-    if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+    // Force full table re-render to propagate width to all body cells, preserving state
+    if (typeof window.triggerSafeRender === 'function') {
+        window.triggerSafeRender();
+    } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
         window.renderVirtualTable(window.currentSheetData);
     }
 

@@ -86,29 +86,96 @@ window.filterVisorData = function() {
     const normString = (s) => s != null ? String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
     const qterms = normString(state.query).split(/\s+/).filter(x => x.length > 0);
 
-    const filtered = currentSheetData.map((row, index) => ({ row, index })) // Mantenemos el índice original si hace falta, aunque el scroller se come el obj. Mejor filtrar crudos
+    const filtered = currentSheetData.map((row, index) => ({ row, index })) 
         .filter(({row}) => {
             return qterms.every(term => {
-                if (state.field === "ALL") {
-                    // Buscar en todas las columnas físicas
-                    return window.virtualColumns.some(v => {
-                        if (v.isCalculated) return false;
-                        return normString(row[v.dataIdx]).includes(term);
-                    });
-                } else {
-                    // Buscar en la columna específica
-                    const vTarget = window.virtualColumns.find(col => col.id === state.field);
-                    if (vTarget && !vTarget.isCalculated && vTarget.dataIdx !== undefined) {
-                        return normString(row[vTarget.dataIdx]).includes(term);
+                
+                // Helper interno para evaluar una celda on-the-fly y ver si matchea
+                const checkCellMatch = (vCol) => {
+                    try {
+                        let rawVal = "";
+                        let finalVal = "";
+                        
+                        if (vCol.isCalculated) {
+                            if (window.computedColumns && window.evaluateComputedColumnMath) {
+                                const compCfg = window.computedColumns.find(c => c.id === vCol.id);
+                                if (compCfg) {
+                                    let opAValue = { clean: 0, display: "", raw: "" };
+                                    let opBValue = { clean: 0, display: "", raw: "" };
+                                    
+                                    const srcA = window.virtualColumns.find(vc => vc.id === compCfg.operands?.[0]);
+                                    if (srcA && srcA.dataIdx !== undefined) {
+                                        opAValue.raw = row[srcA.dataIdx];
+                                        opAValue.clean = row[srcA.dataIdx];
+                                    }
+                                    const srcB = window.virtualColumns.find(vc => vc.id === compCfg.operands?.[1]);
+                                    if (srcB && srcB.dataIdx !== undefined) {
+                                        opBValue.raw = row[srcB.dataIdx];
+                                        opBValue.clean = row[srcB.dataIdx];
+                                    }
+                                    
+                                    const res = window.evaluateComputedColumnMath(compCfg, opAValue, opBValue, window.draftPipelines, window.activeEtlState);
+                                    finalVal = res.resultDisplay || res.mathResult || "";
+                                }
+                            }
+                        } else if (vCol.dataIdx !== undefined) {
+                            rawVal = String(row[vCol.dataIdx] || "");
+                            finalVal = rawVal;
+                            
+                            const pipeline = window.draftPipelines && window.draftPipelines[vCol.id] ? window.draftPipelines[vCol.id].rules : null;
+                            if (pipeline && pipeline.length > 0 && window.viewerETL) {
+                                const res = window.viewerETL.transformCell(rawVal, pipeline);
+                                finalVal = res.resultDisplay || res.result || res.display;
+                            }
+                        }
+                        
+                        return normString(rawVal).includes(term) || normString(finalVal).includes(term);
+                    } catch (e) {
+                        console.warn("[Visor Search] Error silenciado en checkCellMatch:", e);
+                        return false;
                     }
-                    return false;
+                };
+
+                let matched = false;
+                if (state.field === "ALL") {
+                    matched = window.virtualColumns.some(v => checkCellMatch(v));
+                } else {
+                    const vTarget = window.virtualColumns.find(col => col.id === state.field);
+                    if (vTarget) {
+                        matched = checkCellMatch(vTarget);
+                    }
                 }
+                
+                // Fallback de seguridad extrema: Si no matcheó por la columna específica (a veces el ID del index se desincroniza),
+                // y el término sigue sin aparecer, buscamos en TODOS los datos crudos de la fila por si acaso.
+                if (!matched) {
+                    matched = Object.values(row).some(cellStr => normString(cellStr).includes(term));
+                }
+                return matched;
             });
     }).map(obj => obj.row);
     
-    // IMPORTANTE: Al virtual scroller en renderVirtualTable(data) le setearemos la 'data' reducida.
+    // [BUG FIX CRÍTICO] Múltiples reportes indicaban que el 1er resultado "desaparecía" del Visor Universal.
+    // Esto se debe a que renderVirtualTable asume matemáticamente que data[0] son los HEADERS (los consume
+    // del DOM y el bucle for empieza en 1).
+    // Si pasamos el array 'filtered' tal cual, el primer hit de búsqueda es devorado por el thead.
+    // Solución: Restaurar el header original de currentSheetData en la posición 0 antes de renderear.
+    if (currentSheetData && currentSheetData.length > 0) {
+        // En VIRTUAL_DB y archivos normales, currentSheetData[0] siempre es la fila de encabezados
+        filtered.unshift(currentSheetData[0]);
+    }
+    
+    // IMPORTANTE: Al virtual scroller en renderVirtualTable(data) le setearemos la 'data' reducida + headers falsos en pos 0
     if (window.renderVirtualTable) {
         window.renderVirtualTable(filtered);
+    }
+};
+
+window.triggerSafeRender = function() {
+    if (typeof window.filterVisorData === 'function') {
+        window.filterVisorData();
+    } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+        window.renderVirtualTable(window.currentSheetData);
     }
 };
 
@@ -129,7 +196,7 @@ window.toggleGlobalPreview = function () {
     // Forzar repintado si hay datos cargados
     if (window.renderVirtualTable && currentSheetData && currentSheetData.length > 0) {
         console.log("🔄 [ViewerCore] Repintando tabla por cambio de Modo Auditoría:", window.isGlobalPreviewEnabled);
-        window.renderVirtualTable(currentSheetData);
+        window.triggerSafeRender();
     }
 };
 
@@ -902,7 +969,10 @@ window.GlobalSearchFilter = {
                 <div class="relative w-48">
                     <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"></i>
                     <input type="text" id="${targetIdPrefix}SearchInput" placeholder="Filtrar datos..." oninput="${onSearchCallbackName}()" 
-                        class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1 text-[11px] text-white focus:border-emerald-500 outline-none shadow-inner">
+                        class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-8 py-1 text-[11px] text-white focus:border-emerald-500 outline-none shadow-inner">
+                    <button onclick="document.getElementById('${targetIdPrefix}SearchInput').value=''; ${onSearchCallbackName}();" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors" title="Limpiar filtro">
+                        <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
+                    </button>
                 </div>
                 <select id="${targetIdPrefix}SearchField" onchange="${onSearchCallbackName}()" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-emerald-500 max-w-[130px] w-auto">
                     <!-- Inyectado dinámicamente -->

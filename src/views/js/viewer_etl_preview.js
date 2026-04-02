@@ -12,70 +12,61 @@ export function transformCell(rawValue, pipeline) {
     // [V5] Rich Object Support
     let cleanValue = null; // Stores pure mathematical float if evaluated
 
-    // [V5.20 FIX] Absolute Overrides: Evaluate CUSTOM_REPLACE local rules FIRST against RAW value.
-    const customRules = pipeline.filter(r => r.tipo_regex && r.tipo_regex.startsWith('CUSTOM_REPLACE:'));
-    const genericRules = pipeline.filter(r => !(r.tipo_regex && r.tipo_regex.startsWith('CUSTOM_REPLACE:')));
-
-    let hasAbsoluteOverride = false;
-
-    for (const rule of customRules) {
+    // Iteramos el pipeline respetando ERICTAMENTE el orden definido por el usuario (UX).
+    for (const rule of pipeline) {
         if (rule.disabled) continue;
         if (isRejected) break;
-        try {
-            const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
-            const parts = payload.split('|||');
-            const searchStr = parts[0] || '';
-            let replaceStr = parts[1] || '';
-            let matched = false;
 
-            if (searchStr.startsWith('/') && searchStr.lastIndexOf('/') > 0) {
-                const flags = searchStr.slice(searchStr.lastIndexOf('/') + 1);
-                const pattern = searchStr.slice(1, searchStr.lastIndexOf('/'));
-                const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
-                if (regex.test(currentValue)) {
-                    matched = true;
-                    currentValue = currentValue.replace(regex, replaceStr);
-                }
-            } else {
-                const cv = String(currentValue).trim();
-                const sv = String(searchStr).trim();
+        const isCustomReplace = rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:');
 
-                if (sv === "" && cv === "") {
-                    matched = true;
-                    currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
-                }
-                else if (sv !== "" && cv === sv) {
-                    matched = true;
-                    currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
-                }
-                else if (sv !== "" && cv.includes(sv)) {
-                    matched = true;
-                    if (replaceStr === '|||SPLIT|||') {
-                        currentValue = cv.split(sv).join('');
-                    } else {
-                        currentValue = cv.split(sv).join(replaceStr);
+        if (isCustomReplace) {
+            try {
+                const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
+                const parts = payload.split('|||');
+                const searchStr = parts[0] || '';
+                let replaceStr = parts[1] || '';
+                let matched = false;
+
+                if (searchStr.startsWith('/') && searchStr.lastIndexOf('/') > 0) {
+                    const flags = searchStr.slice(searchStr.lastIndexOf('/') + 1);
+                    const pattern = searchStr.slice(1, searchStr.lastIndexOf('/'));
+                    const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
+                    if (regex.test(currentValue)) {
+                        matched = true;
+                        currentValue = currentValue.replace(regex, replaceStr);
+                    }
+                } else {
+                    const cv = String(currentValue).trim();
+                    const sv = String(searchStr).trim();
+
+                    // Coincidencia exacta estricta (Prioridad si el usuario busca reemplazar el valor entero de la celda)
+                    if (cv === sv) {
+                        matched = true;
+                        currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
+                    }
+                    // Búsqueda substring (Peligroso si es "4" y la celda es "W4 40kg", pero mantenido para compatibilidad)
+                    else if (sv !== "" && cv.includes(sv)) {
+                        matched = true;
+                        if (replaceStr === '|||SPLIT|||') {
+                            // Si es split borrar todo? Mejor un literal replace all
+                            currentValue = cv.split(sv).join('');
+                        } else {
+                            currentValue = cv.split(sv).join(replaceStr);
+                        }
                     }
                 }
-            }
 
-            if (matched) {
-                if (window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1') {
-                    console.log(`[VIGIA AUDITOR ETL] MATCH REGLA LOCAL PRE-PIPELINE | Buscar: '${searchStr}', Reemplazar: '${replaceStr}' | Celda Resultante: '${currentValue}'`);
+                if (matched) {
+                    if (window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1') {
+                        console.log(`[VIGIA AUDITOR ETL] MATCH REGLA LOCAL EN PIPELINE | Buscar: '${searchStr}', Reemplazar: '${replaceStr}' | Resultante: '${currentValue}'`);
+                    }
+                    // IMPORTANTE: Ya NO abortamos el pipeline con "break". Dejamos que siga procesando otras reglas posteriores si las hay.
                 }
-                hasAbsoluteOverride = true;
-                break;
+            } catch (e) {
+                console.warn(`[ETL] Error procesando regla custom ${rule.nombre_regla}:`, e);
             }
-        } catch (e) {
-            console.warn(`[ETL] Error procesando regla custom preliminar ${rule.nombre_regla}:`, e);
-        }
-        currentValue = currentValue.trim();
-    }
-
-    if (!hasAbsoluteOverride) {
-        for (const rule of genericRules) {
-            if (rule.disabled) continue;
-            if (isRejected) break; // Si ya fue filtrada, saltar resto
-
+            currentValue = currentValue.trim();
+        } else {
             // Reglas Nativas
             if (rule.tipo_regex === 'SANITIZER_NUMERIC') {
                 currentValue = currentValue.replace(/[^0-9.,-]/g, '');
@@ -214,7 +205,7 @@ export function transformCell(rawValue, pipeline) {
             }
             currentValue = currentValue.trim();
         }
-    } // Cierra if (!hasAbsoluteOverride)
+    } // Cierra el For del pipeline secuencial
 
     // Default cleanValue fallback: Try parse if not explicitly set by rules
     if (cleanValue === null && currentValue !== "" && !isNaN(currentValue.replace(/,/g, '.'))) {

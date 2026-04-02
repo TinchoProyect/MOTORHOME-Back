@@ -184,7 +184,9 @@ const VisibilityManager = {
     },
 
     _triggerReRender() {
-        if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+        if (typeof window.triggerSafeRender === 'function') {
+            window.triggerSafeRender();
+        } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
             window.renderVirtualTable(window.currentSheetData);
         }
     },
