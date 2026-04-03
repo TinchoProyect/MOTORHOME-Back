@@ -158,24 +158,26 @@ class ViewerAiUi {
             // Request to Service
             const responseData = await aiService.generateETLRule(payload);
             
-            // Revisa si trajo rule ast_conditional
-            if (!responseData || !responseData.rule || responseData.rule.tipo !== 'ast_conditional') {
-                throw new Error("El modelo retornó formato no-AST inválido.");
+            // Revisa si trajo un arreglo de reglas válidas
+            if (!responseData || !Array.isArray(responseData.rules) || responseData.rules.length === 0) {
+                throw new Error("El modelo retornó formato pipeline inválido o vacío.");
             }
 
             this._setStatus('Inyectando AST...', 'working');
 
             // Inyectar visual y conceptualmente al sistema local
-            // window.viewerRuleWorkshop require una nueva f(x) o adaptar createLocalRuleDirect
             if (typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
-                const aiRuleObj = { ...responseData.rule, fromAI: true };
-                await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                for (let rConfig of responseData.rules) {
+                    const aiRuleObj = { ...rConfig, fromAI: true };
+                    await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                }
                 
                 this.promptEl.value = "";
                 this._setStatus('Conectado', 'success');
                 
-                // Calcular Exito AST
-                this._evaluateUX(vCol.dataIdx, state.pipeline, aiRuleObj);
+                // Calcular Exito AST sobre la iteracion final completa (usando el current pipeline)
+                const finalState = window.viewerRuleWorkshop.getActiveState();
+                this._evaluateUX(vCol.dataIdx, state.pipeline, finalState.pipeline);
             } else {
                 throw new Error("El API del Taller visual (createLocalRule) fue cerrado.");
             }
@@ -190,14 +192,14 @@ class ViewerAiUi {
         }
     }
 
-    _evaluateUX(dataIdx, oldPipeline, newRuleAst) {
+    _evaluateUX(dataIdx, oldPipeline, currentPipeline) {
         if (!window.currentSheetData || !window.viewerETL) return;
         
         let nullsAfter = 0;
         let altered = 0;
         let maxLimit = Math.min(window.currentSheetData.length - 1, 1000);
         
-        const combined = [...(oldPipeline || []), newRuleAst];
+        const combined = currentPipeline || [];
 
         for (let i = 1; i <= maxLimit; i++) {
             const raw = String(window.currentSheetData[i][dataIdx] || "");

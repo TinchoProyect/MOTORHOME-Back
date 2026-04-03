@@ -51,20 +51,32 @@ const aiController = {
                 return res.status(502).json({ error: 'LLM returned invalid JSON' });
             }
 
-            // Normalización para alinear con el request AST de la UI
-            // El modelo a veces retorna directamente la lógica o el objeto root
-            const normalizedAst = {
-                tipo: 'ast_conditional',
-                logica: astRule.logica || astRule, // Fallback porsi devuelve un mero arreglo
-                explicacion: astRule.explicacion || "Generado automáticamente por Chofer IA"
-            };
-
-            console.log("[AI Controller] ✅ Respuesta AST armada satisfactoriamente.");
+            // Normalización: Extraer reglas del Pipeline AST multi-paso
+            let ruleList = [];
             
-            // Devolver Response standard
+            if (astRule.reglas && Array.isArray(astRule.reglas)) {
+                // Mapear al Schema de currentDraftPipeline del Taller Visual (1 Regla = 1 nodo ast_conditional con logic encapsulada)
+                ruleList = astRule.reglas.map((r, i) => ({
+                    nombre_regla: r.nombre_regla || `Paso IA #${i+1}`,
+                    descripcion: r.descripcion || astRule.explicacion_global || "Automatizado por el Chofer",
+                    tipo: 'ast_conditional',
+                    logica: [
+                        {
+                            condicion: r.condicion || { operador: "DEFAULT", valor: "" },
+                            accion: r.accion || { tipo_accion: "TRIM" }
+                        }
+                    ]
+                }));
+            } else {
+                return res.status(502).json({ error: 'LLM returned invalid pipeline format' });
+            }
+
+            console.log(`[AI Controller] ✅ Respuesta AST (Pipeline Multistep) mapeada satisfactoriamente con ${ruleList.length} pasos.`);
+            
+            // Devolver array de Reglas
             res.status(200).json({
                 success: true,
-                rule: normalizedAst
+                rules: ruleList
             });
 
         } catch (error) {

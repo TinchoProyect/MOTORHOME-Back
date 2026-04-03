@@ -1,0 +1,15 @@
+```json
+{
+  "tipo": "ast_conditional",
+  "logica": [
+    {
+      "condicion": { "operador": "DEFAULT", "valor": "" },
+      "accion": {
+        "tipo_accion": "EXTRACT",
+        "valor": "(?:Repelada |Origen: )?\\s*(.*?)\\s*$"
+      }
+    }
+  ],
+  "explicacion": "Extrae el nombre del país eliminando prefijos como 'Repelada ' y 'Origen:', y recortando espacios en blanco."
+}
+```

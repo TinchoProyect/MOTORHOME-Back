@@ -112,17 +112,29 @@ Genera ÚNICAMENTE el código JSON AST solicitado para limpiar/extraer estos val
      * Limpia la respuesta del modelo, extirpando backticks de markdown (```json ... ```)
      */
     extractJSONFromInference: (rawText) => {
-        let cleaned = rawText.trim();
-        // Remover marcadores de markdown
-        if (cleaned.startsWith('```json')) {
-            cleaned = cleaned.substring(7);
-        } else if (cleaned.startsWith('```')) {
-            cleaned = cleaned.substring(3);
+        if (!rawText) return "";
+        try {
+            // Busca la primera llave de apertura y la última de cierre
+            const firstBrace = rawText.indexOf('{');
+            const lastBrace = rawText.lastIndexOf('}');
+            
+            // Si encuentra un objeto JSON válido delimitado
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+                return rawText.substring(firstBrace, lastBrace + 1);
+            }
+            
+            // Si por alguna razón devolvió un array plano
+            const firstBracket = rawText.indexOf('[');
+            const lastBracket = rawText.lastIndexOf(']');
+            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket >= firstBracket) {
+                return rawText.substring(firstBracket, lastBracket + 1);
+            }
+            
+            return rawText.trim();
+        } catch (err) {
+            console.error("String parser fail:", err);
+            return rawText.trim();
         }
-        if (cleaned.endsWith('```')) {
-            cleaned = cleaned.substring(0, cleaned.length - 3);
-        }
-        return cleaned.trim();
     }
 };
 
