@@ -1,0 +1,111 @@
+﻿[dotenv@17.2.3] injecting env (7) from .env -- tip: ÔÜÖ´©Å  override existing env vars with { override: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ­ƒøá´©Å  run anywhere with `dotenvx run -- yourcommand`
+node : ÔÜá´©Å  Node.js 18 and below are 
+deprecated and will no longer be supported 
+in future versions of @supabase/supabase-js. 
+Please upgrade to Node.js 20 or later. For 
+more information, visit: https://github.com/o
+rgs/supabase/discussions/37217
+En línea: 1 Carácter: 1
++ node src/server.js > test_ai_output.log 
+2>&1
++ 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified:  
+   (ÔÜá´©Å  Node.js...scussions/37217:Strin  
+  g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandE 
+   rror
+ 
+[FilesRoutes] Registering /extract. Handler type: function
+
+­ƒÜÇ Backend 2.0 corriendo en http://localhost:5655
+   - Modo: Development
+[SERVER] Request received: POST /api/ai/generate-etl-rule
+[AI Controller] ­ƒÜÇ Procesando petici├│n de generaci├│n AST para la columna "Descuento"...
+[AI Controller] Ôä╣´©Å N├║mero de muestras: 3
+==========================================
+[AI Service - STEP 2] ­ƒÜÇ Construyendo Payload (Backend -> LLM)
+PAYLOAD COMPLETO:
+ 
+Act├║as como un 'Chofer ETL' incrustado en un pipeline de datos determinista. 
+OBLIGATORIA: Debes devolver puramente una estructura JSON v├ílida que defina el parseo AST (Abstract Syntax Tree) solicitado.
+NO PUEDES RESPONDER CON TEXTO PLANO NI EXPLICACIONES FUERA DEL JSON. El JSON debe poseer la siguiente firma:
+{
+  "tipo": "ast_conditional",
+  "logica": [
+     {
+        "condicion": { "operador": "CONTAINS" | "REGEX_MATCH" | "EQUALS" | "IS_NUMERIC" | "IS_EMPTY" | "DEFAULT", "valor": "param" },
+        "accion": { "tipo_accion": "REPLACE" | "EXTRACT" | "LOWERCASE" | "UPPERCASE" | "TRIM" | "DROP", "target": "opcional", "replacement": "opcional", "valor": "opcional" }
+     }
+  ],
+  "explicacion": "breve descripcion"
+}
+
+Si te piden 'Extraer solo el numero', retornas un "accion": "EXTRACT", "valor": "\\d+".
+Si te piden 'Quitar todo lo que diga X', retornas un "accion": "REPLACE", "target": "X", "replacement": "".
+
+
+TAREA DEL USUARIO: Extraer solo el numero
+
+MUESTRAS DE LA COLUMNA A PROCESAR:
+[0]: "10% OFF"
+[1]: "Desc 20"
+[2]: "Nada"
+
+Genera ├ÜNICAMENTE el c├│digo JSON AST solicitado para limpiar/extraer estos valores acorde al pedido.
+
+==========================================
+
+[AI Service - STEP 3] ÔÅ▒´©Å Temporizador INICIADO. Llamando a Google API...
+[AI Service - STEP 3] ÔÅ▒´©Å Temporizador DETENIDO: 1593ms
+
+==========================================
+[AI Service - STEP 4] ­ƒôª Respuesta Cruda de Gemini:
+```json
+{
+  "tipo": "ast_conditional",
+  "logica": [
+    {
+      "condicion": {
+        "operador": "DEFAULT",
+        "valor": null
+      },
+      "accion": {
+        "tipo_accion": "EXTRACT",
+        "valor": "\\d+"
+      }
+    }
+  ],
+  "explicacion": "Extrae uno o m├ís d├¡gitos num├®ricos de la cadena."
+}
+```
+==========================================
+
+[AI Controller] ­ƒñû Respuesta cruda del modelo:
+ ```json
+{
+  "tipo": "ast_conditional",
+  "logica": [
+    {
+      "condicion": {
+        "operador": "DEFAULT",
+        "valor": null
+      },
+      "accion": {
+        "tipo_accion": "EXTRACT",
+        "valor": "\\d+"
+      }
+    }
+  ],
+  "explicacion": "Extrae uno o m├ís d├¡gitos num├®ricos de la cadena."
+}
+```
+[AI Controller - STEP 5] ÔØî El JSON de la 
+IA es v├ílido pero NO tiene el array 
+'reglas'. Formato recibido: {"tipo":"ast_cond
+itional","logica":[{"condicion":{"operador":"
+DEFAULT","valor":null},"accion":{"tipo_accion
+":"EXTRACT","valor":"\\d+"}}],"explicacion":"
+Extrae uno o m├ís d├¡gitos num├®ricos de la 
+cadena."}

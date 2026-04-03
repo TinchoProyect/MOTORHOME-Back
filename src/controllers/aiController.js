@@ -47,28 +47,42 @@ const aiController = {
             try {
                 astRule = JSON.parse(cleanedJsonText);
             } catch (err) {
-                console.error("[AI Controller] ❌ Error parseando la salida JSON del modelo:", err.message);
+                console.error("\n==========================================");
+                console.error("[AI Controller - STEP 5] ❌ Punto de Quiebre del Intérprete (JSON.parse falló):");
+                console.error("String que se intentó parsear: ", cleanedJsonText);
+                console.error("Stack Trace:");
+                console.error(err.stack);
+                console.error("==========================================\n");
                 return res.status(502).json({ error: 'LLM returned invalid JSON' });
             }
 
             // Normalización: Extraer reglas del Pipeline AST multi-paso
             let ruleList = [];
             
-            if (astRule.reglas && Array.isArray(astRule.reglas)) {
-                // Mapear al Schema de currentDraftPipeline del Taller Visual (1 Regla = 1 nodo ast_conditional con logic encapsulada)
-                ruleList = astRule.reglas.map((r, i) => ({
-                    nombre_regla: r.nombre_regla || `Paso IA #${i+1}`,
-                    descripcion: r.descripcion || astRule.explicacion_global || "Automatizado por el Chofer",
-                    tipo: 'ast_conditional',
-                    logica: [
-                        {
-                            condicion: r.condicion || { operador: "DEFAULT", valor: "" },
-                            accion: r.accion || { tipo_accion: "TRIM" }
-                        }
-                    ]
-                }));
-            } else {
-                return res.status(502).json({ error: 'LLM returned invalid pipeline format' });
+            try {
+                if (astRule.reglas && Array.isArray(astRule.reglas)) {
+                    // Mapear al Schema de currentDraftPipeline del Taller Visual (1 Regla = 1 nodo ast_conditional con logic encapsulada)
+                    ruleList = astRule.reglas.map((r, i) => ({
+                        nombre_regla: r.nombre_regla || `Paso IA #${i+1}`,
+                        descripcion: r.descripcion || astRule.explicacion_global || "Automatizado por el Chofer",
+                        tipo: 'ast_conditional',
+                        logica: [
+                            {
+                                condicion: r.condicion || { operador: "DEFAULT", valor: "" },
+                                accion: r.accion || { tipo_accion: "TRIM" }
+                            }
+                        ]
+                    }));
+                } else {
+                    console.error("[AI Controller - STEP 5] ❌ El JSON de la IA es válido pero NO tiene el array 'reglas'. Formato recibido:", JSON.stringify(astRule));
+                    return res.status(502).json({ error: 'LLM returned invalid pipeline format' });
+                }
+            } catch (err) {
+                console.error("\n==========================================");
+                console.error("[AI Controller - STEP 5] ❌ Punto de Quiebre en la Normalización/Mapeo del AST");
+                console.error(err.stack);
+                console.error("==========================================\n");
+                return res.status(502).json({ error: 'Falla interna en la transformación de objeto AST' });
             }
 
             console.log(`[AI Controller] ✅ Respuesta AST (Pipeline Multistep) mapeada satisfactoriamente con ${ruleList.length} pasos.`);

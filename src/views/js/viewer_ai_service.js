@@ -39,18 +39,27 @@ class ViewerAiService {
         this.lastCallTime = now;
 
         try {
+            const bodyStr = JSON.stringify(payload);
+            console.log("==========================================");
+            console.log("[AI UI - STEP 1] 🌐 Network Request (Frontend -> Backend)");
+            console.log("URL:", `${this.backendUrl}/api/ai/generate-etl-rule`);
+            console.log("PAYLOAD SIZE:", bodyStr.length, "bytes");
+            console.log("PAYLOAD COMPLETO:\n", JSON.parse(bodyStr));
+            console.log("==========================================\n");
+
             const response = await fetch(`${this.backendUrl}/api/ai/generate-etl-rule`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: bodyStr
             });
 
             if (!response.ok) {
-                let errorMsg = `HTTP Error: ${response.status}`;
+                let errorMsg = `HTTP Error: ${response.status} ${response.statusText}`;
                 try {
                     const errData = await response.json();
                     if (errData.error) errorMsg = errData.error;
                 } catch(e) {}
+                console.error("[AI UI - STEP 1] ❌ Terminó con error:", errorMsg);
                 throw new Error(errorMsg);
             }
             
