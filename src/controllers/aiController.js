@@ -148,6 +148,47 @@ const aiController = {
             console.error('[AI Controller] ❌ Falla en la Inferencia (refineRule):', error.message);
             res.status(500).json({ error: error.message || 'Error generating delta rule' });
         }
+    },
+
+    /**
+     * Endpoint: POST /api/ai/discover-entities
+     * Descripción: Analiza diccionario y devuelve Lista Blanca (Data Profiling).
+     */
+    discoverEntities: async (req, res) => {
+        try {
+            const { column_name, prompt, samples } = req.body;
+            
+            if (!prompt || !Array.isArray(samples)) {
+                return res.status(400).json({ error: 'Payload requires a prompt and a unique dictionary samples array' });
+            }
+
+            console.log(`[AI Controller] 🕵️ Data Profiling (Fase 2) iniciado para columna "${column_name || 'Desconocida'}" con ${samples.length} valores en diccionario.`);
+            
+            const responseText = await aiService.executeEntityDiscovery(prompt, samples);
+            
+            const cleanedJsonText = aiService.extractJSONFromInference(responseText);
+            
+            let parsedRes;
+            try {
+                parsedRes = JSON.parse(cleanedJsonText);
+            } catch (err) {
+                console.error("[AI Controller] ❌ Fallo el parseo en discoverEntities (JSON.parse), respuesta cruda: ", cleanedJsonText);
+                return res.status(502).json({ error: 'LLM returned invalid JSON on Discovery phase' });
+            }
+
+            if (!parsedRes || typeof parsedRes.cluster !== 'object' || Array.isArray(parsedRes.cluster)) {
+                 return res.status(502).json({ error: 'LLM returned missing or invalid cluster object' });
+            }
+
+            res.status(200).json({
+                success: true,
+                cluster: parsedRes.cluster
+            });
+
+        } catch (error) {
+            console.error('[AI Controller] ❌ Falla en Data Profiling (discoverEntities):', error.message);
+            res.status(500).json({ error: error.message || 'Error in Data Profiling phase' });
+        }
     }
 };
 

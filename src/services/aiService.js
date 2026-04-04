@@ -209,6 +209,36 @@ Usa escape doble para JSON si emites Regex.`;
         const result = await model.generateContent(systemInstruction);
         const response = await result.response;
         return response.text();
+    },
+
+    /**
+     * [FASE 2] Descubrimiento de Entidades (Lista Blanca Profiling)
+     * Envía un diccionario completo y pide a la IA extraer los válidos según el prompt.
+     */
+    executeEntityDiscovery: async (userPrompt, dictionarySamples) => {
+        if (!genAI) throw new Error("Google AI (Gemini) API Key no está configurada o es inválida.");
+
+        const systemInstruction = `Eres un motor semántico avanzado de Estandarización de Datos (Master Data Management).
+El usuario te ha dado esta orden: "${userPrompt}"
+
+A continuación, se provee el DICCIONARIO COMPLETO (Set único) de todos los valores crudos detectados en la base de datos.
+Tu trabajo es aplicar AGRUPACIÓN INTELIGENTE (Clustering). Debes identificar las entidades objetivo, crear un "Valor Limpio Maestro" óptimo y correcto para cada una, y anidar dentro de ese maestro todos los "Valores Crudos" del diccionario que signifiquen lo mismo pero tengan errores, sufijos o ruido.
+
+Diccionario Crudo en Memoria:
+${JSON.stringify(dictionarySamples)}
+
+INSTRUCCIONES FINALES:
+1. Retorna ÚNICAMENTE los grupos que sean coherentes con el filtro solicitado ("${userPrompt}").
+2. Descarta la basura o valores que NO representen la entidad buscada (simplemente no los incluyas en ninguna matriz).
+3. Todo valor crudo anidado debe existir LITERALMENTE en el Diccionario provisto.
+4. Formato obligatorio requerido ` + '`{"tipo": "ast_clustering", "cluster": {"Valor Maestro 1": ["crudo exacto 1", "crudo exacto 2"], "Valor Maestro 2": ["crudo exacto 3"]}}`';
+
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { temperature: 0.1, responseMimeType: "application/json" } });
+        
+        console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Clusters de Semilla (${dictionarySamples.length} uniques)...`);
+        const result = await model.generateContent(systemInstruction);
+        const response = await result.response;
+        return response.text();
     }
 };
 

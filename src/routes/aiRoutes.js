@@ -6,5 +6,6 @@ const aiController = require('../controllers/aiController');
 router.get('/health', aiController.healthCheck);
 router.post('/generate-etl-rule', aiController.generateRule);
 router.post('/refine-rule', aiController.refineRule);
+router.post('/discover-entities', aiController.discoverEntities);
 
 module.exports = router;

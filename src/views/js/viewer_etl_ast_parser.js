@@ -67,6 +67,18 @@ class ViewerEtlAstParser {
             case "EXACT":
                 return val.trim() === String(cond.valor || "").trim();
                 
+            case "IN_LIST":
+                if (Array.isArray(cond.valor)) {
+                    return cond.valor.includes(val.trim());
+                }
+                return false;
+                
+            case "IN_DICT_KEYS":
+                if (cond.valor && typeof cond.valor === 'object') {
+                    return cond.valor[val.trim()] !== undefined;
+                }
+                return false;
+                
             case "IS_NUMERIC":
                 return !isNaN(parseFloat(val)) && isFinite(val);
                 
@@ -102,6 +114,14 @@ class ViewerEtlAstParser {
                 if (!reExt) return { result: val, handled: true };
                 const m = val.match(reExt);
                 return { result: m && m[0] ? m[0] : "", handled: true, rejected: !m };
+                
+            case "DICTIONARY_REPLACE":
+                if (!action.valor || typeof action.valor !== 'object') return { result: val, handled: true, rejected: false };
+                const keyToCheck = val.trim();
+                if (action.valor[keyToCheck] !== undefined) {
+                    return { result: action.valor[keyToCheck], handled: true, rejected: false };
+                }
+                return { result: val, handled: true, rejected: false };
                 
             case "LOWERCASE":
                 return { result: val.toLowerCase(), handled: true, rejected: false };

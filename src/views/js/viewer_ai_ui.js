@@ -120,11 +120,45 @@ class ViewerAiUi {
         this.feedbackEl.classList.remove('hidden');
     }
 
+    async _buildUniqueSet(dataIdx, pipeline) {
+        return new Promise((resolve) => {
+            const rawRows = window.currentSheetData.slice(1);
+            const total = rawRows.length;
+            const uniqueSet = new Set();
+            const chunkSize = 5000;
+            let i = 0;
+
+            const processChunk = () => {
+                const end = Math.min(i + chunkSize, total);
+                for (; i < end; i++) {
+                    let val = String(rawRows[i][dataIdx] || "").trim();
+                    if (!val) continue;
+                    if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
+                        const mutateRs = window.viewerETL.transformCell(val, pipeline);
+                        if (mutateRs.rejected) continue;
+                        val = mutateRs.display || mutateRs.result || "";
+                    }
+                    if (val.trim()) uniqueSet.add(val.trim());
+                }
+                
+                // Excluir Strings gigantes (Data profiling no sirve en párrafos)
+                for (let k of uniqueSet) { if (k.length > 150) uniqueSet.delete(k); }
+                
+                if (i < total) {
+                    this._setStatus(`Escaneando: ${Math.floor((i/total)*100)}%`, 'working');
+                    setTimeout(processChunk, 0); // Lote asíncrono preventivo
+                } else {
+                    resolve(Array.from(uniqueSet));
+                }
+            };
+            processChunk();
+        });
+    }
+
     async handleGenerate() {
         const promptText = this.promptEl.value.trim();
         if (!promptText) return;
 
-        // Prevent Double Click
         this.btnEl.disabled = true;
         
         try {
@@ -135,60 +169,152 @@ class ViewerAiUi {
             const state = window.viewerRuleWorkshop.getActiveState();
             if (!state || !state.colIndex) throw new Error("Abre el taller de una columna");
 
-            // Geometrics Sampling (Objeción 1)
-            this._setStatus('Muestreando Disp...', 'working');
-            
             const vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
             if (!vCol || vCol.dataIdx === undefined) throw new Error("Columna virtual corrupta.");
             
-            const samples = aiSampler.extractSmartSample(vCol.dataIdx, state.pipeline, 100);
-            if (samples.length === 0) throw new Error("Sin datos para muestrear");
+            // FASE 2: Data Profiling Activo (Extracción Silente Completa)
+            this._setStatus('Extrayendo Perfil...', 'working');
+            const uniqueDictionary = await this._buildUniqueSet(vCol.dataIdx, state.pipeline);
+            
+            if (uniqueDictionary.length === 0) throw new Error("La columna carece de datos parseables.");
+            
+            // Overlays Cinematográficos
+            if (window.Swal) {
+                Swal.fire({
+                    title: 'Inspeccionando Matriz...',
+                    html: `Mapeo completado: <b>${uniqueDictionary.length}</b> valores únicos detectados.<br>
+                           Solicitando filtrado semántico al Motor IA...`,
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); },
+                    background: '#0f172a', color: '#f8fafc'
+                });
+            }
 
             const colTitle = window.currentSheetData[0][vCol.dataIdx] || "¿?";
 
             const payload = {
                 column_name: colTitle,
                 prompt: promptText,
-                samples: samples,
-                require_ast: true // Indicador obligatorio para el backend/chofer de devolver arbol JSON
+                samples: uniqueDictionary, 
+                require_ast: false
             };
 
-            this._setStatus('Pensando...', 'working');
+            this._setStatus('IA Analizando...', 'working');
             
-            // Request to Service
-            const responseData = await aiService.generateETLRule(payload);
+            // Reemplazo del Viejo "GenerateRule" balístico por el nuevo DiscoverEntities
+            const responseData = await aiService.discoverEntities(payload);
             
-            // Revisa si trajo un arreglo de reglas válidas
-            if (!responseData || !Array.isArray(responseData.rules) || responseData.rules.length === 0) {
-                throw new Error("El modelo retornó formato pipeline inválido o vacío.");
+            // Cerramos modal de carga
+            if (window.Swal && Swal.isVisible()) Swal.close();
+            
+            if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
+                throw new Error("El modelo retornó formato de cluster inválido.");
             }
-
-            this._setStatus('Inyectando AST...', 'working');
-
-            // Inyectar visual y conceptualmente al sistema local
-            if (typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
-                for (let rConfig of responseData.rules) {
-                    const aiRuleObj = { ...rConfig, fromAI: true };
-                    await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
-                }
-                
-                this.promptEl.value = "";
-                this._setStatus('Conectado', 'success');
-                
-                // Calcular Exito AST sobre la iteracion final completa (usando el current pipeline)
-                const finalState = window.viewerRuleWorkshop.getActiveState();
-                this._evaluateUX(vCol.dataIdx, state.pipeline, finalState.pipeline);
-            } else {
-                throw new Error("El API del Taller visual (createLocalRule) fue cerrado.");
+            
+            const clusterMap = responseData.cluster;
+            
+            if (Object.keys(clusterMap).length === 0) {
+                 throw new Error("La IA no detectó ninguna coincidencia ni agrupaciones.");
             }
+            
+            // FASE 2.5: Consenso Visual UI Jerárquico (HITL Clustering)
+            await this._displayConsensusModal(clusterMap, promptText, vCol);
 
         } catch (err) {
             console.error("❌ Chofer AST Falló:", err);
+            if (window.Swal && Swal.isVisible()) Swal.close();
             this._setStatus('Error Crítico', 'error');
             this._setFeedback(`Fallo: ${err.message}`, 'error');
         } finally {
-            // Anti-Spam de 1.5 secs extra local UI
             setTimeout(() => { if (aiService.isHealthy) this.btnEl.disabled = false; }, 1500);
+        }
+    }
+    
+    async _displayConsensusModal(clusterMap, promptText, vCol) {
+        if (!window.Swal) return;
+        
+        let accordionHtml = Object.keys(clusterMap).map((masterVal, gIdx) => {
+             const rawValues = clusterMap[masterVal];
+             if (!Array.isArray(rawValues)) return '';
+             
+             let childrenHtml = rawValues.map((val, idx) => `
+                <div class="flex items-center gap-2 mb-1.5 pl-3 p-1.5 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
+                    <input type="checkbox" id="hitl_chk_${gIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${val.replace(/"/g, '&quot;')}" checked class="hitl-raw-chk form-checkbox h-3.5 w-3.5 text-indigo-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                    <label for="hitl_chk_${gIdx}_${idx}" class="text-[11px] text-slate-400 cursor-pointer select-none truncate font-mono">${val}</label>
+                </div>
+             `).join('');
+
+             return `
+             <div class="mb-3 bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden">
+                 <div class="bg-indigo-950/20 p-2 border-b border-indigo-500/10 flex items-center justify-between">
+                     <span class="text-xs font-bold text-indigo-300 font-mono tracking-wide">${masterVal}</span>
+                     <span class="text-[10px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded font-bold">${rawValues.length} crudos</span>
+                 </div>
+                 <div class="p-2 py-1 bg-slate-950/30">
+                    ${childrenHtml}
+                 </div>
+             </div>
+             `;
+        }).join('');
+        
+        const { isConfirmed } = await Swal.fire({
+            title: 'Mapeo Semántico Completado',
+            html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA ha agrupado los siguientes valores (Target Maestros) en base a tu petición <i>"${promptText}"</i>.<br>Desmarca las variaciones crudas incorrectas:</div>
+                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1" id="hitl_checkbox_container">
+                      ${accordionHtml}
+                   </div>`,
+            showCancelButton: true,
+            confirmButtonText: '<i data-lucide="merge" class="w-4 h-4 inline mt-0.5"></i> Insertar Regla (MAP_REPLACE)',
+            cancelButtonText: 'Descartar',
+            confirmButtonColor: '#4f46e5',
+            background: '#0f172a', color: '#f8fafc',
+            width: '500px'
+        });
+        
+        if (isConfirmed) {
+            const finalMap = {};
+            let mappedCount = 0;
+            const masterSet = new Set();
+            
+            document.querySelectorAll('.hitl-raw-chk').forEach(chk => {
+                if (chk.checked) {
+                     finalMap[chk.value] = chk.getAttribute('data-master');
+                     masterSet.add(chk.getAttribute('data-master'));
+                     mappedCount++;
+                }
+            });
+            
+            if (mappedCount === 0) return;
+            
+            this._setStatus('Aterrizando Regla...', 'working');
+            
+            // CREAR AST ESTÁTICO DE MAPEO ESTRUCTURAL (Determinismo Absoluto)
+            const aiRuleObj = {
+                nombre_regla: `[IA] Mapeo Semántico: ${promptText}`,
+                descripcion: `Regla determinista generada bajo perfilamiento. Clusterizó ${mappedCount} variaciones bajo ${masterSet.size} grupos maestros. Purga el resto.`,
+                tipo: 'ast_conditional',
+                logica: [
+                     {
+                         condicion: { operador: "IN_DICT_KEYS", valor: finalMap },
+                         accion: { tipo_accion: "DICTIONARY_REPLACE", valor: finalMap } // Estandariza Mapeo Maestro
+                     },
+                     {
+                         condicion: { operador: "DEFAULT" },
+                         accion: { tipo_accion: "DROP" } // Excluye alienígenas
+                     }
+                ],
+                fromAI: true
+            };
+            
+            if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
+                await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                this.promptEl.value = "";
+                this._setStatus('Conectado', 'success');
+            } else {
+                throw new Error("API del Taller Cerrada.");
+            }
+        } else {
+             this._setStatus('Descartado', 'success');
         }
     }
 
