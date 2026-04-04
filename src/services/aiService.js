@@ -81,12 +81,26 @@ PROHIBIDO generar expresiones regulares masivas o complejas. Si necesitas elimin
 Si te ves forzado a usar Regex en alguna regla menor, es OBLIGATORIO utilizar el doble escape estricto para JSON (ejemplo: \\\\s, \\\\d). Un solo escape inválido corromperá el sistema.
 ` : "Actúas como un asistente de transformación de datos ETL. Responde solo con Expresiones Regulares o strings de formato.";
 
-        const fullPrompt = `${systemInstruction}
+    const contextBlock = samples.length > 0 && typeof samples[0] === 'object' && samples[0] !== null 
+        ? samples.slice(0, 7).map(s => JSON.stringify(s.contexto_fila || {})).join('\n') 
+        : "No hay contexto horizontal disponible.";
+
+    const pureSamples = samples.map((s, i) => {
+        if (typeof s === 'object' && s !== null) {
+            return `[${i}]: "${s.valor_objetivo}"`;
+        }
+        return `[${i}]: "${s}"`;
+    }).join('\n');
+
+    const fullPrompt = `${systemInstruction}
+
+CONTEXTO GENERAL DE LAS FILAS (Variables relacionales de la tabla para entender semánticamente de qué hablan los datos):
+${contextBlock}
 
 TAREA DEL USUARIO: ${userPrompt}
 
-MUESTRAS DE LA COLUMNA A PROCESAR:
-${samples.map((s, i) => `[${i}]: "${s}"`).join('\n')}
+VALORES EXTREMOS A TRANSFORMAR (Tu Regex / REPLACE debe encajar exacta y estrictamente sobre estos strings, asume que no puedes tocar otros campos):
+${pureSamples}
 
 Genera ÚNICAMENTE el código JSON AST solicitado para limpiar/extraer estos valores acorde al pedido.
 `;
@@ -138,33 +152,63 @@ Genera ÚNICAMENTE el código JSON AST solicitado para limpiar/extraer estos val
         }
     },
 
-    /**
-     * Limpia la respuesta del modelo, extirpando backticks de markdown (```json ... ```)
-     */
-    extractJSONFromInference: (rawText) => {
-        if (!rawText) return "";
-        try {
-            // Busca la primera llave de apertura y la última de cierre
-            const firstBrace = rawText.indexOf('{');
-            const lastBrace = rawText.lastIndexOf('}');
-            
-            // Si encuentra un objeto JSON válido delimitado
-            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
-                return rawText.substring(firstBrace, lastBrace + 1);
-            }
-            
-            // Si por alguna razón devolvió un array plano
-            const firstBracket = rawText.indexOf('[');
-            const lastBracket = rawText.lastIndexOf(']');
-            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket >= firstBracket) {
-                return rawText.substring(firstBracket, lastBracket + 1);
-            }
-            
-            return rawText.trim();
-        } catch (err) {
-            console.error("String parser fail:", err);
-            return rawText.trim();
+    extractJSONFromInference: (text) => {
+        const regex = /```json\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*```/;
+        const match = text.match(regex);
+        if (match) {
+            return match[1].trim(); 
         }
+        
+        // Backup si no usa raw markdown
+        try {
+            const firstBrace = text.indexOf('{');
+            const lastBrace = text.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+                return text.substring(firstBrace, lastBrace + 1);
+            }
+            
+            const firstBracket = text.indexOf('[');
+            const lastBracket = text.lastIndexOf(']');
+            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket >= firstBracket) {
+                return text.substring(firstBracket, lastBracket + 1);
+            }
+            
+            return text.trim();
+        } catch (err) {
+            return text.trim();
+        }
+    },
+
+    /**
+     * [FASE 3] Bucle de Auditoría
+     * Envía las muestras que la regla devuelta falló en transformar.
+     */
+    executeRefinement: async (userPrompt, originalRule, residualSamples) => {
+        if (!genAI) throw new Error("Google AI (Gemini) API Key no está configurada o es inválida.");
+
+        const systemInstruction = `Eres un auditor experto de Pipelines ETL.
+El usuario pidió esta regla: "${userPrompt}"
+La IA generó el siguiente nodo (Regex/Acción):
+${JSON.stringify(originalRule)}
+
+Sin embargo, las siguientes cadenas DEBERÍAN haber mutado pero escaparon de tu filtro estricto (Residuos no matcheados):
+${residualSamples.map((r,i) => `Residuo ${i+1}: "${r}"`).join('\n')}
+
+Genera ESTRICTAMENTE el código JSON de UNA RULE (SIN ARRAY, SOLO UN OBJETO JSON) que ataque EXCLUSIVAMENTE a estos residuos ignorados usando EXTRACT o REPLACE. 
+Formato requerido: 
+{
+    "nombre_regla": "Parche para residuos",
+    "accion": "REPLACE | EXTRACT | DROP_ROW | TRIM",
+    "valor": "Regex o String a limpiar"
+}
+Usa escape doble para JSON si emites Regex.`;
+
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { temperature: 0.1, responseMimeType: "application/json" } });
+        
+        console.log(`[AI Service - Fase 3] ⏱️ Refinando Regla Delta...`);
+        const result = await model.generateContent(systemInstruction);
+        const response = await result.response;
+        return response.text();
     }
 };
 

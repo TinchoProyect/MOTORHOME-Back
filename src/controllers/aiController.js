@@ -97,6 +97,57 @@ const aiController = {
             console.error('[AI Controller] ❌ Falla en la Inferencia (generateRule):', error.message);
             res.status(500).json({ error: error.message || 'Error generating rule' });
         }
+    },
+
+    /**
+     * Endpoint: POST /api/ai/refine-rule
+     * Descripción: Analiza residuos (Deltas) para emitir Reglas de limpieza accesorias.
+     */
+    refineRule: async (req, res) => {
+        try {
+            const { colName, prompt, rule, residuals } = req.body;
+            
+            if (!residuals || !Array.isArray(residuals) || residuals.length === 0) {
+                return res.status(400).json({ error: 'Payload requires a non-empty residuals array' });
+            }
+
+            console.log(`[AI Controller] 🛠️ Fase 3: Iniciando Auditoría y Refinado para la columna "${colName || 'Desconocida'}"`);
+            
+            const responseText = await aiService.executeRefinement(prompt, rule, residuals);
+            
+            const cleanedJsonText = aiService.extractJSONFromInference(responseText);
+            
+            let astRule;
+            try {
+                astRule = JSON.parse(cleanedJsonText);
+            } catch (err) {
+                console.error("[AI Controller] ❌ Fallo el parcheo (JSON.parse), respuesta cruda: ", cleanedJsonText);
+                return res.status(502).json({ error: 'LLM returned invalid JSON on refinement' });
+            }
+
+            // Normalización para Devolver Regla 
+            if (!astRule.accion || !astRule.valor) {
+                 return res.status(502).json({ error: 'LLM returned missing AST parameters' });
+            }
+
+            res.status(200).json({
+                success: true,
+                ast: {
+                     nombre_regla: astRule.nombre_regla || "Paso Delta Correctivo",
+                     tipo: 'ast_conditional',
+                     logica: [
+                         {
+                             condicion: { operador: "DEFAULT" },
+                             accion: astRule
+                         }
+                     ]
+                }
+            });
+
+        } catch (error) {
+            console.error('[AI Controller] ❌ Falla en la Inferencia (refineRule):', error.message);
+            res.status(500).json({ error: error.message || 'Error generating delta rule' });
+        }
     }
 };
 

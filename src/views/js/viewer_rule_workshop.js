@@ -532,14 +532,18 @@ function renderPipeline() {
 
     countBadge.textContent = `${currentDraftPipeline.length} reglas`;
 
+    const auditContainer = document.getElementById('vrwAuditContainer');
+
     if (currentDraftPipeline.length === 0) {
         if (emptyState) emptyState.classList.remove('hidden');
         if (flowLine) flowLine.classList.add('hidden');
+        if (auditContainer) auditContainer.classList.add('hidden');
         return;
     }
 
     if (emptyState) emptyState.classList.add('hidden');
     if (flowLine) flowLine.classList.remove('hidden');
+    if (auditContainer) auditContainer.classList.remove('hidden');
 
     currentDraftPipeline.forEach((rule, index) => {
         const chip = document.createElement('div');
@@ -578,6 +582,128 @@ function triggerPreview() {
     }
 }
 
+export function clearPipeline() {
+    if (currentDraftPipeline.length === 0) return;
+    
+    if (confirm("¿Estás seguro de purgar todas las reglas de esta columna?")) {
+        currentDraftPipeline = [];
+        renderPipeline();
+        triggerPreview();
+    }
+}
+
+// [PHASE 3] BUCLE DE AUDITORÍA ACTIVA
+export async function auditResidues() {
+    if (!window.currentSheetData) return;
+    
+    const promptTextContainer = document.getElementById('aiRulePromptPrompt');
+    const userPrompt = promptTextContainer ? promptTextContainer.value : "Transformación libre";
+    
+    if (currentDraftPipeline.length === 0) {
+        alert("No hay reglas para auditar.");
+        return;
+    }
+    
+    const lastRule = currentDraftPipeline[currentDraftPipeline.length - 1];
+    
+    let residualSamples = [];
+    let physicalIdx = activeContext.colIndex;
+    if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) {
+        physicalIdx = parseInt(physicalIdx.replace('col_', ''));
+    }
+    
+    if (isNaN(physicalIdx) || physicalIdx < 0) return;
+    
+    try {
+        const rawRows = window.currentSheetData.slice(1);
+        for(let row of rawRows) {
+            let crudo = String(row[physicalIdx] || "");
+            if (!crudo.trim()) continue;
+            
+            let mutateResult = crudo;
+            if (window.viewerETL && window.viewerETL.cleanValue) {
+               mutateResult = window.viewerETL.cleanValue(crudo, currentDraftPipeline);
+            }
+            
+            if (mutateResult === crudo) {
+               residualSamples.push(crudo);
+            }
+        }
+        
+        residualSamples = [...new Set(residualSamples)].filter(x => x.length > 0).slice(0, 10);
+        
+        if (residualSamples.length === 0) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Columna Limpia',
+                text: 'La mutación detectada fue de 100%.',
+                background: '#0f172a', color: '#f8fafc'
+            });
+            return;
+        }
+        
+        Swal.fire({
+            title: 'Diagnosticando...',
+            html: `Hemos detectado ${residualSamples.length} patrones inactivos.<br>Consultando al Chofer IA para elaborar Regla Delta...`,
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); },
+            background: '#0f172a', color: '#f8fafc'
+        });
+        
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const refinePayload = {
+             colName: activeContext.colName || 'Columna',
+             prompt: userPrompt,
+             rule: lastRule,
+             residuals: residualSamples
+        };
+        
+        const response = await fetch(`${backendUrl}/api/ai/refine-rule`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(refinePayload)
+        });
+        
+        const reqData = await response.json();
+        
+        if (response.ok && reqData.ast) {
+            const ruleProp = reqData.ast;
+            Swal.fire({
+                title: 'Regla Delta Recomendada',
+                html: `La IA propone inyectar un paso de <b>${ruleProp.accion?.tipo_accion || 'REGEX'}</b> para atacar los residuos detectados.<br><br>
+                       <div class="p-3 bg-slate-900 border border-emerald-500/30 rounded text-left text-xs mb-2">
+                       <b>Muestra Evadida:</b> <br><span class="text-slate-400">"${residualSamples[0]}"</span><br>
+                       <b>Regla:</b> <span class="text-amber-400 font-mono">${ruleProp.valor || ruleProp.accion?.tipo_accion || '?'}</span>
+                       </div>
+                       ¿Apilar al final de la cola?`,
+                showCancelButton: true,
+                confirmButtonText: '<i data-lucide="plus" class="w-4 h-4 inline mt-0.5"></i> Agregar',
+                cancelButtonText: 'Descartar',
+                confirmButtonColor: '#10b981',
+                background: '#0f172a', color: '#f8fafc'
+            }).then((res) => {
+                 if (res.isConfirmed) {
+                     currentDraftPipeline.push({
+                         id: `delta_${Date.now()}`,
+                         nombre_regla: `[Delta IA] ${ruleProp.nombre_regla || ruleProp.accion}`,
+                         descripcion: `Generado auto-mágicamente en auditoría iterativa`,
+                         ...ruleProp
+                     });
+                     renderPipeline();
+                     triggerPreview();
+                 }
+            });
+            setTimeout(() => { if(window.lucide) window.lucide.createIcons(); }, 100);
+        } else {
+            throw new Error(reqData.error || "Falla en Refinamiento");
+        }
+        
+    } catch (e) {
+        console.error(e);
+        Swal.fire({ icon: 'error', title: 'Fallo de IA', text: e.message, background: '#0f172a', color: '#f8fafc' });
+    }
+}
+
 // APPLY MAPPING (SAVE to Memory Drafts)
 export function applyMapping() {
     if (!window.draftPipelines) window.draftPipelines = {};
@@ -601,7 +727,17 @@ export function applyMapping() {
     console.log('🛑 [VIGÍA] Verificando window.saveSimulationConfig: ', typeof window.saveSimulationConfig);
 
     try {
-        if (typeof window.saveSimulationConfig === 'function') {
+        if (window.globalContext && window.globalContext.flujoId && window.globalContext.flujoId !== "CRUDO") {
+            console.log("[WORKSHOP] Ejecutando autoguardado en plantilla ID:", window.globalContext.flujoId);
+            let headerName = "Plantilla Activa";
+            const selectEl = document.getElementById('headerFlujoSelect');
+            if (selectEl && selectEl.options[selectEl.selectedIndex]) {
+                headerName = selectEl.options[selectEl.selectedIndex].text;
+            }
+            if (typeof window._executeFlujoSave === 'function') {
+                window._executeFlujoSave(window.globalContext.flujoId, headerName);
+            }
+        } else if (typeof window.saveSimulationConfig === 'function') {
             window.saveSimulationConfig(null, false);
             console.log('🛑 [VIGÍA] Llamada a saveSimulationConfig ejecutada correctamente');
         } else {
@@ -738,9 +874,11 @@ window.viewerRuleWorkshop = {
     applyMapping,
     getActiveState,
     createLocalRule,
-    createLocalRuleDirect,
     switchToComputedMode,
-    switchToStandardMode
+    switchToStandardMode,
+    createLocalRuleDirect,
+    clearPipeline,
+    auditResidues
 };
 
 // Auto-initialize on load
