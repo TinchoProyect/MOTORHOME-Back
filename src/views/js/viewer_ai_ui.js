@@ -172,9 +172,23 @@ class ViewerAiUi {
             const vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
             if (!vCol || vCol.dataIdx === undefined) throw new Error("Columna virtual corrupta.");
             
+            let extractionDataIdx = vCol.dataIdx;
+            
+            // [Fix] Pivot de Muestreo para Columnas Calculadas o Clonadas
+            if (window.computedColumns && Array.isArray(window.computedColumns)) {
+                const compDef = window.computedColumns.find(c => c.id === state.colIndex);
+                if (compDef && compDef.operands && compDef.operands.length > 0) {
+                    const sourceCol = window.virtualColumns.find(v => v.id === compDef.operands[0]);
+                    if (sourceCol && sourceCol.dataIdx !== undefined) {
+                         extractionDataIdx = sourceCol.dataIdx;
+                         console.log(`[Chofer IA] Pivot de extracción activado: Scaneando dataIdx origen [${sourceCol.dataIdx}] operando sobre clon/fórmula.`);
+                    }
+                }
+            }
+            
             // FASE 2: Data Profiling Activo (Extracción Silente Completa)
             this._setStatus('Extrayendo Perfil...', 'working');
-            const uniqueDictionary = await this._buildUniqueSet(vCol.dataIdx, state.pipeline);
+            const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, state.pipeline);
             
             if (uniqueDictionary.length === 0) throw new Error("La columna carece de datos parseables.");
             

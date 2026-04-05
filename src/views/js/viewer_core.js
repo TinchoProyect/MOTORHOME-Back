@@ -338,6 +338,12 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 }
 
                 if (isNaN(dataIdx)) dataIdx = 0;
+                
+                // Evitar colisión de restricción Not Null en backend Supabase
+                if (!config.masterField || !config.masterField.id) {
+                    console.log(`[V4] Omitiendo columna origen ${dataIdx} - No posee campo_maestro_id (mapping) y Supabase lo rechaza.`);
+                    continue;
+                }
 
                 mapeosPayload.push({
                     columna_origen_index: dataIdx, // This is the physical index for the DB
@@ -933,12 +939,12 @@ window.loadSavedConfiguration = async function () {
             if (c.rules && c.rules.length > 0) {
                 window.draftPipelines[c.id] = {
                     masterField: c.masterField,
-                    colName: c.masterField.nombre_campo || 'Calculada',
+                    colName: c.masterField ? c.masterField.nombre_campo : 'Calculada',
                     rules: c.rules
                 };
                 
                 if (!window.columnMapping) window.columnMapping = {};
-                window.columnMapping[c.id] = c.masterField.id;
+                if (c.masterField && c.masterField.id) window.columnMapping[c.id] = c.masterField.id;
                 
                 computedHydrated = true;
             }
