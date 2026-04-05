@@ -293,6 +293,14 @@ function openColumnMenu_v2(vColId, buttonElement) {
             }
 
             columnMapping[vColId] = term.termino;
+            
+            // [V7] Computed Column Mapping Sync
+            if (window.computedColumns) {
+                const compDef = window.computedColumns.find(c => c.id === vColId);
+                if (compDef) {
+                    compDef.masterField = { id: term.id, nombre_campo: term.termino };
+                }
+            }
             if (term.reglas_procesamiento) {
                 processingRules[vColId] = Array.isArray(term.reglas_procesamiento)
                     ? term.reglas_procesamiento
@@ -331,6 +339,12 @@ function openColumnMenu_v2(vColId, buttonElement) {
         if (window.columnMapping) delete window.columnMapping[vColId];
         if (window.processingRules) delete window.processingRules[vColId];
         if (window.draftPipelines) delete window.draftPipelines[vColId];
+        
+        // [V7] Computed Column Mapping Sync
+        if (window.computedColumns) {
+            const compDef = window.computedColumns.find(c => c.id === vColId);
+            if (compDef) delete compDef.masterField;
+        }
 
         if (isClone && window.virtualColumns) {
             const idx = window.virtualColumns.findIndex(v => v.id === vColId);

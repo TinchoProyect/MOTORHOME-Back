@@ -174,9 +174,11 @@ class ViewerAiUi {
 
             // 1. Intentar lectura física (Fallback V4)
             const vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
-            if (vCol && vCol.dataIdx !== undefined) {
+            if (vCol && vCol.dataIdx !== undefined && vCol.dataIdx !== null) {
                 extractionDataIdx = vCol.dataIdx;
                 targetColName = window.currentSheetData && window.currentSheetData[0] ? window.currentSheetData[0][extractionDataIdx] || targetColName : targetColName;
+            } else if (vCol) {
+                console.warn(`[Chofer IA] Fallback 1 abortado: Columna destino ${state.colIndex} encontrada pero sin dataIdx físico.`);
             }
             
             // 2. Rastreo Bimodal (V8 Computadas y Clones Pivot)
@@ -184,10 +186,26 @@ class ViewerAiUi {
                 const compDef = window.computedColumns.find(c => c.id === state.colIndex);
                 if (compDef && compDef.operands && compDef.operands.length > 0) {
                     const sourceCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === compDef.operands[0]) : null;
-                    if (sourceCol && sourceCol.dataIdx !== undefined) {
+                    
+                    if (sourceCol && sourceCol.dataIdx !== undefined && sourceCol.dataIdx !== null) {
                          extractionDataIdx = sourceCol.dataIdx;
                          targetColName = compDef.masterField && compDef.masterField.nombre_campo ? compDef.masterField.nombre_campo : "Clon Computado";
-                         console.log(`[Chofer IA] Rastreo Bimodal: Pivotando dataIdx origen [${sourceCol.dataIdx}] operando sobre clon/fórmula.`);
+                         console.log(`[Chofer IA] Rastreo Bimodal: Pivotando dataIdx origen [${sourceCol.dataIdx}] desde columna [${sourceCol.id}] operando sobre clon/fórmula.`);
+                    } else if (sourceCol) {
+                         console.warn(`[Chofer IA] Rastreo Bimodal abortado: Columna origen ${sourceCol.id} carece de dataIdx físico.`);
+                    } else {
+                         // [V5.25 NUEVO] Rastreo en cascada profunda: Es posible que el origen sea OTRA columna computada.
+                         const sourceComp = window.computedColumns.find(c => c.id === compDef.operands[0]);
+                         if (sourceComp && sourceComp.operands && sourceComp.operands.length > 0) {
+                             const deepCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === sourceComp.operands[0]) : null;
+                             if (deepCol && deepCol.dataIdx !== undefined && deepCol.dataIdx !== null) {
+                                 extractionDataIdx = deepCol.dataIdx;
+                                 targetColName = sourceComp.masterField && sourceComp.masterField.nombre_campo ? sourceComp.masterField.nombre_campo : "Clon Recursivo";
+                                 console.log(`[Chofer IA] Rastreo Bimodal Profundo: Extrayendo dataIdx [${deepCol.dataIdx}] saltando cadena de referencias.`);
+                             }
+                         } else {
+                             console.warn(`[Chofer IA] Rastreo bimodal abortado: El origen [${compDef.operands[0]}] no pudo resolverse ni física ni computacionalmente.`);
+                         }
                     }
                 }
             }

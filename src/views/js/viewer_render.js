@@ -307,20 +307,51 @@ function renderVirtualTable(originalData) {
             // [V6] Control de Visibilidad para Columnas Calculadas
             if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(comp.id)) return;
 
-            const thClass = "relative bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20 transition-colors";
-            const thContent = `
-                <div class="flex items-center justify-between gap-1 h-full relative">
-                    <div class="flex items-center gap-1 overflow-hidden cursor-pointer hover:bg-fuchsia-500/20 px-1 py-0.5 rounded transition-colors w-full h-full" title="Editar ${comp.masterField?.nombre_campo || 'Calculada'}" onclick="if(window.editComputedColumn) window.editComputedColumn('${comp.id}')">
-                        <i data-lucide="calculator" class="w-3 h-3 text-fuchsia-400 flex-shrink-0"></i>
-                        <span class="truncate text-[10px]">${comp.masterField?.nombre_campo || 'Calculada'}</span>
+            let thClass = "relative bg-fuchsia-900/20 border-b-2 border-fuchsia-500/50 text-fuchsia-300 font-bold uppercase border border-fuchsia-900/50 p-2 sticky top-0 z-20 transition-colors";
+            let thContent = "";
+            let mappedName = comp.masterField?.nombre_campo || 'Calculada';
+
+            // [V7] Visibilidad del selector de Mapeo en Computed Columns (Columna Añadida/Clon)
+            if (window.mappingMode || typeof mappingMode !== 'undefined' && mappingMode) {
+                const isMapped = !!comp.masterField;
+                const btnClass = isMapped ? 'bg-fuchsia-600/20 border-fuchsia-500/50 text-fuchsia-300' : 'bg-slate-800/50 text-slate-500 hover:text-fuchsia-400';
+                thClass = "bg-slate-950 p-1 sticky top-0 z-20";
+                
+                // --- NAME RESOLUTION HELPER COPIA EN LÍNEA ---
+                let displayName = mappedName;
+                if (!comp.masterField || comp.masterField.nombre_campo === 'Ignorar Columna') {
+                    displayName = 'Calculada';
+                } else if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                    const match = window.masterDictionary.find(m => String(m.id) === String(mappedName) || String(m.nombre_campo) === String(mappedName));
+                    if (match) displayName = match.nombre_campo;
+                }
+                
+                thContent = `
+                <div class="flex items-center gap-1 h-full relative">
+                    <button onclick="if(typeof openColumnMenu_v2 === 'function') openColumnMenu_v2('${comp.id}', this)" class="flex-grow h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
+                        <span class="truncate font-bold text-[10px] uppercase">${displayName} (Calculada)</span>
+                        <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                    </button>
+                    <button onclick="window.ViewerUI.deleteComputedColumn('${idx}')" class="text-fuchsia-500 hover:text-red-400 p-1 shrink-0 rounded transition-colors" title="Eliminar Columna Calculada">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                    </button>
+                </div>`;
+            } else {
+                thContent = `
+                    <div class="flex items-center justify-between gap-1 h-full relative">
+                        <div class="flex items-center gap-1 overflow-hidden cursor-pointer hover:bg-fuchsia-500/20 px-1 py-0.5 rounded transition-colors w-full h-full" title="Editar ${mappedName}" onclick="if(window.editComputedColumn) window.editComputedColumn('${comp.id}')">
+                            <i data-lucide="calculator" class="w-3 h-3 text-fuchsia-400 flex-shrink-0"></i>
+                            <span class="truncate text-[10px]">${mappedName}</span>
+                        </div>
+                        <div class="flex" style="flex-shrink: 0">
+                            <button onclick="window.ViewerUI.deleteComputedColumn('${idx}')" class="text-fuchsia-500 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Eliminar Cálculo">
+                                <i data-lucide="trash-2" class="w-3 h-3"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex" style="flex-shrink: 0">
-                        <button onclick="window.ViewerUI.deleteComputedColumn('${idx}')" class="text-fuchsia-500 hover:text-red-400 p-0.5 ml-1 shrink-0 rounded hover:bg-red-500/10 transition-colors" title="Eliminar Cálculo">
-                            <i data-lucide="trash-2" class="w-3 h-3"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
+                `;
+            }
+            
             const colWidth = window.currentColWidths && window.currentColWidths[comp.id] ? window.currentColWidths[comp.id] : 150;
             const resizerHtml = `<div class="resizer-handle" onmousedown="window.initColResize(event, '${comp.id}', this.parentElement)" style="position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:70; user-select:none; background:transparent; transition:background 0.2s;" onmouseover="this.style.background='rgba(59,130,246,0.3)'" onmouseout="this.style.background='transparent'"></div>`;
             headerHtml += `<th id="th-${comp.id}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" data-col-id="${comp.id}">${thContent}${resizerHtml}</th>`;
@@ -820,8 +851,52 @@ function generatePreview() {
                         row._rejectedSim = true;
                     }
                 }
+
+                // [NUEVO REQUERIMIENTO] HARD-FILTER POR CÓDIGO (Identidad obligatoria)
+                let dictTermId = columnMapping[vColId];
+                if (dictTermId && dictTermId !== 'Ignorar Columna') {
+                    let colName = dictTermId;
+                    if (window.masterDictionary) {
+                        const mObj = window.masterDictionary.find(m => m.id === dictTermId || m.nombre_campo === dictTermId);
+                        if (mObj && mObj.nombre_campo) colName = mObj.nombre_campo;
+                    }
+                    
+                    // Verifica si el nombre maestro comienza con CÓDIGO o CODIGO
+                    const isCodeCol = !!String(colName).toUpperCase().trim().match(/^C[OÓ]DIGO/i);
+                    const isCellEmpty = (display === null || display === undefined || String(display).trim() === "");
+                    
+                    if (isCodeCol && isCellEmpty) {
+                        row._rejectedSim = true;
+                        row._rejectedByCode = true; // Para titulo especial en UI
+                    }
+                }
             });
             return true; // We never drop rows mathematically anymore, we just paint them red!
+        });
+
+        // [V8 FIX] Detección de filas 100% vacías post-procesamiento
+        sanitizedData.forEach(row => {
+            if (row._rejectedSim) return;
+            
+            let isEmptyRow = true;
+            displayConfig.forEach(cfg => {
+                 let finalVal = null;
+                 if (cfg.isComputed) {
+                     finalVal = cfg.transform(null, row);
+                 } else {
+                     const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
+                     finalVal = row._richContext && row._richContext[cfg.virtualColId] ? row._richContext[cfg.virtualColId].display : null;
+                     if(finalVal === null || finalVal === undefined) finalVal = cfg.transform(rawVal, row);
+                 }
+                 if (finalVal !== null && finalVal !== undefined && String(finalVal).trim() !== "") {
+                     isEmptyRow = false; // Tiene al menos 1 celda con contenido útil
+                 }
+            });
+            
+            if (isEmptyRow) {
+                 row._rejectedSim = true; // Excluimos por vacío total
+                 row._emptySilently = true;
+            }
         });
 
         // Contabilizar rechazos transparentes
@@ -839,10 +914,20 @@ function generatePreview() {
         });
 
         const filterHTML = window.GlobalSearchFilter ? window.GlobalSearchFilter.render('sim', 'filterSimulationData') : '<span class="text-slate-500">Search Loader Failed</span>';
+        
+        // [V8 UI] Toggle de Visibilidad de Rechazos
+        window.ViewerUI._showRejectedRowsInSim = window.ViewerUI._showRejectedRowsInSim || false;
+        const toggleHtml = `
+            <button onclick="window.ViewerUI.toggleRejectedRows()" class="ml-2 px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase ${window.ViewerUI._showRejectedRowsInSim ? 'bg-red-900/40 text-red-300 border border-red-500/50' : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'}" title="Alterna la visibilidad de registros descartados o completamente vacíos">
+                <i data-lucide="${window.ViewerUI._showRejectedRowsInSim ? 'eye' : 'eye-off'}" class="w-3 h-3"></i> 
+                Mostrar Descartadas
+            </button>
+        `;
 
         const toolbar = `
             <div class="flex items-center gap-3 mb-2 p-2 bg-slate-900 border-b border-slate-700 sticky top-0 z-10 w-full">
                 ${filterHTML}
+                ${toggleHtml}
                 
                 <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700 ml-auto">
                     <span id="simFilteredCount">${sanitizedData.length}</span> / ${sanitizedData.length}
@@ -1048,11 +1133,14 @@ function renderSimulationTable(data) {
 
     data.forEach((row) => {
         const isRejected = row._rejectedSim;
-        if (isRejected) return; // FIX Bug 2: Ocultar completamente filas descartadas
+        if (isRejected && !window.ViewerUI._showRejectedRowsInSim) return;
 
-        const rowClass = "hover:bg-slate-800/50";
+        let rowTitle = row._emptySilently ? "Fila 100% vacía tras extracción" : "Fila descartada matemáticamente";
+        if (row._rejectedByCode) rowTitle = "Fila descartada: Carencia de Identidad (Código Vacío)";
         
-        html += `<tr class='transition-colors border-b border-slate-800 ${rowClass}'>`;
+        const rowClass = isRejected ? "hover:bg-red-900/30 bg-red-950/20" : "hover:bg-slate-800/50";
+        
+        html += `<tr class='transition-colors border-b border-slate-800 ${rowClass}' ${isRejected ? `title="${rowTitle}"` : ''}>`;
 
         // Fase 1 - Render V5
         currentDisplayConfig.forEach(cfg => {
@@ -1117,13 +1205,23 @@ window.ViewerUI.toggleAllRulesInSimulation = function(vColId, forceEnable) {
 };
 
 window.ViewerUI.toggleRulesMenu = function(e, vColId) {
-    if (e) e.stopPropagation();
-    if (window.ViewerUI._keepDropdownOpen === vColId) {
+    e.stopPropagation();
+    const dropdown = e.currentTarget.nextElementSibling;
+    const isCurrentlyForced = window.ViewerUI._keepDropdownOpen === vColId;
+    
+    if (isCurrentlyForced) {
         window.ViewerUI._keepDropdownOpen = null;
     } else {
         window.ViewerUI._keepDropdownOpen = vColId;
     }
-    // Forzamos un redibujado local reactivo súper rápido para aplicar las clases y reflejar CSS de "menú activo" sin romper funcionalidad
+    
+    if (typeof window.generatePreview === 'function') {
+        window.generatePreview();
+    }
+};
+
+window.ViewerUI.toggleRejectedRows = function() {
+    window.ViewerUI._showRejectedRowsInSim = !window.ViewerUI._showRejectedRowsInSim;
     if (typeof window.generatePreview === 'function') {
         window.generatePreview();
     }

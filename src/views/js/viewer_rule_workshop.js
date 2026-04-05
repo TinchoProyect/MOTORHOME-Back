@@ -410,11 +410,16 @@ export function switchToComputedMode() {
                 
                 if (elA) elA.value = compConfig.operands[0];
                 if (elB) elB.value = compConfig.operands[1];
-                if (elOp) elOp.value = compConfig.macro;
+                if (elOp) {
+                    elOp.value = compConfig.macro;
+                    // [V7] Forzar actualización de Interfaz (Dynamic UI) luego de hidratar el valor
+                    if (typeof elOp.onchange === 'function') elOp.onchange();
+                    else elOp.dispatchEvent(new Event('change'));
+                }
                 if (elColName) elColName.value = compConfig.masterField?.nombre_campo || "";
                 if (elTol) elTol.checked = compConfig.tolerateEmpty !== false;
             }
-        }, 50);
+        }, 100); // 100ms offset para garantizar que openCalculationModal ya insertó el DOM base.
     }
 }
 

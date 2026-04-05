@@ -71,12 +71,13 @@ function openCalculationModal(fromRuleWorkshop = false) {
     // [New] Dynamic UI For Operations
     const selOp = document.getElementById('calcOperation');
     if (selOp) {
-        selOp.onchange = (e) => {
+        selOp.onchange = () => {
+            const opValue = selOp.value;
             const labelA = document.getElementById('calcFieldA').previousElementSibling;
             const containerB = document.getElementById('calcFieldB').parentElement;
-            const containerTol = document.getElementById('calcTolerateEmpty').parentElement;
+            const containerTol = document.getElementById('calcTolerateEmpty') ? document.getElementById('calcTolerateEmpty').parentElement : null;
             
-            if (e.target.value === 'CLONE') {
+            if (opValue === 'CLONE') {
                 if(labelA) labelA.innerText = "Columna Origen (Clonada)";
                 if(containerB) containerB.style.display = 'none';
                 if(containerTol) containerTol.style.display = 'none';
@@ -86,8 +87,8 @@ function openCalculationModal(fromRuleWorkshop = false) {
                 if(containerTol) containerTol.style.display = 'flex';
             }
         };
-        // Trigger manual for init state
-        setTimeout(() => selOp.dispatchEvent(new Event('change')), 50);
+        // Limpiamos la basura visual del estado anterior forzándolo al disparar el trigger
+        setTimeout(() => selOp.onchange(), 50);
     }
 }
 
