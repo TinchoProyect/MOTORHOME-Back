@@ -169,21 +169,31 @@ class ViewerAiUi {
             const state = window.viewerRuleWorkshop.getActiveState();
             if (!state || !state.colIndex) throw new Error("Abre el taller de una columna");
 
+            let extractionDataIdx = undefined;
+            let targetColName = "Columna Desconocida";
+
+            // 1. Intentar lectura física (Fallback V4)
             const vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
-            if (!vCol || vCol.dataIdx === undefined) throw new Error("Columna virtual corrupta.");
+            if (vCol && vCol.dataIdx !== undefined) {
+                extractionDataIdx = vCol.dataIdx;
+                targetColName = window.currentSheetData && window.currentSheetData[0] ? window.currentSheetData[0][extractionDataIdx] || targetColName : targetColName;
+            }
             
-            let extractionDataIdx = vCol.dataIdx;
-            
-            // [Fix] Pivot de Muestreo para Columnas Calculadas o Clonadas
+            // 2. Rastreo Bimodal (V8 Computadas y Clones Pivot)
             if (window.computedColumns && Array.isArray(window.computedColumns)) {
                 const compDef = window.computedColumns.find(c => c.id === state.colIndex);
                 if (compDef && compDef.operands && compDef.operands.length > 0) {
-                    const sourceCol = window.virtualColumns.find(v => v.id === compDef.operands[0]);
+                    const sourceCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === compDef.operands[0]) : null;
                     if (sourceCol && sourceCol.dataIdx !== undefined) {
                          extractionDataIdx = sourceCol.dataIdx;
-                         console.log(`[Chofer IA] Pivot de extracción activado: Scaneando dataIdx origen [${sourceCol.dataIdx}] operando sobre clon/fórmula.`);
+                         targetColName = compDef.masterField && compDef.masterField.nombre_campo ? compDef.masterField.nombre_campo : "Clon Computado";
+                         console.log(`[Chofer IA] Rastreo Bimodal: Pivotando dataIdx origen [${sourceCol.dataIdx}] operando sobre clon/fórmula.`);
                     }
                 }
+            }
+            
+            if (extractionDataIdx === undefined) {
+                 throw new Error("Columna virtual corrupta o sin origen de datos físico localizable.");
             }
             
             // FASE 2: Data Profiling Activo (Extracción Silente Completa)
@@ -204,10 +214,8 @@ class ViewerAiUi {
                 });
             }
 
-            const colTitle = window.currentSheetData[0][vCol.dataIdx] || "¿?";
-
             const payload = {
-                column_name: colTitle,
+                column_name: targetColName,
                 prompt: promptText,
                 samples: uniqueDictionary, 
                 require_ast: false
