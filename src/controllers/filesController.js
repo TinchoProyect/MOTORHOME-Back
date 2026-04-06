@@ -900,8 +900,13 @@ async function getTemplateConfig(req, res) {
         // 1. Buscamos coincidencia exacta de hoja
         let bestMatch = data.find(t => t.hoja_excel === sheetName);
 
-        // 2. [FIX] Strict Mode: Solo devolvemos si hay coincidencia EXACTA de hoja
-        // Eliminamos los fallbacks genéricos para garantizar la independencia total entre múltiples hojas (V7).
+        // 2. [FIX RETROC. V8] Fallback a plantilla genérica si existe
+        if (!bestMatch) {
+            bestMatch = data.find(t => t.hoja_excel === null || t.hoja_excel === "");
+            if (bestMatch) {
+                console.log("   ⚠️ Usando plantilla genérica heredada (Legacy).");
+            }
+        }
 
         if (bestMatch) {
             console.log(`   ✅ Plantilla encontrada: ${bestMatch.nombre_formato} (Offset: ${bestMatch.fila_encabezado}, ${bestMatch.columna_encabezado})`);

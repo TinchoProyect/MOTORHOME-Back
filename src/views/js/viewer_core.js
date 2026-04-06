@@ -467,18 +467,15 @@ window._executeFlujoSave = async function (id_flujo, nombreFlujo) {
         return;
     }
 
-    // Construcción del config_payload
+    // 0. Sincronizar hoja actual antes de serializar todo
+    if (typeof saveSheetState === 'function' && window.currentSheetName) {
+        saveSheetState(window.currentSheetName);
+    }
+
+    // 1. Construcción del config_payload (Versión Multi-Hoja V8)
     const payload = {
-        offset: typeof currentOffset !== 'undefined' ? currentOffset : { row: 0, col: 0 },
-        virtualColumns: window.virtualColumns || [],
-        computedColumns: window.computedColumns || [],
-        columnMapping: window.columnMapping || {},
-        draftPipelines: window.draftPipelines || {},
-        layoutConfig: {
-            colWidths: window.currentColWidths || {},
-            config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
-            hiddenColumns: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {}
-        }
+        isMultiSheet: true,
+        sheets: window.sheetConfigStore || {}
     };
 
     const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -720,34 +717,53 @@ window.loadSavedConfiguration = async function () {
                 if (resultFlujo && resultFlujo.config_payload) {
                     const payload = resultFlujo.config_payload;
 
-                    // 1. Offset
-                    if (payload.offset) {
-                        currentOffset = payload.offset;
-                        offsetSelectionMode = false;
+                    // Multi-Hoja vs Legacy (Flat)
+                    if (payload.isMultiSheet && payload.sheets) {
+                        console.log("📂 [FLUJOS] Hidratando arquitectura Multi-Hoja (V8)");
+                        window.sheetConfigStore = payload.sheets;
+                        
+                        // Reactivar el estado solo para la hoja actual (Virgin State para las demas)
+                        if (typeof loadSheetState === 'function' && window.currentSheetName) {
+                            loadSheetState(window.currentSheetName);
+                        }
+                    } else {
+                        console.log("⚠️ [FLUJOS] Fallback: Hidratando formato Legacy Plano");
+                        
+                        // 1. Offset
+                        if (payload.offset) {
+                            window.currentOffset = payload.offset;
+                            window.offsetSelectionMode = false;
+                        }
+
+                        // 2. Arrays Virtuales y Calculados
+                        if (payload.virtualColumns) window.virtualColumns = payload.virtualColumns;
+                        if (payload.computedColumns) window.computedColumns = payload.computedColumns;
+
+                        // 3. Mapping
+                        if (payload.columnMapping) window.columnMapping = payload.columnMapping;
+
+                        // 4. Pipelines ETL
+                        if (payload.draftPipelines) window.draftPipelines = payload.draftPipelines;
+
+                        // 5. Layout (Anchos y Orden)
+                        if (payload.layoutConfig) {
+                            if (payload.layoutConfig.colWidths) window.currentColWidths = payload.layoutConfig.colWidths;
+                            if (payload.layoutConfig.config_visual && window.LayoutManager) {
+                                window.LayoutManager.hydrateSettings(payload.layoutConfig.config_visual);
+                            }
+                            if (payload.layoutConfig.hiddenColumns && window.ViewerVisibilityManager) {
+                                window.ViewerVisibilityManager.hydrateSettings(payload.layoutConfig.hiddenColumns);
+                            }
+                        }
+                        
+                        // Salvaguardar forzosamente este legado plano dentro del store de la hoja actual, 
+                        // para que no se filtre a la hoja 2 si navegan.
+                        if (typeof saveSheetState === 'function' && window.currentSheetName) {
+                            saveSheetState(window.currentSheetName);
+                        }
                     }
 
-                    // 2. Arrays Virtuales y Calculados
-                    if (payload.virtualColumns) window.virtualColumns = payload.virtualColumns;
-                    if (payload.computedColumns) window.computedColumns = payload.computedColumns;
-
-                    // 3. Mapping
-                    if (payload.columnMapping) columnMapping = payload.columnMapping;
-
-                    // 4. Pipelines ETL
-                    if (payload.draftPipelines) window.draftPipelines = payload.draftPipelines;
-
-                    // 5. Layout (Anchos y Orden)
-                    if (payload.layoutConfig) {
-                        if (payload.layoutConfig.colWidths) window.currentColWidths = payload.layoutConfig.colWidths;
-                        if (payload.layoutConfig.config_visual && window.LayoutManager) {
-                            window.LayoutManager.hydrateSettings(payload.layoutConfig.config_visual);
-                        }
-                        if (payload.layoutConfig.hiddenColumns && window.ViewerVisibilityManager) {
-                            window.ViewerVisibilityManager.hydrateSettings(payload.layoutConfig.hiddenColumns);
-                        }
-                    }
-
-                    console.log("✅ [FLUJOS] Hidratación 100% Completada");
+                    console.log("✅ [FLUJOS] Hidratación Completada (Aislamiento de Memoria Garantizado)");
                     return true; // Bypass del viejo V3/V4 setup
                 }
             }

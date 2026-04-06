@@ -274,7 +274,7 @@ function renderVirtualTable(originalData) {
 
             // [FIX] Add Visual Feedback for Offset Mode on Headers
             if (offsetSelectionMode) {
-                thClass += " cursor-crosshair hover:bg-amber-500/30 border-amber-500/50";
+                thClass += " cursor-crosshair hover:bg-amber-500/30";
                 // Add Anchor style if this is the selected offset (uses dataIdx)
                 if (currentOffset && currentOffset.row === 0 && currentOffset.col === dataIdx) {
                     thClass += " border-2 border-amber-500 bg-amber-900/40 text-amber-400";

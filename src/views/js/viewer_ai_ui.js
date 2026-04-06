@@ -171,17 +171,10 @@ class ViewerAiUi {
 
             let extractionDataIdx = undefined;
             let targetColName = "Columna Desconocida";
+            let foundPhysical = false;
+            let vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
 
-            // 1. Intentar lectura física (Fallback V4)
-            const vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
-            if (vCol && vCol.dataIdx !== undefined && vCol.dataIdx !== null) {
-                extractionDataIdx = vCol.dataIdx;
-                targetColName = window.currentSheetData && window.currentSheetData[0] ? window.currentSheetData[0][extractionDataIdx] || targetColName : targetColName;
-            } else if (vCol) {
-                console.warn(`[Chofer IA] Fallback 1 abortado: Columna destino ${state.colIndex} encontrada pero sin dataIdx físico.`);
-            }
-            
-            // 2. Rastreo Bimodal (V8 Computadas y Clones Pivot)
+            // 1. Rastreo Bimodal Primero (Prioridad a Computadas y Clones Pivot)
             if (window.computedColumns && Array.isArray(window.computedColumns)) {
                 const compDef = window.computedColumns.find(c => c.id === state.colIndex);
                 if (compDef && compDef.operands && compDef.operands.length > 0) {
@@ -191,6 +184,7 @@ class ViewerAiUi {
                          extractionDataIdx = sourceCol.dataIdx;
                          targetColName = compDef.masterField && compDef.masterField.nombre_campo ? compDef.masterField.nombre_campo : "Clon Computado";
                          console.log(`[Chofer IA] Rastreo Bimodal: Pivotando dataIdx origen [${sourceCol.dataIdx}] desde columna [${sourceCol.id}] operando sobre clon/fórmula.`);
+                         foundPhysical = true;
                     } else if (sourceCol) {
                          console.warn(`[Chofer IA] Rastreo Bimodal abortado: Columna origen ${sourceCol.id} carece de dataIdx físico.`);
                     } else {
@@ -202,6 +196,7 @@ class ViewerAiUi {
                                  extractionDataIdx = deepCol.dataIdx;
                                  targetColName = sourceComp.masterField && sourceComp.masterField.nombre_campo ? sourceComp.masterField.nombre_campo : "Clon Recursivo";
                                  console.log(`[Chofer IA] Rastreo Bimodal Profundo: Extrayendo dataIdx [${deepCol.dataIdx}] saltando cadena de referencias.`);
+                                 foundPhysical = true;
                              }
                          } else {
                              console.warn(`[Chofer IA] Rastreo bimodal abortado: El origen [${compDef.operands[0]}] no pudo resolverse ni física ni computacionalmente.`);
@@ -209,9 +204,22 @@ class ViewerAiUi {
                     }
                 }
             }
+
+            // 2. Intentar lectura física (Fallback V4) si no es computada o si falló el bimodal
+            if (!foundPhysical) {
+                // [FIX V8] Sólo intentar extraer datos físicos si no es un Placeholder Inyectado vacío
+                if (vCol && vCol.dataIdx !== undefined && vCol.dataIdx !== null && !vCol.isGhostPlaceholder && !String(vCol.id).startsWith('col_ph_')) {
+                    extractionDataIdx = vCol.dataIdx;
+                    targetColName = window.currentSheetData && window.currentSheetData[0] ? window.currentSheetData[0][extractionDataIdx] || targetColName : targetColName;
+                } else if (vCol && (vCol.isGhostPlaceholder || String(vCol.id).startsWith('col_ph_'))) {
+                    console.warn(`[Chofer IA] Bloqueo de Ingesta Fantasma: La columna ${state.colIndex} es un placeholder vacío. No se ha definido su origen de clonación (Computada) en el Editor Matemático.`);
+                } else if (vCol) {
+                    console.warn(`[Chofer IA] Fallback 1 abortado: Columna destino ${state.colIndex} encontrada pero sin dataIdx físico.`);
+                }
+            }
             
             if (extractionDataIdx === undefined) {
-                 throw new Error("Columna virtual corrupta o sin origen de datos físico localizable.");
+                 throw new Error("Columna fantasma sin vincular. Debes asignar una regla de 'Clonación' en el Editor de Célculos (ƒx) antes de usar Chofer IA.");
             }
             
             // FASE 2: Data Profiling Activo (Extracción Silente Completa)

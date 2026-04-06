@@ -187,9 +187,10 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
                     renderVirtualTable(currentSheetData);
 
                     // [CORRECCIÓN FINAL] INTENTAR CARGAR MEMORIA AUTOMÁTICAMENTE
-                    if (window.loadSavedConfiguration) {
+                    if (window.loadSavedConfiguration && !window._flujoAlreadyLoaded) {
                         window.loadSavedConfiguration().then(ok => {
                             if (ok) {
+                                window._flujoAlreadyLoaded = true;
                                 console.log("🔄 [ViewerEngine] Worker terminó + Configuración aplicada. Repintando...");
                                 renderVirtualTable(currentSheetData);
                             }
@@ -272,13 +273,18 @@ function loadSheet(sheetName) {
             renderVirtualTable(currentSheetData);
 
             // 2. [NUEVO] INTENTAR CARGAR CONFIGURACIÓN GUARDADA 🧠
-            if (window.loadSavedConfiguration) {
+            if (window.loadSavedConfiguration && !window._flujoAlreadyLoaded) {
                 const loaded = await window.loadSavedConfiguration();
                 if (loaded) {
+                    window._flujoAlreadyLoaded = true;
                     console.log("🔄 [ViewerEngine] Re-pintando tabla con configuración aplicada...");
                     // Volver a pintar para que se vean los colores y el offset aplicado
                     renderVirtualTable(currentSheetData);
                 }
+            } else if (window._flujoAlreadyLoaded) {
+                // Ya se mapeó el store universal, solo asegurarse de repintar
+                console.log("🔄 [ViewerEngine] Re-aplicando vista de tab via store pre-cargado...");
+                renderVirtualTable(currentSheetData);
             }
 
             const loader = document.getElementById('viewerLoader');
@@ -347,7 +353,10 @@ function saveSheetState(sheetName) {
         pipelines: window.draftPipelines ? JSON.parse(JSON.stringify(window.draftPipelines)) : {},
         colWidths: window.currentColWidths ? JSON.parse(JSON.stringify(window.currentColWidths)) : {},
         virtualCols: window.virtualColumns ? JSON.parse(JSON.stringify(window.virtualColumns)) : [],
-        computedCols: window.computedColumns ? JSON.parse(JSON.stringify(window.computedColumns)) : []
+        computedCols: window.computedColumns ? JSON.parse(JSON.stringify(window.computedColumns)) : [],
+        columnMapping: window.columnMapping ? JSON.parse(JSON.stringify(window.columnMapping)) : {},
+        layoutConfig: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
+        visibilityConfig: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {}
     };
 }
 
@@ -370,6 +379,14 @@ function loadSheetState(sheetName) {
         window.currentColWidths = config.colWidths || {};
         window.virtualColumns = config.virtualCols || [];
         window.computedColumns = config.computedCols || [];
+        window.columnMapping = config.columnMapping || {};
+        
+        if (window.LayoutManager && config.layoutConfig) {
+            window.LayoutManager.hydrateSettings(config.layoutConfig);
+        }
+        if (window.ViewerVisibilityManager && config.visibilityConfig) {
+            window.ViewerVisibilityManager.hydrateSettings(config.visibilityConfig);
+        }
     }
 }
 
