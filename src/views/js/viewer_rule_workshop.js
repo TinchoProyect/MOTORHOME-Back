@@ -407,21 +407,37 @@ export function switchToComputedMode() {
         setTimeout(() => {
             const cId = window._activeComputedContext.originalCompId;
             const compConfig = window.computedColumns ? window.computedColumns.find(c => c.id === cId) : null;
-            if (compConfig && compConfig.operands && compConfig.operands.length === 2) {
+            if (compConfig && compConfig.operands && compConfig.operands.length >= 1) {
                 const elA = document.getElementById('calcFieldA');
                 const elB = document.getElementById('calcFieldB');
                 const elOp = document.getElementById('calcOperation');
                 const elColName = document.getElementById('calcColName');
                 const elTol = document.getElementById('calcTolerateEmpty');
                 
-                if (elA) elA.value = compConfig.operands[0];
-                if (elB) elB.value = compConfig.operands[1];
                 if (elOp) {
                     elOp.value = compConfig.macro;
                     // [V7] Forzar actualización de Interfaz (Dynamic UI) luego de hidratar el valor
                     if (typeof elOp.onchange === 'function') elOp.onchange();
                     else elOp.dispatchEvent(new Event('change'));
                 }
+                
+                // Op A es la primera de cualquier tipo (CLONE o Normal)
+                if (elA && compConfig.operands[0]) elA.value = compConfig.operands[0];
+                
+                if (compConfig.macro === 'CLONE') {
+                    // Si hay multiples origenes, recrear dropdowns y valorizarlos
+                    for (let i = 1; i < compConfig.operands.length; i++) {
+                        if (window.addCloneSourceUI) window.addCloneSourceUI();
+                        // Al re-queryear tomará las dinamicas (y baseSel no cuenta en querySelectorAll en V8 normal, a menos que el codigo lo haya incluido. wait! calcFieldA SI tiene la clase)
+                        const allSelects = document.querySelectorAll('.calc-source-dyn');
+                        if (allSelects[i]) {
+                            allSelects[i].value = compConfig.operands[i];
+                        }
+                    }
+                } else if (compConfig.operands.length === 2 && elB) {
+                    elB.value = compConfig.operands[1];
+                }
+
                 if (elColName) elColName.value = compConfig.masterField?.nombre_campo || "";
                 if (elTol) elTol.checked = compConfig.tolerateEmpty !== false;
             }

@@ -705,6 +705,12 @@ window.loadSavedConfiguration = async function () {
     const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
     let loadedAnything = false;
 
+    // [NUEVO] Asegurar que el caché de nomenclatura global esté precargado para el Scanner de Visibilidad
+    if (typeof loadNomenclature === 'function' && typeof nomenclatureCache !== 'undefined' && nomenclatureCache.length === 0) {
+        console.log("📦 [BOOT] Precargando Caché Global de Nomenclatura...");
+        await loadNomenclature();
+    }
+
     // ==========================================
     // [NUEVO] CARGA DE FLUJO/PLANTILLA (Sobrescribe modo tradicional)
     // ==========================================

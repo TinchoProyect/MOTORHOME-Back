@@ -13,11 +13,14 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         let rawStringA = "";
         
         if (allOps && Array.isArray(allOps) && allOps.length > 0) {
-            // Unir N columnas origen usando " | " como delimitador de contexto cruzado
-            rawStringA = allOps.map(op => {
+            // Lógica de Fallback (COALESCE): Tomar la primera columna origen que posea un valor válido.
+            // Opcional: Si el usuario deseaba concatenar, se puede hacer join(" "). Para Fallback estricto usamos filter + shift:
+            const valids = allOps.map(op => {
                 const txt = op?.raw !== undefined ? op.raw : (op?.display !== undefined ? op.display : (op?.clean !== undefined && op?.clean !== null ? op.clean : ""));
                 return String(txt).trim();
-            }).filter(v => v !== "").join(" | ");
+            }).filter(v => v !== "");
+            
+            rawStringA = valids.length > 0 ? valids.join(" ") : ""; // join(" ") cumple ambos propósitos: Si solo hay uno, es él mismo. Si hay dos, es string1 + string2.
         } else {
             // [HOTFIX V5.22] Extraer dato crudo (raw) para CLONE
             const txtA = opA?.raw !== undefined ? opA.raw : (opA?.display !== undefined ? opA.display : (opA?.clean !== undefined && opA?.clean !== null ? opA.clean : ""));
@@ -621,6 +624,18 @@ function generatePreview() {
                     }
                 }
 
+                // [NUEVO MODELO STRICT VINCULATION V8]
+                // El usuario ha determinado que "Mapeada en Primera Instancia" (Nomenclature) NO ES SUFICIENTE.
+                // Para que una columna NO SEA "Basura Visual" en el Simulador, DEBE tener un vínculo de sangre explícito
+                // en el motor ETL a un Campo Maestro del Diccionario Global (Vinculada).
+                let isSupportCol = true; // Por defecto es de apoyo
+                if (window.draftPipelines && window.draftPipelines[vColId]) {
+                    const pipe = window.draftPipelines[vColId];
+                    if (pipe && pipe.masterField && pipe.masterField.id) {
+                        isSupportCol = false; // Es una maestra vinculada oficial
+                    }
+                }
+
                 // [V4/V5] PIPELINE HANDLING (Uses draft pipelines instead of legacy processingRules)
                 const pipelineData = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
                 const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
@@ -643,6 +658,7 @@ function generatePreview() {
                             displayConfig.push({
                                 label: fieldName,
                                 isVirtual: true,
+                                isSupportCol: false, // Split targets son siempre resultado principal
                                 sourceIndex: dataIdx, // For reading raw value
                                 transform: (val) => {
                                     if (val === null || val === undefined || val === '') return '';
@@ -676,6 +692,7 @@ function generatePreview() {
                             displayConfig.push({
                                 label: label,
                                 isVirtual: true,
+                                isSupportCol: false, // Split dinamico siempre visible
                                 sourceIndex: dataIdx, // Read from raw data
                                 transform: (val) => {
                                     const stringVal = (val !== null && val !== undefined) ? String(val) : "";
@@ -698,6 +715,7 @@ function generatePreview() {
                     displayConfig.push({
                         label: termName,
                         isVirtual: false,
+                        isSupportCol: isSupportCol, // Flag Maestro V8
                         sourceIndex: dataIdx,
                         transform: (val) => {
                             if (!window.viewerETL) return val;
@@ -706,7 +724,6 @@ function generatePreview() {
                         },
                         hasSwitch: false, // Legacy switch hidden, relying on Gear
                         switchColIdx: vColId,
-                        sourceIndex: dataIdx,
                         virtualColId: vColId // Important for Gear ID
                     });
                 }
@@ -720,6 +737,7 @@ function generatePreview() {
                     label: calcConfig.masterField?.nombre_campo || 'Calculada',
                     isVirtual: true,
                     isComputed: true, // Custom flag
+                    isSupportCol: false, // Las calculadas son siempre maestras
                     virtualColId: calcConfig.id,
                     sourceIndex: -1, // No lee del slice crudo
                     transform: (val, row) => {
@@ -936,10 +954,22 @@ function generatePreview() {
             </button>
         `;
 
+        // [V8 UI] Toggle de Visibilidad de Columnas de Apoyo
+        window.ViewerUI._showSupportColsInSim = window.ViewerUI._showSupportColsInSim || false;
+        
+        let hasSupportCols = displayConfig.some(c => c.isSupportCol);
+        const supportToggleHtml = hasSupportCols ? `
+            <button onclick="window.ViewerUI.toggleSupportCols()" class="ml-2 px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase ${window.ViewerUI._showSupportColsInSim ? 'bg-indigo-900/40 text-indigo-300 border border-indigo-500/50' : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'}" title="Las columnas de apoyo están mapeadas pero no tienen reglas que las vinculen a un campo maestro">
+                <i data-lucide="${window.ViewerUI._showSupportColsInSim ? 'eye' : 'eye-off'}" class="w-3 h-3"></i> 
+                Columnas de Apoyo
+            </button>
+        ` : '';
+
         const toolbar = `
             <div class="flex items-center gap-3 mb-2 p-2 bg-slate-900 border-b border-slate-700 sticky top-0 z-10 w-full">
                 ${filterHTML}
                 ${toggleHtml}
+                ${supportToggleHtml}
                 
                 <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700 ml-auto">
                     <span id="simFilteredCount">${sanitizedData.length}</span> / ${sanitizedData.length}
@@ -1044,6 +1074,9 @@ function renderSimulationTable(data) {
     };
 
     currentDisplayConfig.forEach((cfg, fieldIdx) => {
+        const isSupport = cfg.isSupportCol;
+        const hideClass = (isSupport && !window.ViewerUI._showSupportColsInSim) ? "hidden" : "";
+
         let content = `<span>${cfg.label}</span>`;
         let actions = '';
         let rulesDropdownHtml = '';
@@ -1063,18 +1096,14 @@ function renderSimulationTable(data) {
                         if (!isOff) activeCount++;
                         const badgeColor = isOff 
                             ? 'text-slate-500 line-through grayscale opacity-50' 
-                            : 'text-emerald-400 font-bold';
-                        const iconType = isOff ? 'zap-off' : 'zap';
-                        
-                        const displayType = getRuleName(r.type || r.tipo_regex);
+                            : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+                        const hoverEffect = isOff ? 'hover:text-slate-300' : 'hover:brightness-110';
                         
                         dropdownItems += `
-                            <button onclick="window.ViewerUI.toggleRuleInSimulation('${cfg.virtualColId}', ${idx}); event.stopPropagation();" 
-                                    class="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800 transition-colors border-b border-slate-800/50 last:border-0 ${badgeColor}"
-                                    title="${isOff ? 'Regla Inactiva (clic para Encender)' : 'Regla Activa (clic para Apagar)'}">
-                                <i data-lucide="${iconType}" class="w-3 h-3 shrink-0"></i>
-                                <span class="truncate text-[10px] text-left">${displayType}</span>
-                            </button>
+                            <div onclick="window.ViewerUI.toggleRuleInSimulation('${cfg.virtualColId}', ${idx}); event.stopPropagation();" class="flex items-center justify-between text-[10px] px-2 py-1.5 border-b border-slate-800/50 cursor-pointer pointer-events-auto ${hoverEffect}">
+                                <div class="truncate max-w-[140px] ${badgeColor} font-bold rounded px-1">${r.nombre_regla || getRuleName(r.type || r.tipo_regex)}</div>
+                                <div class="w-2 h-2 rounded-full ${isOff ? 'bg-slate-600' : 'bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.5)]'}"></div>
+                            </div>
                         `;
                     });
 
@@ -1126,8 +1155,9 @@ function renderSimulationTable(data) {
             </div>
         `;
 
-        let thClass = "p-2 border border-slate-700 text-left align-top relative group ";
+        let thClass = `p-2 border border-slate-700 text-left align-top relative group ${hideClass} `;
         thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
+        if (isSupport) thClass += " opacity-60"; // Visual clue that it's support when shown
         
         let resizeHandle = `<div onmousedown="window.initSimColResize(event, this.parentElement, ${fieldIdx}, '${cfg.virtualColId}')" class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 z-20 transition-colors"></div>`;
         
@@ -1156,13 +1186,16 @@ function renderSimulationTable(data) {
 
         // Fase 1 - Render V5
         currentDisplayConfig.forEach(cfg => {
+            const isSupport = cfg.isSupportCol;
+            const hideClass = (isSupport && !window.ViewerUI._showSupportColsInSim) ? "hidden" : "";
+
             const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
             let finalVal = row._richContext && row._richContext[cfg.virtualColId] ? row._richContext[cfg.virtualColId].display : null;
             if(finalVal === null || finalVal === undefined) finalVal = cfg.transform(rawVal, row);
             
             // Limit text properly so resizing behaves like excel truncating long strings
             // We use max-w-0 on td with table-fixed to force truncation instead of expanding grid
-            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-0 ${isRejected ? 'text-red-400' : ''}" title="${String(finalVal).replace(/"/g, '&quot;')}">${finalVal}</td>`;
+            html += `<td class="p-2 border-r border-slate-800 whitespace-nowrap overflow-hidden text-ellipsis max-w-0 ${isRejected ? 'text-red-400' : ''} ${hideClass} ${isSupport ? 'bg-slate-900/50 text-slate-500' : ''}" title="${String(finalVal).replace(/"/g, '&quot;')}">${finalVal}</td>`;
         });
 
         html += "</tr>";
@@ -1234,6 +1267,13 @@ window.ViewerUI.toggleRulesMenu = function(e, vColId) {
 
 window.ViewerUI.toggleRejectedRows = function() {
     window.ViewerUI._showRejectedRowsInSim = !window.ViewerUI._showRejectedRowsInSim;
+    if (typeof window.generatePreview === 'function') {
+        window.generatePreview();
+    }
+};
+
+window.ViewerUI.toggleSupportCols = function() {
+    window.ViewerUI._showSupportColsInSim = !window.ViewerUI._showSupportColsInSim;
     if (typeof window.generatePreview === 'function') {
         window.generatePreview();
     }
