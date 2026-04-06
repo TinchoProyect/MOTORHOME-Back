@@ -153,29 +153,34 @@ Genera ÚNICAMENTE el código JSON AST solicitado para limpiar/extraer estos val
     },
 
     extractJSONFromInference: (text) => {
-        const regex = /```json\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*```/;
+        const regex = /```(?:json)?\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*```/i;
         const match = text.match(regex);
         if (match) {
             return match[1].trim(); 
         }
         
-        // Backup si no usa raw markdown
+        // Backup robusto contra JSON puros (generados via responseMimeType que no usan markdown)
+        text = text.trim();
+        if (text.startsWith('{') && text.endsWith('}')) return text;
+        if (text.startsWith('[') && text.endsWith(']')) return text;
+
         try {
             const firstBrace = text.indexOf('{');
             const lastBrace = text.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
-                return text.substring(firstBrace, lastBrace + 1);
-            }
-            
             const firstBracket = text.indexOf('[');
             const lastBracket = text.lastIndexOf(']');
-            if (firstBracket !== -1 && lastBracket !== -1 && lastBracket >= firstBracket) {
+            
+            // Evaluar cual contenedor asume la jerarquía principal
+            const isObjectRoot = firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket);
+            
+            if (isObjectRoot && lastBrace >= firstBrace) {
+                return text.substring(firstBrace, lastBrace + 1);
+            } else if (firstBracket !== -1 && lastBracket >= firstBracket) {
                 return text.substring(firstBracket, lastBracket + 1);
             }
-            
-            return text.trim();
+            return text;
         } catch (err) {
-            return text.trim();
+            return text;
         }
     },
 
@@ -221,19 +226,26 @@ Usa escape doble para JSON si emites Regex.`;
         const systemInstruction = `Eres un motor semántico avanzado de Estandarización de Datos (Master Data Management).
 El usuario te ha dado esta orden: "${userPrompt}"
 
-A continuación, se provee el DICCIONARIO COMPLETO (Set único) de todos los valores crudos detectados en la base de datos.
-Tu trabajo es aplicar AGRUPACIÓN INTELIGENTE (Clustering). Debes identificar las entidades objetivo, crear un "Valor Limpio Maestro" óptimo y correcto para cada una, y anidar dentro de ese maestro todos los "Valores Crudos" del diccionario que signifiquen lo mismo pero tengan errores, sufijos o ruido.
+A continuación, se provee el DICCIONARIO COMPLETO de valores crudos.
+Tu trabajo es aplicar AGRUPACIÓN INTELIGENTE (Clustering). Identifica entidades maestro y anida dentro los valores crudos provistos que correspondan. Usa tu conocimiento para limpiar variaciones. OBLIGATORIO acatar la estructura de JSON Object en la raíz.
 
 Diccionario Crudo en Memoria:
 ${JSON.stringify(dictionarySamples)}
 
 INSTRUCCIONES FINALES:
-1. Retorna ÚNICAMENTE los grupos que sean coherentes con el filtro solicitado ("${userPrompt}").
-2. Descarta la basura o valores que NO representen la entidad buscada (simplemente no los incluyas en ninguna matriz).
-3. Todo valor crudo anidado debe existir LITERALMENTE en el Diccionario provisto.
-4. Formato obligatorio requerido ` + '`{"tipo": "ast_clustering", "cluster": {"Valor Maestro 1": ["crudo exacto 1", "crudo exacto 2"], "Valor Maestro 2": ["crudo exacto 3"]}}`';
+1. Retorna ÚNICAMENTE los grupos que sean coherentes con el filtro.
+2. Descarta la basura o valores que NO representen la entidad.
+3. Todo valor crudo anidado debe existir LITERALMENTE en el Diccionario.`;
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { temperature: 0.1, responseMimeType: "application/json" } });
+        // Utilizando responseSchema estandar para forzar el Type Object strict.
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash", 
+            generationConfig: { 
+                 temperature: 0.1, 
+                 responseMimeType: "application/json",
+                 maxOutputTokens: 8192
+            } 
+        });
         
         console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Clusters de Semilla (${dictionarySamples.length} uniques)...`);
         const result = await model.generateContent(systemInstruction);

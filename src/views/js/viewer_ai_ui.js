@@ -263,33 +263,57 @@ class ViewerAiUi {
                 });
             }
 
+            const isFormattingPattern = promptText.toLowerCase().match(/(extraer|quit|borrar|separar|remplazar|reemplazar|regex|limpiar)/);
+            const useClustering = uniqueDictionary.length <= 60 && !isFormattingPattern;
+
             const payload = {
                 column_name: targetColName,
                 prompt: promptText,
-                samples: uniqueDictionary, 
-                require_ast: false
+                samples: useClustering ? uniqueDictionary : uniqueDictionary.slice(0, 15), 
+                require_ast: !useClustering
             };
 
             this._setStatus('IA Analizando...', 'working');
             
-            // Reemplazo del Viejo "GenerateRule" balístico por el nuevo DiscoverEntities
-            const responseData = await aiService.discoverEntities(payload);
-            
-            // Cerramos modal de carga
-            if (window.Swal && Swal.isVisible()) Swal.close();
-            
-            if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
-                throw new Error("El modelo retornó formato de cluster inválido.");
+            if (useClustering) {
+                // === RUTA LENTA: DISCOVER ENTITIES (CLUSTERING) ===
+                const responseData = await aiService.discoverEntities(payload);
+                if (window.Swal && Swal.isVisible()) Swal.close();
+                
+                if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
+                    throw new Error("El modelo retornó formato de cluster inválido.");
+                }
+                
+                const clusterMap = responseData.cluster;
+                if (Object.keys(clusterMap).length === 0) throw new Error("La IA no detectó ninguna coincidencia.");
+                
+                await this._displayConsensusModal(clusterMap, promptText, vCol);
+
+            } else {
+                // === RUTA RÁPIDA: GENERATE ETL RULE (AST TRANSLATION) ===
+                // Usada para operaciones regex puras y diccionarios gigantes. Evita un OOM en el Motor IA.
+                const responseData = await aiService.generateETLRule(payload);
+                if (window.Swal && Swal.isVisible()) Swal.close();
+
+                if (!responseData || !responseData.rules || !Array.isArray(responseData.rules)) {
+                     throw new Error("El modelo retornó reglas de mutación inválidas o la falló la traducción de AST.");
+                }
+                
+                if (responseData.rules.length === 0) throw new Error("La IA no pudo derivar una regla determinista a partir del prompt.");
+                
+                this._setStatus('Aterrizando Regla...', 'working');
+                
+                if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
+                     for (let rule of responseData.rules) {
+                         rule.fromAI = true;
+                         await window.viewerRuleWorkshop.createLocalRuleDirect(rule);
+                     }
+                     this.promptEl.value = "";
+                     this._setStatus('Conectado', 'success');
+                } else {
+                     throw new Error("API del Taller Cerrada.");
+                }
             }
-            
-            const clusterMap = responseData.cluster;
-            
-            if (Object.keys(clusterMap).length === 0) {
-                 throw new Error("La IA no detectó ninguna coincidencia ni agrupaciones.");
-            }
-            
-            // FASE 2.5: Consenso Visual UI Jerárquico (HITL Clustering)
-            await this._displayConsensusModal(clusterMap, promptText, vCol);
 
         } catch (err) {
             console.error("❌ Chofer AST Falló:", err);
