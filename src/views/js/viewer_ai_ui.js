@@ -131,7 +131,12 @@ class ViewerAiUi {
             const processChunk = () => {
                 const end = Math.min(i + chunkSize, total);
                 for (; i < end; i++) {
-                    let val = String(rawRows[i][dataIdx] || "").trim();
+                    let val = "";
+                    if (Array.isArray(dataIdx)) {
+                        val = dataIdx.map(idx => String(rawRows[i][idx] || "").trim()).filter(v => v).join(" | ");
+                    } else {
+                        val = String(rawRows[i][dataIdx] || "").trim();
+                    }
                     if (!val) continue;
                     if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
                         const mutateRs = window.viewerETL.transformCell(val, pipeline);
@@ -173,34 +178,52 @@ class ViewerAiUi {
             let targetColName = "Columna Desconocida";
             let foundPhysical = false;
             let vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
+            
+            // [UX FIX] Auto-guardar ecuación si el usuario está en el Taller con una operación matemática abierta 
+            // pero olvidó presionar "Guardar Ecuación" antes de intentar extraer AST con Chofer IA.
+            if (window._activeComputedContext && window._activeComputedContext.colIndex === state.colIndex && typeof window.saveComputedColumn === 'function') {
+                console.log(`[Chofer IA] 🪄 Salvando ecuación matemática en vuelo para ${state.colIndex} de forma automática...`);
+                window.saveComputedColumn(false);
+            }
 
-            // 1. Rastreo Bimodal Primero (Prioridad a Computadas y Clones Pivot)
+            // 1. Rastreo Bimodal Primero (Prioridad a Computadas y Clones Pivot multi-columna)
             if (window.computedColumns && Array.isArray(window.computedColumns)) {
                 const compDef = window.computedColumns.find(c => c.id === state.colIndex);
                 if (compDef && compDef.operands && compDef.operands.length > 0) {
-                    const sourceCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === compDef.operands[0]) : null;
                     
-                    if (sourceCol && sourceCol.dataIdx !== undefined && sourceCol.dataIdx !== null) {
-                         extractionDataIdx = sourceCol.dataIdx;
-                         targetColName = compDef.masterField && compDef.masterField.nombre_campo ? compDef.masterField.nombre_campo : "Clon Computado";
-                         console.log(`[Chofer IA] Rastreo Bimodal: Pivotando dataIdx origen [${sourceCol.dataIdx}] desde columna [${sourceCol.id}] operando sobre clon/fórmula.`);
-                         foundPhysical = true;
-                    } else if (sourceCol) {
-                         console.warn(`[Chofer IA] Rastreo Bimodal abortado: Columna origen ${sourceCol.id} carece de dataIdx físico.`);
+                    let resolvedIndices = [];
+                    let hasMissing = false;
+                    
+                    for (let opIdx of compDef.operands) {
+                        const sourceCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === opIdx) : null;
+                        if (sourceCol && sourceCol.dataIdx !== undefined && sourceCol.dataIdx !== null) {
+                            resolvedIndices.push(sourceCol.dataIdx);
+                        } else if (sourceCol) {
+                            // [V5.25 NUEVO] Rastreo en cascada profunda: Es posible que el origen sea OTRA columna computada.
+                            const sourceComp = window.computedColumns.find(c => c.id === opIdx);
+                            if (sourceComp && sourceComp.operands && sourceComp.operands.length > 0) {
+                                const deepCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === sourceComp.operands[0]) : null;
+                                if (deepCol && deepCol.dataIdx !== undefined && deepCol.dataIdx !== null) {
+                                    resolvedIndices.push(deepCol.dataIdx);
+                                } else {
+                                    hasMissing = true;
+                                }
+                            } else {
+                                hasMissing = true;
+                            }
+                        } else {
+                            hasMissing = true;
+                        }
+                    }
+                    
+                    if (resolvedIndices.length > 0 && !hasMissing) {
+                        // Si hay 1 solo elemento se mantiene el formato de entero para retro-compatibilidad
+                        extractionDataIdx = resolvedIndices.length === 1 ? resolvedIndices[0] : resolvedIndices;
+                        targetColName = compDef.masterField && compDef.masterField.nombre_campo ? compDef.masterField.nombre_campo : "Clon Computado";
+                        console.log(`[Chofer IA] Rastreo Bimodal Multi-Columna: Pivotando dataIdx orígenes [${resolvedIndices.join(", ")}] operando sobre clon/fórmula.`);
+                        foundPhysical = true;
                     } else {
-                         // [V5.25 NUEVO] Rastreo en cascada profunda: Es posible que el origen sea OTRA columna computada.
-                         const sourceComp = window.computedColumns.find(c => c.id === compDef.operands[0]);
-                         if (sourceComp && sourceComp.operands && sourceComp.operands.length > 0) {
-                             const deepCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === sourceComp.operands[0]) : null;
-                             if (deepCol && deepCol.dataIdx !== undefined && deepCol.dataIdx !== null) {
-                                 extractionDataIdx = deepCol.dataIdx;
-                                 targetColName = sourceComp.masterField && sourceComp.masterField.nombre_campo ? sourceComp.masterField.nombre_campo : "Clon Recursivo";
-                                 console.log(`[Chofer IA] Rastreo Bimodal Profundo: Extrayendo dataIdx [${deepCol.dataIdx}] saltando cadena de referencias.`);
-                                 foundPhysical = true;
-                             }
-                         } else {
-                             console.warn(`[Chofer IA] Rastreo bimodal abortado: El origen [${compDef.operands[0]}] no pudo resolverse ni física ni computacionalmente.`);
-                         }
+                        console.warn(`[Chofer IA] Rastreo Bimodal abortado: Fallo en resolución híbrida de las N-columnas.`);
                     }
                 }
             }

@@ -16,7 +16,10 @@ function openCalculationModal(fromRuleWorkshop = false) {
     // Limpiar opciones previas
     selectA.innerHTML = '';
     selectB.innerHTML = '';
-
+    
+    // Purga de multiclonados anteriores
+    document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
+    
     // V5: Obtener columnas procesadas visual y estructuralmente (Fase 1 completada)
     let hasOptions = false;
 
@@ -73,18 +76,23 @@ function openCalculationModal(fromRuleWorkshop = false) {
     if (selOp) {
         selOp.onchange = () => {
             const opValue = selOp.value;
-            const labelA = document.getElementById('calcFieldA').previousElementSibling;
-            const containerB = document.getElementById('calcFieldB').parentElement;
+            const labelA = document.getElementById('calcLabelA') || document.getElementById('calcFieldA').previousElementSibling;
+            const containerB = document.getElementById('calcFieldB_container') || document.getElementById('calcFieldB').parentElement;
             const containerTol = document.getElementById('calcTolerateEmpty') ? document.getElementById('calcTolerateEmpty').parentElement : null;
+            const cloneAddBtn = document.getElementById('cloneAddBtnContainer');
             
             if (opValue === 'CLONE') {
                 if(labelA) labelA.innerText = "Columna Origen (Clonada)";
                 if(containerB) containerB.style.display = 'none';
                 if(containerTol) containerTol.style.display = 'none';
+                if(cloneAddBtn) cloneAddBtn.style.display = 'block';
             } else {
                 if(labelA) labelA.innerText = "Precio Base (A)";
                 if(containerB) containerB.style.display = 'block';
                 if(containerTol) containerTol.style.display = 'flex';
+                if(cloneAddBtn) cloneAddBtn.style.display = 'none';
+                // Reset clones on math operation
+                document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
             }
         };
         // Limpiamos la basura visual del estado anterior forzándolo al disparar el trigger
@@ -92,20 +100,56 @@ function openCalculationModal(fromRuleWorkshop = false) {
     }
 }
 
+// [NUEVO V8.5] UI Dinámica para Clones Multicolumna
+window.addCloneSourceUI = function() {
+    const container = document.getElementById('calcOperandsContainer');
+    if(!container) return;
+    const baseSel = document.getElementById('calcFieldA');
+    if(!baseSel) return;
+    
+    // Find how many currently exist
+    const count = document.querySelectorAll('.calc-source-dyn').length + 1;
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = "space-y-1 relative";
+    
+    const label = document.createElement('label');
+    label.className = "text-[10px] font-bold text-slate-500 uppercase flex justify-between";
+    label.innerHTML = `Origen (REF ${count}) <button type="button" onclick="this.parentElement.parentElement.remove()" class="text-red-500 hover:text-red-400 font-bold"><i data-lucide="x" class="w-3 h-3 inline"></i></button>`;
+    
+    const sel = document.createElement('select');
+    sel.className = "calc-source-dyn w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none";
+    sel.innerHTML = baseSel.innerHTML; // Copy options
+    sel.value = "";
+    
+    wrapper.appendChild(label);
+    wrapper.appendChild(sel);
+    container.appendChild(wrapper);
+    if(window.lucide) lucide.createIcons();
+};
+
 // --- GUARDAR LA NUEVA COLUMNA ---
-function saveComputedColumn() {
-    const nameInput = document.getElementById('calcColName').value;
+function saveComputedColumn(closeModal = true) {
+    if (!window._activeComputedContext) return;
+
     const op = document.getElementById('calcOperation').value;
-    const vColIdA = document.getElementById('calcFieldA').value;
-    const vColIdB = document.getElementById('calcFieldB').value;
-    const tolerateEmpty = document.getElementById('calcTolerateEmpty').checked;
+    const nameInput = document.getElementById('calcColName') ? document.getElementById('calcColName').value.trim() : null;
+    const tolerateEmpty = document.getElementById('calcTolerateEmpty') ? document.getElementById('calcTolerateEmpty').checked : true;
+    
+    let operandsList = [];
 
     if (op === 'CLONE') {
-        if (!vColIdA) {
-            alert("Por favor completá la Columna Origen a Clonar.");
+        const selects = document.querySelectorAll('.calc-source-dyn');
+        selects.forEach(s => {
+            if(s.value && s.value.trim() !== '') operandsList.push(s.value);
+        });
+        
+        if (operandsList.length === 0) {
+            alert("Por favor completá al menos una Columna Origen a Clonar.");
             return;
         }
     } else {
+        const vColIdA = document.getElementById('calcFieldA').value;
         if (!vColIdA || !vColIdB) {
             alert("Por favor completá todos los operandos.");
             return;
@@ -114,6 +158,7 @@ function saveComputedColumn() {
             alert("Elegí columnas distintas para el cálculo.");
             return;
         }
+        operandsList = [vColIdA, vColIdB];
     }
 
     const targetMasterField = { ...window._activeComputedContext.masterField };
@@ -130,7 +175,7 @@ function saveComputedColumn() {
         if (idx !== -1) {
             window.computedColumns[idx].masterField = targetMasterField;
             window.computedColumns[idx].macro = op || 'PRICE_MINUS_DISCOUNT_PERCENT';
-            window.computedColumns[idx].operands = [vColIdA, vColIdB];
+            window.computedColumns[idx].operands = operandsList;
             window.computedColumns[idx].tolerateEmpty = tolerateEmpty;
             console.log("✅ Columna Calculada Actualizada:", window.computedColumns[idx]);
         } else if (id.startsWith('col_ph_')) {
@@ -146,7 +191,7 @@ function saveComputedColumn() {
                 id: id,
                 masterField: targetMasterField,
                 macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT',
-                operands: [vColIdA, vColIdB],
+                operands: operandsList,
                 tolerateEmpty: tolerateEmpty
             });
             console.log("✅ Ghost Column convertido exitosamente a Columna Calculada!");
@@ -157,23 +202,22 @@ function saveComputedColumn() {
             id: 'comp_' + Date.now(),
             masterField: targetMasterField, // Destination
             macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT', // V5 Rule constant for now (hardcoded map to UI Operation)
-            operands: [vColIdA, vColIdB],
+            operands: operandsList,
             tolerateEmpty: tolerateEmpty
         });
         console.log("✅ Columna Calculada Añadida al V5 Engine:", window.computedColumns);
     }
 
     // Cerrar el Workshop y forzar el volcado de reglas del Pipeline (si es que se asignaron reglas extra)
-    if (window.viewerRuleWorkshop) {
+    if (closeModal && window.viewerRuleWorkshop) {
         if (typeof window.viewerRuleWorkshop.applyMapping === 'function') {
             window.viewerRuleWorkshop.applyMapping(); // Automáticamente cierra el panel
         } else {
             window.viewerRuleWorkshop.close();
         }
+        // Limpiar busqueda
+        window._activeComputedContext = null;
     }
-
-    // Limpiar busqueda
-    window._activeComputedContext = null;
 
     // Disparar Render Phase 1 & Phase 2 in-place (V5 Canvas)
     if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {

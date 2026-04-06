@@ -3,16 +3,26 @@
  * Extracted from viewer_engine_rescatado.js
  */
 
-function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, activeEtlStateVar) {
+function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, activeEtlStateVar, allOps = null) {
     let resultDisplay = "";
     let rejected = false;
     let mathResult = 0;
     
     // [NUEVO CASO CLON] Manejo puramente de String, no matemático
     if (calcConfig.macro === "CLONE") {
-        // [HOTFIX V5.22] Extraer dato crudo (raw) para CLONE para preservar la información oculta antes de filtros de la Columna A
-        const txtA = opA?.raw !== undefined ? opA.raw : (opA?.display !== undefined ? opA.display : (opA?.clean !== undefined && opA?.clean !== null ? opA.clean : ""));
-        const rawStringA = String(txtA).trim();
+        let rawStringA = "";
+        
+        if (allOps && Array.isArray(allOps) && allOps.length > 0) {
+            // Unir N columnas origen usando " | " como delimitador de contexto cruzado
+            rawStringA = allOps.map(op => {
+                const txt = op?.raw !== undefined ? op.raw : (op?.display !== undefined ? op.display : (op?.clean !== undefined && op?.clean !== null ? op.clean : ""));
+                return String(txt).trim();
+            }).filter(v => v !== "").join(" | ");
+        } else {
+            // [HOTFIX V5.22] Extraer dato crudo (raw) para CLONE
+            const txtA = opA?.raw !== undefined ? opA.raw : (opA?.display !== undefined ? opA.display : (opA?.clean !== undefined && opA?.clean !== null ? opA.clean : ""));
+            rawStringA = String(txtA).trim();
+        }
         
         const savedPipeline = draftPipelinesVar && draftPipelinesVar[calcConfig.id] ? draftPipelinesVar[calcConfig.id].rules : null;
         const activePipeline = (activeEtlStateVar && activeEtlStateVar.isOpen && activeEtlStateVar.colIndex === calcConfig.id) 
@@ -520,6 +530,7 @@ function renderVirtualTable(originalData) {
                         if (calcConfig.operands && calcConfig.operands.length >= 1) {
                             const opA = rCtxFinal[calcConfig.operands[0]];
                             const opB = calcConfig.operands[1] ? rCtxFinal[calcConfig.operands[1]] : null;
+                            const allOps = calcConfig.operands.map(opIdx => rCtxFinal[opIdx]);
 
                             // Allow processing if at least opA exists
                             if (opA) {
@@ -530,7 +541,7 @@ function renderVirtualTable(originalData) {
                                     resultDisplay = "<span class='text-fuchsia-500/50 italic text-[10px]'>Sin Base A</span>";
                                     cellClass += ' text-center';
                                 } else {
-                                    const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState);
+                                    const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps);
                                     resultDisplay = evalres.resultDisplay;
                                     mathResult = evalres.mathResult;
                                     if(evalres.rejected) cellClass += ' bg-red-900/30 text-red-400 border border-red-500/50';
@@ -739,11 +750,12 @@ function generatePreview() {
                                 // Obtener los datos previamente transformados por sus columnas base de row._richContext
                                 const cA = calcConfig.operands[0] ? rCtx[calcConfig.operands[0]] : null;
                                 const cB = calcConfig.operands[1] ? rCtx[calcConfig.operands[1]] : null;
+                                const allOps = calcConfig.operands.map(opIdx => rCtx[opIdx]);
                                 
                                 // Permite calcular si al menos cA existe (necesario para CLONE)
                                 if (cA) {
                                     // Utilizar la función unificada de matemáticas / clonación
-                                    const res = evaluateComputedColumnMath(calcConfig, cA, cB, window.draftPipelines);
+                                    const res = evaluateComputedColumnMath(calcConfig, cA, cB, window.draftPipelines, null, allOps);
                                     resultDisplay = res.resultDisplay;
                                 }
                             }

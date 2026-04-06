@@ -596,20 +596,19 @@
                                     </select>
                                 </div>
                 
-                                <div class="grid grid-cols-2 gap-3 mt-2">
+                                <div id="calcOperandsContainer" class="grid grid-cols-2 gap-3 mt-2">
                                     <div class="space-y-1">
-                                        <label class="text-[10px] font-bold text-slate-500 uppercase">Precio Base (A)</label>
-                                            <select id="calcFieldA"
-                                                class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none">
-                                            </select>
-                                        </div>
-                                        <div class="space-y-1">
-                                            <label class="text-[10px] font-bold text-slate-500 uppercase">Descuento (B)</label>
-                                            <select id="calcFieldB"
-                                                class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none">
-                                            </select>
-                                        </div>
+                                        <label id="calcLabelA" class="text-[10px] font-bold text-slate-500 uppercase">Precio Base (A)</label>
+                                        <select id="calcFieldA" class="calc-source-dyn w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none"></select>
                                     </div>
+                                    <div class="space-y-1" id="calcFieldB_container">
+                                        <label class="text-[10px] font-bold text-slate-500 uppercase">Descuento (B)</label>
+                                        <select id="calcFieldB" class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none"></select>
+                                    </div>
+                                </div>
+                                <div id="cloneAddBtnContainer" class="hidden mt-1">
+                                    <button type="button" onclick="window.addCloneSourceUI && window.addCloneSourceUI()" class="px-2 py-1.5 bg-slate-900 border border-slate-700 hover:border-fuchsia-500/50 text-[10px] text-fuchsia-400 hover:text-fuchsia-300 rounded-lg transition-colors flex items-center gap-1 font-bold uppercase tracking-widest"><i data-lucide="plus" class="w-3 h-3"></i> Añadir origen cruzado</button>
+                                </div>
                                     
                                     <div class="flex items-center gap-2 mt-2 py-1">
                                         <input type="checkbox" id="calcTolerateEmpty" checked class="w-3.5 h-3.5 bg-slate-900 border-slate-700 rounded text-purple-600 outline-none">

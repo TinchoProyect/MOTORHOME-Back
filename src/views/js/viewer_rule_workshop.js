@@ -372,6 +372,12 @@ export function switchToComputedMode() {
     document.getElementById('vrwStandardMode').classList.remove('hidden');
     document.getElementById('vrwComputedMode').classList.remove('hidden');
     
+    // Auto-Scroll to Top so the user doesn't miss the Math Formula Form
+    const workshopScrollContainer = document.querySelector('#viewerRightPanel .custom-scrollbar');
+    if (workshopScrollContainer) {
+        workshopScrollContainer.scrollTop = 0;
+    }
+    
     const applyBtnTxt = document.getElementById('vrwBtnApplyText');
     if (applyBtnTxt) applyBtnTxt.innerText = "Guardar Ecuación";
 
