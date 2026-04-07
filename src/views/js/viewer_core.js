@@ -472,7 +472,25 @@ window._executeFlujoSave = async function (id_flujo, nombreFlujo) {
         return;
     }
 
-    // 0. Sincronizar hoja actual antes de serializar todo
+    // 0. Capturar estado activo del Chofer IA si el modal quedó abierto (Evitar amnesia al tocar Guardar General)
+    if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+        const wsState = window.viewerRuleWorkshop.getActiveState();
+        if (wsState.isOpen && wsState.colIndex && wsState.masterField) {
+            console.log("🛡️ [WORKSHOP-SYNC] Autoguardando progreso del Chofer IA activo antes del Commit Global...");
+            if (!window.draftPipelines) window.draftPipelines = {};
+            window.draftPipelines[wsState.colIndex] = {
+                masterField: wsState.masterField,
+                colName: wsState.colName || 'Pendiente',
+                rules: wsState.pipeline ? [...wsState.pipeline] : []
+            };
+            // Commit headers in UI if not already done
+            if (window.viewerETL && typeof window.viewerETL.commitColumnMapping === 'function') {
+                window.viewerETL.commitColumnMapping(wsState.colIndex, wsState.masterField, wsState.pipeline || []);
+            }
+        }
+    }
+
+    // 1. Sincronizar hoja actual antes de serializar todo
     if (typeof saveSheetState === 'function' && window.currentSheetName) {
         saveSheetState(window.currentSheetName);
     }

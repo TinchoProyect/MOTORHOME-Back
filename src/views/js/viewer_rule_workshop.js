@@ -472,6 +472,20 @@ export function switchToStandardMode() {
 
 // CLOSE PANEL
 export function close() {
+    // [UX: Absolute Persistence] Auto-commit to memory BEFORE destroying the context if there are rules
+    if (activeContext.colIndex && activeContext.masterField && currentDraftPipeline && currentDraftPipeline.length > 0) {
+        if (!window.draftPipelines) window.draftPipelines = {};
+        console.log("🛡️ [WORKSHOP] Auto-commit por cierre de panel. Persistiendo reglas...");
+        window.draftPipelines[activeContext.colIndex] = {
+            masterField: activeContext.masterField,
+            colName: activeContext.colName || 'Pendiente',
+            rules: [...currentDraftPipeline]
+        };
+        if (window.viewerETL && typeof window.viewerETL.commitColumnMapping === 'function') {
+            window.viewerETL.commitColumnMapping(activeContext.colIndex, activeContext.masterField, currentDraftPipeline);
+        }
+    }
+
     isPanelOpen = false;
     currentDraftPipeline = [];
     activeContext = { masterField: null, colIndex: null, colName: null };
@@ -948,6 +962,7 @@ export function getActiveState() {
     return {
         isOpen: isPanelOpen,
         colIndex: activeContext.colIndex,
+        colName: activeContext.colName,
         masterField: activeContext.masterField,
         pipeline: currentDraftPipeline
     };
