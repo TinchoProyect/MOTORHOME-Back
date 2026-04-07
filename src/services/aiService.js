@@ -303,6 +303,73 @@ Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parci
             cluster: mergedCluster,
             dictionaryRef: dictionarySamples
         };
+    },
+
+    executeLiteralTranslation: async (userPrompt, dictionarySamples) => {
+        if (!genAI) throw new Error("Gemini API no inicializada");
+        
+        console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Traducciones Literales (Total: ${dictionarySamples.length} uniques)...`);
+        
+        let CHUNK_SIZE = 30; // Fragmentos cortos para payloads textuales gigantes para evitar Laziness
+        let chunks = [];
+        for (let i = 0; i < dictionarySamples.length; i++) {
+            let chunkIdx = Math.floor(i / CHUNK_SIZE);
+            if (!chunks[chunkIdx]) chunks[chunkIdx] = {};
+            chunks[chunkIdx][i] = dictionarySamples[i];
+        }
+
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash", 
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
+        });
+
+        let finalMap = {};
+
+        // Inferencia Iterativa Estricta (Secuencial). Previene que el Rate Limiter de Gemini dropee chunks
+        // masivos, garantizando 100% de cobertura del diccionario al iterar 1-por-1 y concatenar.
+        for (let index = 0; index < chunks.length; index++) {
+            const chunkDict = chunks[index];
+            const systemInstruction = `Eres un procesador analítico y extractor de texto implacable operando en MODO DE TRADUCCIÓN LITERAL 1 A 1.
+TU DIRECTIVA MAESTRA Y ABSOLUTA ES: "${userPrompt}"
+
+DICCIONARIO INDEXADO PARCIAL (Chunk ${index + 1}/${chunks.length}):
+${JSON.stringify(chunkDict, null, 2)}
+
+Aplica TRADUCCIÓN O EXTRACCIÓN estricta registro por registro. NO AGRUPES. NO INVENTES CLÚSTERES.
+Por cada índice en el diccionario parcial, debes generar una llave numérica y asignarle como valor EXACTAMENTE el string limpio, cortado o resultante de aplicar la orden del usuario.
+
+Estructura de Salida OBLIGATORIA (Un objeto JSON plano de tipo Key-Value):
+{
+  "0": "String Limpio 1",
+  "1": "String Limpio 2"
+}
+Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcial como llaves. Ninguna llave originaria puede faltar. NO INCLUYAS arrays, sólo devuelve el objeto llave-valor.`;
+
+            try {
+                const result = await model.generateContent(systemInstruction);
+                let text = result.response.text();
+                let extractedText = module.exports.extractJSONFromInference(text);
+                
+                let parsedObj = JSON.parse(extractedText);
+                
+                // Mapear inmediatamente este chunk al mapa general de retornos
+                for (let key in parsedObj) {
+                    const numKey = parseInt(key);
+                    if (!isNaN(numKey) && dictionarySamples[numKey] !== undefined) {
+                        finalMap[dictionarySamples[numKey]] = String(parsedObj[key]);
+                    }
+                }
+            } catch(e) {
+                console.error(`[AI Service] Falló parseo del chunk literal ${index + 1}:`, e.message);
+            }
+        }
+        
+
+
+        return {
+            translationMap: finalMap,
+            dictionaryRef: dictionarySamples
+        };
     }
 };
 

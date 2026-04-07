@@ -156,14 +156,20 @@ const aiController = {
      */
     discoverEntities: async (req, res) => {
         try {
-            const { column_name, prompt, samples } = req.body;
+            const { column_name, prompt, samples, literal_mode } = req.body;
             
             if (!prompt || !Array.isArray(samples)) {
                 return res.status(400).json({ error: 'Payload requires a prompt and a unique dictionary samples array' });
             }
 
-            console.log(`[AI Controller] 🕵️ Data Profiling (Fase 2) iniciado para columna "${column_name || 'Desconocida'}" con ${samples.length} valores en diccionario.`);
+            console.log(`[AI Controller] 🕵️ Data Profiling (Fase 2) iniciado para columna "${column_name || 'Desconocida'}" con ${samples.length} valores en diccionario. Modo Literal: ${literal_mode || false}`);
             
+            if (literal_mode) {
+                // Nuevo Flujo Directo Literal (Traducción Crudo -> Limpio 1 a 1)
+                const AI_Response = await aiService.executeLiteralTranslation(prompt, samples);
+                return res.status(200).json({ cluster: AI_Response.translationMap });
+            }
+
             const AI_Response = await aiService.executeEntityDiscovery(prompt, samples);
             
             let parsedRes = { cluster: [] };

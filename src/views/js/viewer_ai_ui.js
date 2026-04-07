@@ -53,6 +53,7 @@ class ViewerAiUi {
                     <button data-intent="Relleno de Vacíos" data-route="ast" data-placeholder="Ej: Rellenar con 0,00..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Rellenar vacíos</button>
                     <button data-intent="Extracción Específica" data-route="ast" data-placeholder="Ej: Extraer el primer número..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Extraer datos</button>
                     <button data-intent="Limpieza y Separación" data-route="ast" data-placeholder="Ej: Separar descripción y peso dejando solo desc..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Separar Limpiar</button>
+                    <button data-intent="Limpieza Literal (1 a 1)" data-route="literal" data-placeholder="Ej: Purificar manteniendo estricto el original..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-teal-600/40 text-slate-400 hover:text-teal-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-teal-500/50 font-mono">Limpieza 1 a 1</button>
                     <button data-intent="Mapeo y Agrupación de Texto" data-route="cluster" data-placeholder="Ej: Agrupar marcas comerciales y uniformar nombres..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-purple-600/40 text-slate-400 hover:text-purple-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-purple-500/50 font-mono">Agrupar (HITL)</button>
                 </div>
                 
@@ -85,8 +86,8 @@ class ViewerAiUi {
             btn.onclick = () => {
                 if (this.promptEl.disabled) return;
                 
-                const hoverColorClass = btn.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
-                const borderColorClass = btn.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
+                const hoverColorClass = btn.dataset.route === 'cluster' ? 'bg-purple-600' : (btn.dataset.route === 'literal' ? 'bg-teal-600' : 'bg-indigo-600');
+                const borderColorClass = btn.dataset.route === 'cluster' ? 'border-purple-500' : (btn.dataset.route === 'literal' ? 'border-teal-500' : 'border-indigo-500');
                 
                 if (this.selectedIntent === btn.dataset.intent) {
                     // Deseleccionar
@@ -98,8 +99,8 @@ class ViewerAiUi {
                 } else {
                     // Limpiar todos
                     quickBtns.forEach(b => {
-                        const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
-                        const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
+                        const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : (b.dataset.route === 'literal' ? 'bg-teal-600' : 'bg-indigo-600');
+                        const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : (b.dataset.route === 'literal' ? 'border-teal-500' : 'border-indigo-500');
                         b.classList.remove(hColor, 'text-white', bColor);
                         b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
                     });
@@ -314,18 +315,18 @@ class ViewerAiUi {
             const isFormattingPattern = promptText.toLowerCase().match(/(extraer|quit|borrar|separar|remplazar|reemplazar|regex|limpiar|vaci|vacío|vacio|vacía|agregar|completar|rellenar|cero)/);
             
             // Si el chip seleccionado exige AST => fuerza AST. Si exige Cluster => fuerza Cluster.
-            const forceAstMode = this.selectedRoute === 'ast' || (!this.selectedRoute && isFormattingPattern);
+            const forceAstMode = this.selectedRoute === 'ast' || (!this.selectedRoute && isFormattingPattern && this.selectedRoute !== 'literal');
             const forceClusterMode = this.selectedRoute === 'cluster';
+            const forceLiteralMode = this.selectedRoute === 'literal';
             
             // Si el diccionario es enorme, obligatoriamente se usa AST para evitar OOM, excepto que lo forcemos
-            const useClustering = forceClusterMode ? true : (uniqueDictionary.length <= 60 && !forceAstMode);
+            const useClustering = forceClusterMode ? true : (uniqueDictionary.length <= 60 && !forceAstMode && !forceLiteralMode);
 
             const combinedPrompt = this.selectedIntent ? `CONTEXTO DE LA TAREA: Operación estructurada del tipo "${this.selectedIntent}".\nINTRUCCIONES ESPECÍFICAS DEL USUARIO: ${promptText}` : promptText;
 
             // Restringir max de muestras generativas.
-            // Para AST bastan pocas líneas. Para CLUSTERING (HITL), pasamos de 80 a 1200 para abarcar un diccionario monstruoso
-            // sin saturar la red ni causar un OOM del token threshold (max 8192 salida Gemini).
-            const limiteMuestras = useClustering ? 1200 : 25;
+            // Para AST bastan pocas líneas. Para CLUSTERING (HITL) o LITERAL, pasamos de 80 a 1200 para abarcar diccionarios
+            const limiteMuestras = (useClustering || forceLiteralMode) ? 1200 : 25;
             const dictLimitado = uniqueDictionary.slice(0, limiteMuestras);
             
             if (uniqueDictionary.length > limiteMuestras && useClustering) {
@@ -341,12 +342,27 @@ class ViewerAiUi {
                 column_name: targetColName,
                 prompt: combinedPrompt,
                 samples: dictLimitado, 
-                require_ast: !useClustering
+                require_ast: !useClustering && !forceLiteralMode,
+                literal_mode: forceLiteralMode
             };
 
             this._setStatus('IA Analizando...', 'working');
             
-            if (useClustering) {
+            if (forceLiteralMode) {
+                // === RUTA LENTA 2: LITERAL TRANSLATION (1-A-1) ===
+                const responseData = await aiService.discoverEntities(payload);
+                if (window.Swal && Swal.isVisible()) Swal.close();
+                
+                if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
+                    throw new Error("El modelo retornó formato de traducción literal inválido.");
+                }
+                
+                const translationMap = responseData.cluster;
+                if (Object.keys(translationMap).length === 0) throw new Error("La IA no devolvió traducciones.");
+                
+                await this._displayLiteralModal(translationMap, promptText, vCol);
+
+            } else if (useClustering) {
                 // === RUTA LENTA: DISCOVER ENTITIES (CLUSTERING) ===
                 const responseData = await aiService.discoverEntities(payload);
                 if (window.Swal && Swal.isVisible()) Swal.close();
@@ -542,6 +558,116 @@ class ViewerAiUi {
                      }
                 }
                 this._setStatus('Conectado', 'success');
+            } else {
+                throw new Error("API del Taller Cerrada.");
+            }
+        } else {
+             this._setStatus('Descartado', 'success');
+        }
+    }
+
+    async _displayLiteralModal(translationMap, promptText, vCol) {
+        if (!window.Swal) return;
+        
+        let tableRowsHtml = Object.entries(translationMap).map(([rawVal, cleanVal], idx) => {
+             return `
+               <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
+                   <td class="p-2 w-8 text-center border-r border-slate-700/50 text-slate-400">
+                       <input type="checkbox" id="literal_chk_${idx}" data-raw="${String(rawVal).replace(/"/g, '&quot;')}" value="${String(cleanVal).replace(/"/g, '&quot;')}" checked class="literal-raw-chk form-checkbox h-3.5 w-3.5 text-teal-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                   </td>
+                   <td class="p-2 text-[10px] text-slate-400 font-mono truncate max-w-[200px]" title="${String(rawVal).replace(/"/g, '&quot;')}">${String(rawVal).replace(/</g, "&lt;")}</td>
+                   <td class="p-2 text-[10px] font-bold text-teal-400 font-mono max-w-[200px] break-words" title="${String(cleanVal).replace(/"/g, '&quot;')}">${String(cleanVal).replace(/</g, "&lt;")}</td>
+               </tr>
+             `;
+        }).join('');
+        
+        const { isConfirmed } = await Swal.fire({
+            title: 'Traducción Literal (1 a 1)',
+            html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA ha analizado los crudos únicos y devuelto una limpieza 1 a 1 en base a tu petición <i>"${promptText}"</i>.<br>Desmarca las conversiones incorrectas para ignorarlas:</div>
+                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1 border border-slate-700/50 rounded" id="literal_checkbox_container">
+                      <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-900 sticky top-0 border-b border-slate-700/50 z-10 hover:bg-slate-800/80 transition">
+                            <tr>
+                                <th class="p-2 w-8 text-center border-r border-slate-700/50">
+                                    <input type="checkbox" id="literal_global_chk" class="form-checkbox h-4 w-4 text-teal-500 rounded border-teal-500/50 bg-slate-800 focus:ring-0 focus:ring-offset-0 cursor-pointer" checked>
+                                </th>
+                                <th class="p-2 text-[10px] font-bold text-slate-300 uppercase tracking-wider"><label for="literal_global_chk" class="cursor-pointer">Original Crudo</label></th>
+                                <th class="p-2 text-[10px] font-bold text-teal-300 uppercase tracking-wider"><label for="literal_global_chk" class="cursor-pointer">Traducción Limpia</label></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRowsHtml}
+                        </tbody>
+                      </table>
+                   </div>`,
+            showCancelButton: true,
+            confirmButtonText: '<i data-lucide="split-square-horizontal" class="w-4 h-4 inline mt-0.5"></i> Insertar Regla (DIRECT_REPLACE)',
+            cancelButtonText: 'Descartar',
+            confirmButtonColor: '#0d9488',
+            background: '#0f172a', color: '#f8fafc',
+            width: '600px',
+            didOpen: () => {
+                const container = document.getElementById('literal_checkbox_container');
+                if (!container) return;
+                
+                container.addEventListener('change', (e) => {
+                    if (e.target.id === 'literal_global_chk') {
+                        const isChecked = e.target.checked;
+                        const childChecks = container.querySelectorAll(`.literal-raw-chk`);
+                        childChecks.forEach(chk => chk.checked = isChecked);
+                        e.target.indeterminate = false;
+                    } else if (e.target.classList.contains('literal-raw-chk')) {
+                       const globalChk = document.getElementById('literal_global_chk');
+                       if (globalChk) {
+                           const childChecks = container.querySelectorAll(`.literal-raw-chk`);
+                           const allChecked = Array.from(childChecks).every(c => c.checked);
+                           const someChecked = Array.from(childChecks).some(c => c.checked);
+                           globalChk.checked = allChecked;
+                           globalChk.indeterminate = someChecked && !allChecked;
+                       }
+                    }
+                });
+                if(window.lucide) window.lucide.createIcons();
+            }
+        });
+        
+        if (isConfirmed) {
+            const finalMap = {};
+            let mappedCount = 0;
+            
+            document.querySelectorAll('.literal-raw-chk').forEach(chk => {
+                if (chk.checked) {
+                     finalMap[chk.getAttribute('data-raw')] = chk.value;
+                     mappedCount++;
+                }
+            });
+            
+            if (mappedCount === 0) return;
+            
+            this._setStatus('Aterrizando Regla...', 'working');
+            
+            const aiRuleObj = {
+                nombre_regla: `[IA] Limpieza Literal: ${promptText}`,
+                descripcion: `Regla generada purificando 1 a 1 bajo la directiva AI. Convierte de forma dura ${mappedCount} valores únicos.`,
+                tipo: 'ast_conditional',
+                logica: [
+                     {
+                         condicion: { operador: "IN_DICT_KEYS", valor: finalMap },
+                         accion: { tipo_accion: "DICTIONARY_REPLACE", valor: finalMap }
+                     }
+                ],
+                fromAI: true
+            };
+            
+            if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
+                await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                this.promptEl.value = "";
+                this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
+                if (this.selectedIntent) {
+                    const btn = document.querySelector(`button[data-intent="${this.selectedIntent}"]`);
+                    if(btn) btn.click();
+                }
+                this._setStatus('Completado', 'success');
             } else {
                 throw new Error("API del Taller Cerrada.");
             }
