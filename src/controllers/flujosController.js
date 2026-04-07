@@ -126,4 +126,28 @@ flujosController.eliminar = async (req, res) => {
     }
 };
 
+/**
+ * PATCH /api/flujos/:idFlujo/nombre
+ * Renombra un flujo operativo desde la vista procesados
+ */
+flujosController.renombrar = async (req, res) => {
+    try {
+        const { idFlujo } = req.params;
+        const { nombre_flujo } = req.body;
+        
+        if (!nombre_flujo || !nombre_flujo.trim()) return res.status(400).json({ error: "Falta nuevo nombre." });
+
+        const { error } = await supabase
+            .from('flujos_extraccion')
+            .update({ nombre_flujo: nombre_flujo.trim(), fecha_actualizacion: new Date().toISOString() })
+            .eq('id_flujo', idFlujo);
+
+        if (error) throw error;
+        return res.json({ success: true });
+    } catch (err) {
+        console.error("🛑 [API Flujos] Error renombrando flujo:", err.message);
+        return res.status(500).json({ error: "Error al renombrar flujo", detalle: err.message });
+    }
+};
+
 module.exports = flujosController;

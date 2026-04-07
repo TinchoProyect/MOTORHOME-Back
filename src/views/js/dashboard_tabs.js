@@ -191,12 +191,12 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
             flujosDisponibles.forEach(f => {
                 const isSelected = file.flujo_asignado_id === f.id_flujo ? 'selected' : '';
                 if (file.flujo_asignado_id === f.id_flujo) asignadoName = f.nombre_flujo;
-                currentOptionsHtml += `<option value="${f.id_flujo}" ${isSelected}>${f.nombre_flujo}</option>`;
+                currentOptionsHtml += `<option value="${f.id_flujo}" data-name="${String(f.nombre_flujo).replace(/"/g, '&quot;')}" ${isSelected}>${f.nombre_flujo}</option>`;
             });
         }
 
         html += `
-            <div class="group relative bg-slate-900/60 hover:bg-slate-900/90 border ${currentBorderClass} hover:border-emerald-400/80 rounded-2xl p-5 flex flex-col justify-between transition-all shadow-xl hover:-translate-y-1 hover:shadow-emerald-900/30 min-h-[160px]">
+            <div class="group relative bg-slate-900/60 hover:bg-slate-900/90 border ${currentBorderClass} hover:border-emerald-400/80 rounded-2xl p-5 flex flex-col justify-between transition-all shadow-xl hover:-translate-y-1 hover:shadow-emerald-900/30 h-full min-h-max">
                 
                 ${badgeHtml}
 
@@ -235,11 +235,14 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                     <div class="flex items-center gap-2" onclick="event.stopPropagation()">
                         <div class="relative flex-1">
                             <i data-lucide="workflow" class="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
-                            <select id="flujo_select_${file.id}" class="w-full bg-slate-950 border border-slate-800 text-slate-300 text-[11px] font-medium rounded-xl pl-9 pr-8 py-2 focus:ring-emerald-500 focus:border-emerald-500 appearance-none cursor-pointer hover:border-slate-600 transition-colors shadow-inner truncate">
+                            <select id="flujo_select_${file.id}" class="w-full bg-slate-950 border border-slate-800 text-slate-300 text-[11px] font-medium rounded-xl pl-9 pr-8 flex-1 focus:ring-emerald-500 focus:border-emerald-500 appearance-none cursor-pointer hover:border-slate-600 transition-colors shadow-inner truncate py-2" onchange="document.getElementById('edit_flujo_btn_${file.id}').style.display = this.value ? 'flex' : 'none'">
                                 ${currentOptionsHtml}
                             </select>
                             <i data-lucide="chevron-down" class="absolute right-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
                         </div>
+                        <button onclick="editFlujoName('${file.id}')" id="edit_flujo_btn_${file.id}" class="p-2 shrink-0 border rounded-xl transition-all items-center justify-center text-slate-400 bg-slate-900 border-slate-800 hover:border-indigo-500/50 hover:text-indigo-400" title="Editar nombre del Flujo" style="display: ${file.flujo_asignado_id ? 'flex' : 'none'}; cursor: pointer;">
+                            <i data-lucide="edit-3" class="w-4 h-4"></i>
+                        </button>
                         <button onclick="pinFlujo('${file.id}')" id="pin_btn_${file.id}" class="p-2 shrink-0 border rounded-xl transition-all flex items-center justify-center ${file.flujo_asignado_id ? 'text-fuchsia-400 bg-fuchsia-900/20 border-fuchsia-500/30 hover:border-fuchsia-500/50' : 'text-slate-500 bg-slate-900 border-slate-800 hover:border-fuchsia-500/50'}" title="Fijar flujo por defecto">
                             <i data-lucide="${file.flujo_asignado_id ? 'pin' : 'pin-off'}" class="w-4 h-4"></i>
                         </button>
@@ -320,6 +323,79 @@ window.pinFlujo = async function(fileId) {
         alert("Error fijando el flujo.");
         btn.innerHTML = originalHtml;
         if (window.lucide) window.lucide.createIcons();
+    }
+}
+
+// Logic: Modificar Nombre del Flujo
+window.editFlujoName = async function(fileId) {
+    const selectEl = document.getElementById(`flujo_select_${fileId}`);
+    if (!selectEl || !selectEl.value) return;
+
+    const flujo_id = selectEl.value;
+    const currentName = selectEl.options[selectEl.selectedIndex].text;
+
+    if (!window.Swal) return;
+
+    const { value: newName, isConfirmed } = await Swal.fire({
+        title: 'Renombrar Flujo',
+        input: 'text',
+        inputLabel: 'Nuevo nombre de plantilla',
+        inputValue: currentName,
+        showCancelButton: true,
+        confirmButtonText: 'Guardar cambios',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#4f46e5',
+        background: '#0f172a',
+        color: '#f8fafc',
+        inputValidator: (value) => {
+            if (!value || value.trim().length === 0) return 'El nombre no puede estar vacío';
+        }
+    });
+
+    if (!isConfirmed || newName.trim() === currentName) return;
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendUrl}/api/flujos/${flujo_id}/nombre`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nombre_flujo: newName.trim() })
+        });
+        const result = await res.json();
+
+        if (!result.success) throw new Error(result.error);
+
+        // Actualizamos en local para no tener que recargar toda la grilla
+        selectEl.options[selectEl.selectedIndex].text = newName.trim();
+        selectEl.options[selectEl.selectedIndex].dataset.name = newName.trim();
+
+        // Actualizamos label si está fijado
+        const labelContainer = document.getElementById(`status_label_${fileId}`);
+        if(labelContainer && labelContainer.querySelector('.text-slate-300')) {
+             labelContainer.querySelector('.text-slate-300').textContent = newName.trim();
+             labelContainer.querySelector('.text-slate-300').title = newName.trim();
+        }
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Renombrado exitoso',
+            background: '#0f172a',
+            color: '#f8fafc',
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000
+        });
+
+    } catch (err) {
+        console.error("Error naming:", err);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error de Red',
+            text: err.message,
+            background: '#0f172a',
+            color: '#f8fafc'
+        });
     }
 }
 

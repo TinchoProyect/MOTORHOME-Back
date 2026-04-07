@@ -11,6 +11,9 @@ router.get('/detalle/:idFlujo', flujosController.obtenerDetalle);
 // Crear o Actualizar un Flujo (Botón "Guardar Flujo")
 router.post('/', flujosController.upsertFlujo);
 
+// Renombrar Flujo (Dashboard Operativo)
+router.patch('/:idFlujo/nombre', flujosController.renombrar);
+
 // Borrado lógico (Dashboard Administrativo)
 router.delete('/:idFlujo', flujosController.eliminar);
 
