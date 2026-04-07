@@ -811,6 +811,15 @@
                 </div>
 
                 <div class="flex items-center gap-3 ml-auto">
+                    <!-- Toggle Historial V4.1 -->
+                    <div class="flex items-center gap-2 mr-2 group bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="fmtToggleHistory" value="" class="sr-only peer" onchange="if(window.toggleFmtHistory) window.toggleFmtHistory(this.checked)">
+                            <div class="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-600"></div>
+                            <span class="ml-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-amber-400 transition-colors">Ver Todo</span>
+                        </label>
+                    </div>
+
                     <div class="relative">
                         <button onclick="window.toggleFmtColumnsDropdown()" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 flex items-center gap-2 transition-colors">
                              <i data-lucide="eye-off" class="w-4 h-4"></i> Layout
@@ -1207,17 +1216,37 @@
                 let opJson = { data: [] };
                 if (opRes.ok) opJson = await opRes.json();
                 
+                let showHistory = false;
+                window.toggleFmtHistory = function(checked) {
+                    showHistory = checked;
+                    if (window.v4GridApi) {
+                        window.v4GridApi.onFilterChanged();
+                    }
+                };
+
+                // Identificar Latest Snapshot (La última ingesta por Proveedor+Código)
+                const latestMap = new Map();
+                // Ojo: vienen ordenados DESC desde el backend, el primero que leemos es el último subido.
+                opJson.data.forEach(op => {
+                     const key = `${op.proveedor_id}_${op.datos_maestros.codigo}`;
+                     if (!latestMap.has(key)) latestMap.set(key, op.id);
+                });
+
                 const rowData = opJson.data.map(op => {
+                     const key = `${op.proveedor_id}_${op.datos_maestros.codigo}`;
                      return {
                           _system_id: op.id,
                           _proveedor: op.nombre_proveedor,
                           _timestamp: op.timestamp_extraccion,
+                          _es_delta: op.es_delta,
+                          _is_latest: latestMap.get(key) === op.id,
                           ...op.datos_maestros
                      };
                 });
                 
                 // Build ColDefs
                 const colDefs = fields.map((f, index) => {
+                     const isPrice = f.nombre_campo.toLowerCase().includes('precio');
                      return {
                          headerName: f.nombre_campo,
                          field: f.nombre_campo.replace(/\s+/g, '_').toLowerCase(),
@@ -1225,6 +1254,13 @@
                          filter: 'agTextColumnFilter',
                          resizable: true,
                          rowDrag: index === 0 ? true : false,
+                         cellRenderer: (params) => {
+                              // Resalte Visual de Delta Operativo
+                              if (isPrice && params.data && params.data._es_delta) {
+                                  return `<div class="flex items-center gap-1.5"><span class="text-amber-400 font-bold">${params.value || ''}</span> <div class="px-1.5 py-[1px] rounded bg-amber-500/20 border border-amber-500/50 text-amber-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica (Δ) en la ingesta representativa respecto a su base histórica.">Δ DELTA</div></div>`;
+                              }
+                              return params.value;
+                         }
                      };
                 });
                 
@@ -1242,6 +1278,15 @@
                     rowData: rowData,
                     rowDragManaged: true,
                     animateRows: true,
+                    isExternalFilterPresent: () => {
+                        return !showHistory; // Si NO mostramos historial, el filtro externo debe activarse y cortar filas
+                    },
+                    doesExternalFilterPass: (node) => {
+                        return node.data._is_latest === true; // Pasa la fila operativa si es la última del proveedor+código
+                    },
+                    rowClassRules: {
+                        'bg-amber-900/10 border-l border-amber-500': 'data._es_delta === true'
+                    },
                     defaultColDef: {
                         flex: 1,
                         minWidth: 30, // Absolute freedom requested

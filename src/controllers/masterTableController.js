@@ -375,15 +375,46 @@ module.exports = {
             if (count > 0) {
                 return res.status(409).json({ success: false, error: "Este archivo ya fue extraído.", needs_overwrite: false });
             }
+
+            // Motor de Deltas: Recuperar último estado histórico (Foto previa de la Verdad)
+            const historyMap = new Map();
+            const { data: previousSnapshot, error: snapErr } = await supabase
+                .from('tabla_maestra_operativa')
+                .select('datos_maestros, timestamp_extraccion')
+                .eq('proveedor_id', proveedor_id)
+                .order('timestamp_extraccion', { ascending: false });
+                
+            if (!snapErr && previousSnapshot && previousSnapshot.length > 0) {
+                // Como está ordenado DESC, el primero que encontramos por código es el más reciente (Last Known Good)
+                for (const row of previousSnapshot) {
+                    const code = row.datos_maestros?.codigo;
+                    if (code && !historyMap.has(code)) {
+                        historyMap.set(String(code).trim(), row.datos_maestros?.precio);
+                    }
+                }
+            }
             
-            const inserts = records.map(record => ({
-                 proveedor_id,
-                 archivo_origen_id: archivo_id,
-                 nombre_proveedor: nombre_proveedor || 'Desconocido',
-                 datos_maestros: record,
-                 // Deltas will be evaluated via DB logic optionally
-                 es_delta: false 
-            }));
+            const inserts = records.map(record => {
+                 let es_delta = false;
+                 const rawCode = record.codigo ? String(record.codigo).trim() : null;
+                 
+                 if (rawCode && historyMap.has(rawCode)) {
+                     const historicalPrice = historyMap.get(rawCode);
+                     const currentPrice = record.precio;
+                     // Comparación algorítmica estricta del valor para detectar Variación
+                     if (String(historicalPrice).trim() !== String(currentPrice).trim()) {
+                         es_delta = true;
+                     }
+                 }
+
+                 return {
+                     proveedor_id,
+                     archivo_origen_id: archivo_id,
+                     nombre_proveedor: nombre_proveedor || 'Desconocido',
+                     datos_maestros: record,
+                     es_delta: es_delta 
+                 };
+            });
             
             const { error: insertErr } = await supabase.from('tabla_maestra_operativa').insert(inserts);
             if (insertErr) {
