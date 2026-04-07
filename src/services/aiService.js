@@ -65,7 +65,7 @@ NO PUEDES RESPONDER CON TEXTO PLANO NI EXPLICACIONES FUERA DEL JSON. El JSON deb
      {
         "nombre_regla": "Paso 1",
         "condicion": { "operador": "CONTAINS" | "REGEX_MATCH" | "EQUALS" | "IS_NUMERIC" | "IS_EMPTY" | "DEFAULT", "valor": "param" },
-        "accion": { "tipo_accion": "REPLACE" | "EXTRACT" | "LOWERCASE" | "UPPERCASE" | "TRIM" | "DROP", "target": "opcional", "replacement": "opcional", "valor": "opcional", "is_regex": "BOOLEANO_OBLIGATORIO_SI_ES_REGEX" }
+        "accion": { "tipo_accion": "REPLACE" | "EXTRACT" | "LOWERCASE" | "UPPERCASE" | "TRIM" | "DROP" | "SET_VALUE", "target": "opcional", "replacement": "opcional", "valor": "opcional", "is_regex": "BOOLEANO_OBLIGATORIO_SI_ES_REGEX" }
      }
   ],
   "explicacion_global": "breve descripcion"
@@ -73,6 +73,7 @@ NO PUEDES RESPONDER CON TEXTO PLANO NI EXPLICACIONES FUERA DEL JSON. El JSON deb
 
 Si te piden 'Extraer solo el numero', retornas un "accion": "EXTRACT", "valor": "\\\\d+", "is_regex": true.
 Si te piden 'Quitar todo lo que diga X', retornas un "accion": "REPLACE", "target": "X", "replacement": "", "is_regex": false.
+Si te piden 'Acelerar vacíos, poner 0,00', retornas "condicion": { "operador": "IS_EMPTY" }, "accion": { "tipo_accion": "SET_VALUE", "valor": "0,00" }.
 
 ¡ATENCIÓN! Si "target" o "valor" utilizan una Expresión Regular para buscar patrones, es ESTRICTAMENTE OBLIGATORIO que declares "is_regex": true dentro del objeto "accion". De lo contrario, el motor AST del frontend interpretará tu regex como un string literal y el sistema fallará.
 
@@ -173,12 +174,25 @@ Genera ÚNICAMENTE el código JSON AST solicitado para limpiar/extraer estos val
             // Evaluar cual contenedor asume la jerarquía principal
             const isObjectRoot = firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket);
             
+            let extracted = text;
             if (isObjectRoot && lastBrace >= firstBrace) {
-                return text.substring(firstBrace, lastBrace + 1);
+                extracted = text.substring(firstBrace, lastBrace + 1);
             } else if (firstBracket !== -1 && lastBracket >= firstBracket) {
-                return text.substring(firstBracket, lastBracket + 1);
+                extracted = text.substring(firstBracket, lastBracket + 1);
+            } else if (isObjectRoot) {
+                // Autorecuperación Severa: Falta cierre de objeto o vector por corte de API
+                // Se quedó sin tokens o la API cortó en el aire
+                extracted = text.substring(firstBrace);
+                if (extracted.includes('"cluster":')) {
+                    if (extracted.lastIndexOf(']') < extracted.lastIndexOf('[')) extracted += ']';
+                    extracted += '}]}';
+                }
             }
-            return text;
+            
+            // Limpieza de trailing commas (muy común devueltas por LLM)
+            extracted = extracted.replace(/,\s*([}\]])/g, '$1');
+            
+            return extracted;
         } catch (err) {
             return text;
         }
@@ -223,34 +237,68 @@ Usa escape doble para JSON si emites Regex.`;
     executeEntityDiscovery: async (userPrompt, dictionarySamples) => {
         if (!genAI) throw new Error("Google AI (Gemini) API Key no está configurada o es inválida.");
 
-        const systemInstruction = `Eres un motor semántico avanzado de Estandarización de Datos (Master Data Management).
-El usuario te ha dado esta orden: "${userPrompt}"
+        console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Clusters Distribuidos (Total: ${dictionarySamples.length} uniques)...`);
+        
+        let CHUNK_SIZE = 60;
+        let chunks = [];
+        for (let i = 0; i < dictionarySamples.length; i++) {
+            let chunkIdx = Math.floor(i / CHUNK_SIZE);
+            if (!chunks[chunkIdx]) chunks[chunkIdx] = {};
+            chunks[chunkIdx][i] = dictionarySamples[i];
+        }
 
-A continuación, se provee el DICCIONARIO COMPLETO de valores crudos.
-Tu trabajo es aplicar AGRUPACIÓN INTELIGENTE (Clustering). Identifica entidades maestro y anida dentro los valores crudos provistos que correspondan. Usa tu conocimiento para limpiar variaciones. OBLIGATORIO acatar la estructura de JSON Object en la raíz.
-
-Diccionario Crudo en Memoria:
-${JSON.stringify(dictionarySamples)}
-
-INSTRUCCIONES FINALES:
-1. Retorna ÚNICAMENTE los grupos que sean coherentes con el filtro.
-2. Descarta la basura o valores que NO representen la entidad.
-3. Todo valor crudo anidado debe existir LITERALMENTE en el Diccionario.`;
-
-        // Utilizando responseSchema estandar para forzar el Type Object strict.
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-flash", 
-            generationConfig: { 
-                 temperature: 0.1, 
-                 responseMimeType: "application/json",
-                 maxOutputTokens: 8192
-            } 
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
         });
-        
-        console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Clusters de Semilla (${dictionarySamples.length} uniques)...`);
-        const result = await model.generateContent(systemInstruction);
-        const response = await result.response;
-        return response.text();
+
+        let mergedCluster = [];
+        let discoveredMasters = new Set();
+
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+            const chunkDict = chunks[chunkIndex];
+            const previousMastersList = Array.from(discoveredMasters).join('", "');
+
+            const systemInstruction = `Eres un experto en Estandarización de Datos.
+Orden del usuario: "${userPrompt}"
+
+DICCIONARIO INDEXADO PARCIAL (Chunk ${chunkIndex + 1}/${chunks.length}):
+${JSON.stringify(chunkDict, null, 2)}
+
+Aplica AGRUPACIÓN INTELIGENTE (Clustering) identificando la entidad maestro.
+${discoveredMasters.size > 0 ? `REGLA DE CONTEXTO ESTRICTA: En iteraciones anteriores hemos descubierto estos "maestros": ["${previousMastersList}"]. DEBES REUTILIZAR exactamente el mismo nombre (respetando mayúsculas) si los nuevos ítems pertenecen a la misma entidad. No crees variaciones inútiles.` : ''}
+
+Estructura de Salida OBLIGATORIA:
+{
+  "cluster": [
+    { "maestro": "Valor Maestro", "indices": [0, 10] }
+  ]
+}
+Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parcial sin excepción.`;
+
+            try {
+                const result = await model.generateContent(systemInstruction);
+                let text = result.response.text();
+                let extractedText = module.exports.extractJSONFromInference(text);
+                
+                let parsed = JSON.parse(extractedText);
+                if (parsed.cluster && Array.isArray(parsed.cluster)) {
+                    mergedCluster = mergedCluster.concat(parsed.cluster);
+                    // Alimentar Memoria Global
+                    for (let c of parsed.cluster) {
+                        if (c.maestro) discoveredMasters.add(c.maestro);
+                    }
+                }
+            } catch(e) {
+                console.error(`[AI Service] Falló parseo del chunk ${chunkIndex + 1}:`, e.message);
+            }
+        }
+
+        return {
+            isPreParsed: true,
+            cluster: mergedCluster,
+            dictionaryRef: dictionarySamples
+        };
     }
 };
 

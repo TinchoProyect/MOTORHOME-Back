@@ -219,6 +219,9 @@ window.resetViewerState = function (preserveData = false) {
     columnMapping = {};
     window.draftPipelines = {}; // V8
     currentOffset = { row: 0, col: 0 };
+    window.currentEndOffset = null;
+    window.offsetSelectionMode = false;
+    window.endOffsetSelectionMode = false;
     processingRules = {};
 
     if (window.LayoutManager) window.LayoutManager.reset();
@@ -290,6 +293,7 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
             sheetName: sheetName,
             config: {
                 offset: typeof currentOffset !== 'undefined' ? currentOffset : { row: 0, col: 0 },
+                endOffset: typeof window.currentEndOffset !== 'undefined' ? window.currentEndOffset : null,
                 mapping: typeof columnMapping !== 'undefined' ? columnMapping : {},
                 rules: typeof processingRules !== 'undefined' ? processingRules : {},
                 computedCols: window.computedColumns || [],
@@ -735,10 +739,14 @@ window.loadSavedConfiguration = async function () {
                     } else {
                         console.log("⚠️ [FLUJOS] Fallback: Hidratando formato Legacy Plano");
                         
-                        // 1. Offset
+                        // 1. Offset y EndOffset
                         if (payload.offset) {
                             window.currentOffset = payload.offset;
                             window.offsetSelectionMode = false;
+                        }
+                        if (payload.endOffset) {
+                            window.currentEndOffset = payload.endOffset;
+                            window.endOffsetSelectionMode = false;
                         }
 
                         // 2. Arrays Virtuales y Calculados

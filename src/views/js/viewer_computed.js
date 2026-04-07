@@ -149,7 +149,9 @@ function saveComputedColumn(closeModal = true) {
             return;
         }
     } else {
-        const vColIdA = document.getElementById('calcFieldA').value;
+        const vColIdA = document.getElementById('calcFieldA') ? document.getElementById('calcFieldA').value : null;
+        const vColIdB = document.getElementById('calcFieldB') ? document.getElementById('calcFieldB').value : null;
+        
         if (!vColIdA || !vColIdB) {
             alert("Por favor completá todos los operandos.");
             return;

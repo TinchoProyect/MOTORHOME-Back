@@ -104,6 +104,8 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
 
     offsetSelectionMode = false;
     currentOffset = null;
+    window.endOffsetSelectionMode = false;
+    window.currentEndOffset = null;
 
     try {
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -350,6 +352,7 @@ function saveSheetState(sheetName) {
     // Guardamos el draftPipelines actual para esta hoja aislando memoria
     sheetConfigStore[sheetName] = {
         offset: window.currentOffset,
+        endOffset: window.currentEndOffset,
         pipelines: window.draftPipelines ? JSON.parse(JSON.stringify(window.draftPipelines)) : {},
         colWidths: window.currentColWidths ? JSON.parse(JSON.stringify(window.currentColWidths)) : {},
         virtualCols: window.virtualColumns ? JSON.parse(JSON.stringify(window.virtualColumns)) : [],
@@ -362,8 +365,10 @@ function saveSheetState(sheetName) {
 
 function loadSheetState(sheetName) {
     window.currentOffset = null;
+    window.currentEndOffset = null;
     window.draftPipelines = {};
     window.offsetSelectionMode = false;
+    window.endOffsetSelectionMode = false;
     window.currentColWidths = {}; // Global para Drag&Drop Resizer
     window.virtualColumns = []; // Reset V4 Proxy
     window.computedColumns = []; // Reset V5 Computed Cols
@@ -375,6 +380,7 @@ function loadSheetState(sheetName) {
     const config = sheetConfigStore[sheetName];
     if (config) {
         window.currentOffset = config.offset;
+        window.currentEndOffset = config.endOffset;
         window.draftPipelines = config.pipelines || {};
         window.currentColWidths = config.colWidths || {};
         window.virtualColumns = config.virtualCols || [];
@@ -411,24 +417,50 @@ function renderSheetTabs(sheetNames) {
     });
 }
 
-function toggleOffsetMode() {
-    window.offsetSelectionMode = !window.offsetSelectionMode;
-    const btn = document.getElementById('btnOffsetMode');
-    if (window.offsetSelectionMode) {
-        if (window.viewerMapper) window.viewerMapper.cancelMapping();
-        btn.classList.add('bg-amber-600', 'text-white', 'animate-pulse');
+function toggleOffsetMode(isEnd = false) {
+    if (isEnd) {
+        window.endOffsetSelectionMode = !window.endOffsetSelectionMode;
+        window.offsetSelectionMode = false;
+        const btnEnd = document.getElementById('btnEndOffsetMode');
+        const btnStart = document.getElementById('btnOffsetMode');
+        if (btnStart) btnStart.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
+        
+        if (window.endOffsetSelectionMode) {
+            if (window.viewerMapper) window.viewerMapper.cancelMapping();
+            if (btnEnd) btnEnd.classList.add('bg-red-600', 'text-white', 'animate-pulse');
+        } else {
+            if (btnEnd) btnEnd.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
+        }
     } else {
-        btn.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
+        window.offsetSelectionMode = !window.offsetSelectionMode;
+        window.endOffsetSelectionMode = false;
+        const btnStart = document.getElementById('btnOffsetMode');
+        const btnEnd = document.getElementById('btnEndOffsetMode');
+        if (btnEnd) btnEnd.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
+        
+        if (window.offsetSelectionMode) {
+            if (window.viewerMapper) window.viewerMapper.cancelMapping();
+            if (btnStart) btnStart.classList.add('bg-amber-600', 'text-white', 'animate-pulse');
+        } else {
+            if (btnStart) btnStart.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
+        }
     }
+    
     if (currentSheetData) renderVirtualTable(currentSheetData);
 }
 
 function handleOffsetClick(i, j) {
-    if (!window.offsetSelectionMode) return;
-    window.currentOffset = { row: i, col: j };
-    toggleOffsetMode();
-    saveSheetState(currentSheetName);
-    renderSheetTabs();
+    if (window.offsetSelectionMode) {
+        window.currentOffset = { row: i, col: j };
+        toggleOffsetMode(false);
+        saveSheetState(currentSheetName);
+        renderSheetTabs();
+    } else if (window.endOffsetSelectionMode) {
+        window.currentEndOffset = { row: i, col: j };
+        toggleOffsetMode(true);
+        saveSheetState(currentSheetName);
+        renderSheetTabs();
+    }
 }
 
 function toggleSimulationMode() {

@@ -415,18 +415,21 @@ function renderVirtualTable(originalData) {
 
                 const minRow = window.currentOffset ? window.currentOffset.row : 0;
                 const minCol = window.currentOffset ? window.currentOffset.col : 0;
+                const maxRow = window.currentEndOffset ? window.currentEndOffset.row : Infinity;
                 
                 // Evitar bloqueo (isIgnored) en filas filtradas dinámicamente si el buscador está activo
                 const searchState = window.GlobalSearchFilter ? window.GlobalSearchFilter.getState('visor') : null;
                 const isSearchActive = searchState && searchState.query && searchState.query.trim().length > 0;
                 
-                const isIgnored = (!isSearchActive) && ((i < minRow) || (dataIdx < minCol));
-                const isAnchor = (!isSearchActive) && (i === minRow && dataIdx === minCol);
+                const isIgnored = (!isSearchActive) && ((i < minRow) || (dataIdx < minCol) || (i > maxRow));
+                const isAnchorStart = (!isSearchActive) && (i === minRow && dataIdx === minCol);
+                const isAnchorEnd = (!isSearchActive) && window.currentEndOffset && (i === window.currentEndOffset.row && dataIdx === window.currentEndOffset.col);
 
                 if (isIgnored) cellClass += " opacity-25 grayscale bg-slate-950/50";
-                if (!window.offsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
-                if (isAnchor) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
-                if (window.offsetSelectionMode) cellClass += " cursor-crosshair hover:bg-amber-500/30";
+                if (!window.offsetSelectionMode && !window.endOffsetSelectionMode && isIgnored) cellClass += " pointer-events-none select-none";
+                if (isAnchorStart) cellClass += " border-2 border-amber-500 font-bold bg-amber-900/20 text-amber-500";
+                if (isAnchorEnd) cellClass += " border-2 border-red-500 font-bold bg-red-900/20 text-red-500";
+                if (window.offsetSelectionMode || window.endOffsetSelectionMode) cellClass += " cursor-crosshair hover:bg-slate-700/50";
 
                 // ETL Preview Injection & Global Audit Mode
                 const isWorkshopOpen = activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === j;
@@ -805,7 +808,13 @@ function generatePreview() {
             return;
         }
 
-        let sanitizedData = rawSlice.filter(row => {
+        const startIndex = window.currentOffset ? window.currentOffset.row : 0;
+        const endIndex = window.currentEndOffset ? window.currentEndOffset.row : rawSlice.length;
+
+        let sanitizedData = rawSlice.filter((row, originalIndex) => {
+            // [V6 FIN_DATOS] Filtro duro de ventana de coordenadas
+            if (originalIndex < startIndex || originalIndex > endIndex) return false;
+            
             return sourceConfig.some(cfg => {
                 const val = row[cfg.index];
                 return val !== undefined && val !== null && String(val).trim() !== '';

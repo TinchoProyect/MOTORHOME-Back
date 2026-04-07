@@ -48,6 +48,13 @@ class ViewerAiUi {
                 <textarea id="vaiPrompt" rows="2" placeholder="Ej: Condiciona la extracción aislando los prefijos..." 
                     class="w-full bg-slate-950/50 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50 transition-colors shadow-inner resize-none font-mono placeholder:text-slate-600 custom-scrollbar disabled:opacity-50 disabled:cursor-not-allowed" 
                     disabled></textarea>
+                    
+                <div class="flex flex-wrap gap-1" id="vaiQuickChips">
+                    <button data-intent="Relleno de Vacíos" data-route="ast" data-placeholder="Ej: Rellenar con 0,00..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Rellenar vacíos</button>
+                    <button data-intent="Extracción Específica" data-route="ast" data-placeholder="Ej: Extraer el primer número..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Extraer datos</button>
+                    <button data-intent="Limpieza y Separación" data-route="ast" data-placeholder="Ej: Separar descripción y peso dejando solo desc..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Separar Limpiar</button>
+                    <button data-intent="Mapeo y Agrupación de Texto" data-route="cluster" data-placeholder="Ej: Agrupar marcas comerciales y uniformar nombres..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-purple-600/40 text-slate-400 hover:text-purple-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-purple-500/50 font-mono">Agrupar (HITL)</button>
+                </div>
                 
                 <div class="flex items-center justify-between">
                     <div id="vaiFeedback" class="text-[9px] font-bold px-2 py-0.5 rounded-full hidden"></div>
@@ -69,6 +76,46 @@ class ViewerAiUi {
         this.healthIcon = document.getElementById('vaiHealthIndicator');
 
         this.btnEl.onclick = () => this.handleGenerate();
+
+        this.selectedIntent = null;
+        this.selectedRoute = null;
+
+        const quickBtns = wrapper.querySelectorAll('.vai-quick-btn');
+        quickBtns.forEach(btn => {
+            btn.onclick = () => {
+                if (this.promptEl.disabled) return;
+                
+                const hoverColorClass = btn.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+                const borderColorClass = btn.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
+                
+                if (this.selectedIntent === btn.dataset.intent) {
+                    // Deseleccionar
+                    this.selectedIntent = null;
+                    this.selectedRoute = null;
+                    btn.classList.remove(hoverColorClass, 'text-white', borderColorClass);
+                    btn.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                    this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
+                } else {
+                    // Limpiar todos
+                    quickBtns.forEach(b => {
+                        const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+                        const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
+                        b.classList.remove(hColor, 'text-white', bColor);
+                        b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                    });
+                    
+                    // Seleccionar actual
+                    this.selectedIntent = btn.dataset.intent;
+                    this.selectedRoute = btn.dataset.route;
+                    btn.classList.remove('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                    btn.classList.add(hoverColorClass, 'text-white', borderColorClass);
+                    if(btn.dataset.placeholder) {
+                        this.promptEl.placeholder = btn.dataset.placeholder;
+                    }
+                    this.promptEl.focus();
+                }
+            };
+        });
 
         // Inicializar Health Check periódico (cada 15 secs solo si el panel esta abierto)
         this._runHealthCheck();
@@ -263,13 +310,37 @@ class ViewerAiUi {
                 });
             }
 
-            const isFormattingPattern = promptText.toLowerCase().match(/(extraer|quit|borrar|separar|remplazar|reemplazar|regex|limpiar)/);
-            const useClustering = uniqueDictionary.length <= 60 && !isFormattingPattern;
+            // Enrutamiento Heurístico original
+            const isFormattingPattern = promptText.toLowerCase().match(/(extraer|quit|borrar|separar|remplazar|reemplazar|regex|limpiar|vaci|vacío|vacio|vacía|agregar|completar|rellenar|cero)/);
+            
+            // Si el chip seleccionado exige AST => fuerza AST. Si exige Cluster => fuerza Cluster.
+            const forceAstMode = this.selectedRoute === 'ast' || (!this.selectedRoute && isFormattingPattern);
+            const forceClusterMode = this.selectedRoute === 'cluster';
+            
+            // Si el diccionario es enorme, obligatoriamente se usa AST para evitar OOM, excepto que lo forcemos
+            const useClustering = forceClusterMode ? true : (uniqueDictionary.length <= 60 && !forceAstMode);
+
+            const combinedPrompt = this.selectedIntent ? `CONTEXTO DE LA TAREA: Operación estructurada del tipo "${this.selectedIntent}".\nINTRUCCIONES ESPECÍFICAS DEL USUARIO: ${promptText}` : promptText;
+
+            // Restringir max de muestras generativas.
+            // Para AST bastan pocas líneas. Para CLUSTERING (HITL), pasamos de 80 a 1200 para abarcar un diccionario monstruoso
+            // sin saturar la red ni causar un OOM del token threshold (max 8192 salida Gemini).
+            const limiteMuestras = useClustering ? 1200 : 25;
+            const dictLimitado = uniqueDictionary.slice(0, limiteMuestras);
+            
+            if (uniqueDictionary.length > limiteMuestras && useClustering) {
+                 console.warn(`[VIGÍA] Diccionario truncado: De ${uniqueDictionary.length} a ${limiteMuestras} para proteger la ventana LLM.`);
+                 if (window.Swal) Swal.update({ 
+                     html: `Mapeo completado: <b>${uniqueDictionary.length}</b> únicos detectados.<br>
+                            <span class="text-xs text-orange-400"><i class="fas fa-exclamation-triangle"></i> Lote masivo: Evaluando primeros ${limiteMuestras}...</span><br>
+                            Solicitando filtrado semántico al Motor IA...`
+                 });
+            }
 
             const payload = {
                 column_name: targetColName,
-                prompt: promptText,
-                samples: useClustering ? uniqueDictionary : uniqueDictionary.slice(0, 15), 
+                prompt: combinedPrompt,
+                samples: dictLimitado, 
                 require_ast: !useClustering
             };
 
@@ -301,15 +372,36 @@ class ViewerAiUi {
                 
                 if (responseData.rules.length === 0) throw new Error("La IA no pudo derivar una regla determinista a partir del prompt.");
                 
-                this._setStatus('Aterrizando Regla...', 'working');
-                
                 if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
-                     for (let rule of responseData.rules) {
-                         rule.fromAI = true;
-                         await window.viewerRuleWorkshop.createLocalRuleDirect(rule);
+                     
+                     // [UX FEEDBACK] Pantalla Previa para Evaluar las Reglas AST Generadas
+                     const userConfirmed = await this._displayASTModal(responseData, promptText);
+                     
+                     if (userConfirmed) {
+                         this._setStatus('Aterrizando Regla...', 'working');
+                         for (let rule of responseData.rules) {
+                             rule.fromAI = true;
+                             await window.viewerRuleWorkshop.createLocalRuleDirect(rule);
+                         }
+                         this.promptEl.value = "";
+                         this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
+                         if (this.selectedIntent) {
+                             this.selectedIntent = null;
+                             this.selectedRoute = null;
+                             const wrapper = this.container || document.getElementById('m_ai_copilot_container');
+                             if (wrapper) {
+                                 wrapper.querySelectorAll('.vai-quick-btn').forEach(b => {
+                                     const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+                                     const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
+                                     b.classList.remove(hColor, 'text-white', bColor);
+                                     b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                                 });
+                             }
+                         }
+                         this._setStatus('Conectado', 'success');
+                     } else {
+                         this._setStatus('Descartado', 'success');
                      }
-                     this.promptEl.value = "";
-                     this._setStatus('Conectado', 'success');
                 } else {
                      throw new Error("API del Taller Cerrada.");
                 }
@@ -341,9 +433,12 @@ class ViewerAiUi {
 
              return `
              <div class="mb-3 bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden">
-                 <div class="bg-indigo-950/20 p-2 border-b border-indigo-500/10 flex items-center justify-between">
-                     <span class="text-xs font-bold text-indigo-300 font-mono tracking-wide">${masterVal}</span>
-                     <span class="text-[10px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded font-bold">${rawValues.length} crudos</span>
+                 <div class="bg-indigo-950/20 p-2 border-b border-indigo-500/10 flex items-center justify-between hover:bg-slate-800/40 transition">
+                     <label class="flex items-center gap-2 cursor-pointer w-full" for="hitl_global_${gIdx}">
+                         <input type="checkbox" id="hitl_global_${gIdx}" class="hitl-global-chk form-checkbox h-4 w-4 text-indigo-500 rounded border-indigo-500/50 bg-slate-800 focus:ring-0 focus:ring-offset-0 cursor-pointer" checked data-group="${gIdx}">
+                         <span class="text-xs font-bold text-indigo-300 font-mono tracking-wide truncate pr-2 select-none">${masterVal}</span>
+                     </label>
+                     <span class="text-[10px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded font-bold shrink-0 shadow-sm border border-indigo-500/10">${rawValues.length} crudos</span>
                  </div>
                  <div class="p-2 py-1 bg-slate-950/30">
                     ${childrenHtml}
@@ -363,7 +458,35 @@ class ViewerAiUi {
             cancelButtonText: 'Descartar',
             confirmButtonColor: '#4f46e5',
             background: '#0f172a', color: '#f8fafc',
-            width: '500px'
+            width: '500px',
+            didOpen: () => {
+                const container = document.getElementById('hitl_checkbox_container');
+                if (!container) return;
+                
+                // Event Delegation para checkboxes
+                container.addEventListener('change', (e) => {
+                    if (e.target.classList.contains('hitl-global-chk')) {
+                        const isChecked = e.target.checked;
+                        const groupIdx = e.target.getAttribute('data-group');
+                        const childChecks = container.querySelectorAll(`.hitl-raw-chk[id^="hitl_chk_${groupIdx}_"]`);
+                        childChecks.forEach(chk => chk.checked = isChecked);
+                        e.target.indeterminate = false;
+                    } else if (e.target.classList.contains('hitl-raw-chk')) {
+                       const parts = e.target.id.split('_');
+                       if (parts.length >= 3) {
+                           const groupIdx = parts[2];
+                           const parentChk = container.querySelector(`#hitl_global_${groupIdx}`);
+                           if (parentChk) {
+                               const childChecks = container.querySelectorAll(`.hitl-raw-chk[id^="hitl_chk_${groupIdx}_"]`);
+                               const allChecked = Array.from(childChecks).every(c => c.checked);
+                               const someChecked = Array.from(childChecks).some(c => c.checked);
+                               parentChk.checked = allChecked;
+                               parentChk.indeterminate = someChecked && !allChecked;
+                           }
+                       }
+                    }
+                });
+            }
         });
         
         if (isConfirmed) {
@@ -404,6 +527,20 @@ class ViewerAiUi {
             if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
                 await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
                 this.promptEl.value = "";
+                this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
+                if (this.selectedIntent) {
+                    this.selectedIntent = null;
+                    this.selectedRoute = null;
+                    const wrapper = this.container || document.getElementById('m_ai_copilot_container');
+                    if (wrapper) {
+                        wrapper.querySelectorAll('.vai-quick-btn').forEach(b => {
+                            const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+                            const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
+                            b.classList.remove(hColor, 'text-white', bColor);
+                            b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                        });
+                     }
+                }
                 this._setStatus('Conectado', 'success');
             } else {
                 throw new Error("API del Taller Cerrada.");
@@ -411,6 +548,65 @@ class ViewerAiUi {
         } else {
              this._setStatus('Descartado', 'success');
         }
+    }
+
+    async _displayASTModal(responseData, promptText) {
+        if (!window.Swal) return true;
+        
+        const reglasList = responseData.rules.map((r, i) => {
+             // Constuir visualización del condicional
+             let condText = "Desconocido";
+             if(r.condicion) {
+                 condText = r.condicion.operador;
+                 if(r.condicion.valor) condText += ` ('${r.condicion.valor}')`;
+             }
+             
+             // Construir visualización de la mutación
+             const arrAct = [];
+             if(r.accion) {
+                 if(r.accion.tipo_accion) arrAct.push(`Tipo: <b class="text-indigo-400">${r.accion.tipo_accion}</b>`);
+                 if(r.accion.target) arrAct.push(`Tag: <i>'${r.accion.target}'</i>`);
+                 if(r.accion.valor) arrAct.push(`Regex/Val: <span class="bg-indigo-900/50 px-1 rounded">${r.accion.valor}</span>`);
+                 if(r.accion.replacement !== undefined) arrAct.push(`Reemplazo: <span class="bg-indigo-900/50 px-1 rounded">'${r.accion.replacement}'</span>`);
+             }
+             
+             return `
+             <div class="mb-3 bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden">
+                 <div class="bg-indigo-950/20 p-2 border-b border-indigo-500/10 flex items-center justify-between">
+                     <span class="text-xs font-bold text-indigo-300 font-mono tracking-wide">Regla ${i+1}: ${r.nombre_regla || 'Secuencia'}</span>
+                 </div>
+                 <div class="p-3 py-2 bg-slate-950/30 text-[11px] text-slate-300 font-mono leading-relaxed space-y-1">
+                     <div class="flex items-start gap-2">
+                        <i data-lucide="filter" class="w-3.5 h-3.5 text-slate-500 mt-0.5"></i> 
+                        <span class="text-slate-400 font-bold">Filtro:</span> <span>${condText}</span>
+                     </div>
+                     <div class="flex items-start gap-2">
+                        <i data-lucide="zap" class="w-3.5 h-3.5 text-slate-500 mt-0.5"></i> 
+                        <span class="text-slate-400 font-bold">Mutación:</span> <span>${arrAct.length ? arrAct.join(' <span class="text-slate-600">|</span> ') : 'N/A'}</span>
+                     </div>
+                 </div>
+             </div>
+             `;
+        }).join('');
+        
+        const explicacion = responseData.explicacion_global || "Se derivó AST algorítmico directamente basándose en tu requerimiento.";
+
+        const { isConfirmed } = await Swal.fire({
+            title: 'AST Aterrizado Exitosamente',
+            html: `<div class="text-[11px] text-slate-400 mb-4 text-left">La IA ha transpilado tu petición <i>"${promptText}"</i> en un formato estrictamente predecible (Abstract Syntax Tree).<br><br><span class="text-indigo-300">${explicacion}</span></div>
+                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-2 pb-2">
+                      ${reglasList}
+                   </div>`,
+            showCancelButton: true,
+            confirmButtonText: '<i data-lucide="check" class="w-4 h-4 inline mt-0.5 mr-1"></i> Aceptar e Inyectar',
+            cancelButtonText: 'Descartar',
+            confirmButtonColor: '#4f46e5',
+            background: '#0f172a', color: '#f8fafc',
+            width: '550px',
+            didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
+        });
+        
+        return isConfirmed;
     }
 
     _evaluateUX(dataIdx, oldPipeline, currentPipeline) {

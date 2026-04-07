@@ -164,25 +164,52 @@ const aiController = {
 
             console.log(`[AI Controller] 🕵️ Data Profiling (Fase 2) iniciado para columna "${column_name || 'Desconocida'}" con ${samples.length} valores en diccionario.`);
             
-            const responseText = await aiService.executeEntityDiscovery(prompt, samples);
+            const AI_Response = await aiService.executeEntityDiscovery(prompt, samples);
             
-            const cleanedJsonText = aiService.extractJSONFromInference(responseText);
-            
-            let parsedRes;
-            try {
-                parsedRes = JSON.parse(cleanedJsonText);
-            } catch (err) {
-                console.error("[AI Controller] ❌ Fallo el parseo en discoverEntities (JSON.parse), respuesta cruda: ", cleanedJsonText);
-                return res.status(502).json({ error: 'LLM returned invalid JSON on Discovery phase' });
+            let parsedRes = { cluster: [] };
+
+            if (AI_Response.isPreParsed) {
+                // Nuevo flujo de Clustering Distribuido (100% Determinista, No Laziness)
+                parsedRes.cluster = AI_Response.cluster;
+            } else {
+                // Flujo Legacy / Backward Compat
+                const cleanedJsonText = aiService.extractJSONFromInference(AI_Response.rawText);
+                try {
+                    parsedRes = JSON.parse(cleanedJsonText);
+                } catch (err) {
+                    console.error("[AI Controller] ❌ Fallo el parseo en discoverEntities (JSON.parse), respuesta cruda: ", cleanedJsonText);
+                    return res.status(502).json({ error: 'LLM returned invalid JSON on Discovery phase' });
+                }
+                if (!parsedRes || !Array.isArray(parsedRes.cluster)) {
+                     return res.status(502).json({ error: 'LLM returned missing or invalid cluster array' });
+                }
             }
 
-            if (!parsedRes || typeof parsedRes.cluster !== 'object' || Array.isArray(parsedRes.cluster)) {
-                 return res.status(502).json({ error: 'LLM returned missing or invalid cluster object' });
+            // Rehidratación de Strings Crudos
+            // Convertimos la matriz estricta { cluster: [ {maestro: "A", indices: [0, 1] } ] } a mapa simple { "A": ["cad", "cad"] }
+            const hydratedCluster = {};
+            if (Array.isArray(parsedRes.cluster)) {
+                 for (const clusterObj of parsedRes.cluster) {
+                      const masterName = clusterObj.maestro;
+                      if (!masterName) continue;
+                      if (!hydratedCluster[masterName]) {
+                          hydratedCluster[masterName] = [];
+                      }
+                      if (Array.isArray(clusterObj.indices)) {
+                          for (const idx of clusterObj.indices) {
+                               if (AI_Response.dictionaryRef[idx] !== undefined) {
+                                    hydratedCluster[masterName].push(AI_Response.dictionaryRef[idx]);
+                               }
+                          }
+                      }
+                 }
+            } else {
+                 throw new Error("El modelo generó un cluster en formato erróneo que evadió el schema.");
             }
 
             res.status(200).json({
                 success: true,
-                cluster: parsedRes.cluster
+                cluster: hydratedCluster
             });
 
         } catch (error) {

@@ -98,6 +98,9 @@ class ViewerEtlAstParser {
             case "DROP":
                 return { result: "", handled: true, rejected: true };
                 
+            case "SET_VALUE":
+                return { result: action.valor !== undefined ? String(action.valor) : "", handled: true, rejected: false };
+                
             case "REPLACE":
                 if (!action.target) return { result: val, handled: true, rejected: false };
                 if (action.is_regex) {
