@@ -148,6 +148,9 @@ async function processFile(fileId, providerId, options = {}) {
             let validHeaderIndex = -1;
 
             // Si el usuario forzó un índice alto (ej: 5), respetamos su decisión manual sobre la automática.
+            // Permite desactivar el salto de línea (+1) en la ingesta final.
+            let isManualOffset = headerIndex > 1;
+
             // Pero si es el default (0 o 1), usamos la inteligencia.
             if (headerIndex <= 1) {
                 validHeaderIndex = rawRows.findIndex(row => {
@@ -197,7 +200,11 @@ async function processFile(fileId, providerId, options = {}) {
                 if (forced) existingTemplate = forced;
             }
 
-            const sampleData = rawRows.slice(1, 6).map(rowArray => {
+            // Si el usuario definió el inicio manualmente, la fila 0 ES dato. 
+            // Si el motor autodetectó la cabecera, la fila 0 NO se ingesta (salto +1).
+            const dataStartIndex = isManualOffset ? 0 : 1;
+
+            const sampleData = rawRows.slice(dataStartIndex, dataStartIndex + 5).map(rowArray => {
                 let obj = {};
                 headers.forEach((header, index) => {
                     obj[header] = rowArray[index] || "";
@@ -212,7 +219,7 @@ async function processFile(fileId, providerId, options = {}) {
             };
 
             // FULL DATA EXTRACTION (Warehouse Stock)
-            const fullData = rawRows.slice(1).map(rowArray => {
+            const fullData = rawRows.slice(dataStartIndex).map(rowArray => {
                 let obj = {};
                 headers.forEach((header, index) => {
                     obj[header] = rowArray[index] || "";

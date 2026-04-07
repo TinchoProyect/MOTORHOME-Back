@@ -809,11 +809,12 @@ function generatePreview() {
         }
 
         const startIndex = window.currentOffset ? window.currentOffset.row : 0;
-        const endIndex = window.currentEndOffset ? window.currentEndOffset.row : rawSlice.length;
+        const endIndex = window.currentEndOffset ? window.currentEndOffset.row : currentSheetData.length;
 
-        let sanitizedData = rawSlice.filter((row, originalIndex) => {
+        let sanitizedData = rawSlice.filter((row, localIndex) => {
+            const absoluteRow = startIndex + localIndex;
             // [V6 FIN_DATOS] Filtro duro de ventana de coordenadas
-            if (originalIndex < startIndex || originalIndex > endIndex) return false;
+            if (absoluteRow > endIndex) return false;
             
             return sourceConfig.some(cfg => {
                 const val = row[cfg.index];
