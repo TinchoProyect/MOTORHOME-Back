@@ -214,6 +214,7 @@ window.resetViewerState = function (preserveData = false) {
 
     // Variables de Mapeo
     mappingMode = false;
+    window._flujoAlreadyLoaded = false; // [LIFECYCLE FIX] Permite re-hidratar tras cerrar el modal
     window.virtualColumns = [];
     window.computedColumns = []; // V5
     columnMapping = {};

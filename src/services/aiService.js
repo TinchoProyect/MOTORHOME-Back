@@ -259,22 +259,26 @@ Usa escape doble para JSON si emites Regex.`;
             const chunkDict = chunks[chunkIndex];
             const previousMastersList = Array.from(discoveredMasters).join('", "');
 
-            const systemInstruction = `Eres un experto en Estandarización de Datos.
-Orden del usuario: "${userPrompt}"
+            const systemInstruction = `Eres un procesador analítico y extractor de texto implacable.
+TU DIRECTIVA MAESTRA Y ABSOLUTA ES: "${userPrompt}"
 
 DICCIONARIO INDEXADO PARCIAL (Chunk ${chunkIndex + 1}/${chunks.length}):
 ${JSON.stringify(chunkDict, null, 2)}
 
-Aplica AGRUPACIÓN INTELIGENTE (Clustering) identificando la entidad maestro.
-${discoveredMasters.size > 0 ? `REGLA DE CONTEXTO ESTRICTA: En iteraciones anteriores hemos descubierto estos "maestros": ["${previousMastersList}"]. DEBES REUTILIZAR exactamente el mismo nombre (respetando mayúsculas) si los nuevos ítems pertenecen a la misma entidad. No crees variaciones inútiles.` : ''}
+Aplica AGRUPACIÓN INTELIGENTE (Clustering) basándote EXCLUSIVA Y ESTRICTAMENTE en la orden del usuario.
+Si el usuario pide extraer un número o aplicar matemática, el "Valor Maestro" DEBE SER EL RESULTADO NUMÉRICO.
+Si el usuario pide una marca, es la marca.
+ESTRICTAMENTE PROHIBIDO: NO agrupes por semántica, producto, familia o rubro A MENOS que la directiva del usuario lo pida explícitamente. La llave "maestro" es simplemente el resultado crudo y literal de aplicar la Orden del Usuario a cada registro.
+
+${discoveredMasters.size > 0 ? `REGLA DE CONTEXTO ESTRICTA: En iteraciones anteriores ya has agrupado bajo estos valores: ["${previousMastersList}"]. DEBES REUTILIZAR exactamente la misma cadena si el resultado lógico es idéntico al de iteraciones previas.` : ''}
 
 Estructura de Salida OBLIGATORIA:
 {
   "cluster": [
-    { "maestro": "Valor Maestro", "indices": [0, 10] }
+    { "maestro": "Resultado Estricto (Ej: 6, ARCOR, Cja)", "indices": [0, 10] }
   ]
 }
-Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parcial sin excepción.`;
+Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parcial sin excepción. Ningún índice puede ser excluido.`;
 
             try {
                 const result = await model.generateContent(systemInstruction);
