@@ -376,7 +376,7 @@ module.exports = {
                 return res.status(409).json({ success: false, error: "Este archivo ya fue extraído.", needs_overwrite: false });
             }
 
-            // Motor de Deltas: Recuperar último estado histórico (Foto previa de la Verdad)
+            // Motor de Deltas Bi-Dimensional: Recuperar último estado histórico (Foto previa)
             const historyMap = new Map();
             const { data: previousSnapshot, error: snapErr } = await supabase
                 .from('tabla_maestra_operativa')
@@ -385,36 +385,72 @@ module.exports = {
                 .order('timestamp_extraccion', { ascending: false });
                 
             if (!snapErr && previousSnapshot && previousSnapshot.length > 0) {
-                // Como está ordenado DESC, el primero que encontramos por código es el más reciente (Last Known Good)
                 for (const row of previousSnapshot) {
                     const code = row.datos_maestros?.codigo;
-                    if (code && !historyMap.has(code)) {
-                        historyMap.set(String(code).trim(), row.datos_maestros?.precio);
+                    if (code) {
+                        const strCode = String(code).trim();
+                        // Almacenamos el payload_maestro de la versión más reciente hallada (T-1)
+                        // Aseguramos de no capturar registros que ya figuraban como BAJA en iteraciones muy remotas (filtrado lógico temporal)
+                        if (!historyMap.has(strCode) && row.datos_maestros._estado_delta !== 'BAJA') {
+                            historyMap.set(strCode, row.datos_maestros);
+                        }
                     }
                 }
             }
             
-            const inserts = records.map(record => {
-                 let es_delta = false;
+            const processedCodes = new Set();
+            const inserts = [];
+
+            // 1. Matricular las llegadas reales (Altas, Intactos y Modificados)
+            records.forEach(record => {
+                 let estado_delta = 'ALTA';
+                 let es_delta = true;
                  const rawCode = record.codigo ? String(record.codigo).trim() : null;
                  
                  if (rawCode && historyMap.has(rawCode)) {
-                     const historicalPrice = historyMap.get(rawCode);
+                     processedCodes.add(rawCode);
+                     const historicalData = historyMap.get(rawCode);
+                     const historicalPrice = historicalData.precio;
                      const currentPrice = record.precio;
-                     // Comparación algorítmica estricta del valor para detectar Variación
+                     
+                     // Si hubo salto algorítmico, marcar como modificado.
                      if (String(historicalPrice).trim() !== String(currentPrice).trim()) {
+                         estado_delta = 'MODIFICADO';
+                         record._precio_anterior = historicalPrice;
                          es_delta = true;
+                     } else {
+                         estado_delta = 'INTACTO';
+                         es_delta = false;
                      }
                  }
 
-                 return {
+                 record._estado_delta = estado_delta;
+
+                 inserts.push({
                      proveedor_id,
                      archivo_origen_id: archivo_id,
                      nombre_proveedor: nombre_proveedor || 'Desconocido',
                      datos_maestros: record,
                      es_delta: es_delta 
-                 };
+                 });
             });
+
+            // 2. Inyectar "Ghosts" para el tracking de Bajas (Descontinuados)
+            for (const [historicalCode, historicalData] of historyMap.entries()) {
+                if (!processedCodes.has(historicalCode)) {
+                    // El producto existía vivo en T-1 pero no vino en T0. Es una BAJA definitiva para esta capa operativa.
+                    const ghostPayload = { ...historicalData };
+                    ghostPayload._estado_delta = 'BAJA';
+                    
+                    inserts.push({
+                        proveedor_id,
+                        archivo_origen_id: archivo_id,  // Se asimila a la extracción actual para que asome en los reportes correspondientes a hoy
+                        nombre_proveedor: nombre_proveedor || 'Desconocido',
+                        datos_maestros: ghostPayload,
+                        es_delta: true
+                    });
+                }
+            }
             
             const { error: insertErr } = await supabase.from('tabla_maestra_operativa').insert(inserts);
             if (insertErr) {

@@ -311,9 +311,12 @@ window.revertExtraction = async function(fileId) {
             const res = await fetch(`${backendUrl}/api/master-table/revert/${fileId}`, { method: 'DELETE' });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Fallo en la reversión");
-            
             Swal.fire('Revertido', 'La extracción de este archivo fue deshecha.', 'success');
+            // Refresco UX: Actualizar tab de Archivos Crudos y Procesados Activos (Card Unlocking)
             if (window.fetchPendingFiles) window.fetchPendingFiles();
+            if (window.fetchProcessedFiles && window.globalContext && window.globalContext.providerId) {
+                window.fetchProcessedFiles(window.globalContext.providerId);
+            }
         } catch (e) {
             Swal.fire('Error', e.message, 'error');
         }

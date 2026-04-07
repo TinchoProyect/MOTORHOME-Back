@@ -811,13 +811,11 @@
                 </div>
 
                 <div class="flex items-center gap-3 ml-auto">
-                    <!-- Toggle Historial V4.1 -->
-                    <div class="flex items-center gap-2 mr-2 group bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700/50">
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="fmtToggleHistory" value="" class="sr-only peer" onchange="if(window.toggleFmtHistory) window.toggleFmtHistory(this.checked)">
-                            <div class="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-600"></div>
-                            <span class="ml-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-amber-400 transition-colors">Ver Todo</span>
-                        </label>
+                    <!-- BI Action Pills -->
+                    <div class="flex bg-slate-900 rounded-lg p-1 border border-slate-700/50 mr-2 shadow-inner">
+                        <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('ALL')" id="pill-filter-ALL" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all bg-slate-700 text-white shadow-sm">Todos</button>
+                        <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('NOVEDADES')" id="pill-filter-NOVEDADES" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all text-slate-400 hover:text-slate-300 hover:bg-slate-800">Novedades</button>
+                        <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('BAJAS')" id="pill-filter-BAJAS" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all text-slate-400 hover:text-slate-300 hover:bg-slate-800">Bajas</button>
                     </div>
 
                     <div class="relative">
@@ -1216,12 +1214,21 @@
                 let opJson = { data: [] };
                 if (opRes.ok) opJson = await opRes.json();
                 
-                let showHistory = false;
-                window.toggleFmtHistory = function(checked) {
-                    showHistory = checked;
-                    if (window.v4GridApi) {
-                        window.v4GridApi.onFilterChanged();
+                let currentDeltaFilter = 'ALL';
+                window.setDeltaFilter = function(filter) {
+                    currentDeltaFilter = filter;
+                    // Reset UI pills
+                    document.querySelectorAll('.pill-filter').forEach(btn => {
+                        btn.classList.remove('bg-slate-700', 'text-white', 'shadow-sm');
+                        btn.classList.add('text-slate-400');
+                    });
+                    // Set active
+                    const activeBtn = document.getElementById(`pill-filter-${filter}`);
+                    if (activeBtn) {
+                        activeBtn.classList.remove('text-slate-400');
+                        activeBtn.classList.add('bg-slate-700', 'text-white', 'shadow-sm');
                     }
+                    if (window.v4GridApi) window.v4GridApi.onFilterChanged();
                 };
 
                 // Identificar Latest Snapshot (La última ingesta por Proveedor+Código)
@@ -1238,7 +1245,8 @@
                           _system_id: op.id,
                           _proveedor: op.nombre_proveedor,
                           _timestamp: op.timestamp_extraccion,
-                          _es_delta: op.es_delta,
+                          _estado_delta: op.datos_maestros._estado_delta || 'INTACTO',
+                          _precio_anterior: op.datos_maestros._precio_anterior || '',
                           _is_latest: latestMap.get(key) === op.id,
                           ...op.datos_maestros
                      };
@@ -1255,11 +1263,20 @@
                          resizable: true,
                          rowDrag: index === 0 ? true : false,
                          cellRenderer: (params) => {
-                              // Resalte Visual de Delta Operativo
-                              if (isPrice && params.data && params.data._es_delta) {
-                                  return `<div class="flex items-center gap-1.5"><span class="text-amber-400 font-bold">${params.value || ''}</span> <div class="px-1.5 py-[1px] rounded bg-amber-500/20 border border-amber-500/50 text-amber-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica (Δ) en la ingesta representativa respecto a su base histórica.">Δ DELTA</div></div>`;
+                              const v = params.value || '';
+                              const st = params.data?._estado_delta;
+                              
+                              if (isPrice && st === 'MODIFICADO') {
+                                  const oldP = params.data._precio_anterior || '';
+                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 line-through text-[9px] mr-1">${oldP}</span> <span class="text-amber-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-amber-500/20 border border-amber-500/50 text-amber-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica respecto a su base histórica.">Δ DELTA</div></div>`;
                               }
-                              return params.value;
+                              if (isPrice && st === 'ALTA') {
+                                  return `<div class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Apareció en esta ingesta por primera vez">NUEVO</div></div>`;
+                              }
+                              if (isPrice && st === 'BAJA') {
+                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-red-500/20 border border-red-500/50 text-red-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Descontinuado u Omitido en la última extracción">BAJA</div></div>`;
+                              }
+                              return v;
                          }
                      };
                 });
@@ -1279,13 +1296,21 @@
                     rowDragManaged: true,
                     animateRows: true,
                     isExternalFilterPresent: () => {
-                        return !showHistory; // Si NO mostramos historial, el filtro externo debe activarse y cortar filas
+                        return true; // Obligamos siempre al filtrado para gestionar el aislamiento del ruido
                     },
                     doesExternalFilterPass: (node) => {
-                        return node.data._is_latest === true; // Pasa la fila operativa si es la última del proveedor+código
+                        // Siempre censurar el historial profundo (versiones antiguas)
+                        if (!node.data._is_latest) return false;
+                        
+                        if (currentDeltaFilter === 'NOVEDADES') return node.data._estado_delta === 'ALTA' || node.data._estado_delta === 'MODIFICADO';
+                        if (currentDeltaFilter === 'BAJAS') return node.data._estado_delta === 'BAJA';
+                        // ALL view: Mostramos Alta, Modificado, e Intacto (Ocultamos BAJA para no ensuciar operación real)
+                        return node.data._estado_delta !== 'BAJA';
                     },
                     rowClassRules: {
-                        'bg-amber-900/10 border-l border-amber-500': 'data._es_delta === true'
+                        'bg-slate-800/40 opacity-50 text-slate-500 line-through border-l-2 border-red-500': 'data._estado_delta === "BAJA"',
+                        'bg-emerald-900/10 border-l-2 border-emerald-500': 'data._estado_delta === "ALTA"',
+                        'bg-amber-900/10 border-l-2 border-amber-500': 'data._estado_delta === "MODIFICADO"'
                     },
                     defaultColDef: {
                         flex: 1,
