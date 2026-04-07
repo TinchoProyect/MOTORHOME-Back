@@ -239,7 +239,7 @@ Usa escape doble para JSON si emites Regex.`;
 
         console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Clusters Distribuidos (Total: ${dictionarySamples.length} uniques)...`);
         
-        let CHUNK_SIZE = 60;
+        let CHUNK_SIZE = 30; // Unificado a 30 (Mismo que Literal) para evitar Laziness o Timeout Limit
         let chunks = [];
         for (let i = 0; i < dictionarySamples.length; i++) {
             let chunkIdx = Math.floor(i / CHUNK_SIZE);
@@ -280,21 +280,57 @@ Estructura de Salida OBLIGATORIA:
 }
 Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parcial sin excepción. Ningún índice puede ser excluido.`;
 
-            try {
-                const result = await model.generateContent(systemInstruction);
-                let text = result.response.text();
-                let extractedText = module.exports.extractJSONFromInference(text);
-                
-                let parsed = JSON.parse(extractedText);
-                if (parsed.cluster && Array.isArray(parsed.cluster)) {
-                    mergedCluster = mergedCluster.concat(parsed.cluster);
-                    // Alimentar Memoria Global
-                    for (let c of parsed.cluster) {
-                        if (c.maestro) discoveredMasters.add(c.maestro);
+            let success = false;
+            let retries = 0;
+            const maxRetries = 2;
+            let text = '';
+
+            while (!success && retries <= maxRetries) {
+                try {
+                    const result = await model.generateContent(systemInstruction);
+                    text = result.response.text();
+                    let extractedText = module.exports.extractJSONFromInference(text);
+                    
+                    let parsed = JSON.parse(extractedText);
+                    if (parsed.cluster && Array.isArray(parsed.cluster)) {
+                        
+                        // [AUDITORÍA DE INTEGRIDAD DE LLAVES]
+                        // Verifica si el LLM ignoró crudos debido a LLM Laziness o Truncation Silente
+                        let indicesRecuperados = 0;
+                        for (let c of parsed.cluster) {
+                             if (c.indices && Array.isArray(c.indices)) {
+                                 indicesRecuperados += c.indices.length;
+                             }
+                        }
+                        
+                        const expectedIndices = Object.keys(chunkDict).length;
+                        if (indicesRecuperados < expectedIndices) {
+                             throw new Error(`LLM Laziness Drop: Empaquetó solo ${indicesRecuperados} de ${expectedIndices} crudos. Dictamen Inválido.`);
+                        }
+
+                        mergedCluster = mergedCluster.concat(parsed.cluster);
+                        // Alimentar Memoria Global
+                        for (let c of parsed.cluster) {
+                            if (c.maestro) discoveredMasters.add(c.maestro);
+                        }
+                    } else {
+                        throw new Error(`JSON Schema Inválido. Array cluster no encontrado.`);
                     }
+                    success = true;
+                } catch(e) {
+                    retries++;
+                    console.warn(`[AI Service] ADVERTENCIA: Falló parseo o Rate Limit en chunk ${chunkIndex + 1} del Hit-In-The-Loop. Intento: ${retries}/${maxRetries}. Razón:`, e.message);
+                    
+                    try {
+                        const fs = require('fs');
+                        fs.appendFileSync('./logs_ai_dump.txt', `\n--- INTENTO ${retries} CHUNK ${chunkIndex + 1} ---\nMSG: ${e.message}\nTEXT: ${text || 'NO_TEXT'}\n`);
+                    } catch (fsErr) {}
+
+                    if (retries > maxRetries) {
+                        throw new Error(`El modelo falló consistentemente en el Chunk ${chunkIndex + 1} omitiendo agrupar un lote crítico de datos. Por seguridad, la operación se abortó para prevenir fugas de diccionario. Intenta nuevamente agrupando menos crudos o refina la directiva. (${e.message})`);
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 3000 * retries)); // Backoff delay (3s, 6s)
                 }
-            } catch(e) {
-                console.error(`[AI Service] Falló parseo del chunk ${chunkIndex + 1}:`, e.message);
             }
         }
 
@@ -345,22 +381,34 @@ Estructura de Salida OBLIGATORIA (Un objeto JSON plano de tipo Key-Value):
 }
 Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcial como llaves. Ninguna llave originaria puede faltar. NO INCLUYAS arrays, sólo devuelve el objeto llave-valor.`;
 
-            try {
-                const result = await model.generateContent(systemInstruction);
-                let text = result.response.text();
-                let extractedText = module.exports.extractJSONFromInference(text);
-                
-                let parsedObj = JSON.parse(extractedText);
-                
-                // Mapear inmediatamente este chunk al mapa general de retornos
-                for (let key in parsedObj) {
-                    const numKey = parseInt(key);
-                    if (!isNaN(numKey) && dictionarySamples[numKey] !== undefined) {
-                        finalMap[dictionarySamples[numKey]] = String(parsedObj[key]);
+            let success = false;
+            let retries = 0;
+            const maxRetries = 2;
+
+            while (!success && retries <= maxRetries) {
+                try {
+                    const result = await model.generateContent(systemInstruction);
+                    let text = result.response.text();
+                    let extractedText = module.exports.extractJSONFromInference(text);
+                    
+                    let parsedObj = JSON.parse(extractedText);
+                    
+                    // Mapear inmediatamente este chunk al mapa general de retornos
+                    for (let key in parsedObj) {
+                        const numKey = parseInt(key);
+                        if (!isNaN(numKey) && dictionarySamples[numKey] !== undefined) {
+                            finalMap[dictionarySamples[numKey]] = String(parsedObj[key]);
+                        }
                     }
+                    success = true;
+                } catch(e) {
+                    retries++;
+                    console.warn(`[AI Service] ADVERTENCIA: Falló parseo o Rate Limit en chunk literal ${index + 1}. Intento: ${retries}/${maxRetries}. Razón:`, e.message);
+                    if (retries > maxRetries) {
+                        throw new Error(`Fallo Crítico al intentar limpiar el Chunk ${index + 1}. La generación fue abortada para prevenir un diccionario truncado.`);
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 3000 * retries));
                 }
-            } catch(e) {
-                console.error(`[AI Service] Falló parseo del chunk literal ${index + 1}:`, e.message);
             }
         }
         
