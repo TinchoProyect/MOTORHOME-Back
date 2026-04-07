@@ -585,12 +585,19 @@ function renderPipeline() {
         if (emptyState) emptyState.classList.remove('hidden');
         if (flowLine) flowLine.classList.add('hidden');
         if (auditContainer) auditContainer.classList.add('hidden');
+        
+        const oldGatillo = document.getElementById('vrwCacheMissBtn');
+        if (oldGatillo) oldGatillo.remove();
+        
         return;
     }
 
     if (emptyState) emptyState.classList.add('hidden');
     if (flowLine) flowLine.classList.remove('hidden');
-    if (auditContainer) auditContainer.classList.remove('hidden');
+    if (auditContainer) {
+        auditContainer.classList.remove('hidden');
+        renderCacheMissGatillo(auditContainer);
+    }
 
     currentDraftPipeline.forEach((rule, index) => {
         const chip = document.createElement('div');
@@ -620,6 +627,187 @@ function renderPipeline() {
     });
 
     if (window.lucide) window.lucide.createIcons();
+}
+
+async function renderCacheMissGatillo(container) {
+    let libretaRuleIdx = -1;
+    let libretaPrompt = "";
+    let libretaDict = null;
+    
+    currentDraftPipeline.forEach((r, idx) => {
+         let isDictRule = false;
+         let dictObj = null;
+         if (r.tipo === 'ast_conditional' && r.logica && r.logica[0]) {
+             const cond = r.logica[0].condicion;
+             const act = r.logica[0].accion;
+             if (cond && cond.operador === 'IN_DICT_KEYS' && typeof cond.valor === 'object' && cond.valor !== null) {
+                 isDictRule = true;
+                 dictObj = cond.valor;
+             } else if (act && act.tipo_accion === 'DICTIONARY_REPLACE' && typeof act.valor === 'object' && act.valor !== null) {
+                 isDictRule = true;
+                 dictObj = act.valor;
+             }
+         }
+
+         if (isDictRule) {
+             libretaRuleIdx = idx;
+             libretaDict = dictObj;
+             if (r.nombre_regla && r.nombre_regla.includes(':')) {
+                 let pStart = r.nombre_regla.indexOf(':') + 1;
+                 libretaPrompt = r.nombre_regla.substring(pStart).trim();
+             } else {
+                 libretaPrompt = r.nombre_regla || "Completar Diccionario";
+             }
+         }
+    });
+
+    const oldBtn = document.getElementById('vrwCacheMissBtn');
+    if (oldBtn) oldBtn.remove();
+    
+    if (libretaRuleIdx === -1) return;
+    if (!window.currentSheetData) return;
+    
+    let physicalIdx = activeContext.colIndex;
+    if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) {
+        physicalIdx = parseInt(physicalIdx.replace('col_', ''), 10);
+    }
+    if (isNaN(physicalIdx) || physicalIdx < 0) return;
+    
+    let misses = [];
+    const rawRows = window.currentSheetData.slice(1);
+    for(let row of rawRows) {
+        let crudo = String(row[physicalIdx] || "");
+        if (!crudo.trim()) continue;
+        
+        let outVal = crudo;
+        let rejected = false;
+        if (window.viewerETL && window.viewerETL.transformCell) {
+            const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline);
+            outVal = String(tr.display || tr.result || "");
+            rejected = tr.rejected;
+        }
+        
+        let isUnmapped = libretaDict && libretaDict[crudo.trim()] === undefined;
+        if (rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo)) {
+            misses.push(crudo.trim());
+        }
+    }
+    
+    let uniqueMisses = [...new Set(misses)].filter(x => x);
+    if (uniqueMisses.length > 0) {
+        const btnHtml = `
+            <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.processCacheMiss('${encodeURIComponent(libretaPrompt)}', ${libretaRuleIdx})" class="w-full mt-3 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/50 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none">
+                <i data-lucide="rocket" class="w-4 h-4"></i> Procesar registros nuevos (${uniqueMisses.length})
+            </button>
+        `;
+        container.insertAdjacentHTML('beforeend', btnHtml);
+        if (window.lucide) window.lucide.createIcons();
+    }
+}
+
+export async function processCacheMiss(encodedPrompt, ruleIdx) {
+    if (!window.Swal) return;
+    
+    const originalPrompt = decodeURIComponent(encodedPrompt);
+    const originalRule = currentDraftPipeline[ruleIdx];
+    
+    if (!originalRule || !originalRule.logica || (!originalRule.logica[0].condicion && !originalRule.logica[0].accion)) {
+        Swal.fire("Error", "La libreta madre está corrupta o no tiene diccionario interno.", "error"); return;
+    }
+    
+    let physicalIdx = activeContext.colIndex;
+    if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) {
+        physicalIdx = parseInt(physicalIdx.replace('col_', ''), 10);
+    }
+    
+    let libretaDict = originalRule.logica && originalRule.logica[0] && originalRule.logica[0].condicion ? originalRule.logica[0].condicion.valor : null;
+    if (!libretaDict && originalRule.logica && originalRule.logica[0] && originalRule.logica[0].accion) libretaDict = originalRule.logica[0].accion.valor;
+    
+    let misses = [];
+    const rawRows = window.currentSheetData.slice(1);
+    for(let row of rawRows) {
+        let crudo = String(row[physicalIdx] || "");
+        if (!crudo.trim()) continue;
+        const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline);
+        let outVal = String(tr.display || tr.result || "");
+        let isUnmapped = libretaDict && libretaDict[crudo.trim()] === undefined;
+        
+        if (tr.rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo)) {
+            misses.push(crudo.trim());
+        }
+    }
+    let uniqueMisses = [...new Set(misses)].filter(x => x);
+    
+    if (uniqueMisses.length === 0) {
+        Swal.fire("Todo Ok", "No hay registros nuevos o residuales que procesar.", "success"); return;
+    }
+    
+    try {
+        Swal.fire({
+            title: 'Actualizando Libreta...',
+            html: `Enviando ${uniqueMisses.length} registros huérfanos al Motor IA bajo la directiva:<br><i class="text-indigo-300 text-[11px] font-mono mt-2 block break-words">"${originalPrompt}"</i>`,
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); },
+            background: '#0f172a', color: '#f8fafc'
+        });
+        
+        const isCluster = originalRule.logica[0].accion && originalRule.logica[0].accion.tipo_accion === 'DICTIONARY_REPLACE';
+        const payload = {
+            column_name: activeContext.colName || "Columna",
+            prompt: originalPrompt,
+            samples: uniqueMisses.slice(0, 500),
+            require_ast: false,
+            literal_mode: !isCluster
+        };
+        
+        let backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${backendUrl}/api/ai/discover-entities`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Fallo de servidor al resolver entidades.");
+        
+        const newDict = data.cluster;
+        if (!newDict || Object.keys(newDict).length === 0) throw new Error("La IA evaluó los registros pero no formuló derivaciones nuevas.");
+        
+        // Ejecución Quirúrgica: Fusión (Mergeo Dict)
+        let mapToInject = {};
+        if (isCluster) {
+            Object.keys(newDict).forEach(master => {
+                 newDict[master].forEach(rVal => {
+                      mapToInject[rVal] = master;
+                 });
+            });
+        } else {
+            mapToInject = newDict;
+        }
+        
+        if (originalRule.logica[0].condicion && typeof originalRule.logica[0].condicion.valor === 'object') {
+            Object.assign(originalRule.logica[0].condicion.valor, mapToInject);
+        }
+        if (originalRule.logica[0].accion && typeof originalRule.logica[0].accion.valor === 'object') {
+            Object.assign(originalRule.logica[0].accion.valor, mapToInject);
+        }
+        
+        renderPipeline();
+        triggerPreview();
+        
+        Swal.fire({
+            title: '¡Caché Actualizada!', 
+            html: `Se han fusionado de forma determinista los registros faltantes en la libreta.<br>Se procederá a auto-guardar en la DB...`, 
+            icon: 'success',
+            background: '#0f172a', color: '#f8fafc', timer: 2500, showConfirmButton: false
+        });
+        
+        setTimeout(() => { if (typeof window.saveSimulationConfig === 'function') window.saveSimulationConfig(null, true); }, 2500);
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire({title: 'Fallo Operativo', text: `Error de IA: ${e.message}`, icon: 'error', background: '#0f172a', color: '#f8fafc'});
+    }
 }
 
 // BIND TO VIEWER CORE & PREVIEW
@@ -725,12 +913,14 @@ export async function auditResidues() {
             if (!crudo.trim()) continue;
             
             let mutateResult = crudo;
-            if (window.viewerETL && window.viewerETL.cleanValue) {
-               mutateResult = window.viewerETL.cleanValue(crudo, currentDraftPipeline);
-            }
-            
-            if (mutateResult === crudo) {
-               residualSamples.push(crudo);
+            if (window.viewerETL && window.viewerETL.transformCell) {
+               const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline);
+               mutateResult = String(tr.display || tr.result || "");
+               if (tr.rejected || mutateResult.trim() === "" || mutateResult === crudo) {
+                   residualSamples.push(crudo);
+               }
+            } else {
+                if (crudo.trim() === "" || mutateResult === crudo) residualSamples.push(crudo);
             }
         }
         
@@ -984,6 +1174,7 @@ window.viewerRuleWorkshop = {
     createLocalRuleDirect,
     clearPipeline,
     auditResidues,
+    processCacheMiss,
     unlinkCurrentCol
 };
 

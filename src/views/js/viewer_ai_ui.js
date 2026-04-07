@@ -49,6 +49,13 @@ class ViewerAiUi {
                     class="w-full bg-slate-950/50 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50 transition-colors shadow-inner resize-none font-mono placeholder:text-slate-600 custom-scrollbar disabled:opacity-50 disabled:cursor-not-allowed" 
                     disabled></textarea>
                     
+                <div class="flex items-center gap-2 px-1 mb-1">
+                    <label class="flex items-center gap-2 cursor-pointer group">
+                        <input type="checkbox" id="vaiIncrementalMode" class="form-checkbox h-3.5 w-3.5 text-indigo-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 transition-colors group-hover:border-indigo-400" checked>
+                        <span class="text-[10px] text-slate-400 group-hover:text-slate-300 font-bold tracking-wide transition-colors" title="Solo enviará a la IA los registros que actualmente fallan o quedan vacíos. El resultado se fusionará conservando el trabajo previo.">🔥 Smart Scope: Ignorar OKs (Merge)</span>
+                    </label>
+                </div>
+
                 <div class="flex flex-wrap gap-1" id="vaiQuickChips">
                     <button data-intent="Relleno de Vacíos" data-route="ast" data-placeholder="Ej: Rellenar con 0,00..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Rellenar vacíos</button>
                     <button data-intent="Extracción Específica" data-route="ast" data-placeholder="Ej: Extraer el primer número..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Extraer datos</button>
@@ -186,12 +193,22 @@ class ViewerAiUi {
                         val = String(rawRows[i][dataIdx] || "").trim();
                     }
                     if (!val) continue;
+                    
+                    let effectiveVal = val;
                     if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
                         const mutateRs = window.viewerETL.transformCell(val, pipeline);
-                        if (mutateRs.rejected) continue;
-                        val = mutateRs.display || mutateRs.result || "";
+                        
+                        if (this.incrementalMode) {
+                            const outVal = String(mutateRs.display || mutateRs.result || "").trim();
+                            if (!mutateRs.rejected && outVal !== "") {
+                                continue; // Bypassed! Already successful
+                            }
+                        } else {
+                            if (mutateRs.rejected) continue;
+                            effectiveVal = mutateRs.display || mutateRs.result || "";
+                        }
                     }
-                    if (val.trim()) uniqueSet.add(val.trim());
+                    if (effectiveVal.trim()) uniqueSet.add(effectiveVal.trim());
                 }
                 
                 // Excluir Strings gigantes (Data profiling no sirve en párrafos)
@@ -295,6 +312,10 @@ class ViewerAiUi {
             
             // FASE 2: Data Profiling Activo (Extracción Silente Completa)
             this._setStatus('Extrayendo Perfil...', 'working');
+            
+            const incrementalCheckbox = document.getElementById('vaiIncrementalMode');
+            this.incrementalMode = incrementalCheckbox ? incrementalCheckbox.checked : false;
+            
             const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, state.pipeline);
             
             if (uniqueDictionary.length === 0) throw new Error("La columna carece de datos parseables.");
@@ -534,7 +555,7 @@ class ViewerAiUi {
                      },
                      {
                          condicion: { operador: "DEFAULT" },
-                         accion: { tipo_accion: "DROP" } // Excluye alienígenas
+                         accion: { tipo_accion: this.incrementalMode ? "PASS" : "DROP" } // "PASS" excludes alienígenas but keeps previous valid in Merge mode
                      }
                 ],
                 fromAI: true
@@ -654,6 +675,10 @@ class ViewerAiUi {
                      {
                          condicion: { operador: "IN_DICT_KEYS", valor: finalMap },
                          accion: { tipo_accion: "DICTIONARY_REPLACE", valor: finalMap }
+                     },
+                     {
+                         condicion: { operador: "DEFAULT" },
+                         accion: { tipo_accion: this.incrementalMode ? "PASS" : "DROP" } 
                      }
                 ],
                 fromAI: true

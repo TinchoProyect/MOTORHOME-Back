@@ -472,8 +472,45 @@ function renderVirtualTable(originalData) {
                             console.log(`[VIGIA AUDITOR RENDER] Celda Evaluada | rawVal: '${rawVal}' -> result: '${result}' | rejected: ${rejected} | Pipeline Length: ${activePipeline.length}`);
                         }
 
-                        if (rejected) {
-                            cellClass += " opacity-30 grayscale bg-red-500/10 text-red-400/50";
+                        // [Fase 5.1] Detectar Cache Misses (Naranja)
+                        let isCacheMiss = false;
+                        let libretaDict = null;
+                        activePipeline.forEach(r => {
+                             let isDictRule = false;
+                             let dictObj = null;
+                             if (r.tipo === 'ast_conditional' && r.logica && r.logica[0]) {
+                                 const cond = r.logica[0].condicion;
+                                 const act = r.logica[0].accion;
+                                 if (cond && cond.operador === 'IN_DICT_KEYS' && typeof cond.valor === 'object' && cond.valor !== null) {
+                                     isDictRule = true;
+                                     dictObj = cond.valor;
+                                 } else if (act && act.tipo_accion === 'DICTIONARY_REPLACE' && typeof act.valor === 'object' && act.valor !== null) {
+                                     isDictRule = true;
+                                     dictObj = act.valor;
+                                 }
+                             }
+                             if (isDictRule) libretaDict = dictObj;
+                        });
+                        
+                        if (libretaDict && rawVal.trim() !== "" && libretaDict[rawVal.trim()] === undefined) {
+                            if (rejected || result.trim() === "" || result === rawVal) {
+                                isCacheMiss = true;
+                            }
+                        }
+
+                        if (isCacheMiss) {
+                            cellClass += " bg-amber-500/15 border border-amber-500/40 text-amber-300 relative font-bold shadow-[inset_0_0_10px_rgba(245,158,11,0.1)]";
+                            cellVal = `
+                                <div class="flex items-center gap-2">
+                                    <span class="truncate" title="${rawVal}">${rawVal}</span>
+                                    <div class="relative flex items-center justify-center">
+                                        <div class="absolute w-2 h-2 bg-amber-500 rounded-full animate-ping opacity-75"></div>
+                                        <i data-lucide="database-zap" class="w-3 h-3 flex-shrink-0 text-amber-400 relative z-10"></i>
+                                    </div>
+                                </div>
+                            `;
+                        } else if (rejected) {
+                            cellClass += " opacity-30 grayscale bg-red-500/10 text-red-400/50 border-x border-red-500/20";
                             cellVal = `
                                 <div class="flex items-center gap-2 line-through text-red-500/60">
                                     <span class="truncate" title="${rawVal}">${rawVal}</span>
