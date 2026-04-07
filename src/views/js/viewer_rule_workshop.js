@@ -329,10 +329,16 @@ export async function open(masterField, vColId, colName) {
 
     // UI Updates
     document.getElementById('vrwCurrentMappingInfo').innerHTML = `
-        <span class="text-slate-400">Enlazando columna:</span>
-        <span class="text-white text-sm">"${colName}" <i data-lucide="arrow-right" class="w-3 h-3 inline"></i> ${masterField.nombre_campo}</span>
+        <div class="flex items-center justify-between w-full">
+            <div class="flex flex-col">
+                <span class="text-slate-400 text-xs">Enlazando columna:</span>
+                <span class="text-white text-sm font-bold truncate max-w-[200px]" title="${colName}">"${colName}" <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-400 inline mx-1"></i> ${masterField.nombre_campo}</span>
+            </div>
+            <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.unlinkCurrentCol()" class="shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-red-500/30 bg-red-500/5 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all hover:shadow-lg shadow-red-900/20" title="Eliminar este mapeo y devolver a su estado original">
+                <i data-lucide="unlink" class="w-3 h-3"></i> Quitar Mapeo
+            </button>
+        </div>
     `;
-
     const panel = document.getElementById('viewerRightPanel');
     if (panel) {
         panel.classList.remove('hidden', 'translate-x-full', 'opacity-0');
@@ -617,6 +623,63 @@ export function clearPipeline() {
         renderPipeline();
         triggerPreview();
     }
+}
+
+// FULL UNLINK ACTION (Destructive)
+export async function unlinkCurrentCol() {
+    const isClone = activeContext.colIndex && String(activeContext.colIndex).includes('_clone_');
+    
+    if (currentDraftPipeline.length > 0) {
+        if (!confirm(`La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas.\nAl quitar el mapeo se destruirán todas las reglas.\n\n¿Estás seguro de proceder?`)) {
+            return;
+        }
+    } else {
+        if (!confirm(`¿Deseas desvincular el campo maestro y devolver la columna "${activeContext.colName}" a su estado original?`)) {
+            return;
+        }
+    }
+
+    const vColId = activeContext.colIndex;
+    console.log(`🗑️ [WORKSHOP] UX Unlink: Purgando mapeo de ${vColId}`);
+    
+    if (vColId) {
+        // Purgar de los diccionarios de memoria
+        if (window.draftPipelines) delete window.draftPipelines[vColId];
+        if (window.processingRules) delete window.processingRules[vColId];
+        if (window.columnMapping) delete window.columnMapping[vColId];
+
+        // Purgar si era computed (Calculada Matemática)
+        if (window.computedColumns) {
+            const idx = window.computedColumns.findIndex(c => c.id === vColId);
+            if (idx !== -1) window.computedColumns.splice(idx, 1);
+        }
+
+        // Purgar si era una columna Virtual/Clonada
+        if (isClone && window.virtualColumns) {
+            const idx = window.virtualColumns.findIndex(v => v.id === vColId);
+            if (idx !== -1) window.virtualColumns.splice(idx, 1);
+        }
+
+        // Forzar Refresh de la tabla (desaparece clon o vuelve azul)
+        if (typeof window.triggerSafeRender === 'function') {
+            window.triggerSafeRender();
+        } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+            window.renderVirtualTable(window.currentSheetData);
+        }
+        
+        // Guardar estado local
+        if (typeof window.saveSheetState === 'function') {
+            window.saveSheetState(window.currentSheetName);
+        }
+
+        // Guardar estado en Backend BD para que no reviva solo
+        if (typeof window.saveSimulationConfig === 'function') {
+            window.saveSimulationConfig(null, true);
+        }
+    }
+    
+    // Cerrar taller
+    close();
 }
 
 // [PHASE 3] BUCLE DE AUDITORÍA ACTIVA
@@ -905,7 +968,8 @@ window.viewerRuleWorkshop = {
     switchToStandardMode,
     createLocalRuleDirect,
     clearPipeline,
-    auditResidues
+    auditResidues,
+    unlinkCurrentCol
 };
 
 // Auto-initialize on load
