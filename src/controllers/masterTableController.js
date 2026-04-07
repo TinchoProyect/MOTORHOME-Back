@@ -354,5 +354,91 @@ module.exports = {
     getCategories,
     createCategory,
     updateCategory,
-    deleteCategory
+    deleteCategory,
+    extractToMasterTable: async (req, res) => {
+        try {
+            const { proveedor_id, archivo_id, nombre_proveedor, records, force_overwrite } = req.body;
+            
+            if (!proveedor_id || !archivo_id || !Array.isArray(records)) {
+                return res.status(400).json({ success: false, error: "Parámetros inválidos" });
+            }
+            
+            const supabase = require('../config/supabaseClient');
+            
+            const { count, error: countErr } = await supabase
+                .from('tabla_maestra_operativa')
+                .select('*', { count: 'exact', head: true })
+                .eq('archivo_origen_id', archivo_id);
+                
+            if (countErr && countErr.code !== '42P01') throw countErr;
+            
+            if (count > 0) {
+                return res.status(409).json({ success: false, error: "Este archivo ya fue extraído.", needs_overwrite: false });
+            }
+            
+            const inserts = records.map(record => ({
+                 proveedor_id,
+                 archivo_origen_id: archivo_id,
+                 nombre_proveedor: nombre_proveedor || 'Desconocido',
+                 datos_maestros: record,
+                 // Deltas will be evaluated via DB logic optionally
+                 es_delta: false 
+            }));
+            
+            const { error: insertErr } = await supabase.from('tabla_maestra_operativa').insert(inserts);
+            if (insertErr) {
+                 if (insertErr.code === '42P01') {
+                     return res.status(500).json({ success: false, error: "Tabla tabla_maestra_operativa no existe. Comuníquese con base de datos." });
+                 }
+                 throw insertErr;
+            }
+            
+            await supabase.from('proveedor_listas_raw')
+                .update({ status_global: 'EXTRAIDO' })
+                .eq('id', archivo_id);
+            
+            return res.json({ success: true, message: "Extracción exitosa." });
+        } catch(e) {
+            console.error("[MasterTableController] extractToMasterTable error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+    revertExtraction: async (req, res) => {
+        try {
+            const { archivoId } = req.params;
+            const supabase = require('../config/supabaseClient');
+            const { error } = await supabase.from('tabla_maestra_operativa').delete().eq('archivo_origen_id', archivoId);
+            if (error && error.code !== '42P01') throw error;
+            
+            await supabase.from('proveedor_listas_raw')
+                .update({ status_global: 'CONFIRMED' })
+                .eq('id', archivoId);
+                
+            return res.json({ success: true, message: "Extracción revertida con éxito." });
+        } catch(e) {
+            console.error("[MasterTableController] revertExtraction error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+    getOperativaRecords: async (req, res) => {
+        try {
+            const supabase = require('../config/supabaseClient');
+            const { data, error } = await supabase
+                .from('tabla_maestra_operativa')
+                .select('id, proveedor_id, archivo_origen_id, nombre_proveedor, timestamp_extraccion, datos_maestros, es_delta')
+                .order('timestamp_extraccion', { ascending: false });
+            
+            if (error) {
+                 if (error.code === '42P01') {
+                     return res.json({ success: true, data: [] });
+                 }
+                 throw error;
+            }
+            
+            return res.json({ success: true, data: data || [] });
+        } catch(e) {
+            console.error("[MasterTableController] getOperativaRecords error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    }
 };

@@ -183,6 +183,8 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
         const isNewest = index === 0;
         const currentBorderClass = isNewest ? 'border-emerald-500/60 shadow-lg shadow-emerald-900/30' : 'border-slate-800';
         const badgeHtml = isNewest ? `<div class="absolute -top-3 left-6 bg-emerald-600 text-white font-bold text-[9px] px-3 py-0.5 rounded-full shadow-lg shadow-emerald-900/50 border border-emerald-400/50 z-20 whitespace-nowrap tracking-wider">RECIENTE</div>` : '';
+        const isExtraido = file.status_global === 'EXTRAIDO';
+        const extraidoBadgeHtml = isExtraido ? `<div class="absolute -top-3 right-6 bg-indigo-900/80 text-indigo-300 font-bold text-[9px] px-3 py-0.5 rounded-full shadow-lg shadow-indigo-900/50 border border-indigo-500/30 z-20 whitespace-nowrap tracking-wider flex items-center gap-1"><i data-lucide="database" class="w-3 h-3"></i> EXTRAÍDO</div>` : '';
 
         // Preparar opciones para este archivo (evaluando selección)
         let currentOptionsHtml = `<option value="">-- Sin Flujo (Crudo) --</option>`;
@@ -195,65 +197,93 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
             });
         }
 
-        html += `
-            <div class="group relative bg-slate-900/60 hover:bg-slate-900/90 border ${currentBorderClass} hover:border-emerald-400/80 rounded-2xl p-5 flex flex-col justify-between transition-all shadow-xl hover:-translate-y-1 hover:shadow-emerald-900/30 h-full min-h-max">
-                
-                ${badgeHtml}
-
-                <div class="flex items-start gap-4">
-                    <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-lg shadow-emerald-500/10">
-                        <i data-lucide="file-check" class="w-6 h-6 text-emerald-400"></i>
-                    </div>
-                    
-                    <div class="flex-1 min-w-0 pr-8">
-                        <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide group-hover:text-emerald-400 transition-colors" title="${file.nombre_archivo}">${file.nombre_archivo}</p>
-                        <div class="flex items-center gap-4 mt-2">
-                            <span class="text-[10px] text-emerald-500 font-mono font-bold flex items-center gap-1.5"><i data-lucide="layers" class="w-3 h-3"></i> ${file.items_count || 0} ITEMS</span>
-                            <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()}</span>
+        if (isExtraido) {
+            // TARJETA COMPACTA (EXTRAÍDO)
+            html += `
+                <div class="bg-slate-950/80 backdrop-blur-md border border-indigo-500/40 rounded-2xl p-5 flex flex-col justify-between shadow-2xl shadow-indigo-900/20 hover:border-indigo-400/60 transition-all h-full min-h-max relative overflow-hidden group">
+                    <div>
+                        <div class="flex items-start justify-between mb-3">
+                            <div class="w-12 h-12 rounded-2xl bg-indigo-900/40 flex items-center justify-center border border-indigo-500/30 shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                                <i data-lucide="database" class="w-6 h-6 text-indigo-400"></i>
+                            </div>
+                            <span class="bg-indigo-600 text-white font-bold text-[9px] px-2.5 py-1 rounded shadow-lg shadow-indigo-900/50 tracking-widest flex items-center gap-1.5 uppercase border border-indigo-500/50">
+                                <i data-lucide="lock" class="w-2.5 h-2.5"></i> Extraído
+                            </span>
                         </div>
-                        <div id="status_label_${file.id}">
-                            <div class="mt-3 flex items-center gap-2 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
-                                <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${file.flujo_asignado_id ? 'bg-fuchsia-900/30 text-fuchsia-400 border border-fuchsia-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700'}">
-                                    <i data-lucide="${file.flujo_asignado_id ? 'pin' : 'circle-dashed'}" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i>
-                                    ${file.flujo_asignado_id ? 'Fijado' : 'Sin fijar'}
-                                </span>
-                                <span class="text-[10px] font-medium text-slate-300 truncate" title="${asignadoName}">${asignadoName}</span>
+                        <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide" title="${file.nombre_archivo}">${file.nombre_archivo}</p>
+                        <p class="text-[10px] text-indigo-300/80 font-mono mt-2 mb-4 flex items-center gap-1.5">
+                            <i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()} &middot; ${file.items_count || 0} ítems
+                        </p>
+                    </div>
+                    <div class="mt-auto">
+                        <button class="w-full bg-red-950/40 hover:bg-red-600 text-red-500 hover:text-white border border-red-900/50 hover:border-red-500 text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-red-600/40" onclick="window.revertExtraction('${file.id}')">
+                            <i data-lucide="undo-2" class="w-3.5 h-3.5"></i> Deshacer Extracción
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // TARJETA COMPLETA (PENDIENTE EXTRACCIÓN)
+            html += `
+                <div class="group relative bg-slate-900/60 hover:bg-slate-900/90 border ${currentBorderClass} hover:border-emerald-400/80 rounded-2xl p-5 flex flex-col justify-between transition-all shadow-xl hover:-translate-y-1 hover:shadow-emerald-900/30 h-full min-h-max">
+                    
+                    ${badgeHtml}
+
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-lg shadow-emerald-500/10">
+                            <i data-lucide="file-check" class="w-6 h-6 text-emerald-400"></i>
+                        </div>
+                        
+                        <div class="flex-1 min-w-0 pr-8">
+                            <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide group-hover:text-emerald-400 transition-colors" title="${file.nombre_archivo}">${file.nombre_archivo}</p>
+                            <div class="flex items-center gap-4 mt-2">
+                                <span class="text-[10px] text-emerald-500 font-mono font-bold flex items-center gap-1.5"><i data-lucide="layers" class="w-3 h-3"></i> ${file.items_count || 0} ITEMS</span>
+                                <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div id="status_label_${file.id}">
+                                <div class="mt-3 flex items-center gap-2 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
+                                    <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${file.flujo_asignado_id ? 'bg-fuchsia-900/30 text-fuchsia-400 border border-fuchsia-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700'}">
+                                        <i data-lucide="${file.flujo_asignado_id ? 'pin' : 'circle-dashed'}" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i>
+                                        ${file.flujo_asignado_id ? 'Fijado' : 'Sin fijar'}
+                                    </span>
+                                    <span class="text-[10px] font-medium text-slate-300 truncate" title="${asignadoName}">${asignadoName}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
-                    <input type="checkbox" 
-                        class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer transition-colors"
-                        onchange="toggleSelection('${file.id}', this)"
-                    >
-                </div>
+                    <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
+                        <input type="checkbox" 
+                            class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer transition-colors"
+                            onchange="toggleSelection('${file.id}', this)"
+                        >
+                    </div>
 
-                <div class="mt-5 pt-4 border-t border-slate-800 flex flex-col gap-3">
-                    <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest pl-1">Asignación de Flujo (Plantilla)</label>
-                    <div class="flex items-center gap-2" onclick="event.stopPropagation()">
-                        <div class="relative flex-1">
-                            <i data-lucide="workflow" class="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
-                            <select id="flujo_select_${file.id}" class="w-full bg-slate-950 border border-slate-800 text-slate-300 text-[11px] font-medium rounded-xl pl-9 pr-8 flex-1 focus:ring-emerald-500 focus:border-emerald-500 appearance-none cursor-pointer hover:border-slate-600 transition-colors shadow-inner truncate py-2" onchange="document.getElementById('edit_flujo_btn_${file.id}').style.display = this.value ? 'flex' : 'none'">
-                                ${currentOptionsHtml}
-                            </select>
-                            <i data-lucide="chevron-down" class="absolute right-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
+                    <div class="mt-5 pt-4 border-t border-slate-800 flex flex-col gap-3">
+                        <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest pl-1">Asignación de Flujo (Plantilla)</label>
+                        <div class="flex items-center gap-2" onclick="event.stopPropagation()">
+                            <div class="relative flex-1">
+                                <i data-lucide="workflow" class="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
+                                <select id="flujo_select_${file.id}" class="w-full bg-slate-950 border border-slate-800 text-slate-300 text-[11px] font-medium rounded-xl pl-9 pr-8 flex-1 focus:ring-emerald-500 focus:border-emerald-500 appearance-none cursor-pointer hover:border-slate-600 transition-colors shadow-inner truncate py-2" onchange="document.getElementById('edit_flujo_btn_${file.id}').style.display = this.value ? 'flex' : 'none'">
+                                    ${currentOptionsHtml}
+                                </select>
+                                <i data-lucide="chevron-down" class="absolute right-3 top-2.5 w-3.5 h-3.5 text-slate-500 pointer-events-none"></i>
+                            </div>
+                            <button onclick="editFlujoName('${file.id}')" id="edit_flujo_btn_${file.id}" class="p-2 shrink-0 border rounded-xl transition-all items-center justify-center text-slate-400 bg-slate-900 border-slate-800 hover:border-indigo-500/50 hover:text-indigo-400" title="Editar nombre del Flujo" style="display: ${file.flujo_asignado_id ? 'flex' : 'none'}; cursor: pointer;">
+                                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="pinFlujo('${file.id}')" id="pin_btn_${file.id}" class="p-2 shrink-0 border rounded-xl transition-all flex items-center justify-center ${file.flujo_asignado_id ? 'text-fuchsia-400 bg-fuchsia-900/20 border-fuchsia-500/30 hover:border-fuchsia-500/50' : 'text-slate-500 bg-slate-900 border-slate-800 hover:border-fuchsia-500/50'}" title="Fijar flujo por defecto">
+                                <i data-lucide="${file.flujo_asignado_id ? 'pin' : 'pin-off'}" class="w-4 h-4"></i>
+                            </button>
                         </div>
-                        <button onclick="editFlujoName('${file.id}')" id="edit_flujo_btn_${file.id}" class="p-2 shrink-0 border rounded-xl transition-all items-center justify-center text-slate-400 bg-slate-900 border-slate-800 hover:border-indigo-500/50 hover:text-indigo-400" title="Editar nombre del Flujo" style="display: ${file.flujo_asignado_id ? 'flex' : 'none'}; cursor: pointer;">
-                            <i data-lucide="edit-3" class="w-4 h-4"></i>
-                        </button>
-                        <button onclick="pinFlujo('${file.id}')" id="pin_btn_${file.id}" class="p-2 shrink-0 border rounded-xl transition-all flex items-center justify-center ${file.flujo_asignado_id ? 'text-fuchsia-400 bg-fuchsia-900/20 border-fuchsia-500/30 hover:border-fuchsia-500/50' : 'text-slate-500 bg-slate-900 border-slate-800 hover:border-fuchsia-500/50'}" title="Fijar flujo por defecto">
-                            <i data-lucide="${file.flujo_asignado_id ? 'pin' : 'pin-off'}" class="w-4 h-4"></i>
+                        
+                        <button class="w-full bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-emerald-600/40" onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')">
+                            Abrir Documento <i data-lucide="arrow-right" class="w-3.5 h-3.5 relative top-px"></i>
                         </button>
                     </div>
-                    
-                    <button class="w-full bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-emerald-600/40" onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')">
-                        Abrir Documento <i data-lucide="arrow-right" class="w-3.5 h-3.5 relative top-px"></i>
-                    </button>
                 </div>
-            </div>
-        `;
+            `;
+        }
     });
 
     if (currentMonthYear !== '') html += `</div>`; // Cerrar grid
@@ -261,6 +291,34 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
     container.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
 }
+
+window.revertExtraction = async function(fileId) {
+    const result = await Swal.fire({
+        title: '¿Deshacer extracción?',
+        text: "Se eliminarán permanentemente de la Tabla Maestra todos los registros provenientes de este archivo. Esta acción no se puede deshacer de forma directa.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Sí, revertir extracción',
+        cancelButtonText: 'No, cancelar'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+            Swal.fire({ title: 'Revirtiendo...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+            const res = await fetch(`${backendUrl}/api/master-table/revert/${fileId}`, { method: 'DELETE' });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || "Fallo en la reversión");
+            
+            Swal.fire('Revertido', 'La extracción de este archivo fue deshecha.', 'success');
+            if (window.fetchPendingFiles) window.fetchPendingFiles();
+        } catch (e) {
+            Swal.fire('Error', e.message, 'error');
+        }
+    }
+};
 
 window.pinFlujo = async function(fileId) {
     const selectEl = document.getElementById(`flujo_select_${fileId}`);
@@ -480,8 +538,11 @@ window.openProcessedFile = async function (rawListId, fileName) {
         const providerName = providerContext.nombre;
 
         if (window.loadVirtualWorkbook) {
-            // Pasamos el providerName como 3er argumento y selectedFlujoId
-            window.loadVirtualWorkbook(workbookMap, fileName, providerName, selectedFlujoId);
+            // [FIX] Pasamos explícitamente proveedorId y archivo_origen (fileId) para evitar Amnesia de Contexto (Fallo 1)
+            window.globalContext.fileId = rawListId;
+            window.globalContext.providerId = window.currentActiveProviderId;
+            
+            window.loadVirtualWorkbook(workbookMap, fileName, providerName, selectedFlujoId, window.currentActiveProviderId, rawListId);
         } else {
             console.warn("Viewer Engine does not support external loading yet.");
             alert("Error: El motor del visor no admite carga externa. Actualizar viewer_engine.");

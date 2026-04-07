@@ -766,9 +766,11 @@
                     <p class="text-[10px] font-mono">EJECUTA LA SIMULACIÓN PARA VER DATOS</p>
                 </div>
             </div>
-            <div class="p-4 border-t border-slate-700 bg-slate-950/30 flex justify-end">
-                <button onclick="closeSimulationModal()"
-                    class="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors">Cerrar</button>
+            <div class="p-4 border-t border-slate-700 bg-slate-950/30 flex justify-end gap-3 items-center">
+                <button onclick="closeSimulationModal()" class="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors">Cerrar</button>
+                <button id="btnExecuteExtraction" onclick="window.executeExtraction()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors shadow-[0_0_15px_rgba(52,211,153,0.3)] flex items-center gap-2">
+                    <i data-lucide="database" class="w-4 h-4"></i> Ejecutar Extracción
+                </button>
             </div>
         </div>
     </div>
@@ -789,7 +791,26 @@
                         <p class="text-[10px] text-slate-400 font-mono tracking-widest mt-1">BASE DE DATOS UNIFICADA (OPERATIVA)</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-3">
+                
+                <!-- Status Bar injection -->
+                <div id="fmtStatusBar" class="flex-1 flex gap-4 ml-6 items-center hidden xl:flex">
+                     <div class="bg-slate-900 border border-slate-800 rounded-lg px-4 py-2 flex items-center gap-3 shadow-inner">
+                          <i data-lucide="hash" class="w-4 h-4 text-slate-500"></i>
+                          <div>
+                              <p class="text-[9px] font-bold uppercase tracking-widest text-slate-500">Total Registros</p>
+                              <p id="fmtTotalVisualizados" class="text-xs font-mono font-bold text-slate-300">0</p>
+                          </div>
+                     </div>
+                     <div class="bg-slate-900 border border-slate-800 rounded-lg px-4 py-2 flex items-center gap-3 shadow-inner">
+                          <i data-lucide="clock" class="w-4 h-4 text-slate-500"></i>
+                          <div>
+                              <p class="text-[9px] font-bold uppercase tracking-widest text-slate-500">Última Actualización</p>
+                              <p id="fmtUltimaExtraccion" class="text-xs font-mono font-bold text-slate-300">--</p>
+                          </div>
+                     </div>
+                </div>
+
+                <div class="flex items-center gap-3 ml-auto">
                     <div class="relative">
                         <button onclick="window.toggleFmtColumnsDropdown()" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 flex items-center gap-2 transition-colors">
                              <i data-lucide="eye-off" class="w-4 h-4"></i> Layout
@@ -1181,6 +1202,20 @@
                      return;
                 }
                 
+                // Fetch Operational Data
+                const opRes = await fetch(`${backendUrl}/api/master-table/operativa`);
+                let opJson = { data: [] };
+                if (opRes.ok) opJson = await opRes.json();
+                
+                const rowData = opJson.data.map(op => {
+                     return {
+                          _system_id: op.id,
+                          _proveedor: op.nombre_proveedor,
+                          _timestamp: op.timestamp_extraccion,
+                          ...op.datos_maestros
+                     };
+                });
+                
                 // Build ColDefs
                 const colDefs = fields.map((f, index) => {
                      return {
@@ -1189,18 +1224,12 @@
                          sortable: true,
                          filter: 'agTextColumnFilter',
                          resizable: true,
-                         rowDrag: index === 0 ? true : false, // First col draggable
+                         rowDrag: index === 0 ? true : false,
                      };
                 });
                 
-                // Mock Mappings Output
-                const rowData = [1, 2, 3, 4, 5].map(id => {
-                     let row = {};
-                     colDefs.forEach(col => {
-                         row[col.field] = `Mock Value ${id} - ${col.headerName}`;
-                     });
-                     return row;
-                });
+                // Inject Provider tracking column 
+                colDefs.unshift({ headerName: 'Proveedor', field: '_proveedor', sortable: true, filter: true, pinned: 'left', width: 180 });
                 
                 const saveGridState = () => {
                     if (!window.v4GridApi) return;
@@ -1222,7 +1251,14 @@
                     onColumnResized: saveGridState,
                     onColumnMoved: saveGridState,
                     onColumnVisible: saveGridState,
-                    onSortChanged: saveGridState
+                    onSortChanged: saveGridState,
+                    onFilterChanged: () => {
+                        window.updateFmtStatusBar();
+                        saveGridState();
+                    },
+                    onModelUpdated: () => {
+                        window.updateFmtStatusBar();
+                    }
                 };
                 
                 window.v4GridApi = agGrid.createGrid(gridContainer, gridOptions);
@@ -1311,6 +1347,151 @@
             setTimeout(() => {
                 if (window.v4GridApi) window.v4GridApi.sizeColumnsToFit();
             }, 300);
+        }
+
+        window.updateFmtStatusBar = function() {
+            if (!window.v4GridApi) return;
+            const count = window.v4GridApi.getDisplayedRowCount();
+            document.getElementById('fmtTotalVisualizados').innerText = count;
+            
+            let maxTimestamp = 0;
+            let providerCount = new Set();
+            
+            window.v4GridApi.forEachNodeAfterFilterAndSort(node => {
+                 if (node.data && node.data._timestamp) {
+                     const ts = new Date(node.data._timestamp).getTime();
+                     if (ts > maxTimestamp) {
+                         maxTimestamp = ts;
+                     }
+                 }
+                 if (node.data && node.data._proveedor) providerCount.add(node.data._proveedor);
+            });
+            
+            const txtDate = document.getElementById('fmtUltimaExtraccion');
+            
+            if (maxTimestamp > 0) {
+                let diffDays = Math.floor((new Date() - maxTimestamp)/(1000*60*60*24));
+                const dateStr = new Date(maxTimestamp).toLocaleDateString('es-AR', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+                const daysStr = diffDays === 0 ? "Hoy" : `Hace ${diffDays} ${diffDays === 1 ? 'día' : 'días'}`;
+                
+                if (providerCount.size === 1) {
+                    txtDate.innerHTML = `<span class="text-blue-400 font-bold">${Array.from(providerCount)[0]}</span>: <span class="tracking-wide">${dateStr}</span> <span class="text-[9px] text-slate-500 font-normal">(${daysStr})</span> <span class="ml-2 inline-flex items-center gap-1 bg-blue-900/40 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded text-[9px] font-bold tracking-widest uppercase"><i data-lucide="layers" class="w-2.5 h-2.5"></i> ${count} registros</span>`;
+                    if (window.lucide) window.lucide.createIcons();
+                } else {
+                    txtDate.innerHTML = `${dateStr} <span class="text-[9px] text-slate-500 font-normal">(${daysStr})</span>`;
+                }
+            } else {
+                txtDate.innerText = '--';
+            }
+        };
+
+        // ==========================================
+        // EXTRACCIÓN OPERATIVA (FASE 5)
+        // ==========================================
+        window.executeExtraction = async function(forceOverwrite = false) {
+            if (!window.currentSimData || !window.currentDisplayConfig) {
+                Swal.fire('Error', 'No hay datos simulados disponibles para extraer', 'error');
+                return;
+            }
+
+            const proveedorId = window.globalContext.providerId;
+            const providerName = window.globalContext.providerName;
+            const fileId = window.globalContext.fileId;
+
+            if (!proveedorId || !fileId) {
+                Swal.fire('Error', 'Falta contexto de Proveedor o Archivo de Origen', 'error');
+                return;
+            }
+
+            // Build Operational records exactly like the UI renders them
+            const records = window.currentSimData.filter(r => !r._rejectedSim).map(row => {
+                 let record = {};
+                 window.currentDisplayConfig.forEach(cfg => {
+                     if (cfg.isSupportCol) return; 
+                     const key = cfg.label.replace(/\s+/g, '_').toLowerCase();
+                     let finalVal = null;
+                     
+                     if (cfg.isComputed) {
+                         finalVal = cfg.transform(null, row);
+                     } else {
+                         const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
+                         finalVal = row._richContext && row._richContext[cfg.virtualColId] ? row._richContext[cfg.virtualColId].display : null;
+                         if(finalVal === null || finalVal === undefined) finalVal = cfg.transform(rawVal, row);
+                     }
+                     record[key] = finalVal;
+                 });
+                 return record;
+            });
+
+            if (records.length === 0) {
+                 Swal.fire('Error', 'No hay registros válidos para ingesta', 'error');
+                 return;
+            }
+
+            const btn = document.getElementById('btnExecuteExtraction');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="w-4 h-4 animate-spin text-white">⏳</i> Procesando...';
+            btn.disabled = true;
+
+            try {
+                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const url = new URL(`${backendUrl}/api/master-table/extract`);
+                if (forceOverwrite) url.searchParams.append('force_overwrite', 'true');
+
+                const res = await fetch(url.toString(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        proveedor_id: proveedorId,
+                        archivo_id: fileId,
+                        nombre_proveedor: providerName,
+                        records: records
+                    })
+                });
+
+                const json = await res.json();
+                
+                if (!res.ok) {
+                    if (res.status === 409 && json.needs_overwrite) {
+                        const result = await Swal.fire({
+                            title: 'Archivo ya extraído',
+                            text: "Este archivo ya posee registros en la Tabla Maestra Operativa. ¿Deseas sobreescribir los datos viejos?",
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#3085d6',
+                            cancelButtonColor: '#d33',
+                            confirmButtonText: 'Sí, Sobreescribir',
+                            cancelButtonText: 'Cancelar'
+                        });
+                        
+                        if (result.isConfirmed) {
+                             btn.innerHTML = originalHtml;
+                             btn.disabled = false;
+                             return window.executeExtraction(true);
+                        } else {
+                             throw new Error("Extracción cancelada por el usuario");
+                        }
+                    }
+                    throw new Error(json.error || "Error de servidor");
+                }
+
+                Swal.fire('¡Éxito!', 'Los datos han sido inyectados en la Tabla Maestra.', 'success');
+                closeSimulationModal();
+                closeViewerModal();
+                // Opcional: Re-render procesados table si es necesario
+                if (window.fetchPendingFiles) window.fetchPendingFiles();
+                
+            } catch (err) {
+                if (err.message !== "Extracción cancelada por el usuario") {
+                   Swal.fire('Error', err.message, 'error');
+                }
+            } finally {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+            }
         }
     </script>
 </body>

@@ -538,7 +538,7 @@ window.getViewerSnapshot = function () {
 };
 
 // [PHASE 5] Virtual Workbook Loader (Multi-Sheet DB Recovery)
-window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DATO HISTÓRICO", flujoId = null) {
+window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DATO HISTÓRICO", flujoId = null, providerId = null, fileId = null) {
     console.log("[ViewerEngine] Loading Virtual Workbook:", fileName, Object.keys(workbookMap), "con Flujo:", flujoId || "N/A");
 
     // 1. Reset State
@@ -565,6 +565,8 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
     // [FIX] Hydrate Context
     window.globalContext.fileType = "VIRTUAL_DB";
     window.globalContext.providerName = providerName;
+    if (providerId) window.globalContext.providerId = providerId;
+    if (fileId) window.globalContext.fileId = fileId;
     console.log("[ViewerEngine] Virtual Context Hydrated:", window.globalContext);
 
     // 3. UI Setup (ESTO VA PRIMERO para que limpie la casa)

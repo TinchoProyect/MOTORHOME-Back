@@ -616,7 +616,7 @@ async function listProcessedFiles(req, res) {
             .from('proveedor_listas_raw')
             .select('id, nombre_archivo, created_at, status_global, flujo_asignado_id')
             .eq('proveedor_id', providerId)
-            .eq('status_global', 'CONFIRMED')
+            .in('status_global', ['CONFIRMED', 'EXTRAIDO'])
             .order('created_at', { ascending: false });
 
         if (error) throw error;
