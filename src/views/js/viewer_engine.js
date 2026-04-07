@@ -62,6 +62,18 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
         window.initViewerFlujosContext(providerId, flujoId);
     }
 
+    // [QA-4] Establecer Flags de Contexto para Pendientes vs Procesados
+    // Pendientes = Cualquier archivo de Drive (no es VIRTUAL_DB)
+    window.isViewerReadOnly = true; 
+    
+    // Raw Mode = "Omitir e inicio vacío" (sin flujo)
+    window.isRawViewerMode = (!flujoId || flujoId === "CRUDO");
+
+    // Prevenir auto-hidratación V3/V4/flujos si es Raw
+    if (window.isRawViewerMode) {
+        window.globalContext.flujoId = "CRUDO"; // Forza salida rápida de loadSavedConfiguration
+    }
+
     // Reset Containers
     const excelContainer = document.getElementById('excelContainer');
     const sheetTabs = document.getElementById('sheetTabs');
@@ -70,7 +82,15 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
     const imgContainer = document.getElementById('imageContainer');
     const imgEl = document.getElementById('viewerImage');
 
-    // Ocultar botones especiales al abrir un nuevo archivo (se habilitan si es Excel)
+    // [QA-HOTFIX] Restaurar botón principal "Ingestar" (Pendientes)
+    const btnConfirm = document.getElementById('btnConfirmIngest');
+    if (btnConfirm) btnConfirm.classList.remove('hidden');
+
+    // [QA-HOTFIX] Ocultar control explícito de Auditoría
+    const btnGlobal = document.getElementById('btnGlobalPreview');
+    if (btnGlobal) btnGlobal.classList.add('hidden');
+
+    // Ocultar botones especiales al abrir un nuevo archivo
     const btnMap = document.getElementById('btnMappingMode');
     const btnOffset = document.getElementById('btnOffsetMode');
     const btnCalc = document.getElementById('btnCalcMode');
@@ -106,6 +126,14 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
     currentOffset = null;
     window.endOffsetSelectionMode = false;
     window.currentEndOffset = null;
+    
+    // [QA-4] Wipe all virtual memory completely
+    window.virtualColumns = [];
+    window.computedColumns = [];
+    window.draftPipelines = {};
+    window.sheetConfigStore = {};
+    if (window.LayoutManager) window.LayoutManager.reset();
+    if (window.ViewerVisibilityManager) window.ViewerVisibilityManager.reset();
 
     try {
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -116,15 +144,15 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
         const isImg = fileName.match(/\.(jpg|jpeg|png)$/i);
 
         if (isExcel) {
-            // [V4 Fix] Utilizamos toggleTools en vez de manipular CSS crudo, para respetar el DOM.
+            // [QA-HOTFIX] En modo Pendientes/Lectura, NO renderizar herramientas ETL avanzadas.
             if (window.ViewerUI && window.ViewerUI.toggleTools) {
-                window.ViewerUI.toggleTools(true);
+                window.ViewerUI.toggleTools(false);
             } else {
-                if (btnMap) btnMap.classList.remove('hidden');
-                if (btnOffset) btnOffset.classList.remove('hidden');
-                if (btnCalc) btnCalc.classList.remove('hidden');
-                if (btnSave) btnSave.classList.remove('hidden');
-                if (btnReset) btnReset.classList.remove('hidden');
+                if (btnMap) btnMap.classList.add('hidden');
+                if (btnOffset) btnOffset.classList.add('hidden');
+                if (btnCalc) btnCalc.classList.add('hidden');
+                if (btnSave) btnSave.classList.add('hidden');
+                if (btnReset) btnReset.classList.add('hidden');
             }
 
             // [V4 Fix] Rule Workshop se auto-inicializa ahora.
@@ -516,6 +544,10 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
     // 1. Reset State
     window.resetViewerState();
     
+    // [QA-4] Habilitar modo interactivo pleno para Procesados
+    window.isViewerReadOnly = false;
+    window.isRawViewerMode = false;
+    
     // [FLUJOS] Asignar identificador a global context post-reset
     window.globalContext.flujoId = flujoId;
 
@@ -543,9 +575,13 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
         window.ViewerUI.toggleLoader(false);
     }
 
-    // 4. Force Hide Ingest Button
+    // 4. Force Hide Ingest Button (Es Procesados, no se ingesta)
     const btnConfirm = document.getElementById('btnConfirmIngest');
     if (btnConfirm) btnConfirm.classList.add('hidden');
+
+    // [QA-HOTFIX] Asegurar que botón de Auditoría ETL está visible en Procesados
+    const btnGlobal = document.getElementById('btnGlobalPreview');
+    if (btnGlobal) btnGlobal.classList.remove('hidden');
 
     // 5. Update Badges manually (AHORA VA AL FINAL para sobrescribir)
     const badgeContainer = document.getElementById('viewerBadges');

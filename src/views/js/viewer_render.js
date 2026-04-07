@@ -255,6 +255,10 @@ function renderVirtualTable(originalData) {
                     <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                 </button>
             </div>`;
+        } else if (window.isViewerReadOnly) {
+            // [QA-4] MODO LECTURA ESTRICTA (Pendientes)
+            // Cero eventos, cero mappings visuales. Un simple span con el texto crudo.
+            thContent = `<span class="truncate" title="${originalVal}">${originalVal}</span>`;
         } else {
             if (window.draftPipelines && window.draftPipelines[j]) {
                 const pipe = window.draftPipelines[j];
@@ -443,9 +447,12 @@ function renderVirtualTable(originalData) {
                     .replace(/\n/g, "\\n")
                     .replace(/\r/g, "\\r");
 
-                // EXCEPCIONES: Bindear click derecho para TODAS las columnas renderizadas, sin importar si el ETL o Taller están en foco
-                let onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}')"`;
-                cellClass += " cursor-context-menu";
+                // EXCEPCIONES: Bindear click derecho para TODAS las columnas renderizadas, sin importar si el ETL o Taller están en foco (Solo si no es Modo Lectura/Pendientes)
+                let onCtx = "";
+                if (!window.isViewerReadOnly) {
+                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}')"`;
+                    cellClass += " cursor-context-menu";
+                }
 
                 if (isWorkshopOpen || isGlobalAuditOn) {
                     if (isWorkshopOpen) {
