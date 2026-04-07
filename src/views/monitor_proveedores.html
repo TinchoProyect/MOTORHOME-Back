@@ -13,8 +13,23 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
 
     <link rel="stylesheet" href="css/dashboard.css">
+    <style>
+        /* AG-Grid Native LAMDA Integration */
+        .ag-theme-alpine-dark {
+            --ag-background-color: #0f172a !important;         /* bg-slate-900 */
+            --ag-odd-row-background-color: #0f172a !important; /* bg-slate-900 */
+            --ag-row-hover-color: #1e293b !important;          /* hover:bg-slate-800 */
+            --ag-header-background-color: #020617 !important;  /* bg-slate-950 */
+            --ag-border-color: #1e293b !important;             /* border-slate-800 */
+            --ag-row-border-color: #1e293b !important;         /* border-slate-800 */
+            --ag-header-foreground-color: #94a3b8 !important;  /* text-slate-400 */
+            --ag-control-panel-background-color: #0f172a !important;
+            --ag-foreground-color: #cbd5e1 !important;         /* text-slate-300 */
+        }
+    </style>
 </head>
 
 <body class="flex h-screen w-screen overflow-hidden">
@@ -37,23 +52,35 @@
             <nav class="space-y-1">
                 <p class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-4 ml-4">Panel de Control</p>
 
-                <div id="listsMenuContainer">
-                    <button onclick="toggleDropdown('listsDropdown', 'listsMenuContainer')"
+                <div id="masterDataMenuContainer">
+                    <button onclick="toggleDropdown('masterDataDropdown', 'masterDataMenuContainer')"
                         class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
                         <div class="flex items-center gap-3">
-                            <i data-lucide="list-checks" class="w-4 h-4"></i>
-                            <span>Gestión de listas</span>
+                            <i data-lucide="database" class="w-4 h-4"></i>
+                            <span>Datos Maestros</span>
                         </div>
                         <i data-lucide="chevron-down" class="w-3 h-3 chevron-icon"></i>
                     </button>
-                    <div id="listsDropdown"
+                    <div id="masterDataDropdown"
+                        class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
+                        <button onclick="openFinalMasterTable()"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Tabla Maestra V4.1</button>
+                    </div>
+                </div>
+
+                <div id="etlMenuContainer">
+                    <button onclick="toggleDropdown('etlDropdown', 'etlMenuContainer')"
+                        class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="settings-2" class="w-4 h-4"></i>
+                            <span>Configuración ETL</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="w-3 h-3 chevron-icon"></i>
+                    </button>
+                    <div id="etlDropdown"
                         class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
                         <button onclick="window.openMasterTableModal()"
-                            class="submenu-item text-left py-2 text-[11px] text-blue-400 hover:text-blue-300 text-xs font-semibold">
-                            <i data-lucide="database" class="w-3 h-3 inline-block mr-1"></i> Tabla Maestra</button>
-                        <button onclick="openSupplierModal()"
-                            class="submenu-item text-left py-2 text-[11px] text-emerald-500 hover:text-emerald-400 text-xs font-semibold">+
-                            Nuevo Proveedor</button>
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Diccionario Maestro</button>
                     </div>
                 </div>
 
@@ -68,6 +95,9 @@
                     </button>
                     <div id="tasksDropdown"
                         class="hidden flex flex-col pl-11 pr-4 py-2 space-y-1 overflow-hidden transition-all duration-300">
+                        <button onclick="openSupplierModal()"
+                            class="submenu-item text-left py-2 text-[11px] text-emerald-500 hover:text-emerald-400 text-xs font-semibold">+
+                            Nuevo Proveedor</button>
                         <button onclick="taskAction('Generar pedidos')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Generar
                             pedidos</button>
@@ -745,6 +775,60 @@
 
 
 
+    <!-- MODAL TABLA MAESTRA V4.1 (DATOS OPERATIVOS) -->
+    <div id="finalMasterTableModal" class="hidden fixed inset-0 z-[200] flex flex-col bg-slate-900 animate-in fade-in duration-200">
+        <div class="w-full h-full flex flex-col">
+            <!-- Header -->
+            <div class="p-6 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 bg-emerald-500/10 rounded-xl text-emerald-400">
+                        <i data-lucide="table-properties" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center">Tabla Maestra V4.1</h2>
+                        <p class="text-[10px] text-slate-400 font-mono tracking-widest mt-1">BASE DE DATOS UNIFICADA (OPERATIVA)</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <button onclick="window.toggleFmtColumnsDropdown()" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 flex items-center gap-2 transition-colors">
+                             <i data-lucide="eye-off" class="w-4 h-4"></i> Layout
+                        </button>
+                        <div id="fmtColumnsDropdown" class="hidden absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 p-3 max-h-64 overflow-y-auto custom-scrollbar flex flex-col gap-1">
+                             <!-- checkboxes injected dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="w-px h-6 bg-slate-700 mx-1"></div>
+                    
+                    <button id="fmtToggleWindowBtn" onclick="window.toggleFmtWindow()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors" title="Restaurar Tamaño">
+                        <i id="fmtToggleWindowIcon" data-lucide="minimize-2" class="w-5 h-5"></i>
+                    </button>
+                    <button onclick="window.closeFinalMasterTable()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors" title="Cerrar">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Area (Clean Grid) -->
+            <div class="flex-1 overflow-hidden bg-slate-900 p-4 relative">
+                <!-- Loading State -->
+                <div id="fmtLoading" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 bg-slate-900/80 backdrop-blur-sm z-10 hidden">
+                    <i data-lucide="loader-2" class="w-8 h-8 animate-spin mb-3 text-emerald-500"></i>
+                    <p class="text-[10px] font-mono tracking-widest">OBTENIENDO ESTRUCTURA...</p>
+                </div>
+                
+                <div id="v4Grid" class="ag-theme-alpine-dark w-full h-full hidden"></div>
+                
+                <div id="fmtEmptyState" class="hidden flex flex-col items-center justify-center text-slate-500 p-12 text-center h-full w-full absolute inset-0 z-[5]">
+                    <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-30"></i>
+                    <p class="text-sm font-bold text-slate-300">Molde de Tabla Vacío</p>
+                    <p class="text-xs text-slate-500 mt-2">La estructura de la vista está lista. Registre nuevos campos maestros para ver las columnas.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MAIN MASTER TABLE MODAL [V2] -->
     <div id="masterTableModal"
         class="hidden fixed inset-0 z-[200] flex items-center justify-center p-4 modal-blur overflow-y-auto">
@@ -1061,6 +1145,174 @@
     <!-- MASTER TABLE V2 -->
     <script type="module" src="js/master_table_ui.js"></script>
     <script type="module" src="js/category_manager_ui.js"></script>
+    <script>
+        // LOGIC FOR FINAL MASTER TABLE (V4.1) WITH AG-GRID
+        window.v4GridApi = null;
+        
+        window.openFinalMasterTable = async function() {
+            const modal = document.getElementById('finalMasterTableModal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            
+            const loading = document.getElementById('fmtLoading');
+            const gridContainer = document.getElementById('v4Grid');
+            const emptyState = document.getElementById('fmtEmptyState');
+            const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+            
+            loading.classList.remove('hidden');
+            gridContainer.classList.add('hidden');
+            emptyState.classList.add('hidden');
+            
+            // Re-mount cleanup
+            if (window.v4GridApi) {
+                window.v4GridApi.destroy();
+                window.v4GridApi = null;
+            }
+            gridContainer.innerHTML = '';
+            
+            try {
+                const res = await fetch(`${backendUrl}/api/master-table/dictionary`);
+                if (!res.ok) throw new Error("Fallo backend fetch API");
+                const json = await res.json();
+                const fields = json.data || [];
+                
+                if (fields.length === 0) {
+                     emptyState.classList.remove('hidden');
+                     return;
+                }
+                
+                // Build ColDefs
+                const colDefs = fields.map((f, index) => {
+                     return {
+                         headerName: f.nombre_campo,
+                         field: f.nombre_campo.replace(/\s+/g, '_').toLowerCase(),
+                         sortable: true,
+                         filter: 'agTextColumnFilter',
+                         resizable: true,
+                         rowDrag: index === 0 ? true : false, // First col draggable
+                     };
+                });
+                
+                // Mock Mappings Output
+                const rowData = [1, 2, 3, 4, 5].map(id => {
+                     let row = {};
+                     colDefs.forEach(col => {
+                         row[col.field] = `Mock Value ${id} - ${col.headerName}`;
+                     });
+                     return row;
+                });
+                
+                const saveGridState = () => {
+                    if (!window.v4GridApi) return;
+                    const state = window.v4GridApi.getColumnState();
+                    localStorage.setItem('lamda_v4_grid_state', JSON.stringify(state));
+                };
+
+                const gridOptions = {
+                    columnDefs: colDefs,
+                    rowData: rowData,
+                    rowDragManaged: true,
+                    animateRows: true,
+                    defaultColDef: {
+                        flex: 1,
+                        minWidth: 30, // Absolute freedom requested
+                        filter: true,
+                        floatingFilter: true,
+                    },
+                    onColumnResized: saveGridState,
+                    onColumnMoved: saveGridState,
+                    onColumnVisible: saveGridState,
+                    onSortChanged: saveGridState
+                };
+                
+                window.v4GridApi = agGrid.createGrid(gridContainer, gridOptions);
+                
+                // Restoring State
+                const savedState = localStorage.getItem('lamda_v4_grid_state');
+                if (savedState) {
+                    window.v4GridApi.applyColumnState({ state: JSON.parse(savedState), applyOrder: true });
+                }
+                
+                gridContainer.classList.remove('hidden');
+                
+                // Populate Dropdown
+                window.renderFmtColumnsDropdown(fields);
+                
+            } catch(e) {
+                console.error("Error cargando estructura para V4.1:", e);
+                emptyState.classList.remove('hidden');
+                emptyState.innerHTML = `<p class="text-red-400">Error al cargar la estructura y motor AG-Grid.</p>`;
+            } finally {
+                loading.classList.add('hidden');
+                if (window.lucide) window.lucide.createIcons();
+            }
+        }
+
+        window.closeFinalMasterTable = function() {
+            document.getElementById('finalMasterTableModal').classList.add('hidden');
+            document.getElementById('fmtColumnsDropdown').classList.add('hidden'); // auto-hide
+            if (window.v4GridApi) {
+                window.v4GridApi.destroy();
+                window.v4GridApi = null;
+            }
+        }
+        
+        window.renderFmtColumnsDropdown = function(fields) {
+            const dropdown = document.getElementById('fmtColumnsDropdown');
+            dropdown.innerHTML = '<p class="text-[10px] text-slate-500 font-bold mb-2 uppercase tracking-widest px-1">Ocultar/Mostrar Columnas</p>';
+            
+            if (!window.v4GridApi) return;
+            const state = window.v4GridApi.getColumnState();
+            
+            fields.forEach(f => {
+                const fieldId = f.nombre_campo.replace(/\s+/g, '_').toLowerCase();
+                const colState = state.find(s => s.colId === fieldId);
+                const isVisible = colState ? !colState.hide : true;
+                
+                const label = document.createElement('label');
+                label.className = "flex items-center gap-2 p-1.5 hover:bg-slate-700/50 rounded cursor-pointer";
+                label.innerHTML = `
+                    <input type="checkbox" class="rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500 checked:bg-emerald-500" 
+                        ${isVisible ? 'checked' : ''} 
+                        onchange="if(window.v4GridApi) window.v4GridApi.setColumnsVisible(['${fieldId}'], this.checked)">
+                    <span class="text-xs text-slate-300 truncate">${f.nombre_campo}</span>
+                `;
+                dropdown.appendChild(label);
+            });
+        }
+
+        window.toggleFmtColumnsDropdown = function() {
+            document.getElementById('fmtColumnsDropdown').classList.toggle('hidden');
+        }
+
+        // Window Controls (Maximized/Windowed)
+        window.isFmtMaximized = true;
+        window.toggleFmtWindow = function() {
+            const modal = document.getElementById('finalMasterTableModal');
+            const inner = modal.children[0]; 
+            const icon = document.getElementById('fmtToggleWindowIcon');
+            
+            window.isFmtMaximized = !window.isFmtMaximized;
+            
+            if (window.isFmtMaximized) {
+                modal.className = "hidden fixed inset-0 z-[200] flex flex-col bg-slate-900 animate-in fade-in duration-200";
+                inner.className = "w-full h-full flex flex-col";
+                icon.setAttribute('data-lucide', 'minimize-2');
+                modal.classList.remove('hidden'); // re-show after re-class
+            } else {
+                modal.className = "hidden fixed inset-0 z-[200] flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200";
+                inner.className = "glass-panel w-full h-[85vh] max-w-7xl rounded-2xl border border-emerald-500/30 flex flex-col shadow-2xl overflow-hidden bg-slate-900";
+                icon.setAttribute('data-lucide', 'maximize-2');
+                modal.classList.remove('hidden');
+            }
+            if (window.lucide) window.lucide.createIcons();
+            
+            // Allow grid to re-measure itself after CSS transitions
+            setTimeout(() => {
+                if (window.v4GridApi) window.v4GridApi.sizeColumnsToFit();
+            }, 300);
+        }
+    </script>
 </body>
 
 </html>
