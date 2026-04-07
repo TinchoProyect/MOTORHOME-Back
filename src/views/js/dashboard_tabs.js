@@ -365,16 +365,38 @@ window.editFlujoName = async function(fileId) {
 
         if (!result.success) throw new Error(result.error);
 
-        // Actualizamos en local para no tener que recargar toda la grilla
-        selectEl.options[selectEl.selectedIndex].text = newName.trim();
-        selectEl.options[selectEl.selectedIndex].dataset.name = newName.trim();
-
-        // Actualizamos label si está fijado
-        const labelContainer = document.getElementById(`status_label_${fileId}`);
-        if(labelContainer && labelContainer.querySelector('.text-slate-300')) {
-             labelContainer.querySelector('.text-slate-300').textContent = newName.trim();
-             labelContainer.querySelector('.text-slate-300').title = newName.trim();
+        // Actualizamos caché global para que el Visor (initViewerFlujosContext) tome el cambio
+        if (window.cachedFlujos && Array.isArray(window.cachedFlujos)) {
+             const flujoEntry = window.cachedFlujos.find(f => f.id_flujo === flujo_id);
+             if (flujoEntry) flujoEntry.nombre_flujo = newName.trim();
         }
+
+        // DOM PATCHING MASIVO: Encontrar todos los selects y labels de la grilla que usen este flujo
+        const allSelects = document.querySelectorAll('select[id^="flujo_select_"]');
+        allSelects.forEach(sel => {
+             for (let prop of sel.options) {
+                  if (prop.value === flujo_id) {
+                       prop.text = newName.trim();
+                       prop.dataset.name = newName.trim();
+                  }
+             }
+        });
+
+        // Actualizar labels fijados (Status Labels)
+        const allStatusLabels = document.querySelectorAll('div[id^="status_label_"]');
+        allStatusLabels.forEach(labelContainer => {
+             // Verificamos si este label está asociado al flujo que acabamos de renombrar
+             // Extraemos el id_archivo del id del contenedor
+             const fileIdMatched = labelContainer.id.replace('status_label_', '');
+             const attachedSelect = document.getElementById(`flujo_select_${fileIdMatched}`);
+             if (attachedSelect && attachedSelect.value === flujo_id) {
+                  const textSpan = labelContainer.querySelector('.text-slate-300');
+                  if (textSpan) {
+                       textSpan.textContent = newName.trim();
+                       textSpan.title = newName.trim();
+                  }
+             }
+        });
 
         Swal.fire({
             icon: 'success',
