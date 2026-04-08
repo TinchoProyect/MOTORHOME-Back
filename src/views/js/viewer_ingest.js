@@ -133,14 +133,16 @@ window.confirmIngestion = async function () {
             }
 
             // [FIX] Dashboard Refresh Logic
-            if (window.loadProcessedFiles && window.switchDashboardTab) {
-                // Refresh Drive List (if active)
+            if (window.loadProcessedFiles && window.currentActiveProviderId) {
                 const btnDrive = document.getElementById('tabPending');
+                
+                // Refresh Pendientes si está activa
                 if (btnDrive && btnDrive.classList.contains('text-blue-400')) {
-                    // We are in Drive Mode
-
                     if (window.loadFiles && targetFolderId) window.loadFiles(targetFolderId);
                 }
+                
+                // Refresh Procesados en background para que tenga el estado actual al cambiar, o si ya está activa
+                window.loadProcessedFiles(window.currentActiveProviderId);
             }
 
         } else {

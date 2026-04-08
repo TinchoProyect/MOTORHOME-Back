@@ -354,7 +354,11 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                     columna_origen_index: dataIdx, // This is the physical index for the DB
                     columna_origen_nombre: config.colName || `Columna ${dataIdx}`,
                     campo_maestro_id: config.masterField.id,
-                    reglas: (config.rules || []).filter(r => r && r.id).map(r => r.id)
+                    reglas: (config.rules || []).filter(r => r && r.id).map(r => {
+                        // [MIGRACIÓN DE REGLA IN-MEM A UUID FÍSICA] Evita 400 Bad Request
+                        if (r.id === 'sys_sanitize_decimal_fill') return 'ae2c90c7-2c9b-4654-be8c-9c9aeea9f8e5';
+                        return r.id;
+                    })
                 });
             }
 
@@ -398,8 +402,11 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
 
     } catch (error) {
         console.error("❌ Error guardando configuración:", error);
-        if (typeof Swal !== 'undefined') Swal.fire("Error", error.message, "error");
-        else alert("Error al guardar: " + error.message);
+        // Supresión Silenciosa de Errores de UI
+        if (!silent) {
+            if (typeof Swal !== 'undefined') Swal.fire("Error", error.message, "error");
+            else alert("Error al guardar: " + error.message);
+        }
     } finally {
         // 6. UI Restore
         if (btn) {

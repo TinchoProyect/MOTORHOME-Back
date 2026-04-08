@@ -186,6 +186,14 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
         const isExtraido = file.status_global === 'EXTRAIDO';
         const extraidoBadgeHtml = isExtraido ? `<div class="absolute -top-3 right-6 bg-indigo-900/80 text-indigo-300 font-bold text-[9px] px-3 py-0.5 rounded-full shadow-lg shadow-indigo-900/50 border border-indigo-500/30 z-20 whitespace-nowrap tracking-wider flex items-center gap-1"><i data-lucide="database" class="w-3 h-3"></i> EXTRAÍDO</div>` : '';
 
+        // Normalización Semántica (Hotfix QA)
+        let displayName = file.nombre_archivo || 'Documento Desconocido';
+        if (displayName.toLowerCase().includes('ingestado manualmente')) {
+            // Capitalize 'Archivo' correctly if needed by the regex replacement
+            displayName = displayName.replace(/ingestado manualmente/i, 'extraído manualmente');
+            displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+        }
+
         // Preparar opciones para este archivo (evaluando selección)
         let currentOptionsHtml = `<option value="">-- Sin Flujo (Crudo) --</option>`;
         let asignadoName = "Sin asignar";
@@ -210,7 +218,7 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                                 <i data-lucide="lock" class="w-2.5 h-2.5"></i> Extraído
                             </span>
                         </div>
-                        <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide" title="${file.nombre_archivo}">${file.nombre_archivo}</p>
+                        <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide" title="${displayName}">${displayName}</p>
                         <p class="text-[10px] text-indigo-300/80 font-mono mt-2 mb-4 flex items-center gap-1.5">
                             <i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()} &middot; ${file.items_count || 0} ítems
                         </p>
@@ -235,7 +243,7 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                         </div>
                         
                         <div class="flex-1 min-w-0 pr-8">
-                            <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide group-hover:text-emerald-400 transition-colors" title="${file.nombre_archivo}">${file.nombre_archivo}</p>
+                            <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide group-hover:text-emerald-400 transition-colors" title="${displayName}">${displayName}</p>
                             <div class="flex items-center gap-4 mt-2">
                                 <span class="text-[10px] text-emerald-500 font-mono font-bold flex items-center gap-1.5"><i data-lucide="layers" class="w-3 h-3"></i> ${file.items_count || 0} ITEMS</span>
                                 <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()}</span>

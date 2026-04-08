@@ -65,15 +65,6 @@ async function loadRuleCatalog() {
         if (response.ok) {
             catalogRules = await response.json();
             
-            // [QA/ETL Req] Inyectar regla determinista de limpieza monetaria
-            catalogRules.push({
-                id: 'sys_sanitize_decimal_fill',
-                nombre_regla: 'Normalización Decimal y Relleno',
-                descripcion: 'Reemplaza puntos por comas y rellena vacíos con 0,00',
-                tipo_regex: 'SANITIZE_DECIMAL_FILL',
-                es_global: true
-            });
-            
             console.log(`✅ [WORKSHOP] Catálogo de reglas cargado: ${catalogRules.length} reglas.`);
             renderRuleSelector();
         } else {
