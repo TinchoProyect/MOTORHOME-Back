@@ -40,7 +40,7 @@ async function processIngestion(fileId, providerId, dataSnapshot) {
                 archivo_id: fileId,
                 proveedor_id: providerId,
                 status_global: 'CONFIRMED', // Set directo
-                nombre_archivo: 'Archivo Ingestado Manualmente'
+                nombre_archivo: 'Archivo extraído manualmente'
             })
             .select()
             .single();

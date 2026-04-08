@@ -1330,18 +1330,21 @@
                                   
                                   let arrowIcon = '';
                                   let deltaClass = 'bg-amber-500/20 border-amber-500/50 text-amber-400';
+                                  let deltaText = 'Δ DELTA';
                                   
                                   if (!isNaN(numCurrent) && !isNaN(numOld)) {
                                       if (numCurrent > numOld) {
                                           arrowIcon = '↑';
                                           deltaClass = 'bg-rose-500/20 border-rose-500/50 text-rose-400';
+                                          deltaText = 'AUMENTO';
                                       } else if (numCurrent < numOld) {
                                           arrowIcon = '↓';
                                           deltaClass = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400';
+                                          deltaText = 'BAJA';
                                       }
                                   }
                                   
-                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 line-through text-[9px] mr-1">${oldP}</span> <span class="text-amber-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] flex items-center gap-0.5 rounded border ${deltaClass} text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica respecto a su base histórica.">${arrowIcon} Δ DELTA</div></div>`;
+                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 line-through text-[9px] mr-1">${oldP}</span> <span class="text-amber-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] flex items-center gap-0.5 rounded border ${deltaClass} text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica respecto a su base histórica.">${arrowIcon} ${deltaText}</div></div>`;
                               }
                               if (isPrice && st === 'ALTA') {
                                   return `<div class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Apareció en esta ingesta por primera vez">NUEVO</div></div>`;
