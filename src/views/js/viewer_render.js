@@ -174,6 +174,16 @@ function renderVirtualTable(originalData) {
         for (let idx = 0; idx < maxCols; idx++) {
             window.virtualColumns.push({ id: `col_${idx}`, dataIdx: idx });
         }
+    } else {
+        // [V5.5 - MERGE DE ESQUEMAS] Resuelve "Schema Blindness" cruzando memoria con Raw Data
+        // Aseguramos que si el archivo nuevo trajo más columnas de las que el flujo recordaba, estas se inyecten.
+        for (let idx = 0; idx < maxCols; idx++) {
+            const baseId = `col_${idx}`;
+            const exists = window.virtualColumns.some(vc => vc.id === baseId);
+            if (!exists) {
+                window.virtualColumns.push({ id: baseId, dataIdx: idx });
+            }
+        }
     }
     
     // [V5 UX] Auto-Restore UI Order Preference via Layout Manager
@@ -250,7 +260,7 @@ function renderVirtualTable(originalData) {
             thClass = "bg-slate-950 p-1 sticky top-0 z-20";
             const displayName = isMapped ? getHumanName(mappedType) : originalVal;
             thContent = `<div class="flex items-center gap-1 h-full">
-                <button onclick="openColumnMenu_v2('${j}', this)" class="flex-grow h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
+                <button onclick="if(window.isRemappingFlow) return; openColumnMenu_v2('${j}', this)" class="flex-grow h-full text-left px-3 flex items-center justify-between border rounded transition-all ${btnClass}">
                     <span class="truncate font-bold text-[10px] uppercase">${displayName}</span>
                     <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                 </button>
@@ -263,14 +273,21 @@ function renderVirtualTable(originalData) {
             if (window.draftPipelines && window.draftPipelines[j]) {
                 const pipe = window.draftPipelines[j];
                 const pipeName = getHumanName(pipe.masterField ? (pipe.masterField.nombre_campo || pipe.masterField.id) : mappedType);
+                const safeOriginVal = originalVal ? originalVal.replace(/'/g, "\\'") : '';
                 thContent = `
-                    <div class="flex items-center gap-2 text-emerald-300 cursor-pointer hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${originalVal}')">
-                        <i data-lucide="link-2" class="w-3 h-3"></i>
-                        <span class="truncate" title="${pipeName}">${pipeName}</span>
-                        <div class="bg-emerald-800 text-emerald-200 text-[9px] px-1.5 rounded-full ml-auto">${pipe.rules ? pipe.rules.length : 0}r</div>
+                    <div class="flex items-center justify-between w-full gap-1 group relative">
+                        <div class="flex items-center gap-1.5 flex-1 cursor-pointer text-emerald-300 hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors truncate" onclick="if(window.isRemappingFlow) return; if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${safeOriginVal}')">
+                            <i data-lucide="link-2" class="w-3 h-3 shrink-0"></i>
+                            <span class="truncate font-bold text-[10px] uppercase" title="${pipeName}">${pipeName}</span>
+                            <div class="bg-emerald-800 text-emerald-200 text-[8px] font-bold px-1.5 rounded-full shrink-0">${pipe.rules ? pipe.rules.length : 0}R</div>
+                        </div>
+                        
+                        <button onclick="if(window.startColumnRemap) window.startColumnRemap('${j}', '${safeOriginVal}'); event.stopPropagation();" class="shrink-0 p-1 opacity-0 group-hover:opacity-100 bg-indigo-900/50 hover:bg-indigo-600 hover:text-white text-indigo-300 rounded transition-all z-10 pointer-events-auto absolute right-0 shadow" title="Mudar este flujo ETL a otra columna (Reasignar Origen)">
+                            <i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i>
+                        </button>
                     </div>
                 `;
-                thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-2 sticky top-0 z-20";
+                thClass = "bg-slate-900 border-b-2 border-emerald-500/50 text-slate-300 font-bold uppercase border border-slate-800 p-1.5 sticky top-0 z-20";
             } else if (mappedType && mappedType !== 'Ignorar Columna') {
                 const mapName = getHumanName(mappedType);
                 thContent = `<span class="text-emerald-400" title="ID: ${mappedType}">${mapName}</span> <span class="text-slate-600 text-[9px] ml-1">(${originalVal})</span>`;
@@ -1184,17 +1201,21 @@ function renderSimulationTable(data) {
         let content = `<span>${cfg.label}</span>`;
         let actions = '';
         let rulesDropdownHtml = '';
+        
+        // Hoist safeLabel to avoid TDZ (Temporal Dead Zone) ReferenceError
+        const safeLabel = cfg.label ? cfg.label.replace(/'/g, "\\'") : '';
 
         // [New] Pipeline Quick Toggles
         if (cfg.virtualColId) {
-            // Generate Interactive Dropdown for Applied Rules
-            if (window.draftPipelines && window.draftPipelines[cfg.virtualColId] && window.draftPipelines[cfg.virtualColId].rules) {
-                let rulesStack = window.draftPipelines[cfg.virtualColId].rules;
+            // Generate Interactive Dropdown for Applied Rules and Remapping
+            if (window.draftPipelines && window.draftPipelines[cfg.virtualColId]) {
+                let rulesStack = window.draftPipelines[cfg.virtualColId].rules || [];
                 if (!Array.isArray(rulesStack)) rulesStack = [rulesStack];
                 
+                let dropdownItems = '';
+                let activeCount = 0;
+
                 if (rulesStack.length > 0) {
-                    let dropdownItems = '';
-                    let activeCount = 0;
                     rulesStack.forEach((r, idx) => {
                         const isOff = r.disabled;
                         if (!isOff) activeCount++;
@@ -1210,42 +1231,48 @@ function renderSimulationTable(data) {
                             </div>
                         `;
                     });
+                } else {
+                    dropdownItems = `<div class="px-2 py-3 text-center text-[9px] text-slate-500 italic">Columna Maestra enlazada directo (sin reglas).</div>`;
+                }
 
-                    // Logic to force the dropdown open if it was the last toggled
-                    const isForcedOpen = (window.ViewerUI && window.ViewerUI._keepDropdownOpen === cfg.virtualColId);
-                    const dropdownClasses = isForcedOpen 
-                        ? 'opacity-100 visible pointer-events-auto scale-100'
-                        : 'opacity-0 invisible pointer-events-none scale-95';
+                // Logic to force the dropdown open if it was the last toggled
+                const isForcedOpen = (window.ViewerUI && window.ViewerUI._keepDropdownOpen === cfg.virtualColId);
+                const dropdownClasses = isForcedOpen 
+                    ? 'opacity-100 visible pointer-events-auto scale-100'
+                    : 'opacity-0 invisible pointer-events-none scale-95';
 
-                    rulesDropdownHtml = `
-                        <div class="relative group pb-1">
-                            <button onclick="window.ViewerUI.toggleRulesMenu(event, '${cfg.virtualColId}')" class="flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-1 bg-emerald-900/40 text-emerald-400 border border-emerald-500/30 rounded shadow-sm hover:brightness-125 transition-all w-full justify-between focus:outline-none focus:ring-1 focus:ring-emerald-500">
-                                <span><i data-lucide="filter" class="w-3 h-3 inline mr-1"></i> ${activeCount} / ${rulesStack.length}</span> <i data-lucide="${isForcedOpen ? 'chevron-up' : 'chevron-down'}" class="w-3 h-3"></i>
-                            </button>
-                            <div class="absolute left-0 top-full pt-1 w-52 z-[300] transition-all duration-200 transform origin-top ${dropdownClasses}" onmousedown="event.stopPropagation()" draggable="false">
-                                <div class="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl py-1">
-                                    <div class="px-2 pb-1 border-b border-slate-800 flex gap-1 mb-1">
+                rulesDropdownHtml = `
+                    <div class="relative group pb-1">
+                        <button onclick="window.ViewerUI.toggleRulesMenu(event, '${cfg.virtualColId}')" class="flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-1 bg-emerald-900/40 text-emerald-400 border border-emerald-500/30 rounded shadow-sm hover:brightness-125 transition-all w-full justify-between focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                            <span><i data-lucide="${rulesStack.length > 0 ? 'filter' : 'link'}" class="w-3 h-3 inline mr-1"></i> ${rulesStack.length > 0 ? activeCount + ' / ' + rulesStack.length : 'Opciones'}</span> <i data-lucide="${isForcedOpen ? 'chevron-up' : 'chevron-down'}" class="w-3 h-3"></i>
+                        </button>
+                        <div class="absolute left-0 top-full pt-1 w-52 z-[300] transition-all duration-200 transform origin-top ${dropdownClasses}" onmousedown="event.stopPropagation()" draggable="false">
+                            <div class="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl py-1">
+                                <div class="px-2 pb-1 border-b border-slate-800 flex flex-col gap-1 mb-1">
+                                    <button onclick="if(window.startColumnRemap) window.startColumnRemap('${cfg.virtualColId}', '${safeLabel}'); window.ViewerUI.toggleRulesMenu(event, '${cfg.virtualColId}'); event.stopPropagation();" class="w-full text-[9px] font-bold text-center bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 border border-indigo-500/30 rounded py-1.5 transition-colors pointer-events-auto shadow-sm flex items-center justify-center gap-1.5" title="Reasignar el origen de datos a otra columna"><i data-lucide="arrow-left-right" class="w-3 h-3"></i> Mudar Origen</button>
+                                    ${rulesStack.length > 0 ? `
+                                    <div class="flex gap-1 mt-1">
                                         <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', true); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 rounded py-1 transition-colors pointer-events-auto" title="Prender Todo">ON</button>
                                         <button onclick="window.ViewerUI.toggleAllRulesInSimulation('${cfg.virtualColId}', false); event.stopPropagation();" class="flex-1 text-[8px] font-bold text-center bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded py-1 transition-colors pointer-events-auto" title="Apagar Todo">OFF</button>
                                     </div>
-                                    <div class="max-h-[300px] overflow-y-auto custom-scrollbar">
-                                        ${dropdownItems}
-                                    </div>
+                                    ` : ''}
+                                </div>
+                                <div class="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                    ${dropdownItems}
                                 </div>
                             </div>
                         </div>
-                    `;
-                }
+                    </div>
+                `;
             }
         }
 
         const isComputedConfig = cfg.isComputed || false;
         
         // Define click handler for the label area (Bug Fix N°2)
-        const safeLabel = cfg.label ? cfg.label.replace(/'/g, "\\'") : '';
         const clickHandler = isComputedConfig 
-            ? `onclick="event.stopPropagation(); if(window.editComputedColumn) window.editComputedColumn('${cfg.virtualColId}')"` 
-            : `onclick="event.stopPropagation(); if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${cfg.virtualColId}', '${safeLabel}')"`;
+            ? `onclick="event.stopPropagation(); if(window.isRemappingFlow) return; if(window.editComputedColumn) window.editComputedColumn('${cfg.virtualColId}')"` 
+            : `onclick="event.stopPropagation(); if(window.isRemappingFlow) return; if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${cfg.virtualColId}', '${safeLabel}')"`;
 
         let thContent = `
             <div class="flex flex-col gap-1 min-h-[40px] relative w-full h-full justify-center">

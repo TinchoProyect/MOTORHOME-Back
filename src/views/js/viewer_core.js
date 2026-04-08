@@ -356,7 +356,7 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                     campo_maestro_id: config.masterField.id,
                     reglas: (config.rules || []).filter(r => r && r.id).map(r => {
                         // [MIGRACIÓN DE REGLA IN-MEM A UUID FÍSICA] Evita 400 Bad Request
-                        if (r.id === 'sys_sanitize_decimal_fill') return 'ae2c90c7-2c9b-4654-be8c-9c9aeea9f8e5';
+                        if (r.id === 'sys_sanitize_decimal_fill') return '895e8e7d-11c9-439f-a98b-d9c0edf65f5d';
                         return r.id;
                     })
                 });

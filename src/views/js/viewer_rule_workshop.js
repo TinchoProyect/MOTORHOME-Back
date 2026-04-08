@@ -843,36 +843,44 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         // [Fase 5.2] Modal de Aprobación LAMDA
         if (window.Swal) Swal.close();
         
-        let tableRowsHtml = Object.entries(mapToInject).map(([rawVal, cleanVal], idx) => {
+        const clusterMap = {};
+        Object.entries(mapToInject).forEach(([raw, clean]) => {
+            if (!clusterMap[clean]) clusterMap[clean] = [];
+            clusterMap[clean].push(raw);
+        });
+
+        let accordionHtml = Object.keys(clusterMap).map((masterVal, gIdx) => {
+             const rawValues = clusterMap[masterVal];
+             if (!Array.isArray(rawValues)) return '';
+             
+             let childrenHtml = rawValues.map((val, idx) => `
+                <div class="flex items-center gap-2 mb-1.5 pl-3 p-1.5 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
+                    <input type="checkbox" id="gatillo_chk_${gIdx}_${idx}" data-raw="${val.replace(/"/g, '&quot;')}" value="${masterVal.replace(/"/g, '&quot;')}" checked class="gatillo-raw-chk form-checkbox h-3.5 w-3.5 text-amber-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                    <label for="gatillo_chk_${gIdx}_${idx}" class="text-[11px] text-slate-400 cursor-pointer select-none truncate font-mono">${val.replace(/</g, "&lt;")}</label>
+                </div>
+             `).join('');
+
              return `
-               <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
-                   <td class="p-2 w-8 text-center border-r border-slate-700/50 text-slate-400">
-                       <input type="checkbox" id="gatillo_chk_${idx}" data-raw="${String(rawVal).replace(/"/g, '&quot;')}" value="${String(cleanVal).replace(/"/g, '&quot;')}" checked class="gatillo-raw-chk form-checkbox h-3.5 w-3.5 text-amber-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
-                   </td>
-                   <td class="p-2 text-[10px] text-slate-400 font-mono truncate max-w-[200px]" title="${String(rawVal).replace(/"/g, '&quot;')}">${String(rawVal).replace(/</g, "&lt;")}</td>
-                   <td class="p-2 text-[10px] font-bold text-amber-400 font-mono max-w-[200px] break-words" title="${String(cleanVal).replace(/"/g, '&quot;')}">${String(cleanVal).replace(/</g, "&lt;")}</td>
-               </tr>
+             <div class="mb-3 bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden">
+                 <div class="bg-amber-950/20 p-2 border-b border-amber-500/10 flex items-center justify-between hover:bg-slate-800/40 transition">
+                     <label class="flex items-center gap-2 cursor-pointer w-full" for="gatillo_global_${gIdx}">
+                         <input type="checkbox" id="gatillo_global_${gIdx}" class="gatillo-global-chk form-checkbox h-4 w-4 text-amber-500 rounded border-amber-500/50 bg-slate-800 focus:ring-0 focus:ring-offset-0 cursor-pointer" checked data-group="${gIdx}">
+                         <span class="text-xs font-bold text-amber-500 font-mono tracking-wide truncate pr-2 select-none">${masterVal.replace(/</g, "&lt;")}</span>
+                     </label>
+                     <span class="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold shrink-0 shadow-sm border border-amber-500/10">${rawValues.length} sugerencias</span>
+                 </div>
+                 <div class="p-2 py-1 bg-slate-950/30">
+                    ${childrenHtml}
+                 </div>
+             </div>
              `;
         }).join('');
 
         const resultModal = await window.Swal.fire({
             title: 'Validar Fusión de Datos',
             html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA resolvió los registros aislados de forma no destructiva. Desmarca las sugerencias que no desees aprender:</div>
-                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1 border border-slate-700/50 rounded" id="gatillo_checkbox_container">
-                      <table class="w-full text-left border-collapse">
-                        <thead class="bg-slate-900 sticky top-0 border-b border-slate-700/50 z-10 hover:bg-slate-800/80 transition">
-                            <tr>
-                                <th class="p-2 w-8 text-center border-r border-slate-700/50">
-                                    <input type="checkbox" id="gatillo_global_chk" class="form-checkbox h-4 w-4 text-amber-500 rounded border-amber-500/50 bg-slate-800 focus:ring-0 focus:ring-offset-0 cursor-pointer" checked>
-                                </th>
-                                <th class="p-2 text-[10px] font-bold text-slate-300 uppercase tracking-wider"><label for="gatillo_global_chk" class="cursor-pointer">Cache Miss (Original)</label></th>
-                                <th class="p-2 text-[10px] font-bold text-amber-300 uppercase tracking-wider"><label for="gatillo_global_chk" class="cursor-pointer">Traducción Propuesta</label></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tableRowsHtml}
-                        </tbody>
-                      </table>
+                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1" id="gatillo_checkbox_container">
+                      ${accordionHtml}
                    </div>`,
             showCancelButton: true,
             confirmButtonText: '<i data-lucide="merge" class="w-4 h-4 inline mt-0.5"></i> Aprobar Carga',
@@ -884,18 +892,24 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
                 const container = document.getElementById('gatillo_checkbox_container');
                 if (!container) return;
                 container.addEventListener('change', (e) => {
-                    if (e.target.id === 'gatillo_global_chk') {
+                    if (e.target.classList.contains('gatillo-global-chk')) {
                         const isChecked = e.target.checked;
-                        const childChecks = container.querySelectorAll(`.gatillo-raw-chk`);
+                        const groupIdx = e.target.getAttribute('data-group');
+                        const childChecks = container.querySelectorAll(`.gatillo-raw-chk[id^="gatillo_chk_${groupIdx}_"]`);
                         childChecks.forEach(chk => chk.checked = isChecked);
+                        e.target.indeterminate = false;
                     } else if (e.target.classList.contains('gatillo-raw-chk')) {
-                        const globalChk = document.getElementById('gatillo_global_chk');
-                        if (globalChk) {
-                            const childChecks = container.querySelectorAll(`.gatillo-raw-chk`);
-                            const allChecked = Array.from(childChecks).every(c => c.checked);
-                            const someChecked = Array.from(childChecks).some(c => c.checked);
-                            globalChk.checked = allChecked;
-                            globalChk.indeterminate = someChecked && !allChecked;
+                        const parts = e.target.id.split('_');
+                        if (parts.length >= 4) {
+                            const groupIdx = parts[2];
+                            const parentChk = container.querySelector(`#gatillo_global_${groupIdx}`);
+                            if (parentChk) {
+                                const childChecks = container.querySelectorAll(`.gatillo-raw-chk[id^="gatillo_chk_${groupIdx}_"]`);
+                                const allChecked = Array.from(childChecks).every(c => c.checked);
+                                const someChecked = Array.from(childChecks).some(c => c.checked);
+                                parentChk.checked = allChecked;
+                                parentChk.indeterminate = someChecked && !allChecked;
+                            }
                         }
                     }
                 });
