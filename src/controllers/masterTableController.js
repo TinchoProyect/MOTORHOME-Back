@@ -398,6 +398,23 @@ module.exports = {
                 return res.status(409).json({ success: false, error: "Este archivo ya fue extraído.", needs_overwrite: false });
             }
 
+            // [HOTFIX] Trazabilidad Histórica Determinista: Usar la fecha nativa del documento (fecha_vigencia) o su created_at, NUNCA el Date.now() del servidor.
+            let timestamp_real = new Date().toISOString();
+            const { data: rawFileMetas } = await supabase
+                .from('proveedor_listas_raw')
+                .select('fecha_vigencia, created_at')
+                .eq('archivo_id', archivo_id)
+                .maybeSingle();
+
+            if (rawFileMetas) {
+                if (rawFileMetas.fecha_vigencia) {
+                    // Para que PostgreSQL lo tome como timestamp valido sumamos hora 00 si viene solo YYYY-MM-DD
+                    timestamp_real = rawFileMetas.fecha_vigencia.length <= 10 ? `${rawFileMetas.fecha_vigencia}T00:00:00.000Z` : rawFileMetas.fecha_vigencia;
+                } else if (rawFileMetas.created_at) {
+                    timestamp_real = rawFileMetas.created_at;
+                }
+            }
+
             // Motor de Deltas Bi-Dimensional: Recuperar último estado histórico (Foto previa)
             const historyMap = new Map();
             const { data: previousSnapshot, error: snapErr } = await supabase
@@ -453,7 +470,8 @@ module.exports = {
                      archivo_origen_id: archivo_id,
                      nombre_proveedor: nombre_proveedor || 'Desconocido',
                      datos_maestros: record,
-                     es_delta: es_delta 
+                     es_delta: es_delta,
+                     timestamp_extraccion: timestamp_real
                  });
             });
 
@@ -469,7 +487,8 @@ module.exports = {
                         archivo_origen_id: archivo_id,  // Se asimila a la extracción actual para que asome en los reportes correspondientes a hoy
                         nombre_proveedor: nombre_proveedor || 'Desconocido',
                         datos_maestros: ghostPayload,
-                        es_delta: true
+                        es_delta: true,
+                        timestamp_extraccion: timestamp_real
                     });
                 }
             }

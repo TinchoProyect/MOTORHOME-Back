@@ -301,24 +301,58 @@ window.revertExtraction = async function(fileId) {
         confirmButtonColor: '#d33',
         cancelButtonColor: '#3085d6',
         confirmButtonText: 'Sí, revertir extracción',
-        cancelButtonText: 'No, cancelar'
+        cancelButtonText: 'No, cancelar',
+        background: '#0f172a',
+        color: '#f8fafc',
+        customClass: {
+            popup: 'border border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl'
+        }
     });
 
     if (result.isConfirmed) {
         try {
             const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-            Swal.fire({ title: 'Revirtiendo...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+            Swal.fire({
+                title: 'Revirtiendo...',
+                allowOutsideClick: false,
+                background: '#0f172a',
+                color: '#f8fafc',
+                customClass: { popup: 'border border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl' },
+                didOpen: () => { Swal.showLoading() }
+            });
             const res = await fetch(`${backendUrl}/api/master-table/revert/${fileId}`, { method: 'DELETE' });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Fallo en la reversión");
-            Swal.fire('Revertido', 'La extracción de este archivo fue deshecha.', 'success');
+            
+            Swal.fire({
+                title: 'Revertido',
+                text: 'La extracción de este archivo fue deshecha.',
+                icon: 'success',
+                background: '#0f172a',
+                color: '#f8fafc',
+                timer: 2000,
+                showConfirmButton: false,
+                customClass: {
+                    popup: 'border border-emerald-900/50 shadow-[0_0_40px_rgba(16,185,129,0.15)] rounded-2xl'
+                }
+            });
             // Refresco UX: Actualizar tab de Archivos Crudos y Procesados Activos (Card Unlocking)
             if (window.fetchPendingFiles) window.fetchPendingFiles();
             if (window.fetchProcessedFiles && window.globalContext && window.globalContext.providerId) {
                 window.fetchProcessedFiles(window.globalContext.providerId);
             }
+                if (window.renderProviderData && window.globalContext && window.globalContext.providerId) {
+                    window.renderProviderData(window.globalContext.providerId);
+                }
         } catch (e) {
-            Swal.fire('Error', e.message, 'error');
+            Swal.fire({
+                title: 'Error',
+                text: e.message,
+                icon: 'error',
+                background: '#0f172a',
+                color: '#f8fafc',
+                customClass: { popup: 'border border-red-900/50 shadow-[0_0_40px_rgba(239,68,68,0.15)] rounded-2xl' }
+            });
         }
     }
 };

@@ -870,8 +870,8 @@
                     <!-- BI Action Pills -->
                     <div class="flex bg-slate-900 rounded-lg p-1 border border-slate-700/50 mr-2 shadow-inner">
                         <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('ALL')" id="pill-filter-ALL" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all bg-slate-700 text-white shadow-sm">Todos</button>
-                        <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('NOVEDADES')" id="pill-filter-NOVEDADES" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all text-slate-400 hover:text-slate-300 hover:bg-slate-800">Novedades</button>
-                        <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('BAJAS')" id="pill-filter-BAJAS" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all text-slate-400 hover:text-slate-300 hover:bg-slate-800">Bajas</button>
+                        <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('NUEVOS')" id="pill-filter-NUEVOS" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all text-slate-400 hover:text-slate-300 hover:bg-slate-800">Nuevos</button>
+                        <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('MODIFICADOS')" id="pill-filter-MODIFICADOS" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all text-slate-400 hover:text-slate-300 hover:bg-slate-800">Deltas / Modificados</button>
                     </div>
 
                     <div class="relative">
@@ -1317,6 +1317,7 @@
                          sortable: true,
                          filter: 'agTextColumnFilter',
                          resizable: true,
+                         width: isPrice ? 240 : undefined,
                          rowDrag: index === 0 ? true : false,
                          cellRenderer: (params) => {
                               const v = params.value || '';
@@ -1324,7 +1325,23 @@
                               
                               if (isPrice && st === 'MODIFICADO') {
                                   const oldP = params.data._precio_anterior || '';
-                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 line-through text-[9px] mr-1">${oldP}</span> <span class="text-amber-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-amber-500/20 border border-amber-500/50 text-amber-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica respecto a su base histórica.">Δ DELTA</div></div>`;
+                                  const numCurrent = parseFloat(String(v).replace(/[^0-9.-]+/g,""));
+                                  const numOld = parseFloat(String(oldP).replace(/[^0-9.-]+/g,""));
+                                  
+                                  let arrowIcon = '';
+                                  let deltaClass = 'bg-amber-500/20 border-amber-500/50 text-amber-400';
+                                  
+                                  if (!isNaN(numCurrent) && !isNaN(numOld)) {
+                                      if (numCurrent > numOld) {
+                                          arrowIcon = '↑';
+                                          deltaClass = 'bg-rose-500/20 border-rose-500/50 text-rose-400';
+                                      } else if (numCurrent < numOld) {
+                                          arrowIcon = '↓';
+                                          deltaClass = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400';
+                                      }
+                                  }
+                                  
+                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 line-through text-[9px] mr-1">${oldP}</span> <span class="text-amber-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] flex items-center gap-0.5 rounded border ${deltaClass} text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica respecto a su base histórica.">${arrowIcon} Δ DELTA</div></div>`;
                               }
                               if (isPrice && st === 'ALTA') {
                                   return `<div class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Apareció en esta ingesta por primera vez">NUEVO</div></div>`;
@@ -1358,8 +1375,9 @@
                         // Siempre censurar el historial profundo (versiones antiguas)
                         if (!node.data._is_latest) return false;
                         
-                        if (currentDeltaFilter === 'NOVEDADES') return node.data._estado_delta === 'ALTA' || node.data._estado_delta === 'MODIFICADO';
-                        if (currentDeltaFilter === 'BAJAS') return node.data._estado_delta === 'BAJA';
+                        if (currentDeltaFilter === 'NUEVOS') return node.data._estado_delta === 'ALTA';
+                        if (currentDeltaFilter === 'MODIFICADOS') return node.data._estado_delta === 'MODIFICADO';
+                        
                         // ALL view: Mostramos Alta, Modificado, e Intacto (Ocultamos BAJA para no ensuciar operación real)
                         return node.data._estado_delta !== 'BAJA';
                     },
@@ -1590,7 +1608,12 @@
                             confirmButtonColor: '#3085d6',
                             cancelButtonColor: '#d33',
                             confirmButtonText: 'Sí, Sobreescribir',
-                            cancelButtonText: 'Cancelar'
+                            cancelButtonText: 'Cancelar',
+                            background: '#0f172a',
+                            color: '#f8fafc',
+                            customClass: {
+                                popup: 'border border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl'
+                            }
                         });
                         
                         if (result.isConfirmed) {
@@ -1604,15 +1627,42 @@
                     throw new Error(json.error || "Error de servidor");
                 }
 
-                Swal.fire('¡Éxito!', 'Los datos han sido inyectados en la Tabla Maestra.', 'success');
+                await Swal.fire({
+                    title: '¡Éxito!',
+                    text: 'Los datos han sido inyectados en la Tabla Maestra.',
+                    icon: 'success',
+                    background: '#0f172a',
+                    color: '#f8fafc',
+                    timer: 2000,
+                    showConfirmButton: false,
+                    customClass: {
+                        popup: 'border border-emerald-900/50 shadow-[0_0_40px_rgba(16,185,129,0.15)] rounded-2xl'
+                    }
+                });
                 closeSimulationModal();
                 closeViewerModal();
-                // Opcional: Re-render procesados table si es necesario
+                
+                // Re-render UX (Card Unlocking)
                 if (window.fetchPendingFiles) window.fetchPendingFiles();
+                if (window.fetchProcessedFiles && window.globalContext && window.globalContext.providerId) {
+                    window.fetchProcessedFiles(window.globalContext.providerId);
+                }
+                
+                // Si la vista Operativa base también debe recargar, lo exponemos:
+                if (window.renderProviderData && window.globalContext.providerId) {
+                    window.renderProviderData(window.globalContext.providerId);
+                }
                 
             } catch (err) {
                 if (err.message !== "Extracción cancelada por el usuario") {
-                   Swal.fire('Error', err.message, 'error');
+                   Swal.fire({
+                       title: 'Error',
+                       text: err.message,
+                       icon: 'error',
+                       background: '#0f172a',
+                       color: '#f8fafc',
+                       customClass: { popup: 'border border-red-900/50 shadow-[0_0_40px_rgba(239,68,68,0.15)] rounded-2xl' }
+                   });
                 }
             } finally {
                 btn.innerHTML = originalHtml;
