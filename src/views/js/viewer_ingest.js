@@ -51,26 +51,90 @@ window.confirmIngestion = async function () {
         return;
     }
 
-    // 2. Confirmación de Usuario
+    // 2. Confirmación de Usuario (Intervención Selectiva por Solapas)
     let confirmed = false;
-    const txtHojas = finalPayload.sheets ? finalPayload.sheets.length : 1;
-    if (typeof Swal !== 'undefined') {
+
+    if (finalPayload.mode === 'MULTI_SHEET_BLOB' && finalPayload.sheets) {
+        // --- FLUJO MULTI-HOJA DUAL (Selectivo) ---
+        const validSheets = finalPayload.sheets;
+        const sheetsHtml = validSheets.map((s, idx) => `
+            <div class="flex items-center gap-3 p-3 bg-slate-900 rounded-lg border border-slate-700/50 hover:border-blue-500/50 transition-colors">
+                <input type="checkbox" id="chk_sheet_${idx}" value="${s.name}" class="w-5 h-5 rounded bg-slate-800 border-slate-600 text-blue-500 cursor-pointer" ${idx === 0 ? 'checked' : ''}>
+                <div class="flex-1 text-left cursor-pointer" onclick="document.getElementById('chk_sheet_${idx}').click()">
+                    <div class="text-white text-sm font-bold flex items-center gap-2">
+                        <i data-lucide="sheet" class="w-4 h-4 text-slate-400"></i> ${s.name || 'Hoja ' + (idx + 1)}
+                    </div>
+                    <div class="text-xs text-slate-500 font-mono mt-0.5">Filas: ${s.data.length}</div>
+                </div>
+            </div>
+        `).join('');
+
         const res = await Swal.fire({
-            title: '¿Confirmar Extracción?',
-            html: `¿Estás seguro de inyectar estos datos en la Tabla Maestra?<br><br><span class="text-slate-400">📄 Hojas: <b>${txtHojas}</b><br>📊 Filas: <b>${itemCount}</b></span>`,
+            title: 'Parámetros de Ingesta',
+            html: `
+                <p class="text-slate-400 text-sm mb-4">Selecciona qué hojas deseas inyectar en la base de datos:</p>
+                <div class="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar text-left text-base">
+                    ${sheetsHtml}
+                </div>
+            `,
             icon: 'question',
             background: '#0f172a', color: '#f8fafc',
             showCancelButton: true,
-            confirmButtonText: 'Sí, procesar',
+            confirmButtonText: 'Ejecutar Ingesta',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#10b981',
-            cancelButtonColor: '#334155'
+            cancelButtonColor: '#334155',
+            didOpen: () => {
+                if (window.lucide) window.lucide.createIcons();
+            },
+            preConfirm: () => {
+                const selected = [];
+                validSheets.forEach((s, idx) => {
+                    const chk = document.getElementById(`chk_sheet_${idx}`);
+                    if (chk && chk.checked) {
+                        selected.push(s);
+                    }
+                });
+                if (selected.length === 0) {
+                    Swal.showValidationMessage('⚠️ Debes seleccionar al menos una solapa para continuar.');
+                    return false;
+                }
+                return selected;
+            }
         });
-        confirmed = res.isConfirmed;
+
+        if (!res.isConfirmed) return;
+        
+        // Mutar el Payload con la selección determinista
+        const selectedSheetsArray = res.value;
+        const oldTotal = finalPayload.sheets.length;
+        
+        finalPayload.sheets = selectedSheetsArray;
+        itemCount = selectedSheetsArray.reduce((acc, s) => acc + s.data.length, 0);
+        
+        console.log(`[Ingest] Auditoría: Seleccionadas ${selectedSheetsArray.length} hojas de ${oldTotal}. Filas totales a procesar: ${itemCount}.`);
+        confirmed = true;
+        
     } else {
-        confirmed = confirm(`¿Estás seguro de confirmar la extracción?\n\n📄 Hojas detectadas: ${txtHojas}\n📊 Filas totales: ${itemCount}\n\nEsto guardará los datos en la Base de Datos.`);
+        // --- FLUJO LEGACY (Fallback Confirm Simple) ---
+        if (typeof Swal !== 'undefined') {
+            const res = await Swal.fire({
+                title: '¿Confirmar Extracción?',
+                html: `¿Estás seguro de inyectar estos datos en la Tabla Maestra?<br><br><span class="text-slate-400">📊 Filas: <b>${itemCount}</b></span>`,
+                icon: 'question',
+                background: '#0f172a', color: '#f8fafc',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, procesar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#10b981',
+                cancelButtonColor: '#334155'
+            });
+            confirmed = res.isConfirmed;
+        } else {
+            confirmed = confirm(`¿Estás seguro de confirmar la extracción?\n\n📊 Filas totales: ${itemCount}\n\nEsto guardará los datos en la Base de Datos.`);
+        }
+        if (!confirmed) return;
     }
-    if (!confirmed) return;
 
     // 3. UI Loading state
     const btn = document.getElementById('btnConfirmIngest');
