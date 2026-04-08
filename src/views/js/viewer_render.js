@@ -332,7 +332,8 @@ function renderVirtualTable(originalData) {
         }
 
         thClass += " relative"; // Add relative so the absolute resizer handles position correctly
-        headerHtml += `<th id="th-${j}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" ${clickAttr} data-col-id="${j}">${thContent}${resizerHtml}</th>`;
+        const headerNameEscaped = String((typeof getHumanName === 'function' ? getHumanName(mappedType) : '') || originalVal).replace(/'/g, "\\'");
+        headerHtml += `<th id="th-${j}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" ${clickAttr} data-col-id="${j}" oncontextmenu="window.handleColumnContextMenu(event, '${j}', '${headerNameEscaped}')">${thContent}${resizerHtml}</th>`;
     });
 
     // [V5.6] Fase 2 - Encabezados Computed en Virtual Scroller
@@ -388,7 +389,8 @@ function renderVirtualTable(originalData) {
             
             const colWidth = window.currentColWidths && window.currentColWidths[comp.id] ? window.currentColWidths[comp.id] : 150;
             const resizerHtml = `<div class="resizer-handle" onmousedown="window.initColResize(event, '${comp.id}', this.parentElement)" style="position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:70; user-select:none; background:transparent; transition:background 0.2s;" onmouseover="this.style.background='rgba(59,130,246,0.3)'" onmouseout="this.style.background='transparent'"></div>`;
-            headerHtml += `<th id="th-${comp.id}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" data-col-id="${comp.id}">${thContent}${resizerHtml}</th>`;
+            const compNameEscaped = String(comp.nombre || '').replace(/'/g, "\\'");
+            headerHtml += `<th id="th-${comp.id}" class="${thClass}" style="height: ${HEADER_HEIGHT}px; width: ${colWidth}px; min-width: ${colWidth}px; max-width: ${colWidth}px;" data-col-id="${comp.id}" oncontextmenu="window.handleColumnContextMenu(event, '${comp.id}', '${compNameEscaped}')">${thContent}${resizerHtml}</th>`;
         });
     }
 
@@ -1683,3 +1685,206 @@ function onColMouseUp(e) {
 
 // [VIGÍA DE CONTROL]
 console.log("🎨 [ViewerRender] Motor Gráfico Iniciado (Con Drag & Drop Resizing v1.0).");
+
+// --- AUDITORÍA CLIENT-SIDE DE UNICIDAD (NUEVA FUNCIONALIDAD) --- //
+
+window.handleColumnContextMenu = function(e, colId, colName) {
+    if (window.isRemappingFlow || window.isViewerReadOnly) return; // Omitir si es un modo restringido, a menos que el usuario lo requiera en ReadOnly.
+    
+    e.preventDefault();
+    
+    // Remover menu viejo si hay
+    const oldMenu = document.getElementById('viewerCtxMenu');
+    if (oldMenu) oldMenu.remove();
+    
+    const menu = document.createElement('div');
+    menu.id = 'viewerCtxMenu';
+    menu.className = "absolute z-[9999] bg-slate-900 border border-slate-700 shadow-2xl rounded-lg overflow-hidden py-1 min-w-[220px]";
+    menu.style.left = `${e.pageX}px`;
+    menu.style.top = `${e.pageY}px`;
+    
+    menu.innerHTML = `
+        <div class="px-3 py-2 text-xs font-bold text-slate-400 border-b border-slate-800 uppercase tracking-wider bg-slate-950">
+            Opciones p/ Columna
+        </div>
+        <button onclick="window.runUniqueValueAudit('${colId}', '${colName}'); document.getElementById('viewerCtxMenu').remove();" class="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-slate-800 transition-colors flex items-center gap-2">
+            <i data-lucide="search" class="w-4 h-4"></i>
+            Control de Valor Único
+        </button>
+    `;
+    
+    document.body.appendChild(menu);
+    if(window.lucide) window.lucide.createIcons();
+    
+    // Autodestrucción al click fuera o Escape
+    const killMenu = (evt) => {
+        if (!menu.contains(evt.target)) {
+            menu.remove();
+            document.removeEventListener('mousedown', killMenu);
+        }
+    };
+    // Delay binding
+    setTimeout(() => document.addEventListener('mousedown', killMenu), 10);
+};
+
+window.runUniqueValueAudit = function(colId, colName) {
+    // 1. Snapshot validación
+    if (!window.viewerState || !window.viewerState.data || window.viewerState.data.length === 0) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({ title: 'Auditoría Abortada', text: 'No hay datos en memoria para auditar.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        }
+        return;
+    }
+    
+    const data = window.viewerState.data;
+    const valueMap = {}; // hashmap para agrupar rows
+    
+    // 2. Extraemos el 'dataIdx' si existe en virtual columns, sino asumimos ID de computed object
+    let lookupKey = null;
+    if (window.virtualColumns) {
+        const vCol = window.virtualColumns.find(c => String(c.id) === String(colId));
+        if (vCol) lookupKey = vCol.dataIdx;
+    }
+    
+    const isComputed = lookupKey === null; // si lookupKey es nulo, significa que debe estar como llave cruda
+    
+    let scannedCount = 0;
+
+    data.forEach((row, rowIdx) => {
+        // Obviamos filas desechadas o vacías virtualmente
+        if (row._rejectedSim || row._emptySilently || row._rejectedByCode) return;
+        
+        let cellVal = null;
+        if (isComputed) {
+            cellVal = row[colId]; 
+        } else {
+            cellVal = row[lookupKey];
+        }
+        
+        // Trim value and stringify
+        const strVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
+        
+        // 3. Omitir nulos o vacíos ("Manejo de Celdas Vacías")
+        if (strVal === '') return; 
+        
+        scannedCount++;
+        
+        if (!valueMap[strVal]) valueMap[strVal] = [];
+        valueMap[strVal].push({ index: rowIdx, rawData: row });
+    });
+    
+    // 4. Analizar Conflicto (Valores duplicados)
+    const duplicates = Object.entries(valueMap).filter(([val, occurrences]) => occurrences.length > 1);
+    
+    // 5. UX Escenarios
+    if (duplicates.length === 0) {
+        // ÉXITO
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 4000,
+                timerProgressBar: true,
+                icon: 'success',
+                title: 'Auditoría Exitosa',
+                html: `Se escanearon <b>${scannedCount}</b> registros.<br>Todos los valores en <b>'${colName}'</b> son únicos.`,
+                background: '#0f172a',
+                color: '#10b981'
+            });
+        } else {
+            alert(`Auditoría exitosa! Se escanearon ${scannedCount} registros. Todos los valores son únicos.`);
+        }
+    } else {
+        // CONFLICTO
+        console.warn("[Auditoria] Duplicados detectados: ", duplicates);
+        
+        // 5.1 Math Analítico de Frecuencias
+        let f2 = 0, f3 = 0, f4 = 0, fM = 0;
+        duplicates.forEach(([_, occ]) => {
+            const l = occ.length;
+            if (l === 2) f2++;
+            else if (l === 3) f3++;
+            else if (l === 4) f4++;
+            else if (l > 4) fM++;
+        });
+
+        const phrases = [];
+        if (f2 > 0) phrases.push(`${f2} caso${f2===1?'':'s'} de códigos duplicados`);
+        if (f3 > 0) phrases.push(`${f3} caso${f3===1?'':'s'} de código triplicado`);
+        if (f4 > 0) phrases.push(`${f4} caso${f4===1?'':'s'} de código cuadruplicado`);
+        if (fM > 0) phrases.push(`${fM} caso${fM===1?'':'s'} de repeticiones masivas (>4)`);
+        
+        let freqSentence = "";
+        if (phrases.length > 1) {
+            const lastPhrase = phrases.pop();
+            freqSentence = phrases.join(', ') + ' y ' + lastPhrase;
+        } else {
+            freqSentence = phrases[0] || 'casos repetidos';
+        }
+
+        const totalAffected = duplicates.reduce((sum, [_, arr]) => sum + arr.length, 0);
+
+        // Build conflict UI HTML
+        let conflictHtml = `
+            <div class="mb-5 bg-amber-900/40 border border-amber-500/40 shadow-lg shadow-amber-900/20 rounded-lg p-4 text-left">
+                <div class="flex items-center gap-2 text-amber-400 font-bold mb-2 text-[11px] uppercase tracking-wider">
+                    <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Resumen Analítico
+                </div>
+                <div class="text-amber-200/90 text-[13px] leading-relaxed">
+                    Se encontraron ${freqSentence}. Total de filas afectadas: <b class="text-amber-400 text-sm bg-amber-500/10 px-1 rounded">${totalAffected}</b>.
+                </div>
+            </div>
+        `;
+        
+        conflictHtml += `<div class="flex flex-col gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-4">`;
+        
+        duplicates.forEach(([val, reqs]) => {
+            conflictHtml += `
+            <div class="bg-slate-900 border-l-4 border-l-rose-500 border border-slate-700/50 rounded p-3">
+                <div class="font-bold text-rose-400 font-mono text-sm mb-2 break-all flex items-center justify-between">
+                    <span>📌 Valor: <span class="bg-slate-950 px-2 py-0.5 rounded ml-1 text-rose-300 select-all">${val}</span></span>
+                    <span class="text-xs bg-rose-500/10 text-rose-500 px-2 rounded-full py-0.5 border border-rose-500/20">${reqs.length} repeticiones</span>
+                </div>
+                <div class="flex flex-col gap-1.5 mt-2">
+            `;
+            
+            // Limit shown occurrences inside modal to prevent freezing if there are thousands.
+            const shows = reqs.slice(0, 50);
+            shows.forEach(occ => {
+                // Serializar la fila para verla completita, filtrando llaves internas que empiezan con _ (underscore)
+                const displayRow = Object.keys(occ.rawData)
+                     .filter(k => !k.startsWith('_')) 
+                     .map(k => {
+                         const rawVal = occ.rawData[k] !== undefined && occ.rawData[k] !== null ? occ.rawData[k] : '';
+                         return `<span class="opacity-50">[${k}]:</span> <span class="text-slate-200">${rawVal}</span>`;
+                     })
+                     .join(' <span class="text-slate-700 mx-1">•</span> ');
+                     
+                conflictHtml += `<div class="bg-slate-950 px-2 py-1.5 text-[11px] font-mono rounded overflow-hidden text-ellipsis whitespace-nowrap hover:whitespace-normal transition-all border border-slate-800 shadow-inner" style="word-break: break-all;">
+                    <span class="text-slate-500 mr-2 font-bold bg-slate-900 px-1 rounded">#${occ.index}</span> ${displayRow || 'Fila Vacia'}
+                </div>`;
+            });
+            
+            if (reqs.length > 50) {
+               conflictHtml += `<div class="text-xs text-slate-500 text-center italic mt-1">+ ${reqs.length - 50} filas adicionales omitidas de la visualización...</div>`;
+            }
+            
+            conflictHtml += `</div></div>`;
+        });
+        
+        conflictHtml += `</div></div>`;
+        
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: '⚠️ Alerta de Duplicidad',
+                html: conflictHtml,
+                width: '850px',
+                background: '#0f172a',
+                color: '#f8fafc',
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#3b82f6',
+            });
+        }
+    }
+};
