@@ -3,6 +3,36 @@
  * Phase 3: The Right Panel and Rule Pipeline Builder
  */
 
+// [Fase 5.2] Helper determinista para resolver el crudo de columnas calculadas/fantasmas iterativamente
+export function resolveRawValueForRow(row, targetColId) {
+    let physicalIdx = targetColId;
+
+    if (window.computedColumns) {
+        const comp = window.computedColumns.find(c => c.id === targetColId);
+        if (comp && comp.operands && comp.operands.length > 0) {
+            let opA = comp.operands[0];
+            return resolveRawValueForRow(row, opA); 
+        }
+    }
+
+    if (typeof physicalIdx === 'string') {
+        if (window.virtualColumns) {
+            const vCol = window.virtualColumns.find(c => c.id === physicalIdx);
+            if (vCol && vCol.dataIdx !== undefined && vCol.dataIdx !== null) {
+                physicalIdx = vCol.dataIdx;
+            }
+        }
+    }
+
+    if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) {
+        let pId = parseInt(physicalIdx.replace('col_', ''), 10);
+        if (!isNaN(pId)) physicalIdx = pId;
+    }
+
+    if (typeof physicalIdx !== 'number' || isNaN(physicalIdx) || physicalIdx < 0) return "";
+    return String(row[physicalIdx] || "");
+}
+
 let isPanelOpen = false;
 let currentDraftPipeline = [];
 let activeContext = {
@@ -668,15 +698,12 @@ async function renderCacheMissGatillo(container) {
     if (!window.currentSheetData) return;
     
     let physicalIdx = activeContext.colIndex;
-    if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) {
-        physicalIdx = parseInt(physicalIdx.replace('col_', ''), 10);
-    }
-    if (isNaN(physicalIdx) || physicalIdx < 0) return;
+    if (physicalIdx === null || physicalIdx === undefined) return;
     
     let misses = [];
     const rawRows = window.currentSheetData.slice(1);
     for(let row of rawRows) {
-        let crudo = String(row[physicalIdx] || "");
+        let crudo = resolveRawValueForRow(row, physicalIdx);
         if (!crudo.trim()) continue;
         
         let outVal = crudo;
@@ -716,9 +743,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
     }
     
     let physicalIdx = activeContext.colIndex;
-    if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) {
-        physicalIdx = parseInt(physicalIdx.replace('col_', ''), 10);
-    }
+    if (physicalIdx === null || physicalIdx === undefined) return;
     
     let libretaDict = originalRule.logica && originalRule.logica[0] && originalRule.logica[0].condicion ? originalRule.logica[0].condicion.valor : null;
     if (!libretaDict && originalRule.logica && originalRule.logica[0] && originalRule.logica[0].accion) libretaDict = originalRule.logica[0].accion.valor;
@@ -726,7 +751,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
     let misses = [];
     const rawRows = window.currentSheetData.slice(1);
     for(let row of rawRows) {
-        let crudo = String(row[physicalIdx] || "");
+        let crudo = resolveRawValueForRow(row, physicalIdx);
         if (!crudo.trim()) continue;
         const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline);
         let outVal = String(tr.display || tr.result || "");
@@ -773,7 +798,6 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         const newDict = data.cluster;
         if (!newDict || Object.keys(newDict).length === 0) throw new Error("La IA evaluó los registros pero no formuló derivaciones nuevas.");
         
-        // Ejecución Quirúrgica: Fusión (Mergeo Dict)
         let mapToInject = {};
         if (isCluster) {
             Object.keys(newDict).forEach(master => {
@@ -784,12 +808,94 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         } else {
             mapToInject = newDict;
         }
+
+        // [Fase 5.2] Modal de Aprobación LAMDA
+        if (window.Swal) Swal.close();
+        
+        let tableRowsHtml = Object.entries(mapToInject).map(([rawVal, cleanVal], idx) => {
+             return `
+               <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
+                   <td class="p-2 w-8 text-center border-r border-slate-700/50 text-slate-400">
+                       <input type="checkbox" id="gatillo_chk_${idx}" data-raw="${String(rawVal).replace(/"/g, '&quot;')}" value="${String(cleanVal).replace(/"/g, '&quot;')}" checked class="gatillo-raw-chk form-checkbox h-3.5 w-3.5 text-amber-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                   </td>
+                   <td class="p-2 text-[10px] text-slate-400 font-mono truncate max-w-[200px]" title="${String(rawVal).replace(/"/g, '&quot;')}">${String(rawVal).replace(/</g, "&lt;")}</td>
+                   <td class="p-2 text-[10px] font-bold text-amber-400 font-mono max-w-[200px] break-words" title="${String(cleanVal).replace(/"/g, '&quot;')}">${String(cleanVal).replace(/</g, "&lt;")}</td>
+               </tr>
+             `;
+        }).join('');
+
+        const resultModal = await window.Swal.fire({
+            title: 'Validar Fusión de Datos',
+            html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA resolvió los registros aislados de forma no destructiva. Desmarca las sugerencias que no desees aprender:</div>
+                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1 border border-slate-700/50 rounded" id="gatillo_checkbox_container">
+                      <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-900 sticky top-0 border-b border-slate-700/50 z-10 hover:bg-slate-800/80 transition">
+                            <tr>
+                                <th class="p-2 w-8 text-center border-r border-slate-700/50">
+                                    <input type="checkbox" id="gatillo_global_chk" class="form-checkbox h-4 w-4 text-amber-500 rounded border-amber-500/50 bg-slate-800 focus:ring-0 focus:ring-offset-0 cursor-pointer" checked>
+                                </th>
+                                <th class="p-2 text-[10px] font-bold text-slate-300 uppercase tracking-wider"><label for="gatillo_global_chk" class="cursor-pointer">Cache Miss (Original)</label></th>
+                                <th class="p-2 text-[10px] font-bold text-amber-300 uppercase tracking-wider"><label for="gatillo_global_chk" class="cursor-pointer">Traducción Propuesta</label></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRowsHtml}
+                        </tbody>
+                      </table>
+                   </div>`,
+            showCancelButton: true,
+            confirmButtonText: '<i data-lucide="merge" class="w-4 h-4 inline mt-0.5"></i> Aprobar Carga',
+            cancelButtonText: 'Descartar',
+            confirmButtonColor: '#f59e0b',
+            background: '#0f172a', color: '#f8fafc',
+            width: '600px',
+            didOpen: () => {
+                const container = document.getElementById('gatillo_checkbox_container');
+                if (!container) return;
+                container.addEventListener('change', (e) => {
+                    if (e.target.id === 'gatillo_global_chk') {
+                        const isChecked = e.target.checked;
+                        const childChecks = container.querySelectorAll(`.gatillo-raw-chk`);
+                        childChecks.forEach(chk => chk.checked = isChecked);
+                    } else if (e.target.classList.contains('gatillo-raw-chk')) {
+                        const globalChk = document.getElementById('gatillo_global_chk');
+                        if (globalChk) {
+                            const childChecks = container.querySelectorAll(`.gatillo-raw-chk`);
+                            const allChecked = Array.from(childChecks).every(c => c.checked);
+                            const someChecked = Array.from(childChecks).some(c => c.checked);
+                            globalChk.checked = allChecked;
+                            globalChk.indeterminate = someChecked && !allChecked;
+                        }
+                    }
+                });
+                if (window.lucide) window.lucide.createIcons();
+            }
+        });
+
+        if (!resultModal.isConfirmed) {
+            Swal.fire({
+                title: 'Cancelado', 
+                text: 'La libreta no fue alterada.', 
+                icon: 'info', 
+                background: '#0f172a', color: '#f8fafc', timer: 1500, showConfirmButton: false
+            });
+            return;
+        }
+
+        let userApprovedMap = {};
+        document.querySelectorAll('.gatillo-raw-chk').forEach(chk => {
+             if (chk.checked) {
+                 userApprovedMap[chk.getAttribute('data-raw')] = chk.value;
+             }
+        });
+
+        if (Object.keys(userApprovedMap).length === 0) return;
         
         if (originalRule.logica[0].condicion && typeof originalRule.logica[0].condicion.valor === 'object') {
-            Object.assign(originalRule.logica[0].condicion.valor, mapToInject);
+            Object.assign(originalRule.logica[0].condicion.valor, userApprovedMap);
         }
         if (originalRule.logica[0].accion && typeof originalRule.logica[0].accion.valor === 'object') {
-            Object.assign(originalRule.logica[0].accion.valor, mapToInject);
+            Object.assign(originalRule.logica[0].accion.valor, userApprovedMap);
         }
         
         renderPipeline();
@@ -898,18 +1004,18 @@ export async function auditResidues() {
     
     const lastRule = currentDraftPipeline[currentDraftPipeline.length - 1];
     
-    let residualSamples = [];
     let physicalIdx = activeContext.colIndex;
-    if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) {
-        physicalIdx = parseInt(physicalIdx.replace('col_', ''));
+    if (physicalIdx === null || physicalIdx === undefined) {
+        if (window.Swal) Swal.fire('Error', 'Contexto perdido. Reabre el taller.', 'error');
+        return;
     }
     
-    if (isNaN(physicalIdx) || physicalIdx < 0) return;
+    let residualSamples = [];
     
     try {
         const rawRows = window.currentSheetData.slice(1);
         for(let row of rawRows) {
-            let crudo = String(row[physicalIdx] || "");
+            let crudo = resolveRawValueForRow(row, physicalIdx);
             if (!crudo.trim()) continue;
             
             let mutateResult = crudo;

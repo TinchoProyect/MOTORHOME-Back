@@ -248,3 +248,876 @@ TEXT: {
       "indices": [42, 43, 44, 49, 50, 51, 52, 53]
     },
     {
+
+--- INTENTO 1 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": 0,
+      "indices": [0, 1, 12, 24]
+    },
+    {
+      "maestro": 30125,
+      "indices": [2]
+    },
+    {
+      "maestro": 30126,
+      "indices": [3]
+    },
+    {
+      "maestro": 30129,
+      "indices": [4]
+    },
+    {
+      "maestro": 30327,
+      "indices": [5]
+    },
+    {
+      "maestro": 30328,
+      "indices": [6]
+    },
+    {
+      "maestro": 30329,
+      "indices": [7]
+    },
+    {
+      "maestro": 30334,
+      "indices": [8]
+    },
+    {
+      "maestro": 30425,
+      "indices": [9]
+    },
+    {
+      "maestro": 30432,
+      "indices": [10]
+    },
+    {
+      "maestro": 31509,
+      "indices": [11]
+    },
+    {
+
+
+--- INTENTO 1 CHUNK 2 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "30518",
+      "indices": [
+        "30"
+      ]
+    },
+    {
+      "maestro": "30526",
+      "indices": [
+        "31"
+      ]
+    },
+    {
+      "maestro": "30726",
+      "indices": [
+        "32"
+      ]
+    },
+    {
+      "maestro": "30727",
+      "indices": [
+        "33"
+      ]
+    },
+    {
+      "maestro": "30730",
+      "indices": [
+        "34"
+      ]
+    },
+    {
+      "maestro": "30731",
+      "indices": [
+        "35"
+      ]
+    },
+    {
+      "maestro": "30732",
+      "indices": [
+        "36"
+      ]
+    },
+    {
+      "maestro": "30733",
+      "indices": [
+        "37"
+      ]
+    },
+    {
+      "maestro": "30736",
+      "indices": [
+        "38"
+      ]
+    },
+    {
+      "maestro": "30833",
+      "indices": [
+        "39"
+      ]
+    },
+    {
+      "maestro": "30844",
+      "indices": [
+        "40"
+      ]
+    },
+    {
+      "maestro": "30850",
+      "indices": [
+        "41"
+      ]
+    },
+    {
+      "maestro": "30914",
+      "indices": [
+        "42"
+      ]
+    },
+    {
+      "maestro": "30920",
+      "indices": [
+        "43"
+      ]
+    },
+    {
+      "maestro": "32028",
+      "indices": [
+        "44"
+      ]
+    },
+    {
+      "maestro": "32029",
+      "indices": [
+        "45"
+      ]
+    },
+    {
+      "maestro": "32033",
+      "indices": [
+        "46"
+      ]
+    },
+    {
+      "maestro": "32034",
+      "indices": [
+        "47"
+      ]
+    },
+    {
+      "maestro": "32035",
+      "indices": [
+        "48"
+      ]
+    },
+    {
+      "maestro": "32109",
+      "indices": [
+        "49"
+      ]
+    },
+    {
+      "maestro": "32110",
+      "indices": [
+        "50"
+      ]
+    },
+    {
+      "maestro": "32503",
+      "indices": [
+        "51"
+      ]
+    },
+    {
+      "ma
+
+--- INTENTO 2 CHUNK 2 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "30518",
+      "indices": ["30"]
+    },
+    {
+      "maestro": "30526",
+      "indices": ["31"]
+    },
+    {
+      "maestro": "30726",
+      "indices": ["32"]
+    },
+    {
+      "maestro": "30727",
+      "indices": ["33"]
+    },
+    {
+      "maestro": "30730",
+      "indices": ["34"]
+    },
+    {
+      "maestro": "30731",
+      "indices": ["35"]
+    },
+    {
+      "maestro": "30732",
+      "indices": ["36"]
+    },
+    {
+      "maestro": "30733",
+      "indices": ["37"]
+    },
+    {
+      "maestro": "30736",
+      "indices": ["38"]
+    },
+    {
+      "maestro": "30833",
+      "indices": ["39"]
+    },
+    {
+      "maestro": "30844",
+      "indices": ["40"]
+    },
+
+--- INTENTO 1 CHUNK 8 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "23017",
+      "indices": ["210"]
+    },
+    {
+      "maestro": "23019",
+      "indices": ["211"]
+    },
+    {
+      "maestro": "23417",
+      "indices": ["212"]
+    },
+    {
+      "maestro": "23418",
+      "indices": ["213"]
+    },
+    {
+      "maestro": "70711",
+      "indices": ["214"]
+    },
+    {
+      "maestro": "70713",
+      "indices": ["215"]
+    },
+    {
+      "maestro": "70715",
+      "indices": ["216"]
+    },
+    {
+      "maestro": "70901",
+      "indices": ["217"]
+    },
+    {
+      "maestro": "70902",
+      "indices": ["218"]
+    },
+    {
+      "maestro": "Harina P.A.N",
+      "indices": ["219"]
+    },
+    {
+      "maestro": "70708",
+      "
+
+--- INTENTO 1 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "",
+      "indices": [
+        0
+      ]
+    },
+    {
+      "maestro": "3",
+      "indices": [
+        1,
+        2,
+        6
+      ]
+    },
+    {
+      "maestro": "836",
+      "indices": [
+        3
+      ]
+    },
+    {
+      "maestro": "820",
+      "indices": [
+        4,
+        10
+      ]
+    },
+    {
+      "maestro": "800",
+      "indices": [
+        5,
+        22,
+        24
+      ]
+    },
+    {
+      "maestro": "2,9",
+      "indices": [
+        7
+      ]
+    },
+    {
+      "maestro": "3,1",
+      "indices": [
+        8
+      ]
+    },
+    {
+      "maestro": "200",
+      "indices": [
+        9
+      ]
+    },
+    {
+      "maestro": "1",
+      "indices": [
+        11
+      ]
+    },
+    {
+      "maestro": "1,88",
+      "indices": [
+        12
+      ]
+    },
+
+
+--- INTENTO 2 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": null,
+      "indices": [0]
+    },
+    {
+      "maestro": 3.0,
+      "indices": [1, 2, 6]
+    },
+    {
+      "maestro": 836.0,
+      "indices": [3]
+    },
+    {
+      "maestro": 820.0,
+      "indices": [4, 10]
+    },
+    {
+      "maestro": 800.0,
+      "indices": [5, 22, 24]
+    },
+    {
+      "maestro": 2.9,
+      "indices": [7]
+    },
+    {
+      "maestro": 3.1,
+      "indices": [8]
+    },
+    {
+      "maestro": 200.0,
+      "indices": [9]
+    },
+    {
+      "maestro": 1.0,
+      "indices": [11]
+    },
+    {
+      "maestro": 1.88,
+      "indices": [12]
+    },
+    {
+      "maestro": 170.0,
+      "indices": [13, 14, 15, 
+
+--- INTENTO 1 CHUNK 2 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "2,84",
+      "indices": [
+        30
+      ]
+    },
+    {
+      "maestro": "400",
+      "indices": [
+        31,
+        32,
+        37
+      ]
+    },
+    {
+      "maestro": "284",
+      "indices": [
+        33,
+        34
+      ]
+    },
+    {
+      "maestro": "800",
+      "indices": [
+        35,
+        44
+      ]
+    },
+    {
+      "maestro": "2",
+      "indices": [
+        36
+      ]
+    },
+    {
+      "maestro": "2,93",
+      "indices": [
+        38
+      ]
+    },
+    {
+      "maestro": "430",
+      "indices": [
+        39
+      ]
+    },
+    {
+      "maestro": "330",
+      "indices": [
+        40
+      ]
+    },
+    {
+      "maestro": "300",
+      "indices": [
+        41,
+        42,
+        43,
+        48,
+        49,
+        50,
+
+
+--- INTENTO 1 CHUNK 5 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "500",
+      "indices": [
+        "120"
+      ]
+    },
+    {
+      "maestro": "25",
+      "indices": [
+        "121",
+        "128",
+        "129",
+        "132",
+        "140"
+      ]
+    },
+    {
+      "maestro": "10",
+      "indices": [
+        "122",
+        "127"
+      ]
+    },
+    {
+      "maestro": "1",
+      "indices": [
+        "123",
+        "124",
+        "125",
+        "126",
+        "130",
+        "134",
+        "135",
+        "136",
+        "143",
+        "146",
+        "147",
+        "148",
+        "149"
+      ]
+    },
+    {
+      "maestro": "5",
+      "indices": [
+        "131",
+        "141",
+        "142"
+      ]
+    },
+    {
+      "maestro": "22,68",
+
+--- INTENTO 1 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "",
+      "indices": [0]
+    },
+    {
+      "maestro": "565",
+      "indices": [1]
+    },
+    {
+      "maestro": "800",
+      "indices": [2, 7, 8]
+    },
+    {
+      "maestro": "850",
+      "indices": [3, 12]
+    },
+    {
+      "maestro": "820",
+      "indices": [4]
+    },
+    {
+      "maestro": "410",
+      "indices": [5]
+    },
+    {
+      "maestro": "425",
+      "indices": [6]
+    },
+    {
+      "maestro": "396",
+      "indices": [9]
+    },
+    {
+      "maestro": "750",
+      "indices": [10]
+    },
+    {
+      "maestro": "2.93",
+      "indices": [11]
+    },
+    {
+      "maestro": "400",
+      "indices": [13]
+    },
+    {
+      "maestro": "25",
+      "indices": [14, 15,
+
+--- INTENTO 2 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "0",
+      "indices": [
+        0
+      ]
+    },
+    {
+      "maestro": "565",
+      "indices": [
+        1
+      ]
+    },
+    {
+      "maestro": "800",
+      "indices": [
+        2,
+        7,
+        8
+      ]
+    },
+    {
+      "maestro": "850",
+      "indices": [
+        3,
+        12
+      ]
+    },
+    {
+      "maestro": "820",
+      "indices": [
+        4
+      ]
+    },
+    {
+      "maestro": "410",
+      "indices": [
+        5
+      ]
+    },
+    {
+      "maestro": "425",
+      "indices": [
+        6
+      ]
+    },
+    {
+      "maestro": "396",
+      "indices": [
+        9
+      ]
+    },
+    {
+      "maestro": "750",
+      "indices": [
+        10
+      ]
+    },
+    {
+      "maestro": "2.93",
+      "indices": [
+        11
+      ]
+    },
+    {
+      "
+
+--- INTENTO 3 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "0",
+      "indices": [0]
+    },
+    {
+      "maestro": "565",
+      "indices": [1]
+    },
+    {
+      "maestro": "800",
+      "indices": [2, 7, 8]
+    },
+    {
+      "maestro": "850",
+      "indices": [3, 12]
+    },
+    {
+      "maestro": "820",
+      "indices": [4]
+    },
+    {
+      "maestro": "410",
+      "indices": [5]
+    },
+    {
+      "maestro": "425",
+      "indices": [6]
+    },
+    {
+      "maestro": "396",
+      "indices": [9]
+    },
+    {
+      "maestro": "750",
+      "indices": [10]
+    },
+    {
+      "maestro": "2.93",
+      "indices": [11]
+    },
+    {
+      "maestro": "400",
+      "indices": [13]
+    },
+    {
+      "maestro": "25",
+      "indices": [14
+
+--- INTENTO 1 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "0",
+      "indices": [0]
+    },
+    {
+      "maestro": "1",
+      "indices": [17, 23, 25]
+    },
+    {
+      "maestro": "2.93",
+      "indices": [11]
+    },
+    {
+      "maestro": "10",
+      "indices": [22]
+    },
+    {
+      "maestro": "22.68",
+      "indices": [21]
+    },
+    {
+      "maestro": "25",
+      "indices": [14, 15, 16, 18, 19]
+    },
+    {
+      "maestro": "150",
+      "indices": [26, 27, 28]
+    },
+    {
+      "maestro": "250",
+      "indices": [29]
+    },
+    {
+      "maestro": "396",
+      "indices": [9]
+    },
+    {
+      "maestro": "400",
+      "indices": [13]
+    },
+    {
+      "maestro": "410",
+      "indices": [5]
+
+--- INTENTO 2 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "0",
+      "indices": [
+        0
+      ]
+    },
+    {
+      "maestro": "565",
+      "indices": [
+        1
+      ]
+    },
+    {
+      "maestro": "800",
+      "indices": [
+        2,
+        7,
+        8
+      ]
+    },
+    {
+      "maestro": "850",
+      "indices": [
+        3,
+        12
+      ]
+    },
+    {
+      "maestro": "820",
+      "indices": [
+        4
+      ]
+    },
+    {
+      "maestro": "410",
+      "indices": [
+        5
+      ]
+    },
+    {
+      "maestro": "425",
+      "indices": [
+        6
+      ]
+    },
+    {
+      "maestro": "396",
+      "indices": [
+        9
+      ]
+    },
+    {
+      "maestro": "750",
+      "indices": [
+        10
+      ]
+    },
+    {
+      "maestro": "2,93",
+      "indices": [
+        11
+      ]
+    },
+    {
+      "
+
+--- INTENTO 3 CHUNK 1 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "",
+      "indices": [0]
+    },
+    {
+      "maestro": "565",
+      "indices": [1]
+    },
+    {
+      "maestro": "800",
+      "indices": [2, 7, 8]
+    },
+    {
+      "maestro": "850",
+      "indices": [3, 12]
+    },
+    {
+      "maestro": "820",
+      "indices": [4]
+    },
+    {
+      "maestro": "410",
+      "indices": [5]
+    },
+    {
+      "maestro": "425",
+      "indices": [6]
+    },
+    {
+      "maestro": "396",
+      "indices": [9]
+    },
+    {
+      "maestro": "750",
+      "indices": [10]
+    },
+    {
+      "maestro": "2.93",
+      "indices": [11]
+    },
+    {
+      "maestro": "400",
+      "indices": [13]
+    },
+    {
+      "maestro": "25",
+      "indices": [14, 

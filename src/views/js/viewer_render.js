@@ -594,7 +594,54 @@ function renderVirtualTable(originalData) {
                                     const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps);
                                     resultDisplay = evalres.resultDisplay;
                                     mathResult = evalres.mathResult;
-                                    if(evalres.rejected) cellClass += ' bg-red-900/30 text-red-400 border border-red-500/50';
+                                    
+                                    // [Fase 5.2] Detectar Cache Misses en Ghost Columns (Naranja)
+                                    let isGhostCacheMiss = false;
+                                    const savedPipe = window.draftPipelines && window.draftPipelines[calcConfig.id] ? window.draftPipelines[calcConfig.id].rules : null;
+                                    const cPipe = (activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === calcConfig.id) ? activeEtlState.pipeline : savedPipe;
+                                    const isGlobalAuditOnGhost = window.isGlobalPreviewEnabled && savedPipe && savedPipe.length > 0;
+                                    const isWorkshopOpenGhost = activeEtlState && activeEtlState.isOpen && activeEtlState.colIndex === calcConfig.id;
+
+                                    if ((isGlobalAuditOnGhost || isWorkshopOpenGhost) && cPipe && cPipe.length > 0) {
+                                        let libretaDict = null;
+                                        cPipe.forEach(r => {
+                                             let isDictRule = false;
+                                             let dictObj = null;
+                                             if (r.tipo === 'ast_conditional' && r.logica && r.logica[0]) {
+                                                 const cond = r.logica[0].condicion;
+                                                 const act = r.logica[0].accion;
+                                                 if (cond && cond.operador === 'IN_DICT_KEYS' && typeof cond.valor === 'object' && cond.valor !== null) {
+                                                     isDictRule = true; dictObj = cond.valor;
+                                                 } else if (act && act.tipo_accion === 'DICTIONARY_REPLACE' && typeof act.valor === 'object' && act.valor !== null) {
+                                                     isDictRule = true; dictObj = act.valor;
+                                                 }
+                                             }
+                                             if (isDictRule) libretaDict = dictObj;
+                                        });
+
+                                        const crudoGhost = String(mathResult || "").trim();
+                                        if (libretaDict && crudoGhost !== "" && libretaDict[crudoGhost] === undefined) {
+                                            if (evalres.rejected || String(resultDisplay).trim() === "" || resultDisplay == crudoGhost) {
+                                                isGhostCacheMiss = true;
+                                            }
+                                        }
+                                    }
+
+                                    if (isGhostCacheMiss) {
+                                        cellClass = cellClass.replace('bg-fuchsia-950/20', '');
+                                        cellClass += " bg-amber-500/15 border border-amber-500/40 text-amber-300 relative font-bold shadow-[inset_0_0_10px_rgba(245,158,11,0.1)]";
+                                        resultDisplay = `
+                                            <div class="flex items-center gap-2">
+                                                <span class="truncate" title="${String(resultDisplay).replace(/"/g, '&quot;')}">${resultDisplay}</span>
+                                                <div class="relative flex items-center justify-center">
+                                                    <div class="absolute w-2 h-2 bg-amber-500 rounded-full animate-ping opacity-75"></div>
+                                                    <i data-lucide="database-zap" class="w-3 h-3 flex-shrink-0 text-amber-400 relative z-10"></i>
+                                                </div>
+                                            </div>
+                                        `;
+                                    } else if(evalres.rejected) {
+                                         cellClass += ' bg-red-900/30 text-red-400 border border-red-500/50';
+                                    }
                                 }
                             }
                         }
