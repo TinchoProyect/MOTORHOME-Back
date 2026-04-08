@@ -253,6 +253,62 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
         console.warn("⏳ [V4] Save already in progress, queuing or ignoring to prevent race conditions.");
         return;
     }
+
+    // --- UX INTERCEPTOR: Prevenir Autoguardado silencioso sobre Flujos Heredados ---
+    // Si hay un flujo heredado, y no ha sido ya respondida la bifurcación
+    if (window.globalContext && window.globalContext.flujoId && window.globalContext.flujoId !== 'CRUDO') {
+        if (!window._hasPromptedFlowDerivation && !window.globalContext._isLocalSessionFlow) {
+            
+            const selectEl = document.getElementById('headerFlujoSelect');
+            let currentName = "Plantilla Activa";
+            if (selectEl && selectEl.options[selectEl.selectedIndex]) {
+                currentName = selectEl.options[selectEl.selectedIndex].text;
+            }
+
+            if (typeof Swal !== 'undefined') {
+                window._isSavingSimulationLock = true; // Lock before Swal to prevent re-entry
+                
+                const result = await Swal.fire({
+                    title: 'Modificación de Flujo',
+                    html: `Estás a punto de modificar el flujo heredado <b>${currentName}</b>.<br><br>¿Deseas aplicar estos cambios al flujo actual o crear un flujo nuevo para evitar alterar el original?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    showDenyButton: true,
+                    confirmButtonText: '<i data-lucide="copy" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Crear Flujo Nuevo',
+                    confirmButtonColor: '#d65ce6',
+                    denyButtonText: '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Sobrescribir Actual',
+                    denyButtonColor: '#10b981',
+                    cancelButtonText: 'Cancelar'
+                });
+                
+                if (result.isConfirmed) {
+                    // "Crear Flujo Nuevo"
+                    let nombreFlujo = prompt("🏁 Ingrese un nombre único para la nueva Plantilla:", `${currentName} (Derivado)`);
+                    if (!nombreFlujo || nombreFlujo.trim() === '') {
+                        window._isSavingSimulationLock = false;
+                        return; // Aborta
+                    }
+                    // Forzar guardado profundo inicial para bifurcar el estado del sistema hacia la DB
+                    await window._executeFlujoSave(null, nombreFlujo.trim());
+                    // Marcar para no volver a molestar
+                    window.globalContext._isLocalSessionFlow = true;
+                    window._hasPromptedFlowDerivation = true;
+                } else if (result.isDenied) {
+                    // "Sobrescribir Actual"
+                    window._hasPromptedFlowDerivation = true;
+                } else {
+                    // Cancelar
+                    window._isSavingSimulationLock = false;
+                    return;
+                }
+                
+                window._isSavingSimulationLock = false; // Unlock for the real execution
+                if (window.lucide) window.lucide.createIcons();
+            }
+        }
+    }
+    // -------------------------------------------------------------------------------
+
     window._isSavingSimulationLock = true;
 
     // 1. Validaciones Básicas
