@@ -253,7 +253,7 @@
                             <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Proveedores Activos</span>
                         </div>
                         <div class="mt-auto flex items-end justify-between">
-                            <span class="text-4xl font-black text-white font-mono tracking-tighter drop-shadow-md">142</span>
+                            <span id="widget-active-providers" class="text-4xl font-black text-white font-mono tracking-tighter drop-shadow-md cursor-default">--</span>
                             <span class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md font-bold">+12%</span>
                         </div>
                     </div>
@@ -1619,6 +1619,43 @@
                 btn.disabled = false;
             }
         }
+
+        // ==========================================
+        // DYNAMIC WIDGETS INIT
+        // ==========================================
+        async function loadActiveProvidersCount() {
+            try {
+                const badge = document.getElementById('widget-active-providers');
+                if (!badge) return;
+                
+                badge.innerHTML = '<i data-lucide="loader-2" class="w-6 h-6 animate-spin text-blue-500/50 inline-block"></i>';
+                if (window.lucide) window.lucide.createIcons();
+
+                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const res = await fetch(`${backendUrl}/api/master-table/providers/active-count`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.success) {
+                        badge.innerHTML = json.count;
+                    } else {
+                        badge.innerHTML = '--';
+                    }
+                } else {
+                    badge.innerHTML = '--';
+                }
+            } catch(e) {
+                console.error("Error loading active providers count:", e);
+                const badge = document.getElementById('widget-active-providers');
+                if (badge) badge.innerHTML = '--';
+            }
+        }
+
+        // Init on script load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadActiveProvidersCount();
+        });
+        // Also call now in case DOMContentLoaded already fired (common in SPA-like navigation)
+        loadActiveProvidersCount();
     </script>
 </body>
 

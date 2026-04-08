@@ -18,6 +18,11 @@ router.patch('/dictionary/:id/toggle', masterTableController.toggleMasterFieldSt
 router.delete('/dictionary/:id', masterTableController.deleteMasterField);
 
 // ==========================================
+// WIDGETS DATA
+// ==========================================
+router.get('/providers/active-count', masterTableController.getActiveProvidersCount);
+
+// ==========================================
 // V5: CRUD DE CATEGORÍAS (Solapas Dinámicas)
 // ==========================================
 router.get('/categories', masterTableController.getCategories);

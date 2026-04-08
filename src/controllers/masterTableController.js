@@ -33,6 +33,27 @@ async function getMasterFields(req, res) {
     }
 }
 
+// GET /api/master-table/providers/active-count
+async function getActiveProvidersCount(req, res) {
+    try {
+        console.log(`[MasterTableController] 🔍 Consultando cantidad de proveedores activos...`);
+        const { count, error } = await supabase
+            .from('proveedores')
+            .select('*', { count: 'exact', head: true })
+            .eq('activo', true);
+
+        if (error) {
+            console.error("[MasterTableController] Error DB:", error);
+            return res.status(500).json({ success: false, error: error.message });
+        }
+
+        return res.json({ success: true, count: count || 0 });
+    } catch (error) {
+        console.error("[MasterTableController] Catch Error getActiveProvidersCount:", error);
+        return res.status(500).json({ success: false, error: "Error interno del servidor", details: error.message });
+    }
+}
+
 // POST /api/master-table/dictionary
 async function createMasterField(req, res) {
     try {
@@ -347,6 +368,7 @@ async function deleteCategory(req, res) {
 
 module.exports = {
     getMasterFields,
+    getActiveProvidersCount,
     createMasterField,
     updateMasterField,
     toggleMasterFieldStatus,
