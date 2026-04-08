@@ -686,8 +686,8 @@ async function rollbackFiles(req, res) {
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
         return res.status(400).json({ error: "No se seleccionaron archivos." });
     }
-    if (!['ROLLBACK', 'UNLINK'].includes(action)) {
-        return res.status(400).json({ error: "Acción inválida. Use ROLLBACK o UNLINK." });
+    if (!['ROLLBACK', 'UNLINK', 'REMOVE_EXTRACTION'].includes(action)) {
+        return res.status(400).json({ error: "Acción inválida. Use ROLLBACK, UNLINK o REMOVE_EXTRACTION." });
     }
 
     try {
@@ -757,13 +757,24 @@ async function rollbackFiles(req, res) {
 
                 if (delItemsError) throw new Error("Error borrando items hijos: " + delItemsError.message);
 
-                // Paso 2: Padre (Lista Raw)
-                const { error: delListError } = await supabase
-                    .from('proveedor_listas_raw')
-                    .delete()
-                    .eq('id', rawListId);
+                // Paso 2: Padre (Lista Raw o Degradación Lógica)
+                if (action === 'REMOVE_EXTRACTION') {
+                    console.log(`   -> [Option C] Limpieza Quirúrgica. Degradando estado a CONFIRMED para preservarla.`);
+                    const { error: updateError } = await supabase
+                        .from('proveedor_listas_raw')
+                        .update({ status_global: 'CONFIRMED' })
+                        .eq('id', rawListId);
+                    
+                    if (updateError) throw new Error("Error degradando registro padre: " + updateError.message);
+                } else {
+                    console.log(`   -> Eliminando registro raíz (Lista Raw) de Base de Datos...`);
+                    const { error: delListError } = await supabase
+                        .from('proveedor_listas_raw')
+                        .delete()
+                        .eq('id', rawListId);
 
-                if (delListError) throw new Error("Error borrando registro padre: " + delListError.message);
+                    if (delListError) throw new Error("Error borrando registro padre: " + delListError.message);
+                }
 
                 results.processed++;
 
@@ -961,6 +972,51 @@ async function deleteTemplateConfig(req, res) {
     }
 }
 
+// =============================================================================
+// UPLOAD DIRECT FILE TO DRIVE via BUFFER
+// =============================================================================
+async function uploadDirectFile(req, res) {
+    try {
+        console.log("[FilesController] Received upload request via Multer.");
+        
+        if (!req.file) {
+            return res.status(400).json({ error: "No se proporcionó ningún archivo." });
+        }
+        
+        const folderId = req.body.folderId;
+        if (!folderId) {
+            return res.status(400).json({ error: "No se proporcionó un ID de carpeta destino (folderId)." });
+        }
+
+        const allowedMimeTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'text/csv' // .csv
+        ];
+
+        // Strict UI Validation matching Backend (Safe Fallback via extension)
+        if (!allowedMimeTypes.includes(req.file.mimetype) && !req.file.originalname.match(/\.(xlsx|xls|csv)$/i)) {
+            console.error(`[FilesController] Upload rejected. Invalid mime: ${req.file.mimetype}`);
+            return res.status(415).json({ error: "Formato de archivo no soportado. Solo se permiten archivos Excel o CSV." });
+        }
+
+        console.log(`[FilesController] Uploading ${req.file.originalname} (${req.file.size} bytes) to folder ${folderId}`);
+        
+        const uploadedFile = await driveService.uploadBufferToFile(
+            req.file.originalname, 
+            req.file.mimetype, 
+            req.file.buffer, 
+            folderId
+        );
+
+        res.json({ success: true, file: uploadedFile, message: "Archivo cargado correctamente en Drive." });
+
+    } catch (error) {
+        console.error("[FilesController] Upload error:", error);
+        res.status(500).json({ error: "Error en servidor al cargar el archivo a Drive. " + error.message });
+    }
+}
+
 module.exports = {
     listFiles,
     processExtraction,
@@ -977,5 +1033,6 @@ module.exports = {
     saveTemplateConfig,
     getTemplateConfig,
     deleteTemplateConfig,
-    assignFlujoToFile
+    assignFlujoToFile,
+    uploadDirectFile
 };

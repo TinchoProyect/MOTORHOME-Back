@@ -108,9 +108,15 @@ window.confirmIngestion = async function () {
 
 
 
-            // Cerrar Modal y refrescar
+            // Cerrar Modal y refrescar (Rebote determinista para Estado UI del Padre)
             if (window.closeViewerModal) window.closeViewerModal();
-
+            
+            // Hooks a la arquitectura del Dashboard
+            const providerContext = window.globalContext?.providerId || window.currentActiveProviderId;
+            if (providerContext) {
+                if (window.fetchProcessedFiles) window.fetchProcessedFiles(providerContext);
+                if (window.exploreSupplierFiles) window.exploreSupplierFiles(providerContext); // Hook a Pendientes si aplica
+            }
             // Helper to get current Drive Folder ID (Robust Context Aware)
             const getDriveFolderId = () => {
                 // 1. Priority: Global Memory (The "Ghost" Folder)

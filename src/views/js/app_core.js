@@ -275,10 +275,16 @@ function renderFileGrid(files, folderId) {
                         </button>
                     </div>
                 </div>
-                
-                <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" class="px-3 py-1.5 bg-slate-800 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 border border-slate-700 rounded-lg text-xs font-medium transition-all flex items-center gap-2">
-                    Drive Exte&shy;rno <i data-lucide="external-link" class="w-3 h-3"></i>
-                </a>
+                <div class="flex items-center gap-2 relative">
+                    <!-- Contenedor Reactivo Inyectable para UploadButton (Oculto en Db/Procesados) -->
+                    <div id="uploadButtonContainer"></div>
+
+                    <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" 
+                        class="px-3 py-2 bg-slate-900/50 hover:bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-800 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 shrink-0"
+                        title="Ver carpeta original en Google Drive">
+                        Drive <i data-lucide="external-link" class="w-3 h-3"></i>
+                    </a>
+                </div>
             </div>
 
             <!-- CONTAINER DRIVE (DEFAULT) -->
@@ -301,7 +307,7 @@ function renderFileGrid(files, folderId) {
             const colorClass = getColor(file.mimeType);
 
             html += `
-                <div onclick="handleFileClick('${file.id}', '${file.name}')" class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
+                <div onclick="handleFileClick('${file.id}', '${file.name}', 'ingestion')" class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
                     <!-- External Link (Corner) -->
                     <a href="${file.webViewLink}" target="_blank" onclick="event.stopPropagation()" class="absolute top-2 right-2 p-1 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Abrir en Drive">
                         <i data-lucide="external-link" class="w-3 h-3"></i>
@@ -341,7 +347,85 @@ function renderFileGrid(files, folderId) {
     if (window.initDashboardTabs) window.initDashboardTabs();
 }
 
-async function handleFileClick(fileId, fileName) {
+// ============================================================================
+// Carga Estricta de Archivos a Google Drive (Upload Node Pipe)
+// ============================================================================
+window.uploadSelectedFile = async function(event, folderId) {
+    const file = event.target.files[0];
+    if (!file || !folderId) return;
+
+    // Strict Size Bound Verification Frontend-side
+    const maxMB = 50;
+    if (file.size > maxMB * 1024 * 1024) {
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Carga DENEGADA', text: `El archivo supera el límite máximo estricto de ${maxMB} MB.`, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        else alert(`Error: Archivo muy grande. Límite ${maxMB} MB.`);
+        event.target.value = ''; // Reset input
+        return;
+    }
+
+    const btn = document.getElementById(`btnNativeUpload_${folderId}`);
+    const icon = document.getElementById(`iconNativeUpload_${folderId}`);
+
+    // UI Loading Lock
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin text-white"></i> Inyectando...`;
+        lucide.createIcons();
+    }
+
+    // Prepare Multipart FormData
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folderId', folderId);
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${backendUrl}/api/files/upload`, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Fallo en la comunicación con la API.");
+        }
+
+        console.log(`[UploadService] Archivo inyectado con éxito: ${data.file.id}`);
+        // Limpiamos el File Input Local por seguridad
+        event.target.value = '';
+
+        // Feedback
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Ingesta Exitosa',
+                text: 'El archivo ya se encuentra persistido en Drive.',
+                icon: 'success',
+                timer: 2000,
+                background: '#0f172a', color: '#f8fafc',
+                showConfirmButton: false
+            });
+        }
+
+        // Determinist Lifecycle: Rehidratación ciega de la lista actual.
+        // Dado que este archivo forzosamente reside en "Pendientes", explorar la carpeta refresca visualmente este tab.
+        window.exploreSupplierFiles(folderId);
+
+    } catch (error) {
+        console.error("[UploadService] Error: ", error);
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error de Ingesta', text: error.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        else alert("Error al subir archivo: " + error.message);
+        
+        // Restore UI Lock
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="upload-cloud" class="w-4 h-4"></i> Buscar Archivo`;
+            lucide.createIcons();
+        }
+    }
+}
+
+async function handleFileClick(fileId, fileName, context = null) {
     console.log("Abriendo visor para:", fileName);
     if (!window.openFileViewer) {
         console.error("Módulo ViewerEngine no cargado");
@@ -356,11 +440,12 @@ async function handleFileClick(fileId, fileName) {
         const res = await fetch(`${backendUrl}/api/flujos/${providerId}`);
         const flujos = await res.json();
 
-        if (flujos && flujos.length > 0) {
+        // Aplicamos política estricta de omisión si el contexto es 'ingestion' (pestaña Pendientes)
+        if (flujos && flujos.length > 0 && context !== 'ingestion') {
             // Mostrar modal inyectado al vuelo
             mostrarModalSelectorFlujos(fileId, fileName, providerId, flujos);
         } else {
-            // No hay flujos, Blank Slate directo
+            // No hay flujos o se omitieron por contexto (Blank Slate directo)
             window.openFileViewer(fileId, fileName, providerId, null);
         }
     } catch (e) {

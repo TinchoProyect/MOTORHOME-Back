@@ -1,11 +1,10 @@
 const { google } = require('googleapis');
-const { JWT } = require('google-auth-library');
 const path = require('path');
 const fs = require('fs');
+const { PassThrough } = require('stream');
 
 // Config
-const SCOPES = ['https://www.googleapis.com/auth/drive'];
-const KEY_FILE_PATH = path.join(__dirname, '../../service-account.json');
+const OAUTH_FILE_PATH = path.join(__dirname, '../../oauth2_tokens.json');
 
 // State
 let driveClient = null;
@@ -13,26 +12,27 @@ let driveClient = null;
 async function getDriveClient() {
     if (driveClient) return driveClient;
 
-    if (!fs.existsSync(KEY_FILE_PATH)) {
-        throw new Error(`[DriveService] Falta service-account.json en: ${KEY_FILE_PATH}`);
+    if (!fs.existsSync(OAUTH_FILE_PATH)) {
+        throw new Error(`[DriveService] Falta oauth2_tokens.json en: ${OAUTH_FILE_PATH}`);
     }
 
     // Read Key File
-    const keys = JSON.parse(fs.readFileSync(KEY_FILE_PATH, 'utf8'));
+    const keys = JSON.parse(fs.readFileSync(OAUTH_FILE_PATH, 'utf8'));
 
-    console.log("[DriveService] Inicializando JWT Auth (vía KeyFile)...");
+    console.log("[DriveService] Inicializando OAuth2 Auth con Cuota de Google One...");
 
-    const client = new JWT({
-        email: keys.client_email,
-        keyFile: KEY_FILE_PATH, // Delegate parsing to library (fixes \n issues)
-        scopes: SCOPES,
+    const oauth2Client = new google.auth.OAuth2(
+        keys.client_id,
+        keys.client_secret,
+        'http://localhost'
+    );
+    
+    oauth2Client.setCredentials({ 
+        refresh_token: keys.refresh_token 
     });
 
-    // Explicitly verify connection
-    await client.authorize();
-
-    driveClient = google.drive({ version: 'v3', auth: client });
-    console.log("   [DriveService] Cliente JWT Autenticado OK.");
+    driveClient = google.drive({ version: 'v3', auth: oauth2Client });
+    console.log("   [DriveService] Cliente OAuth2 Autenticado OK.");
     return driveClient;
 }
 
@@ -200,11 +200,48 @@ async function moveFile(fileId, targetFolderId) {
     }
 }
 
+/**
+ * Upload a File from Memory Buffer to Drive
+ */
+async function uploadBufferToFile(fileName, mimeType, fileBuffer, parentId) {
+    const drive = await getDriveClient();
+    
+    const bufferStream = new PassThrough();
+    bufferStream.end(fileBuffer);
+
+    try {
+        const fileMetadata = {
+            name: fileName,
+            parents: [parentId]
+        };
+        const media = {
+            mimeType: mimeType,
+            body: bufferStream
+        };
+        
+        console.log(`[DriveService] Uploading stream for ${fileName} to folder ${parentId}...`);
+
+        const file = await drive.files.create({
+            resource: fileMetadata,
+            media: media,
+            fields: 'id, name, webViewLink, parents'
+        });
+        
+        console.log(`[DriveService] Upload Complete: ${fileName} (ID: ${file.data.id})`);
+        return file.data;
+
+    } catch (error) {
+        console.error(`[DriveService] Error uploading file ${fileName}:`, error.message);
+        throw error;
+    }
+}
+
 module.exports = {
     listFiles,
     getFileContent,
     getFileMetadata,
     getFileStream,
     createFolder,
-    moveFile
+    moveFile,
+    uploadBufferToFile
 };

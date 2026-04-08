@@ -1,6 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const filesController = require('../controllers/filesController');
+const multer = require('multer');
+
+// Memory storage for Drive streaming (avoids local disk I/O)
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 } // 50 MB
+});
+
+// POST /api/files/upload (Direct Drive Upload)
+router.post('/upload', upload.single('file'), filesController.uploadDirectFile);
 
 // GET /api/files/list?folderId=...
 router.get('/list', filesController.listFiles);

@@ -46,11 +46,25 @@ window.DashboardActions = (function () {
         }
     }
 
+    // State flags for the current context
+    let _hasExtracted = false;
+
     // 2. Open Decision Modal
     function openRollbackModal(ids = null, providerId = null) {
-        // Get Context from Global if not passed (Dependency Injection preferred but fallback to global for now)
-        _selectedIds = ids || Array.from(window.selectedFiles || []);
+        // Get Context from Global if not passed
+        _selectedIds = ids || (window.selectedFiles ? Array.from(window.selectedFiles.keys()) : []);
         _providerId = providerId || window.currentActiveProviderId;
+
+        // Context Evaluation (Detect if ANY file is extracted)
+        _hasExtracted = false;
+        if (window.selectedFiles && window.selectedFiles.size > 0) {
+            for (const value of window.selectedFiles.values()) {
+                if (value.isExtraido) {
+                    _hasExtracted = true;
+                    break;
+                }
+            }
+        }
 
         if (_selectedIds.length === 0) return;
 
@@ -81,34 +95,54 @@ window.DashboardActions = (function () {
                     ¿Qué destino deseas dar a estos archivos? Esta acción afectará la base de datos y los archivos físicos.
                 </p>
 
-                <div class="grid gap-3">
+                <div class="grid gap-4">
                     <!-- Opción A: ROLLBACK -->
-                    <button onclick="window.DashboardActions.executeRollback('ROLLBACK')" 
-                        class="group relative flex items-start gap-3 p-4 rounded-xl border border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-400 transition-all text-left">
-                        <div class="mt-0.5 text-blue-400 group-hover:text-blue-300">
-                            <i data-lucide="undo-2" class="w-5 h-5"></i>
+                    <div class="rounded-xl border border-blue-500/30 bg-blue-500/5 hover:border-blue-400 transition-all p-4">
+                        <button onclick="window.DashboardActions.executeRollback('ROLLBACK')" 
+                            class="group relative flex items-start gap-3 w-full text-left">
+                            <div class="mt-0.5 text-blue-400 group-hover:text-blue-300">
+                                <i data-lucide="undo-2" class="w-5 h-5"></i>
+                            </div>
+                            <div class="flex-1">
+                                <span class="block text-sm font-bold text-blue-100 mb-1">Volver a Pendientes (Rollback Total)</span>
+                                <span class="block text-xs text-blue-300/60 leading-relaxed">
+                                    Mueve el archivo al Inbox y borra el registro de ingestión.
+                                </span>
+                            </div>
+                        </button>
+                        ${_hasExtracted ? `
+                        <div class="mt-4 pt-3 border-t border-blue-500/20 flex flex-col gap-2">
+                            <label class="flex items-center gap-2 cursor-pointer text-xs text-blue-200/80">
+                                <input type="checkbox" id="toggleDist_A" class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer" checked>
+                                ¿Eliminar también la información ingresada en el sistema destino?
+                            </label>
                         </div>
-                        <div>
-                            <span class="block text-sm font-bold text-blue-100 mb-1">Volver a Pendientes (Rollback)</span>
-                            <span class="block text-xs text-blue-300/60 leading-relaxed">
-                                Mueve el archivo físico de vuelta a la carpeta "Inbox" (o Raíz) y borra los datos extraídos. Ideal para re-intentar.
-                            </span>
-                        </div>
-                    </button>
+                        ` : ''}
+                    </div>
 
                     <!-- Opción B: UNLINK -->
-                    <button onclick="window.DashboardActions.executeRollback('UNLINK')"
-                        class="group relative flex items-start gap-3 p-4 rounded-xl border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 hover:border-red-400 transition-all text-left">
-                        <div class="mt-0.5 text-red-400 group-hover:text-red-300">
-                            <i data-lucide="scissors" class="w-5 h-5"></i>
+                    <div class="rounded-xl border border-red-500/30 bg-red-500/5 hover:border-red-400 transition-all p-4">
+                        <button onclick="window.DashboardActions.executeRollback('UNLINK')"
+                            class="group relative flex items-start gap-3 w-full text-left">
+                            <div class="mt-0.5 text-red-400 group-hover:text-red-300">
+                                <i data-lucide="scissors" class="w-5 h-5"></i>
+                            </div>
+                            <div class="flex-1">
+                                <span class="block text-sm font-bold text-red-100 mb-1">Solo Desvincular (Unlink)</span>
+                                <span class="block text-xs text-red-300/60 leading-relaxed">
+                                    Dejar el archivo en "Procesados" pero limpiar el registro en la BD LAMDA.
+                                </span>
+                            </div>
+                        </button>
+                        ${_hasExtracted ? `
+                        <div class="mt-4 pt-3 border-t border-red-500/20 flex flex-col gap-2">
+                            <label class="flex items-center gap-2 cursor-pointer text-xs text-red-200/80">
+                                <input type="checkbox" id="toggleDist_B" class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-red-500 focus:ring-red-500 cursor-pointer">
+                                Eliminar también los registros impactados en el sistema destino
+                            </label>
                         </div>
-                        <div>
-                            <span class="block text-sm font-bold text-red-100 mb-1">Solo Desvincular (Unlink)</span>
-                            <span class="block text-xs text-red-300/60 leading-relaxed">
-                                Borra los registros de la base de datos pero <strong>DEJA</strong> el archivo en "Procesados". Útil para limpieza de datos.
-                            </span>
-                        </div>
-                    </button>
+                        ` : ''}
+                    </div>
                     
                     <button onclick="window.DashboardActions.closeModal()" 
                         class="mt-2 w-full py-3 text-xs font-bold text-slate-500 hover:text-white transition-colors uppercase tracking-wider">
@@ -153,13 +187,52 @@ window.DashboardActions = (function () {
         const loader = document.getElementById('rollbackLoader');
         const status = document.getElementById('rollbackStatus');
 
+        // Evaluate Toggles
+        let deleteDestination = false;
+        if (_hasExtracted) {
+            if (action === 'ROLLBACK') {
+                const elA = document.getElementById('toggleDist_A');
+                deleteDestination = elA ? elA.checked : false;
+            } else if (action === 'UNLINK') {
+                const elB = document.getElementById('toggleDist_B');
+                deleteDestination = elB ? elB.checked : false;
+            }
+        }
+
         if (loader) loader.classList.remove('hidden');
-        if (status) status.innerText = action === 'ROLLBACK' ? "Moviendo Archivos..." : "Eliminando Registros...";
 
         try {
-
-
             const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+
+            // [ORCHESTRATOR PHASE 1]: Destrucción Externa Garantizada
+            if (deleteDestination) {
+                if (status) status.innerText = "Orquestando: Eliminando en Sistema Destino...";
+                
+                // Extraer unicamente los IDs que realmente estaban "isExtraido"
+                const extractedIds = [];
+                if (window.selectedFiles) {
+                    for (const [id, val] of window.selectedFiles.entries()) {
+                         if (val.isExtraido && _selectedIds.includes(id)) {
+                             extractedIds.push(id);
+                         }
+                    }
+                }
+
+                // Borrado Secuencial Controlado
+                for (let i = 0; i < extractedIds.length; i++) {
+                    const id = extractedIds[i];
+                    if (status) status.innerText = `Destino: Procesando ${i+1} de ${extractedIds.length}...`;
+                    
+                    const dr = await fetch(`${backendUrl}/api/master-table/revert/${id}`, { method: 'DELETE' });
+                    if (!dr.ok) {
+                        const dres = await dr.json();
+                        throw new Error(`Fallo limpiando destino del archivo ${id}: ` + (dres.error || dr.statusText));
+                    }
+                }
+            }
+
+            // [ORCHESTRATOR PHASE 2]: Transacción LAMDA Core Pura
+            if (status) status.innerText = action === 'ROLLBACK' ? "Moviendo Archivos en Motor Central..." : "Eliminando Registros RAW...";
 
             const res = await fetch(`${backendUrl}/api/files/rollback`, {
                 method: 'POST',

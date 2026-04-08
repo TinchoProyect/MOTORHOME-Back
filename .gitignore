@@ -8,3 +8,9 @@ service-account.json
 verify_key.js
 verify_db.js
 src/views/config.js
+ 
+# OAuth Scripts and Tokens
+get_auth_url.js
+get_token.js
+oauth2_tokens.json
+test_upload.js

@@ -8,12 +8,12 @@ console.log("%c 🗂️ DASHBOARD TABS: READY ", "background: #3b82f6; color: #f
 
 // State
 let dashboardTabState = 'DRIVE'; // 'DRIVE' | 'DB'
-window.selectedFiles = new Set(); // Selection State
+window.selectedFiles = new Map(); // Selection State (Context Aware Map)
 
 // Selection Logic
-window.toggleSelection = function (id, el) {
+window.toggleSelection = function (id, el, isExtraido = false) {
     if (el.checked) {
-        window.selectedFiles.add(id);
+        window.selectedFiles.set(id, { isExtraido: !!isExtraido });
     } else {
         window.selectedFiles.delete(id);
     }
@@ -54,6 +54,7 @@ window.switchDashboardTab = function (mode) {
     // Contenedores
     const containerDrive = document.getElementById('fileListDrive');
     const containerDB = document.getElementById('fileListDB');
+    const uploadBtnContainer = document.getElementById('uploadButtonContainer');
 
     // Update UI Classes
     if (mode === 'DRIVE') {
@@ -69,6 +70,19 @@ window.switchDashboardTab = function (mode) {
         if (containerDrive) containerDrive.classList.remove('hidden');
         if (containerDB) containerDB.classList.add('hidden');
 
+        // Contextual UI Reactivity (Render Upload Feature ONLY in DRIVE mode)
+        if (uploadBtnContainer && window.currentDriveFolderId) {
+            uploadBtnContainer.innerHTML = `
+                <input type="file" id="nativeFileUpload_${window.currentDriveFolderId}" accept=".xlsx,.xls,.csv" class="hidden" onchange="window.uploadSelectedFile(event, '${window.currentDriveFolderId}')">
+                <button onclick="document.getElementById('nativeFileUpload_${window.currentDriveFolderId}').click()" 
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 border border-blue-500/50 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0" 
+                    id="btnNativeUpload_${window.currentDriveFolderId}">
+                    <i data-lucide="upload-cloud" class="w-4 h-4" id="iconNativeUpload_${window.currentDriveFolderId}"></i> Buscar Archivo
+                </button>
+            `;
+            if (window.lucide) window.lucide.createIcons();
+        }
+
     } else {
         // DB Mode
         if (btnDrive) {
@@ -82,6 +96,11 @@ window.switchDashboardTab = function (mode) {
 
         if (containerDrive) containerDrive.classList.add('hidden');
         if (containerDB) containerDB.classList.remove('hidden');
+
+        // Contextual UI Reactivity (Hide / Destroy Upload Button in PROCESADOS mode)
+        if (uploadBtnContainer) {
+            uploadBtnContainer.innerHTML = '';
+        }
 
         // Trigger Load
         window.loadProcessedFiles();
@@ -209,12 +228,18 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
             // TARJETA COMPACTA (EXTRAÍDO)
             html += `
                 <div class="bg-slate-950/80 backdrop-blur-md border border-indigo-500/40 rounded-2xl p-5 flex flex-col justify-between shadow-2xl shadow-indigo-900/20 hover:border-indigo-400/60 transition-all h-full min-h-max relative overflow-hidden group">
+                    <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
+                        <input type="checkbox" 
+                            class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500 cursor-pointer transition-colors"
+                            onchange="toggleSelection('${file.id}', this, true)"
+                        >
+                    </div>
                     <div>
-                        <div class="flex items-start justify-between mb-3">
+                        <div class="flex items-start justify-between mb-3 pr-8">
                             <div class="w-12 h-12 rounded-2xl bg-indigo-900/40 flex items-center justify-center border border-indigo-500/30 shrink-0 shadow-inner group-hover:scale-105 transition-transform">
                                 <i data-lucide="database" class="w-6 h-6 text-indigo-400"></i>
                             </div>
-                            <span class="bg-indigo-600 text-white font-bold text-[9px] px-2.5 py-1 rounded shadow-lg shadow-indigo-900/50 tracking-widest flex items-center gap-1.5 uppercase border border-indigo-500/50">
+                            <span class="bg-indigo-600 text-white font-bold text-[9px] px-2.5 py-1 rounded shadow-lg shadow-indigo-900/50 tracking-widest flex items-center gap-1.5 uppercase border border-indigo-500/50 -mt-1 -mr-2">
                                 <i data-lucide="lock" class="w-2.5 h-2.5"></i> Extraído
                             </span>
                         </div>
@@ -263,7 +288,7 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                     <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
                         <input type="checkbox" 
                             class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer transition-colors"
-                            onchange="toggleSelection('${file.id}', this)"
+                            onchange="toggleSelection('${file.id}', this, false)"
                         >
                     </div>
 
@@ -304,40 +329,63 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
 }
 
 window.revertExtraction = async function(fileId) {
+    const providerContext = window.globalContext?.providerId || window.currentActiveProviderId;
+
     const result = await Swal.fire({
-        title: '¿Deshacer extracción?',
-        text: "Se eliminarán permanentemente de la Tabla Maestra todos los registros provenientes de este archivo. Esta acción no se puede deshacer de forma directa.",
+        title: 'Gestión de Eliminación',
+        text: 'Seleccione el alcance de la reversión:',
         icon: 'warning',
+        input: 'radio',
+        inputOptions: {
+            'ROLLBACK': '<b>Rollback Total:</b> Mover archivo al Inbox y borrar Base de Datos.',
+            'UNLINK': '<b>Solo Desvincular:</b> Mantener archivo procesado y limpiar Base de Datos.',
+            'REMOVE_EXTRACTION': '<b>Retirar Extracción:</b> Revertir Extracción pero mantener Estado Ingestado.'
+        },
+        inputValue: 'REMOVE_EXTRACTION',
         showCancelButton: true,
         confirmButtonColor: '#d33',
         cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Sí, revertir extracción',
-        cancelButtonText: 'No, cancelar',
+        confirmButtonText: 'Ejecutar Reversión',
+        cancelButtonText: 'Cancelar',
         background: '#0f172a',
         color: '#f8fafc',
         customClass: {
-            popup: 'border border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl'
+            popup: 'border border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl',
+            inputRadio: 'text-left text-sm text-slate-300 gap-4 flex flex-col pt-4',
+            radioLabel: 'ml-2 leading-relaxed' 
+        },
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Debe seleccionar una opción'
+            }
         }
     });
 
     if (result.isConfirmed) {
         try {
+            const action = result.value;
             const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
             Swal.fire({
-                title: 'Revirtiendo...',
+                title: 'Ejecutando Transacción Atómica...',
                 allowOutsideClick: false,
                 background: '#0f172a',
                 color: '#f8fafc',
                 customClass: { popup: 'border border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl' },
                 didOpen: () => { Swal.showLoading() }
             });
-            const res = await fetch(`${backendUrl}/api/master-table/revert/${fileId}`, { method: 'DELETE' });
+
+            const res = await fetch(`${backendUrl}/api/files/rollback`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileIds: [fileId], action: action, providerId: providerContext })
+            });
+
             const json = await res.json();
-            if (!res.ok) throw new Error(json.error || "Fallo en la reversión");
+            if (!res.ok) throw new Error(json.error || "Fallo en el protocolo de Rollback");
             
-            Swal.fire({
-                title: 'Revertido',
-                text: 'La extracción de este archivo fue deshecha.',
+            await Swal.fire({
+                title: 'Transacción Exitosa',
+                text: 'La base de datos fue sincronizada.',
                 icon: 'success',
                 background: '#0f172a',
                 color: '#f8fafc',
