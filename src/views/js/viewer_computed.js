@@ -145,7 +145,8 @@ function saveComputedColumn(closeModal = true) {
         });
         
         if (operandsList.length === 0) {
-            alert("Por favor completá al menos una Columna Origen a Clonar.");
+            if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Por favor completá al menos una Columna Origen a Clonar.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+            else alert("Por favor completá al menos una Columna Origen a Clonar.");
             return;
         }
     } else {
@@ -153,11 +154,13 @@ function saveComputedColumn(closeModal = true) {
         const vColIdB = document.getElementById('calcFieldB') ? document.getElementById('calcFieldB').value : null;
         
         if (!vColIdA || !vColIdB) {
-            alert("Por favor completá todos los operandos.");
+            if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Por favor completá todos los operandos.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+            else alert("Por favor completá todos los operandos.");
             return;
         }
         if (vColIdA === vColIdB) {
-            alert("Elegí columnas distintas para el cálculo.");
+            if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Elegí columnas distintas para el cálculo.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+            else alert("Elegí columnas distintas para el cálculo.");
             return;
         }
         operandsList = [vColIdA, vColIdB];

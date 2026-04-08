@@ -161,6 +161,17 @@ export function transformCell(rawValue, pipeline) {
                     currentValue = currentValue.replace(/\./g, ',');
                 }
             }
+            else if (rule.tipo_regex === 'SANITIZE_DECIMAL_FILL') {
+                if (!currentValue || currentValue.trim() === "") {
+                    currentValue = "0,00";
+                    cleanValue = 0.0;
+                } else {
+                    currentValue = currentValue.replace(/\./g, ',');
+                    const parseable = currentValue.replace(/,/g, '.');
+                    cleanValue = parseFloat(parseable);
+                    if (isNaN(cleanValue)) cleanValue = 0.0;
+                }
+            }
             else if (rule.tipo_regex === 'FORMAT_PRICE_AR') {
                 if (currentValue && currentValue !== "") {
                     // Remove everything except digits, dots, and commas

@@ -895,7 +895,8 @@ function generatePreview() {
         }
 
         if (displayConfig.length === 0) {
-            alert("Primero debes mapear al menos una columna.");
+            if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Primero debes mapear al menos una columna.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+            else alert("Primero debes mapear al menos una columna.");
             return;
         }
 
@@ -1110,7 +1111,8 @@ function generatePreview() {
 
     } catch (error) {
         console.error("Critical Preview Error:", error);
-        alert("Error en Previsualizador: " + error.message);
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error en Previsualización', text: error.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        else alert("Error en Previsualizador: " + error.message);
     }
 }
 
@@ -1168,6 +1170,7 @@ function renderSimulationTable(data) {
             case 'SANITIZE_NUMERIC_PIPE': return 'Extractor Numérico Agresivo';
             case 'FORMAT_DECIMAL_DISCOUNT': return 'Parser Decimal / Descuento';
             case 'FORMAT_PRICE_AR': return 'Conversión Monetaria ARS';
+            case 'SANITIZE_DECIMAL_FILL': return 'Normalización Decimal y Relleno';
             case 'sanitize': return 'Saneamiento / Regex';
             case 'row_filter': case 'filter': return 'Filtro Condicional';
             default: return type || 'Regla de Transformación';
@@ -1236,13 +1239,13 @@ function renderSimulationTable(data) {
             }
         }
 
-        const isComputed = window.computedColumns && window.computedColumns.find(c => c.id === cfg.virtualColId);
+        const isComputedConfig = cfg.isComputed || false;
         
         // Define click handler for the label area (Bug Fix N°2)
         const safeLabel = cfg.label ? cfg.label.replace(/'/g, "\\'") : '';
-        const clickHandler = isComputed 
-            ? `onclick="if(window.editComputedColumn) window.editComputedColumn('${cfg.virtualColId}')"` 
-            : `onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${cfg.virtualColId}', '${safeLabel}')"`;
+        const clickHandler = isComputedConfig 
+            ? `onclick="event.stopPropagation(); if(window.editComputedColumn) window.editComputedColumn('${cfg.virtualColId}')"` 
+            : `onclick="event.stopPropagation(); if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${cfg.virtualColId}', '${safeLabel}')"`;
 
         let thContent = `
             <div class="flex flex-col gap-1 min-h-[40px] relative w-full h-full justify-center">

@@ -64,6 +64,16 @@ async function loadRuleCatalog() {
         const response = await fetch(`${backendUrl}/api/mapping/rules${queryParams}`);
         if (response.ok) {
             catalogRules = await response.json();
+            
+            // [QA/ETL Req] Inyectar regla determinista de limpieza monetaria
+            catalogRules.push({
+                id: 'sys_sanitize_decimal_fill',
+                nombre_regla: 'Normalización Decimal y Relleno',
+                descripcion: 'Reemplaza puntos por comas y rellena vacíos con 0,00',
+                tipo_regex: 'SANITIZE_DECIMAL_FILL',
+                es_global: true
+            });
+            
             console.log(`✅ [WORKSHOP] Catálogo de reglas cargado: ${catalogRules.length} reglas.`);
             renderRuleSelector();
         } else {
@@ -308,7 +318,16 @@ export async function open(masterField, vColId, colName) {
             // Validation: Cannot clone if no virtual column found
             const vColObj = window.virtualColumns ? window.virtualColumns.find(v => v.id === vColId) : null;
             if (!vColObj) {
-                alert("No se puede clonar: la columna virtual original no fue encontrada.");
+                if (typeof Swal !== 'undefined') {
+                    await Swal.fire({
+                        title: 'Clonación Fallida',
+                        text: 'La columna virtual original no fue encontrada.',
+                        icon: 'error',
+                        background: '#0f172a', color: '#f8fafc'
+                    });
+                } else {
+                    alert("No se puede clonar: la columna virtual original no fue encontrada.");
+                }
                 return;
             }
 
@@ -376,11 +395,22 @@ export async function open(masterField, vColId, colName) {
 
     if (window.lucide) window.lucide.createIcons();
     
-    // Validar en que modo corre: ¿Es una Columna Calculada existente o un Fantasma recién inyectado?
-    const isEditingComputed = window.computedColumns && window.computedColumns.find(c => c.id === activeVColId);
-    const isNewGhostComputed = window.virtualColumns && window.virtualColumns.find(c => c.id === activeVColId && c.isGhostPlaceholder === true);
+    // [Garbage Collection Inicial] Si existe un contexto ajeno/sucio remanente, limpiarlo.
+    if (window._activeComputedContext && window._activeComputedContext.colIndex !== activeVColId) {
+        window._activeComputedContext = null;
+    }
+
+    // BUG FIX UI/UX: Inicialización Estricta de Estado del Toggle Matemático
+    // Evaluamos si estrictamente estamos frente a una columna matemática/virtual (Virtual/Fantasma)
+    const isComputedConfig = window.computedColumns && window.computedColumns.find(c => c.id === activeVColId);
+    const isVirtualPlaceholder = window.virtualColumns && window.virtualColumns.find(c => c.id === activeVColId && (c.isGhostPlaceholder === true || c.isCalculated === true));
     
-    if (isEditingComputed || isNewGhostComputed || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId)) {
+    // VIGÍA DE QA EXIGIDO
+    // (Alerta extraída por validación exitosa de Hotfix Arquitectónico)
+    console.error("🚨 VIGÍA DE ALERTA ROJA - DIAGNÓSTICO UI - Evaluando Columna:", activeVColId, {isComputedConfig, isVirtualPlaceholder, activeContext: window._activeComputedContext});
+
+    // Si la columna es Fantasma/Virtual -> Editor Matemático ON. Si es Nativa -> Editor OFF.
+    if (isComputedConfig || isVirtualPlaceholder || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId)) {
         switchToComputedMode();
     } else {
         switchToStandardMode();
@@ -404,6 +434,7 @@ export async function open(masterField, vColId, colName) {
  * Switches the Workshop Panel visual state to Computed Editor 
  */
 export function switchToComputedMode() {
+
     // BUG FIX Nº3: Mantenemos visible el modo estándar de reglas por debajo del panel matemático
     document.getElementById('vrwStandardMode').classList.remove('hidden');
     document.getElementById('vrwComputedMode').classList.remove('hidden');
@@ -546,7 +577,16 @@ export function close() {
 export function addSelectedRule() {
     const selector = document.getElementById('vrwRuleSelector');
     if (!selector || !selector.value) {
-        alert("Atención: Selecciona una transformación del catálogo primero.");
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Atención',
+                text: 'Selecciona una transformación del catálogo primero.',
+                icon: 'warning',
+                background: '#0f172a', color: '#f8fafc'
+            });
+        } else {
+            alert("Atención: Selecciona una transformación del catálogo primero.");
+        }
         return;
     }
 
@@ -923,14 +963,29 @@ function triggerPreview() {
     }
 }
 
-export function clearPipeline() {
+export async function clearPipeline() {
     if (currentDraftPipeline.length === 0) return;
     
-    if (confirm("¿Estás seguro de purgar todas las reglas de esta columna?")) {
-        currentDraftPipeline = [];
-        renderPipeline();
-        triggerPreview();
+    if (typeof Swal !== 'undefined') {
+        const result = await Swal.fire({
+            title: '¿Purgar todas las reglas?',
+            text: "Se eliminarán todas las transformaciones asignadas a esta columna.",
+            icon: 'warning',
+            background: '#0f172a', color: '#f8fafc',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, purgar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#334155'
+        });
+        if (!result.isConfirmed) return;
+    } else {
+        if (!confirm("¿Estás seguro de purgar todas las reglas de esta columna?")) return;
     }
+    
+    currentDraftPipeline = [];
+    renderPipeline();
+    triggerPreview();
 }
 
 // FULL UNLINK ACTION (Destructive)
@@ -938,12 +993,38 @@ export async function unlinkCurrentCol() {
     const isClone = activeContext.colIndex && String(activeContext.colIndex).includes('_clone_');
     
     if (currentDraftPipeline.length > 0) {
-        if (!confirm(`La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas.\nAl quitar el mapeo se destruirán todas las reglas.\n\n¿Estás seguro de proceder?`)) {
-            return;
+        if (typeof Swal !== 'undefined') {
+            const result = await Swal.fire({
+                title: '¿Destruir Taller de Reglas?',
+                text: `La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas. Al quitar el mapeo se destruirán de forma irreversible.`,
+                icon: 'warning',
+                background: '#0f172a', color: '#f8fafc',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, destruir todo',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#334155'
+            });
+            if (!result.isConfirmed) return;
+        } else {
+            if (!confirm(`La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas.\nAl quitar el mapeo se destruirán todas las reglas.\n\n¿Estás seguro de proceder?`)) return;
         }
     } else {
-        if (!confirm(`¿Deseas desvincular el campo maestro y devolver la columna "${activeContext.colName}" a su estado original?`)) {
-            return;
+        if (typeof Swal !== 'undefined') {
+            const result = await Swal.fire({
+                title: '¿Desvincular Campo Maestro?',
+                text: `La columna "${activeContext.colName}" volverá a su estado original.`,
+                icon: 'question',
+                background: '#0f172a', color: '#f8fafc',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, desvincular',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#334155'
+            });
+            if (!result.isConfirmed) return;
+        } else {
+            if (!confirm(`¿Deseas desvincular el campo maestro y devolver la columna "${activeContext.colName}" a su estado original?`)) return;
         }
     }
 
@@ -998,7 +1079,8 @@ export async function auditResidues() {
     const userPrompt = promptTextContainer ? promptTextContainer.value : "Transformación libre";
     
     if (currentDraftPipeline.length === 0) {
-        alert("No hay reglas para auditar.");
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'No hay reglas para auditar.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+        else alert("No hay reglas para auditar.");
         return;
     }
     
@@ -1150,7 +1232,8 @@ export function applyMapping() {
 
 export async function createLocalRule(searchStr, replaceStr, isRegex = false, colId = null) {
     if (!window.globalContext || !window.globalContext.providerId || !window.currentSheetName) {
-        alert("Falta contexto del proveedor u hoja actual.");
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error', text: 'Falta contexto del proveedor u hoja actual.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        else alert("Falta contexto del proveedor u hoja actual.");
         return false;
     }
 

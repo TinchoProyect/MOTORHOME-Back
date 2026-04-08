@@ -605,12 +605,23 @@ window.cambiarFlujoActivo = async function(flujoId) {
     
     // Validar si hay datos en pantalla
     if (!window.currentSheetData) {
-        alert("Primero debe cargar una hoja de datos.");
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Primero debe cargar una hoja de datos.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+        else alert("Primero debe cargar una hoja de datos.");
         return;
     }
 
     if (!flujoId || flujoId === "") {
-        if (!confirm("¿Está seguro de limpiar todo y volver al formato en crudo?")) return;
+        if (typeof Swal !== 'undefined') {
+            const res = await Swal.fire({
+                title: '¿Limpiar Plantilla?',
+                text: '¿Está seguro de limpiar todo y volver al formato en crudo?',
+                icon: 'warning', background: '#0f172a', color: '#f8fafc',
+                showCancelButton: true, confirmButtonText: 'Sí, limpiar', confirmButtonColor: '#ef4444', cancelButtonColor: '#334155'
+            });
+            if (!res.isConfirmed) return;
+        } else {
+            if (!confirm("¿Está seguro de limpiar todo y volver al formato en crudo?")) return;
+        }
         window.resetViewerState(true);
         window.globalContext.flujoId = null;
         if (currentSheetName) window.loadSheet(currentSheetName);
@@ -618,7 +629,17 @@ window.cambiarFlujoActivo = async function(flujoId) {
     }
 
     // Modal de confirmación (Pisar cambios)
-    if (!confirm("¿Desea aplicar este flujo? Esto sobreescribirá todas las columnas y fórmulas actuales.")) return;
+    if (typeof Swal !== 'undefined') {
+        const res = await Swal.fire({
+            title: '¿Aplicar Flujo?',
+            text: '¿Desea aplicar este flujo? Esto sobreescribirá todas las variables en pantalla.',
+            icon: 'warning', background: '#0f172a', color: '#f8fafc',
+            showCancelButton: true, confirmButtonText: 'Sí, aplicar', confirmButtonColor: '#2563eb', cancelButtonColor: '#334155'
+        });
+        if (!res.isConfirmed) return;
+    } else {
+        if (!confirm("¿Desea aplicar este flujo? Esto sobreescribirá todas las columnas y fórmulas actuales.")) return;
+    }
 
     // Actualizar global context y forzar carga
     window.globalContext.flujoId = flujoId;
@@ -660,8 +681,18 @@ window.cambiarFlujoActivo = async function(flujoId) {
 window.deleteSimulationConfig = async function () {
     if (!window.globalContext || !window.globalContext.providerId) return;
 
-    if (!confirm("¿Estás seguro de eliminar toda la configuración guardada para esta hoja? Esto borrará el mapeo y las reglas.")) {
-        return;
+    if (typeof Swal !== 'undefined') {
+        const res = await Swal.fire({
+            title: '¿Eliminar Configuración?',
+            text: '¿Estás seguro de eliminar toda la configuración guardada? Esto borrará permanentemente el mapeo y reglas.',
+            icon: 'error', background: '#0f172a', color: '#f8fafc',
+            showCancelButton: true, confirmButtonText: 'Sí, eliminar', confirmButtonColor: '#ef4444', cancelButtonColor: '#334155'
+        });
+        if (!res.isConfirmed) return;
+    } else {
+        if (!confirm("¿Estás seguro de eliminar toda la configuración guardada para esta hoja? Esto borrará el mapeo y las reglas.")) {
+            return;
+        }
     }
 
     const payload = {

@@ -38,19 +38,38 @@ window.confirmIngestion = async function () {
             finalPayload = snapshot; // Legacy array payload
         }
     } catch (e) {
-        alert("Error capturando datos del visor: " + e.message);
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error de Extracción', text: e.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        else alert("Error capturando datos del visor: " + e.message);
         return;
     }
 
     const context = window.globalContext || {};
 
     if (!context.fileId || !context.providerId) {
-        alert("Error de Contexto: Falta FileId o ProviderId.");
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error de Contexto', text: 'Falta FileId o ProviderId.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        else alert("Error de Contexto: Falta FileId o ProviderId.");
         return;
     }
 
     // 2. Confirmación de Usuario
-    const confirmed = confirm(`¿Estás seguro de confirmar la ingesta?\n\n📄 Hojas detectadas: ${finalPayload.sheets ? finalPayload.sheets.length : 1}\n📊 Filas totales: ${itemCount}\n\nEsto guardará los datos en la Base de Datos.`);
+    let confirmed = false;
+    const txtHojas = finalPayload.sheets ? finalPayload.sheets.length : 1;
+    if (typeof Swal !== 'undefined') {
+        const res = await Swal.fire({
+            title: '¿Confirmar Extracción?',
+            html: `¿Estás seguro de inyectar estos datos en la Tabla Maestra?<br><br><span class="text-slate-400">📄 Hojas: <b>${txtHojas}</b><br>📊 Filas: <b>${itemCount}</b></span>`,
+            icon: 'question',
+            background: '#0f172a', color: '#f8fafc',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, procesar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#10b981',
+            cancelButtonColor: '#334155'
+        });
+        confirmed = res.isConfirmed;
+    } else {
+        confirmed = confirm(`¿Estás seguro de confirmar la extracción?\n\n📄 Hojas detectadas: ${txtHojas}\n📊 Filas totales: ${itemCount}\n\nEsto guardará los datos en la Base de Datos.`);
+    }
     if (!confirmed) return;
 
     // 3. UI Loading state
@@ -81,7 +100,11 @@ window.confirmIngestion = async function () {
 
         if (result.success) {
             // 5. Success UI
-            alert("✅ Ingesta Exitosa!\n\n" + (result.message || "Archivo procesado y movido."));
+            if (typeof Swal !== 'undefined') {
+                await Swal.fire({ title: 'Extracción Exitosa', text: result.message || "Archivo procesado y movido.", icon: 'success', background: '#0f172a', color: '#f8fafc', timer: 2500, showConfirmButton: false });
+            } else {
+                alert("✅ Extracción Exitosa!\n\n" + (result.message || "Archivo procesado y movido."));
+            }
 
 
 
@@ -126,7 +149,8 @@ window.confirmIngestion = async function () {
 
     } catch (error) {
         console.error("[Ingest] Error:", error);
-        alert("❌ Error en Ingesta:\n" + error.message);
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error de Extracción', text: error.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        else alert("❌ Error en Extracción:\n" + error.message);
     } finally {
         // Restore UI
         if (btn) {
