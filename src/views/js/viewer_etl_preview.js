@@ -92,7 +92,17 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 }
             }
 
+            // GUARDIA ARQUITECTÓNICA & DIAGNÓSTICO: Prevenir mutación de celdas vacías
+            if (currentValue.trim() === "") {
+                if (!skipTransform) {
+                    console.warn(`[ETL DIAGNOSTIC] 🛡️ Regla 'combine_numeric' abortada. La celda estaba vacía (Posible remanente de limpieza previa).`);
+                }
+                skipTransform = true;
+            }
+
             if (!skipTransform && tgtColId !== undefined && contextRow) {
+                const beforeEnrich = currentValue;
+
                 let targetRawVal = "";
                 if (window.virtualColumns) {
                     const vCol = window.virtualColumns.find(c => String(c.id) === String(tgtColId));
@@ -104,6 +114,8 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 
                 const numbersOnly = String(targetRawVal || "").replace(/[^0-9]/g, '');
                 currentValue = currentValue + (numbersOnly ? "-" + numbersOnly : "");
+                
+                console.log(`[ETL DIAGNOSTIC] Trazabilidad 'combine_numeric' | Ingreso: '${beforeEnrich}' -> Salida: '${currentValue}'`);
             }
         }
         else if (rule.tipo === 'combine_hash') {
@@ -164,7 +176,16 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 }
             }
 
+            // GUARDIA ARQUITECTÓNICA & DIAGNÓSTICO: Prevenir mutación de celdas vacías
+            if (currentValue.trim() === "") {
+                if (!skipTransform) {
+                    console.warn(`[ETL DIAGNOSTIC] 🛡️ Regla 'combine_hash' abortada. La celda estaba vacía (Posible remanente de limpieza previa).`);
+                }
+                skipTransform = true;
+            }
+
             if (!skipTransform && tgtColId !== undefined && contextRow) {
+                const beforeEnrich = currentValue;
                 let targetRawVal = "";
                 if (window.virtualColumns) {
                     const vCol = window.virtualColumns.find(c => String(c.id) === String(tgtColId));
@@ -182,6 +203,8 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 }
                 const suffix = Math.abs(hash); // Tomar valor absoluto preventivo
                 currentValue = currentValue + "-" + suffix;
+                
+                console.log(`[ETL DIAGNOSTIC] Trazabilidad 'combine_hash' | Ingreso: '${beforeEnrich}' -> Salida: '${currentValue}'`);
             }
         }
         else if (isCustomReplace) {

@@ -121,7 +121,7 @@ class ViewerEtlAstParser {
             case "DICTIONARY_REPLACE":
                 if (!action.valor || typeof action.valor !== 'object') return { result: val, handled: true, rejected: false };
                 const keyToCheck = val.trim();
-                if (action.valor[keyToCheck] !== undefined) {
+                if (Object.prototype.hasOwnProperty.call(action.valor, keyToCheck)) {
                     return { result: action.valor[keyToCheck], handled: true, rejected: false };
                 }
                 return { result: val, handled: true, rejected: false };

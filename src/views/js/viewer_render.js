@@ -510,7 +510,7 @@ function renderVirtualTable(originalData) {
                              if (isDictRule) libretaDict = dictObj;
                         });
                         
-                        if (libretaDict && rawVal.trim() !== "" && libretaDict[rawVal.trim()] === undefined) {
+                        if (libretaDict && rawVal.trim() !== "" && !Object.prototype.hasOwnProperty.call(libretaDict, rawVal.trim())) {
                             if (rejected || result.trim() === "" || result === rawVal) {
                                 isCacheMiss = true;
                             }

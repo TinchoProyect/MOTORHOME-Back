@@ -188,7 +188,7 @@ class ViewerAiUi {
                 for (; i < end; i++) {
                     let val = "";
                     if (Array.isArray(dataIdx)) {
-                        val = dataIdx.map(idx => String(rawRows[i][idx] || "").trim()).filter(v => v).join(" | ");
+                        val = dataIdx.map(idx => String(rawRows[i][idx] || "").trim()).filter(v => v).join(" ");
                     } else {
                         val = String(rawRows[i][dataIdx] || "").trim();
                     }

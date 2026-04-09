@@ -63,5 +63,32 @@ window.ViewerColumnInjector = {
         }
         
         console.log(`✅ [INJECTOR] Columna Placeholder Inyectada -> ID: ${newColId} (dataIdx: ${newDataIdx})`);
+    },
+    
+    /**
+     * Inicializa el módulo y vincula el listener de forma robusta
+     * Previniendo memory leaks o suscripciones múltiples (firing twice)
+     */
+    init: function() {
+        if (this._isInitialized) return;
+        
+        const btn = document.getElementById("btnInjectColumn");
+        if (btn) {
+            // Remueve listeners previos limpiando el nodo en el DOM
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+            
+            newBtn.addEventListener("click", () => {
+                this.injectEmptyColumn();
+            });
+            
+            this._isInitialized = true;
+            console.log("✅ [INJECTOR] Event Listener montado exitosamente de forma aislada.");
+        }
     }
 };
+
+// Automontaje de Eventos al Documento
+document.addEventListener('DOMContentLoaded', () => {
+    window.ViewerColumnInjector.init();
+});

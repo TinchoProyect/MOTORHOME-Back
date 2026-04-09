@@ -239,7 +239,7 @@ Usa escape doble para JSON si emites Regex.`;
 
         console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Clusters Distribuidos (Total: ${dictionarySamples.length} uniques)...`);
         
-        let CHUNK_SIZE = 30; // Unificado a 30 (Mismo que Literal) para evitar Laziness o Timeout Limit
+        let CHUNK_SIZE = 20; // Reducido a 20 para evitar Truncation de JSON (JSON Unexpected end) en resoluciones voluminosas
         let chunks = [];
         for (let i = 0; i < dictionarySamples.length; i++) {
             let chunkIdx = Math.floor(i / CHUNK_SIZE);
@@ -266,19 +266,17 @@ DICCIONARIO INDEXADO PARCIAL (Chunk ${chunkIndex + 1}/${chunks.length}):
 ${JSON.stringify(chunkDict, null, 2)}
 
 Aplica AGRUPACIÓN INTELIGENTE (Clustering) basándote EXCLUSIVA Y ESTRICTAMENTE en la orden del usuario.
-Si el usuario pide extraer un número o aplicar matemática, el "Valor Maestro" DEBE SER EL RESULTADO NUMÉRICO.
-Si el usuario pide una marca, es la marca.
-ESTRICTAMENTE PROHIBIDO: NO agrupes por semántica, producto, familia o rubro A MENOS que la directiva del usuario lo pida explícitamente. La llave "maestro" es simplemente el resultado crudo y literal de aplicar la Orden del Usuario a cada registro.
+Si el usuario pide extraer un número o aplicar matemática, el nombre de la llave DEBE SER EL RESULTADO NUMÉRICO.
+ESTRICTAMENTE PROHIBIDO: NO agrupes por semántica A MENOS que la directiva lo pida. El valor maestro es simplemente el resultado crudo y literal.
 
-${discoveredMasters.size > 0 ? `REGLA DE CONTEXTO ESTRICTA: En iteraciones anteriores ya has agrupado bajo estos valores: ["${previousMastersList}"]. DEBES REUTILIZAR exactamente la misma cadena si el resultado lógico es idéntico al de iteraciones previas.` : ''}
+${discoveredMasters.size > 0 ? `REGLA DE CONTEXTO ESTRICTA: En iteraciones anteriores ya has agrupado bajo estos valores: ["${previousMastersList}"]. DEBES REUTILIZAR exactamente la misma cadena si el resultado lógico es idéntico.` : ''}
 
-Estructura de Salida OBLIGATORIA:
+Estructura de Salida OBLIGATORIA (UN OBJETO JSON PLANO SUPER MINIMALISTA):
 {
-  "cluster": [
-    { "maestro": "Resultado Estricto (Ej: 6, ARCOR, Cja)", "indices": [0, 10] }
-  ]
+  "Resultado Estricto (Ej: 6, ARCOR, Cja)": [0, 10],
+  "Otro Resultado Distinto": [3, 4]
 }
-Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parcial sin excepción. Ningún índice puede ser excluido.`;
+Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcial sin excepción. CERO VERBOSIDAD. NO añadas palabras como "cluster" o "indices".`;
 
             let success = false;
             let retries = 0;
@@ -287,17 +285,48 @@ Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parci
 
             while (!success && retries <= maxRetries) {
                 try {
+                    const startTime = performance.now();
                     const result = await model.generateContent(systemInstruction);
+                    const runTime = performance.now() - startTime;
+                    
+                    const candidate = result.response.candidates && result.response.candidates[0];
+                    const finishReason = candidate ? candidate.finishReason : 'UNKNOWN';
+
                     text = result.response.text();
                     let extractedText = module.exports.extractJSONFromInference(text);
                     
-                    let parsed = JSON.parse(extractedText);
-                    if (parsed.cluster && Array.isArray(parsed.cluster)) {
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(extractedText);
+                    } catch (parseError) {
+                        const fs = require('fs');
+                        fs.appendFileSync('./logs_ai_dump.txt', `\n\n=== DIAGNOSTICO LIMIT ROOTO [CHUNK ${chunkIndex + 1}] ====
+- TIEMPO DE RESPUESTA: ${runTime.toFixed(2)} ms
+- FINISH_REASON DE GOOGLE: ${finishReason}
+- RAW STRING (Extraido):
+${extractedText}
+- RAW STRING (Respuesta Completa Gemini):
+${text}
+- CRITERIO DEL CHUNK ${chunkIndex + 1} (Registro Crudo):
+${JSON.stringify(chunkDict, null, 2)}
+========================================================\n\n`);
+                        throw new Error(`Excepción en JSON.parse. Revisa logs_ai_dump.txt. TRACE: Time=${runTime.toFixed(2)}ms, Reason=${finishReason}`);
+                    }
+
+                    // Adaptador: Convertir Schema Minimalista a Legacy Schema Interno
+                    let parsedArray = [];
+                    for (let pseudoKey in parsed) {
+                         if (Array.isArray(parsed[pseudoKey])) {
+                              parsedArray.push({ maestro: pseudoKey, indices: parsed[pseudoKey] });
+                         }
+                    }
+
+                    if (parsedArray.length > 0) {
                         
                         // [AUDITORÍA DE INTEGRIDAD DE LLAVES]
                         // Verifica si el LLM ignoró crudos debido a LLM Laziness o Truncation Silente
                         let indicesRecuperados = 0;
-                        for (let c of parsed.cluster) {
+                        for (let c of parsedArray) {
                              if (c.indices && Array.isArray(c.indices)) {
                                  indicesRecuperados += c.indices.length;
                              }
@@ -308,13 +337,13 @@ Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parci
                              throw new Error(`LLM Laziness Drop: Empaquetó solo ${indicesRecuperados} de ${expectedIndices} crudos. Dictamen Inválido.`);
                         }
 
-                        mergedCluster = mergedCluster.concat(parsed.cluster);
+                        mergedCluster = mergedCluster.concat(parsedArray);
                         // Alimentar Memoria Global
-                        for (let c of parsed.cluster) {
+                        for (let c of parsedArray) {
                             if (c.maestro) discoveredMasters.add(c.maestro);
                         }
                     } else {
-                        throw new Error(`JSON Schema Inválido. Array cluster no encontrado.`);
+                        throw new Error(`JSON Schema Inválido. Array dict de keys no encontrado.`);
                     }
                     success = true;
                 } catch(e) {
@@ -346,7 +375,7 @@ Tu arreglo DEBE contener TODOS los índices numéricos de este diccionario parci
         
         console.log(`[AI Service - Fase 2] ⏱️ Extrayendo Traducciones Literales (Total: ${dictionarySamples.length} uniques)...`);
         
-        let CHUNK_SIZE = 30; // Fragmentos cortos para payloads textuales gigantes para evitar Laziness
+        let CHUNK_SIZE = 20; // Reducido a 20 para prevenir Truncation de JSON en operaciones complejas
         let chunks = [];
         for (let i = 0; i < dictionarySamples.length; i++) {
             let chunkIdx = Math.floor(i / CHUNK_SIZE);

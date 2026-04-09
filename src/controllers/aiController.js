@@ -197,7 +197,7 @@ const aiController = {
             if (Array.isArray(parsedRes.cluster)) {
                  for (const clusterObj of parsedRes.cluster) {
                       const masterName = clusterObj.maestro;
-                      if (!masterName) continue;
+                      if (masterName === undefined || masterName === null) continue;
                       if (!hydratedCluster[masterName]) {
                           hydratedCluster[masterName] = [];
                       }

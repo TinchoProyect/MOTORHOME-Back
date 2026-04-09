@@ -2529,3 +2529,511 @@ TEXT: {
         75,
         76,
         7
+
+--- INTENTO 1 CHUNK 2 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "1",
+      "indices": [
+        25,
+        26,
+        37
+      ]
+    },
+    {
+      "maestro": "11.34",
+      "indices": [
+        22,
+        39
+      ]
+    },
+    {
+      "maestro": "12",
+      "indices": [
+        23
+      ]
+    },
+    {
+      "maestro": "13.6",
+      "indices": [
+        24
+      ]
+    },
+    {
+      "maestro": "15",
+      "indices": [
+        21
+      ]
+    },
+    {
+      "maestro": "18",
+      "indices": [
+        33
+      ]
+    },
+    {
+      "maestro": "2.5",
+      "indices": [
+        34
+      ]
+    },
+    {
+      "maestro": "22.68",
+      "indices": [
+        28
+      ]
+    },
+    {
+      "maestro": "25",
+      "indices": [
+        29,
+        32
+      ]
+    },
+    {
+      "maestro": "3",
+      "indices": [
+
+
+--- INTENTO 1 CHUNK 3 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "5",
+      "indices": [
+        40,
+        51,
+        52
+      ]
+    },
+    {
+      "maestro": "1",
+      "indices": [
+        41,
+        43,
+        44,
+        57,
+        58
+      ]
+    },
+    {
+      "maestro": "225",
+      "indices": [
+        42
+      ]
+    },
+    {
+      "maestro": "8",
+      "indices": [
+        45
+      ]
+    },
+    {
+      "maestro": "13.6",
+      "indices": [
+        46
+      ]
+    },
+    {
+      "maestro": "12.5",
+      "indices": [
+        47,
+        49
+      ]
+    },
+    {
+      "maestro": "7",
+      "indices": [
+        48,
+        50
+      ]
+    },
+    {
+      "maestro": "3.125",
+      "indices": [
+        53,
+        54
+      ]
+    },
+    {
+      "maestro": "1.5",
+      "indices": [
+        55,
+        
+
+--- INTENTO 2 CHUNK 3 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "5",
+      "indices": [
+        "40",
+        "51",
+        "52"
+      ]
+    },
+    {
+      "maestro": "1",
+      "indices": [
+        "41",
+        "43",
+        "44",
+        "57",
+        "58"
+      ]
+    },
+    {
+      "maestro": "225",
+      "indices": [
+        "42"
+      ]
+    },
+    {
+      "maestro": "8",
+      "indices": [
+        "45"
+      ]
+    },
+    {
+      "maestro": "13.6",
+      "indices": [
+        "46"
+      ]
+    },
+    {
+      "maestro": "12.5",
+      "indices": [
+        "47",
+        "49"
+      ]
+    },
+    {
+      "maestro": "7",
+      "indices": [
+        "48",
+        "50"
+      ]
+    },
+    {
+      "maestro": "3.125",
+      "indices": [
+        "53",
+        "54"
+      ]
+    },
+    {
+
+
+--- INTENTO 1 CHUNK 8 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "1",
+      "indices": [151]
+    },
+    {
+      "maestro": "2.5",
+      "indices": [142]
+    },
+    {
+      "maestro": "3",
+      "indices": [150]
+    },
+    {
+      "maestro": "3.5",
+      "indices": [141, 149]
+    },
+    {
+      "maestro": "4",
+      "indices": [140]
+    },
+    {
+      "maestro": "4.5",
+      "indices": [143]
+    },
+    {
+      "maestro": "5",
+      "indices": [145, 152]
+    },
+    {
+      "maestro": "10",
+      "indices": [146]
+    },
+    {
+      "maestro": "12",
+      "indices": [147]
+    },
+    {
+      "maestro": "15",
+      "indices": [148]
+    },
+    {
+      "maestro": "15 (10 * 1.5)",
+      "indices": [156, 157]
+    },
+    
+
+--- INTENTO 2 CHUNK 8 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "1",
+      "indices": [151]
+    },
+    {
+      "maestro": "2.5",
+      "indices": [142]
+    },
+    {
+      "maestro": "3",
+      "indices": [150]
+    },
+    {
+      "maestro": "3.5",
+      "indices": [141, 149]
+    },
+    {
+      "maestro": "4",
+      "indices": [140]
+    },
+    {
+      "maestro": "4.5",
+      "indices": [143]
+    },
+    {
+      "maestro": "5",
+      "indices": [145, 152]
+    },
+    {
+      "maestro": "10",
+      "indices": [146]
+    },
+    {
+      "maestro": "12",
+      "indices": [147]
+    },
+    {
+      "maestro": "15",
+      "indices": [148]
+    },
+    {
+      "maestro": "20 (10 * 2)",
+      "indices": [153, 154, 155]
+    
+
+--- INTENTO 3 CHUNK 8 ---
+MSG: Unexpected end of JSON input
+TEXT: {
+  "cluster": [
+    {
+      "maestro": "1",
+      "indices": [
+        151
+      ]
+    },
+    {
+      "maestro": "10",
+      "indices": [
+        146
+      ]
+    },
+    {
+      "maestro": "12",
+      "indices": [
+        147
+      ]
+    },
+    {
+      "maestro": "15",
+      "indices": [
+        148
+      ]
+    },
+    {
+      "maestro": "15 (10 * 1.5)",
+      "indices": [
+        156,
+        157
+      ]
+    },
+    {
+      "maestro": "2.5",
+      "indices": [
+        142
+      ]
+    },
+    {
+      "maestro": "20 (10 * 2)",
+      "indices": [
+        153,
+        154,
+        155
+      ]
+    },
+    {
+      "maestro": "3",
+      "indices": [
+        150
+      ]
+    },
+    {
+      "maestro": "3.5",
+      "indices": [
+        141,
+        149
+      ]
+    },
+    
+
+
+=== DIAGNOSTICO LIMIT ROOTO [CHUNK 9] ====
+- TIEMPO DE RESPUESTA: 33673.46 ms
+- FINISH_REASON DE GOOGLE: MAX_TOKENS
+- RAW STRING (Extraido):
+[
+    "160"
+  ],
+  "480 (12 * 20 * 2)": [
+    "161"
+  ],
+  "360 (12 * 20 * 1.5)": [
+    "162",
+    "164"
+  ],
+  "720 (12 * 40 * 1.5)": [
+    "163"
+  ],
+  "240 (6 * 20 * 2)": [
+    "165"
+  ],
+  "100 (50 * 2)": [
+    "166"
+  ],
+  "400 (4 * 50 * 2)": [
+    "167",
+    "168"
+  ],
+  "60 (30 * 2)": [
+    "169"
+  ],
+  "240 (4 * 30 * 2)": [
+    "170"
+  ],
+  "1": [
+    "171",
+    "178"
+  ],
+  "252 (42 * 6)": [
+    "172"
+  ]
+- RAW STRING (Respuesta Completa Gemini):
+{
+  "600 (6 * 50 * 2)": [
+    "160"
+  ],
+  "480 (12 * 20 * 2)": [
+    "161"
+  ],
+  "360 (12 * 20 * 1.5)": [
+    "162",
+    "164"
+  ],
+  "720 (12 * 40 * 1.5)": [
+    "163"
+  ],
+  "240 (6 * 20 * 2)": [
+    "165"
+  ],
+  "100 (50 * 2)": [
+    "166"
+  ],
+  "400 (4 * 50 * 2)": [
+    "167",
+    "168"
+  ],
+  "60 (30 * 2)": [
+    "169"
+  ],
+  "240 (4 * 30 * 2)": [
+    "170"
+  ],
+  "1": [
+    "171",
+    "178"
+  ],
+  "252 (42 * 6)": [
+    "172"
+  ],
+  
+- CRITERIO DEL CHUNK 9 (Registro Crudo):
+{
+  "160": "Pack  x 6 U (50 x 2 grs)",
+  "161": "Pack  x 12 U ( 20 x 2 grs)",
+  "162": "Pack  x 12 U(20 x 1,5 grs)",
+  "163": "Pack  x 12 U( 40 x 1,5 grs)",
+  "164": "Pack  x 12 U (20 x 1,5 grs)",
+  "165": "Pack x 6 U ( 20 x 2 grs)",
+  "166": "Caja (50 U x 2 Grs)",
+  "167": "Pack x 4 U( 50 x 2 Grs)",
+  "168": "Pack x 4 U (50 x 2 grs)",
+  "169": "Caja (30 U x 2 Grs)",
+  "170": "Pack x 4 U (30 x 2 grs )",
+  "171": "x1 unidad",
+  "172": "Caja x (42 sobres Surtidos) 6 variedades o sabores",
+  "173": "Caja x (84 sobres Surtidos) 12 variedades o sabores",
+  "174": "2 x 500 gr",
+  "175": "2x500 gr",
+  "176": "2 Latas x 45 Sobres c/u",
+  "177": "3 x 100 grs.",
+  "178": "x 1 Caja",
+  "179": "12 x 330 ml"
+}
+========================================================
+
+
+--- INTENTO 1 CHUNK 9 ---
+MSG: Excepción en JSON.parse. Revisa logs_ai_dump.txt. TRACE: Time=33673.46ms, Reason=MAX_TOKENS
+TEXT: {
+  "600 (6 * 50 * 2)": [
+    "160"
+  ],
+  "480 (12 * 20 * 2)": [
+    "161"
+  ],
+  "360 (12 * 20 * 1.5)": [
+    "162",
+    "164"
+  ],
+  "720 (12 * 40 * 1.5)": [
+    "163"
+  ],
+  "240 (6 * 20 * 2)": [
+    "165"
+  ],
+  "100 (50 * 2)": [
+    "166"
+  ],
+  "400 (4 * 50 * 2)": [
+    "167",
+    "168"
+  ],
+  "60 (30 * 2)": [
+    "169"
+  ],
+  "240 (4 * 30 * 2)": [
+    "170"
+  ],
+  "1": [
+    "171",
+    "178"
+  ],
+  "252 (42 * 6)": [
+    "172"
+  ],
+  
