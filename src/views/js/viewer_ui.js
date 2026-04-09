@@ -166,12 +166,20 @@ window.ViewerUI = (function () {
 
     const tools = [btnMap, btnOff, btnEndOff, btnInyect, btnSave, btnSaveFlujo, btnReset, btnGlobal];
 
+    // Herramientas avanzadas: 'show' flag (Mostrar en procesados, ocultar en pendientes)
     tools.forEach((btn) => {
       if (btn) {
         if (show) btn.classList.remove("hidden");
         else btn.classList.add("hidden");
       }
     });
+
+    // Inversa estricta para Confirmar Ingesta: Oculto en procesados, Mostrado en pendientes
+    const btnConfirm = document.getElementById('btnConfirmIngest');
+    if (btnConfirm) {
+        if (show) btnConfirm.classList.add("hidden");
+        else btnConfirm.classList.remove("hidden");
+    }
   }
 
   // --- [PHASE 4: DYNAMIC DOM MODAL] ---

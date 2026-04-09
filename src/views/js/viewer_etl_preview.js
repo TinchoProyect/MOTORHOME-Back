@@ -6,7 +6,7 @@
 // CORE ALGORITHM: Apply pipeline sequentially
 import astParser from "./viewer_etl_ast_parser.js";
 
-export function transformCell(rawValue, pipeline) {
+export function transformCell(rawValue, pipeline, contextRow = null) {
     if (rawValue === undefined || rawValue === null) rawValue = "";
     let currentValue = String(rawValue).trim();
     let isRejected = false;
@@ -30,7 +30,161 @@ export function transformCell(rawValue, pipeline) {
                 if (execution.rejected) isRejected = true;
                 continue;
             }
-        } else if (isCustomReplace) {
+        } 
+        else if (rule.tipo === 'combine_numeric') {
+            // Evaluador de Fusionado Numérico (Context-Aware & Frequency-Aware)
+            const tgtColId = rule.target_col_id;
+            const srcColId = rule.source_col_id;
+            
+            let skipTransform = false;
+
+            // FASE DE ESCANEO PRE-COMPUTADA (CACHÉ)
+            if (srcColId && window.currentSheetData && window.currentSheetData.length > 1) {
+                if (!window._freqCache) window._freqCache = {};
+                
+                const ruleIdx = pipeline.indexOf(rule);
+                const partialPipeline = ruleIdx >= 0 ? pipeline.slice(0, ruleIdx) : [];
+                // Un hash que garantiza invalidación ante cambios de pipeline o de volumen de datos
+                const cacheKeyStr = "combine_freq_" + srcColId + "_" + window.currentSheetData.length + "_" + JSON.stringify(partialPipeline);
+                
+                if (!window._freqCache[cacheKeyStr]) {
+                    console.log(`[ETL PREVIEW] ⚡ Construyendo Mapa de Frecuencias global para columna: ${srcColId}...`);
+                    window._freqCache[cacheKeyStr] = {};
+                    
+                    // Helper iterativo local para resolver el crudo de la columna
+                    const resolveRaw = (r, tId) => {
+                        let physicalIdx = tId;
+                        if (window.computedColumns) {
+                            const comp = window.computedColumns.find(c => c.id === tId);
+                            if (comp && comp.operands && comp.operands.length > 0) return resolveRaw(r, comp.operands[0]); 
+                        }
+                        if (typeof physicalIdx === 'string' && window.virtualColumns) {
+                            const vCol = window.virtualColumns.find(c => String(c.id) === String(physicalIdx));
+                            if (vCol && vCol.dataIdx !== undefined) physicalIdx = vCol.dataIdx;
+                        }
+                        if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) physicalIdx = parseInt(physicalIdx.replace('col_', ''), 10);
+                        if (typeof physicalIdx !== 'number' || isNaN(physicalIdx) || physicalIdx < 0) return "";
+                        return String(r[physicalIdx] || "");
+                    };
+
+                    const rawRows = window.currentSheetData.slice(1);
+                    for (let r of rawRows) {
+                        let baseRaw = resolveRaw(r, srcColId);
+                        if (!baseRaw.trim()) continue;
+                        
+                        let outVal = baseRaw;
+                        if (partialPipeline.length > 0) {
+                            const tr = transformCell(baseRaw, partialPipeline, r);
+                            if (tr.rejected) continue;
+                            outVal = String(tr.display || tr.result || "");
+                        }
+                        
+                        if (outVal !== "") {
+                            window._freqCache[cacheKeyStr][outVal] = (window._freqCache[cacheKeyStr][outVal] || 0) + 1;
+                        }
+                    }
+                }
+                
+                // CONDICIONAL: Verificar duplicados
+                const ocurrences = window._freqCache[cacheKeyStr][currentValue] || 0;
+                if (ocurrences <= 1) {
+                    skipTransform = true; // Código Base ÚNICO: Bypass de la regla.
+                }
+            }
+
+            if (!skipTransform && tgtColId !== undefined && contextRow) {
+                let targetRawVal = "";
+                if (window.virtualColumns) {
+                    const vCol = window.virtualColumns.find(c => String(c.id) === String(tgtColId));
+                    if (vCol) targetRawVal = contextRow[vCol.dataIdx];
+                    else targetRawVal = contextRow[tgtColId];
+                } else {
+                    targetRawVal = contextRow[tgtColId];
+                }
+                
+                const numbersOnly = String(targetRawVal || "").replace(/[^0-9]/g, '');
+                currentValue = currentValue + (numbersOnly ? "-" + numbersOnly : "");
+            }
+        }
+        else if (rule.tipo === 'combine_hash') {
+            // Evaluador de Hash de Texto (Context-Aware & Frequency-Aware)
+            const tgtColId = rule.target_col_id;
+            const srcColId = rule.source_col_id;
+            
+            let skipTransform = false;
+
+            // FASE DE ESCANEO PRE-COMPUTADA (CACHÉ)
+            if (srcColId && window.currentSheetData && window.currentSheetData.length > 1) {
+                if (!window._freqCache) window._freqCache = {};
+                
+                const ruleIdx = pipeline.indexOf(rule);
+                const partialPipeline = ruleIdx >= 0 ? pipeline.slice(0, ruleIdx) : [];
+                const cacheKeyStr = "combine_freq_" + srcColId + "_" + window.currentSheetData.length + "_" + JSON.stringify(partialPipeline);
+                
+                if (!window._freqCache[cacheKeyStr]) {
+                    console.log(`[ETL PREVIEW] ⚡ Construyendo Mapa de Frecuencias global para columna (Hash): ${srcColId}...`);
+                    window._freqCache[cacheKeyStr] = {};
+                    
+                    const resolveRaw = (r, tId) => {
+                        let physicalIdx = tId;
+                        if (window.computedColumns) {
+                            const comp = window.computedColumns.find(c => c.id === tId);
+                            if (comp && comp.operands && comp.operands.length > 0) return resolveRaw(r, comp.operands[0]); 
+                        }
+                        if (typeof physicalIdx === 'string' && window.virtualColumns) {
+                            const vCol = window.virtualColumns.find(c => String(c.id) === String(physicalIdx));
+                            if (vCol && vCol.dataIdx !== undefined) physicalIdx = vCol.dataIdx;
+                        }
+                        if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) physicalIdx = parseInt(physicalIdx.replace('col_', ''), 10);
+                        if (typeof physicalIdx !== 'number' || isNaN(physicalIdx) || physicalIdx < 0) return "";
+                        return String(r[physicalIdx] || "");
+                    };
+
+                    const rawRows = window.currentSheetData.slice(1);
+                    for (let r of rawRows) {
+                        let baseRaw = resolveRaw(r, srcColId);
+                        if (!baseRaw.trim()) continue;
+                        
+                        let outVal = baseRaw;
+                        if (partialPipeline.length > 0) {
+                            const tr = transformCell(baseRaw, partialPipeline, r);
+                            if (tr.rejected) continue;
+                            outVal = String(tr.display || tr.result || "");
+                        }
+                        
+                        if (outVal !== "") {
+                            window._freqCache[cacheKeyStr][outVal] = (window._freqCache[cacheKeyStr][outVal] || 0) + 1;
+                        }
+                    }
+                }
+                
+                const ocurrences = window._freqCache[cacheKeyStr][currentValue] || 0;
+                if (ocurrences <= 1) {
+                    skipTransform = true; // Código Base ÚNICO: Bypass de la regla.
+                }
+            }
+
+            if (!skipTransform && tgtColId !== undefined && contextRow) {
+                let targetRawVal = "";
+                if (window.virtualColumns) {
+                    const vCol = window.virtualColumns.find(c => String(c.id) === String(tgtColId));
+                    if (vCol) targetRawVal = contextRow[vCol.dataIdx];
+                    else targetRawVal = contextRow[tgtColId];
+                } else {
+                    targetRawVal = contextRow[tgtColId];
+                }
+                
+                // Algoritmo DJB2 Hash para convertir texto a un numero determinista pseudo-unico
+                const rawStr = String(targetRawVal || "").trim().toLowerCase();
+                let hash = 5381;
+                for (let i = 0; i < rawStr.length; i++) {
+                    hash = ((hash << 5) + hash) + rawStr.charCodeAt(i);
+                }
+                const suffix = Math.abs(hash); // Tomar valor absoluto preventivo
+                currentValue = currentValue + "-" + suffix;
+            }
+        }
+        else if (isCustomReplace) {
             try {
                 const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
                 const parts = payload.split('|||');
@@ -81,6 +235,9 @@ export function transformCell(rawValue, pipeline) {
             // Reglas Nativas
             if (rule.tipo_regex === 'SANITIZER_NUMERIC') {
                 currentValue = currentValue.replace(/[^0-9.,-]/g, '');
+            }
+            else if (rule.tipo_regex === 'SANITIZER_NUMERIC_AND_DASH') {
+                currentValue = currentValue.replace(/[^0-9\-]/g, '');
             }
             else if (rule.tipo_regex === 'SANITIZER_NUMERIC_PIPE') {
                 if (/[^0-9|/]/.test(currentValue)) {
@@ -271,7 +428,7 @@ export function previewColumn(colIndex, pipeline, skipMath = false) {
             countTotal = realData.length - 1; // exclude header
             for (let i = 1; i < realData.length; i++) {
                 const rawVal = (realData[i][dataIdx] !== undefined && realData[i][dataIdx] !== null) ? String(realData[i][dataIdx]) : "";
-                const { rejected } = transformCell(rawVal, pipeline);
+                const { rejected } = transformCell(rawVal, pipeline, realData[i]);
                 if (rejected) countRejected++;
             }
         } else {

@@ -178,10 +178,9 @@ function renderVirtualTable(originalData) {
         // [V5.5 - MERGE DE ESQUEMAS] Resuelve "Schema Blindness" cruzando memoria con Raw Data
         // Aseguramos que si el archivo nuevo trajo más columnas de las que el flujo recordaba, estas se inyecten.
         for (let idx = 0; idx < maxCols; idx++) {
-            const baseId = `col_${idx}`;
-            const exists = window.virtualColumns.some(vc => vc.id === baseId);
+            const exists = window.virtualColumns.some(vc => vc.dataIdx === idx);
             if (!exists) {
-                window.virtualColumns.push({ id: baseId, dataIdx: idx });
+                window.virtualColumns.push({ id: `col_${idx}`, dataIdx: idx });
             }
         }
     }
@@ -485,7 +484,7 @@ function renderVirtualTable(originalData) {
 
                     if (activePipeline && activePipeline.length > 0 && window.viewerETL) {
                         const rawVal = String(cellVal);
-                        const { result, rejected } = window.viewerETL.transformCell(rawVal, activePipeline);
+                        const { result, rejected } = window.viewerETL.transformCell(rawVal, activePipeline, row);
 
                         if (rawVal === "" && (window.location.hostname.includes('localhost') || window.location.hostname === '127.0.0.1')) {
                             console.log(`[VIGIA AUDITOR RENDER] Celda Evaluada | rawVal: '${rawVal}' -> result: '${result}' | rejected: ${rejected} | Pipeline Length: ${activePipeline.length}`);
@@ -577,7 +576,7 @@ function renderVirtualTable(originalData) {
                                     const vColOp = window.virtualColumns.find(v => v.id === opColId);
                                     if (vColOp && vColOp.dataIdx !== undefined) {
                                         const raw = String(row[vColOp.dataIdx] || "");
-                                        const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || []);
+                                        const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || [], row);
                                         rCtx[opColId] = { clean, display: display !== undefined ? display : result, raw: raw };
                                     } else {
                                         // Prevents undefined crash
@@ -749,8 +748,9 @@ function generatePreview() {
                     }
                 }
 
-                // [V4/V5] PIPELINE HANDLING (Uses draft pipelines instead of legacy processingRules)
-                const pipelineData = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
+                // [V4/V5] PIPELINE HANDLING WITH LIVE WORKSHOP CONTEXT
+                const savedPipeline = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
+                const pipelineData = (window.activeEtlState && window.activeEtlState.isOpen && window.activeEtlState.colIndex === vColId) ? window.activeEtlState.pipeline : savedPipeline;
                 const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
 
                 // Check for Structure Modifying Rules (Split) - Toma prioridad
@@ -773,7 +773,7 @@ function generatePreview() {
                                 isVirtual: true,
                                 isSupportCol: false, // Split targets son siempre resultado principal
                                 sourceIndex: dataIdx, // For reading raw value
-                                transform: (val) => {
+                                transform: (val, rowContext) => {
                                     if (val === null || val === undefined || val === '') return '';
                                     const parts = String(val).split(splitRule.delimiter);
                                     return parts[subIdx] ? parts[subIdx].trim() : '';
@@ -807,7 +807,7 @@ function generatePreview() {
                                 isVirtual: true,
                                 isSupportCol: false, // Split dinamico siempre visible
                                 sourceIndex: dataIdx, // Read from raw data
-                                transform: (val) => {
+                                transform: (val, rowContext) => {
                                     const stringVal = (val !== null && val !== undefined) ? String(val) : "";
                                     const match = stringVal.trim().match(regex);
                                     if (match) {
@@ -830,9 +830,9 @@ function generatePreview() {
                         isVirtual: false,
                         isSupportCol: isSupportCol, // Flag Maestro V8
                         sourceIndex: dataIdx,
-                        transform: (val) => {
+                        transform: (val, rowContext) => {
                             if (!window.viewerETL) return val;
-                            const res = window.viewerETL.transformCell(String(val || ""), rulesStack);
+                            const res = window.viewerETL.transformCell(String(val || ""), rulesStack, rowContext);
                             return res.resultDisplay || res.result || res.display;
                         },
                         hasSwitch: false, // Legacy switch hidden, relying on Gear
@@ -868,7 +868,7 @@ function generatePreview() {
                                             const vColOp = window.virtualColumns.find(v => v.id === opColId);
                                             if (vColOp && vColOp.dataIdx !== undefined) {
                                                 const raw = String(row[vColOp.dataIdx] || "");
-                                                const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || []);
+                                                const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || [], row);
                                                 rCtx[opColId] = { clean, display: display !== undefined ? display : result, raw: raw };
                                             } else {
                                                 rCtx[opColId] = { clean: "", display: "", raw: "" };
@@ -944,7 +944,9 @@ function generatePreview() {
                 if (!vCol) return;
                 const dataIdx = vCol.dataIdx;
 
-                const pipelineData = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
+                // [V4/V5] PIPELINE HANDLING WITH LIVE WORKSHOP CONTEXT
+                const savedPipeline = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
+                const pipelineData = (window.activeEtlState && window.activeEtlState.isOpen && window.activeEtlState.colIndex === vColId) ? window.activeEtlState.pipeline : savedPipeline;
                 const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
 
                 let cellValue = row[dataIdx];
@@ -955,7 +957,7 @@ function generatePreview() {
 
                 // 1. Core V5 Mega-Pipeline Transformation
                 if (window.viewerETL && typeof window.viewerETL.transformCell === 'function') {
-                    const result = window.viewerETL.transformCell(cellValue, rulesStack);
+                    const result = window.viewerETL.transformCell(cellValue, rulesStack, row); // PASS ROW CONTEXT
                     display = result.display;
                     clean = result.clean;
                     rejected = result.rejected;
@@ -1014,9 +1016,10 @@ function generatePreview() {
                     
                     // Verifica si el nombre maestro comienza con CÓDIGO o CODIGO
                     const isCodeCol = !!String(colName).toUpperCase().trim().match(/^C[OÓ]DIGO/i);
-                    const isCellEmpty = (display === null || display === undefined || String(display).trim() === "");
+                    const cleanDisplay = display ? String(display).trim() : "";
+                    const hasAlphanumeric = /[a-zA-Z0-9]/.test(cleanDisplay);
                     
-                    if (isCodeCol && isCellEmpty) {
+                    if (isCodeCol && !hasAlphanumeric) {
                         row._rejectedSim = true;
                         row._rejectedByCode = true; // Para titulo especial en UI
                     }
@@ -1727,7 +1730,7 @@ window.handleColumnContextMenu = function(e, colId, colName) {
     setTimeout(() => document.addEventListener('mousedown', killMenu), 10);
 };
 
-window.runUniqueValueAudit = function(colId, colName) {
+window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
     // 1. Snapshot validación
     if (!window.viewerState || !window.viewerState.data || window.viewerState.data.length === 0) {
         if (typeof Swal !== 'undefined') {
@@ -1748,6 +1751,11 @@ window.runUniqueValueAudit = function(colId, colName) {
     
     const isComputed = lookupKey === null; // si lookupKey es nulo, significa que debe estar como llave cruda
     
+    // Obtener Pipeline Activo para esta columna en caso de modo procesado
+    const pipeObj = (window.activeEtlState && window.activeEtlState.isOpen && window.activeEtlState.colIndex === colId) 
+        ? window.activeEtlState.pipeline 
+        : (window.draftPipelines && window.draftPipelines[colId] ? window.draftPipelines[colId].rules : []);
+
     let scannedCount = 0;
 
     data.forEach((row, rowIdx) => {
@@ -1761,8 +1769,13 @@ window.runUniqueValueAudit = function(colId, colName) {
             cellVal = row[lookupKey];
         }
         
-        // Trim value and stringify
-        const strVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
+        let strVal = '';
+        if (viewMode === 'processed' && pipeObj && pipeObj.length > 0 && window.viewerETL) {
+            const tr = window.viewerETL.transformCell(cellVal, pipeObj, row);
+            strVal = String(tr.display || tr.result || "").trim();
+        } else {
+            strVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
+        }
         
         // 3. Omitir nulos o vacíos ("Manejo de Celdas Vacías")
         if (strVal === '') return; 
@@ -1776,21 +1789,32 @@ window.runUniqueValueAudit = function(colId, colName) {
     // 4. Analizar Conflicto (Valores duplicados)
     const duplicates = Object.entries(valueMap).filter(([val, occurrences]) => occurrences.length > 1);
     
+    const toggleHtml = `
+        <div class="flex items-center justify-between bg-slate-900 border border-slate-700/50 p-2 rounded-lg mb-4">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 focus:outline-none">
+                <i data-lucide="eye" class="w-3.5 h-3.5"></i> Auditando origen:
+            </div>
+            <div class="w-72 bg-slate-950 p-1 rounded-md flex relative shadow-inner">
+                <div class="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-blue-600/30 border border-blue-500/50 rounded transition-all duration-300" style="left: ${viewMode === 'raw' ? '4px' : 'calc(50% + 4px)'};"></div>
+                <button onclick="window.runUniqueValueAudit('${colId}', '${colName}', 'raw')" class="flex-1 py-1.5 text-xs font-bold z-10 transition-colors ${viewMode === 'raw' ? 'text-blue-200' : 'text-slate-500 hover:text-slate-300'}">Crudo (Inicial)</button>
+                <button onclick="window.runUniqueValueAudit('${colId}', '${colName}', 'processed')" class="flex-1 py-1.5 text-xs font-bold z-10 transition-colors ${viewMode === 'processed' ? 'text-blue-200' : 'text-slate-500 hover:text-slate-300'}">Procesado (ETL)</button>
+            </div>
+        </div>
+        ${viewMode === 'processed' && (!pipeObj || pipeObj.length === 0) ? '<div class="text-xs text-amber-400 bg-amber-900/20 py-2 px-3 rounded text-center mb-4 border border-amber-500/30"><i data-lucide="alert-triangle" class="inline w-3 h-3 mr-1 align-middle"></i>Mostrando estado inicial: Aún no hay reglas activas para alterar el flujo.</div>' : ''}
+    `;
+
     // 5. UX Escenarios
     if (duplicates.length === 0) {
         // ÉXITO
         if (typeof Swal !== 'undefined') {
             Swal.fire({
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 4000,
-                timerProgressBar: true,
-                icon: 'success',
                 title: 'Auditoría Exitosa',
-                html: `Se escanearon <b>${scannedCount}</b> registros.<br>Todos los valores en <b>'${colName}'</b> son únicos.`,
+                html: toggleHtml + `<div class="mt-4"><i data-lucide="check-circle" class="w-16 h-16 text-emerald-500 mx-auto mb-4"></i><br>Se escanearon <b>${scannedCount}</b> registros.<br>Todos los valores en <b>'${colName}'</b> son rigurosamente únicos.</div>`,
                 background: '#0f172a',
-                color: '#10b981'
+                color: '#10b981',
+                confirmButtonText: 'Genial',
+                confirmButtonColor: '#3b82f6',
+                didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
             });
         } else {
             alert(`Auditoría exitosa! Se escanearon ${scannedCount} registros. Todos los valores son únicos.`);
@@ -1826,7 +1850,7 @@ window.runUniqueValueAudit = function(colId, colName) {
         const totalAffected = duplicates.reduce((sum, [_, arr]) => sum + arr.length, 0);
 
         // Build conflict UI HTML
-        let conflictHtml = `
+        let conflictHtml = toggleHtml + `
             <div class="mb-5 bg-amber-900/40 border border-amber-500/40 shadow-lg shadow-amber-900/20 rounded-lg p-4 text-left">
                 <div class="flex items-center gap-2 text-amber-400 font-bold mb-2 text-[11px] uppercase tracking-wider">
                     <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Resumen Analítico
@@ -1835,9 +1859,8 @@ window.runUniqueValueAudit = function(colId, colName) {
                     Se encontraron ${freqSentence}. Total de filas afectadas: <b class="text-amber-400 text-sm bg-amber-500/10 px-1 rounded">${totalAffected}</b>.
                 </div>
             </div>
+            <div class="flex flex-col gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
         `;
-        
-        conflictHtml += `<div class="flex flex-col gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-4">`;
         
         duplicates.forEach(([val, reqs]) => {
             conflictHtml += `

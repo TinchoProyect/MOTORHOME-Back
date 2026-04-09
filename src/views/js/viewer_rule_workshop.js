@@ -113,6 +113,19 @@ function renderRuleSelector() {
         
         selector.appendChild(option);
     });
+
+    // Inyectar Regla Local Bespoke (COMBINE_NUMERIC)
+    const bespokeOption = document.createElement('option');
+    bespokeOption.value = 'BESPOKE_COMBINE_NUMERIC';
+    bespokeOption.textContent = '⚡ Resolver duplicados por combinación';
+    bespokeOption.className = 'font-bold text-amber-400 bg-amber-900/20';
+    selector.appendChild(bespokeOption);
+
+    const hashOption = document.createElement('option');
+    hashOption.value = 'BESPOKE_COMBINE_HASH';
+    hashOption.textContent = '⚡ Resolver duplicados por texto (Hash)';
+    hashOption.className = 'font-bold text-fuchsia-400 bg-fuchsia-900/20';
+    selector.appendChild(hashOption);
 }
 
 // OPEN PANEL
@@ -582,6 +595,18 @@ export function addSelectedRule() {
     }
 
     const ruleId = selector.value;
+    
+    // CASO A: Regla Bespoke Local
+    if (ruleId === 'BESPOKE_COMBINE_NUMERIC') {
+        promptCombineNumericRule();
+        selector.value = "";
+        return;
+    }
+    if (ruleId === 'BESPOKE_COMBINE_HASH') {
+        promptCombineHashRule();
+        selector.value = "";
+        return;
+    }
     // ruleId from DOM is a string, rule.id from DB is an int.
     const ruleObj = catalogRules.find(r => r.id.toString() === ruleId);
 
@@ -740,7 +765,7 @@ async function renderCacheMissGatillo(container) {
         let outVal = crudo;
         let rejected = false;
         if (window.viewerETL && window.viewerETL.transformCell) {
-            const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline);
+            const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
             outVal = String(tr.display || tr.result || "");
             rejected = tr.rejected;
         }
@@ -784,7 +809,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
     for(let row of rawRows) {
         let crudo = resolveRawValueForRow(row, physicalIdx);
         if (!crudo.trim()) continue;
-        const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline);
+        const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
         let outVal = String(tr.display || tr.result || "");
         let isUnmapped = libretaDict && libretaDict[crudo.trim()] === undefined;
         
@@ -1107,7 +1132,7 @@ export async function auditResidues() {
             
             let mutateResult = crudo;
             if (window.viewerETL && window.viewerETL.transformCell) {
-               const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline);
+               const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
                mutateResult = String(tr.display || tr.result || "");
                if (tr.rejected || mutateResult.trim() === "" || mutateResult === crudo) {
                    residualSamples.push(crudo);
@@ -1317,6 +1342,200 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false, co
     } catch (err) {
         console.error("Error creando regla local:", err);
         return false;
+    }
+}
+
+// [V5.30 UX] Bespoke Rule: Combine Numeric (Inter-Column)
+async function promptCombineNumericRule() {
+    // Collect ALL columns from Virtual Guard (Not just mapped ones) to provide total freedom
+    const headers = window.currentSheetData && window.currentSheetData[0] ? window.currentSheetData[0] : [];
+    
+    const availableCols = (window.virtualColumns || []).map(vCol => {
+        if (String(vCol.id) === String(activeContext.colIndex)) return null;
+        if (vCol.isGhostPlaceholder || vCol.isCalculated) return null; // Skip virtual UI blocks
+        
+        let displayName = "";
+        const draft = window.draftPipelines && window.draftPipelines[vCol.id];
+        
+        if (draft && draft.masterField && draft.masterField.nombre_campo) {
+            displayName = `[Enlazada] ${draft.masterField.nombre_campo}`;
+        } else {
+            const rawHeader = headers[vCol.dataIdx] ? String(headers[vCol.dataIdx]).trim() : `Columna ${vCol.dataIdx + 1}`;
+            displayName = `[Crudo] ${rawHeader || 'Sin Nombre'}`;
+        }
+        
+        return { id: vCol.id, name: displayName, isMapped: !!draft };
+    }).filter(Boolean);
+
+    if (availableCols.length === 0) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'No hay contexto',
+                text: 'No hay otras columnas en el archivo para combinar.',
+                icon: 'warning',
+                background: '#0f172a',
+                color: '#f8fafc',
+                customClass: { popup: 'border border-slate-700 shadow-2xl' }
+            });
+        }
+        return;
+    }
+
+    // Ordenar: Mapeadas primero, luego crudas
+    availableCols.sort((a, b) => (a.isMapped === b.isMapped ? 0 : a.isMapped ? -1 : 1));
+
+    const optionsHtml = availableCols.map(c => `<option value="${c.id}" style="background-color: #0f172a; color: ${c.isMapped ? '#34d399' : '#94a3b8'}; text-transform: uppercase;">${c.name}</option>`).join('');
+
+    const { value: selectedColId } = await Swal.fire({
+        title: 'Seleccionar Origen',
+        html: `
+            <div style="text-align: left; margin-bottom: 24px; font-size: 13px; color: rgba(203, 213, 225, 0.8); line-height: 1.6; font-weight: 300;">
+                Selecciona la columna secundaria (cruda o enlazada). El motor descartará cualquier carácter que no sea numérico y concatenará el resultado al código actual con un guion (-).
+            </div>
+            <div style="position: relative;">
+                <i data-lucide="link" style="width: 16px; height: 16px; color: #34d399; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 10; pointer-events: none;"></i>
+                <select id="swal-combine-col" style="width: 100%; background: rgba(2, 6, 23, 0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 12px 16px 12px 36px; color: #d1fae5; appearance: none; outline: none; cursor: pointer; font-weight: 500; letter-spacing: 0.025em; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);">
+                    <option value="" disabled selected>Elige una columna mapeada...</option>
+                    ${optionsHtml}
+                </select>
+                <i data-lucide="chevron-down" style="width: 16px; height: 16px; color: #64748b; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); z-index: 10; pointer-events: none;"></i>
+            </div>
+        `,
+        background: 'rgba(15, 23, 42, 0.85)',
+        color: '#ffffff',
+        customClass: {
+            title: 'text-white font-light tracking-wide text-xl',
+            confirmButton: 'bg-emerald-600/80 hover:bg-emerald-500 text-white border border-emerald-400/30 rounded-lg shadow-lg px-6 py-2 transition-all',
+            cancelButton: 'bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 border border-slate-600/50 rounded-lg px-6 py-2 transition-all'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Aplicar Fusión',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            const val = document.getElementById('swal-combine-col').value;
+            if (!val) Swal.showValidationMessage('Debes seleccionar una columna');
+            return val;
+        },
+        didOpen: () => {
+            if (window.lucide) window.lucide.createIcons();
+            const popup = Swal.getPopup();
+            if (popup) {
+                popup.style.backdropFilter = 'blur(16px)';
+                popup.style.WebkitBackdropFilter = 'blur(16px)';
+                popup.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                popup.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.5)';
+                popup.style.borderRadius = '1rem';
+            }
+        }
+    });
+
+    if (selectedColId) {
+        const sourceName = availableCols.find(c => c.id === selectedColId)?.name || 'Otra columna';
+        const ruleObj = {
+            tipo: 'combine_numeric',
+            nombre_regla: `Fusionar Cód + Núms de [${sourceName}]`,
+            descripcion: 'Regla Avanzada: Extrae caracteres numéricos (0-9) de la columna referenciada y los concatena con un guion (-).',
+            target_col_id: selectedColId,
+            source_col_id: activeContext.colIndex,
+            disabled: false
+        };
+        
+        console.log(`⚡ [WORKSHOP] Aplicando Regla Combine Numeric | Target: ${selectedColId}`);
+        currentDraftPipeline.push({ ...ruleObj });
+        renderPipeline();
+        triggerPreview();
+    }
+}
+
+// [V5.30 UX] Bespoke Rule: Combine Hash (Text to Numeric)
+async function promptCombineHashRule() {
+    const headers = window.currentSheetData && window.currentSheetData[0] ? window.currentSheetData[0] : [];
+    
+    const availableCols = (window.virtualColumns || []).map(vCol => {
+        if (String(vCol.id) === String(activeContext.colIndex)) return null;
+        if (vCol.isGhostPlaceholder || vCol.isCalculated) return null;
+        
+        let displayName = "";
+        const draft = window.draftPipelines && window.draftPipelines[vCol.id];
+        
+        if (draft && draft.masterField && draft.masterField.nombre_campo) {
+            displayName = `[Enlazada] ${draft.masterField.nombre_campo}`;
+        } else {
+            const rawHeader = headers[vCol.dataIdx] ? String(headers[vCol.dataIdx]).trim() : `Columna ${vCol.dataIdx + 1}`;
+            displayName = `[Crudo] ${rawHeader || 'Sin Nombre'}`;
+        }
+        
+        return { id: vCol.id, name: displayName, isMapped: !!draft };
+    }).filter(Boolean);
+
+    if (availableCols.length === 0) {
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'No hay contexto', text: 'No hay otras columnas en el archivo para combinar.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+        return;
+    }
+
+    // Ordenar: Mapeadas primero, luego crudas
+    availableCols.sort((a, b) => (a.isMapped === b.isMapped ? 0 : a.isMapped ? -1 : 1));
+
+    const optionsHtml = availableCols.map(c => `<option value="${c.id}" style="background-color: #0f172a; color: ${c.isMapped ? '#d946ef' : '#94a3b8'}; text-transform: uppercase;">${c.name}</option>`).join('');
+
+    const { value: selectedColId } = await Swal.fire({
+        title: 'Seleccionar Origen (Hash)',
+        html: `
+            <div style="text-align: left; margin-bottom: 24px; font-size: 13px; color: rgba(203, 213, 225, 0.8); line-height: 1.6; font-weight: 300;">
+                Selecciona la columna secundaria (ej. Descripción). El motor convertirá su texto en una huella numérica única (Hash Determinista) y la enlazará a los registros duplicados.
+            </div>
+            <div style="position: relative;">
+                <i data-lucide="hash" style="width: 16px; height: 16px; color: #d946ef; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 10; pointer-events: none;"></i>
+                <select id="swal-combine-hash" style="width: 100%; background: rgba(2, 6, 23, 0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 12px 16px 12px 36px; color: #fdf4ff; appearance: none; outline: none; cursor: pointer; font-weight: 500; letter-spacing: 0.025em; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);">
+                    <option value="" disabled selected>Elige una columna de texto...</option>
+                    ${optionsHtml}
+                </select>
+                <i data-lucide="chevron-down" style="width: 16px; height: 16px; color: #64748b; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); z-index: 10; pointer-events: none;"></i>
+            </div>
+        `,
+        background: 'rgba(15, 23, 42, 0.85)',
+        color: '#ffffff',
+        customClass: {
+            title: 'text-white font-light tracking-wide text-xl',
+            confirmButton: 'bg-fuchsia-600/80 hover:bg-fuchsia-500 text-white border border-fuchsia-400/30 rounded-lg shadow-lg px-6 py-2 transition-all',
+            cancelButton: 'bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 border border-slate-600/50 rounded-lg px-6 py-2 transition-all'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Generar Hash',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            const val = document.getElementById('swal-combine-hash').value;
+            if (!val) Swal.showValidationMessage('Debes seleccionar una columna');
+            return val;
+        },
+        didOpen: () => {
+            if (window.lucide) window.lucide.createIcons();
+            const popup = Swal.getPopup();
+            if (popup) {
+                popup.style.backdropFilter = 'blur(16px)';
+                popup.style.WebkitBackdropFilter = 'blur(16px)';
+                popup.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                popup.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.5)';
+                popup.style.borderRadius = '1rem';
+            }
+        }
+    });
+
+    if (selectedColId) {
+        const sourceName = availableCols.find(c => c.id === selectedColId)?.name || 'Otra columna';
+        const ruleObj = {
+            tipo: 'combine_hash',
+            nombre_regla: `Sufijo Hash desde [${sourceName}]`,
+            descripcion: 'Regla Avanzada: Transforma el texto de la columna origen en un identificador numérico único (DJB2) y lo concatena con un guion (-).',
+            target_col_id: selectedColId,
+            source_col_id: activeContext.colIndex,
+            disabled: false
+        };
+        
+        console.log(`⚡ [WORKSHOP] Aplicando Regla Combine Hash | Target: ${selectedColId}`);
+        currentDraftPipeline.push({ ...ruleObj });
+        renderPipeline();
+        triggerPreview();
     }
 }
 
