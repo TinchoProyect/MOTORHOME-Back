@@ -766,6 +766,18 @@ async function rollbackFiles(req, res) {
                         .eq('id', rawListId);
                     
                     if (updateError) throw new Error("Error degradando registro padre: " + updateError.message);
+
+                    // [VECTOR B y C - FIX] Borrado sincrónico en Tabla Maestra
+                    // Si revertimos la extracción, debemos físicamente sacar la data que se había insertado al master
+                    console.log(`   -> Limpiando registros asociados en tabla_maestra_operativa...`);
+                    const { error: masterDeleteError } = await supabase
+                        .from('tabla_maestra_operativa')
+                        .delete()
+                        .eq('archivo_origen_id', rawListId);
+
+                    if (masterDeleteError && masterDeleteError.code !== '42P01') {
+                        throw new Error("Error purgado de tabla maestra: " + masterDeleteError.message);
+                    }
                 } else {
                     console.log(`   -> Eliminando registro raíz (Lista Raw) de Base de Datos...`);
                     const { error: delListError } = await supabase
@@ -774,6 +786,16 @@ async function rollbackFiles(req, res) {
                         .eq('id', rawListId);
 
                     if (delListError) throw new Error("Error borrando registro padre: " + delListError.message);
+                    
+                    // Asegurarnos que también se borre de maestra ante un delete puro
+                    const { error: masterDeleteError2 } = await supabase
+                        .from('tabla_maestra_operativa')
+                        .delete()
+                        .eq('archivo_origen_id', rawListId);
+                        
+                    if (masterDeleteError2 && masterDeleteError2.code !== '42P01') {
+                        throw new Error("Error purgado de tabla maestra: " + masterDeleteError2.message);
+                    }
                 }
 
                 results.processed++;

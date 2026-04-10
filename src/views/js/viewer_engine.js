@@ -553,6 +553,7 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
 
     // 2. Load Data Cache
     const sheetNames = Object.keys(workbookMap);
+    window.currentSheetList = sheetNames;
     if (sheetNames.length === 0) {
         alert("El archivo está vacío.");
         return;

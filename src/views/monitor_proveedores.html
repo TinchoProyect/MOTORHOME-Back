@@ -816,7 +816,7 @@
                     </button>
                 </div>
             </div>
-            <div id="simulationTableContainer" class="flex-1 overflow-auto bg-slate-900 p-0 custom-scrollbar">
+            <div id="simulationTableContainer" class="flex-1 overflow-hidden flex flex-col bg-slate-900 p-0 custom-scrollbar">
                 <div class="flex flex-col items-center justify-center h-full text-slate-600">
                     <i data-lucide="table" class="w-12 h-12 opacity-20 mb-2"></i>
                     <p class="text-[10px] font-mono">EJECUTA LA SIMULACIÓN PARA VER DATOS</p>
@@ -864,9 +864,13 @@
                               <p id="fmtUltimaExtraccion" class="text-xs font-mono font-bold text-slate-300">--</p>
                           </div>
                      </div>
-                </div>
+                 </div>
+                 
+                 <!-- Dynamic multi-provider switch container -->
+                 <div id="fmtNavbarProviders" class="flex gap-2 items-center flex-wrap px-4 border-l border-slate-700/50">
+                 </div>
 
-                <div class="flex items-center gap-3 ml-auto">
+                 <div class="flex items-center gap-3 ml-auto">
                     <!-- BI Action Pills -->
                     <div class="flex bg-slate-900 rounded-lg p-1 border border-slate-700/50 mr-2 shadow-inner">
                         <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('ALL')" id="pill-filter-ALL" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all bg-slate-700 text-white shadow-sm">Todos</button>
@@ -1288,23 +1292,51 @@
                     if (window.v4GridApi) window.v4GridApi.onFilterChanged();
                 };
 
-                // Identificar Latest Snapshot (La última ingesta por Proveedor+Código)
-                const latestMap = new Map();
-                // Ojo: vienen ordenados DESC desde el backend, el primero que leemos es el último subido.
+                // Extract the distinct providers dynamically
+                const providersSet = new Map();
                 opJson.data.forEach(op => {
-                     const key = `${op.proveedor_id}_${op.datos_maestros.codigo}`;
-                     if (!latestMap.has(key)) latestMap.set(key, op.id);
+                    providersSet.set(op.proveedor_id, op.nombre_proveedor);
                 });
+                
+                // Add Multi-Provider Switches dynamically to the header toolbar
+                const container = document.getElementById('fmtNavbarProviders');
+                if (container) {
+                    container.innerHTML = ''; // Clean up if re-rendered
+                    
+                    // Initialize state with all ON
+                    window.activeProviderFilters = new Set(providersSet.keys());
+
+                    window.toggleProviderFilter = function(provId) {
+                         const btn = document.getElementById(`prov-switch-${provId}`);
+                         if (window.activeProviderFilters.has(provId)) {
+                              window.activeProviderFilters.delete(provId);
+                              btn.classList.remove('bg-purple-600', 'text-white', 'shadow-sm', 'border-purple-500/50');
+                              btn.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
+                         } else {
+                              window.activeProviderFilters.add(provId);
+                              btn.classList.add('bg-purple-600', 'text-white', 'shadow-sm', 'border-purple-500/50');
+                              btn.classList.remove('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
+                         }
+                         if (window.v4GridApi) window.v4GridApi.onFilterChanged();
+                    };
+
+                    Array.from(providersSet.entries()).forEach(([id, name]) => {
+                        const switchHtml = `<button id="prov-switch-${id}" onclick="window.toggleProviderFilter('${id}')" title="Mostrar/Ocultar ${name}" class="prov-switch px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all bg-purple-600 text-white shadow-sm border border-purple-500/50 flex items-center gap-2">
+                             <div class="w-2 h-2 rounded-full bg-white/80"></div>
+                             ${name}
+                        </button>`;
+                        container.insertAdjacentHTML('beforeend', switchHtml);
+                    });
+                }
 
                 const rowData = opJson.data.map(op => {
-                     const key = `${op.proveedor_id}_${op.datos_maestros.codigo}`;
                      return {
                           _system_id: op.id,
+                          _proveedor_id: op.proveedor_id,
                           _proveedor: op.nombre_proveedor,
                           _timestamp: op.timestamp_extraccion,
                           _estado_delta: op.datos_maestros._estado_delta || 'INTACTO',
                           _precio_anterior: op.datos_maestros._precio_anterior || '',
-                          _is_latest: latestMap.get(key) === op.id,
                           ...op.datos_maestros
                      };
                 });
@@ -1376,8 +1408,10 @@
                         return true; // Obligamos siempre al filtrado para gestionar el aislamiento del ruido
                     },
                     doesExternalFilterPass: (node) => {
-                        // Siempre censurar el historial profundo (versiones antiguas)
-                        if (!node.data._is_latest) return false;
+                        // Filtro de Proveedor Multi-Switch
+                        if (window.activeProviderFilters && !window.activeProviderFilters.has(node.data._proveedor_id)) {
+                             return false;
+                        }
                         
                         if (currentDeltaFilter === 'NUEVOS') return node.data._estado_delta === 'ALTA';
                         if (currentDeltaFilter === 'MODIFICADOS') return node.data._estado_delta === 'MODIFICADO';
@@ -1571,6 +1605,9 @@
                      }
                      record[key] = finalVal;
                  });
+                 
+                 // Añadir metadata de origen
+                 record._sourceSheet = row._sourceSheet;
                  return record;
             });
 

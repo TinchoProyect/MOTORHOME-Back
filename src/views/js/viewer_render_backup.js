@@ -694,7 +694,7 @@ function renderVirtualTable(originalData) {
     updateVisibleRows();
 }
 
-async function generatePreview(skipModal = false) {
+async function generatePreview() {
     try {
         if (!currentSheetData || currentSheetData.length === 0) return;
 
@@ -711,189 +711,74 @@ async function generatePreview(skipModal = false) {
         }
         
         let sheetsToProcess = [];
-        let caciqueName = null;
+        if (window.currentSheetList && window.currentSheetList.length > 1) {
+            Swal.fire({
+                title: 'Recolectando Estructura...',
+                html: '<span class="text-slate-400">Analizando el alcance del documento multi-hoja.</span>',
+                allowOutsideClick: false,
+                background: '#0f172a',
+                color: '#f8fafc'
+            });
+            Swal.showLoading(); // Invocación síncrona para evitar leak al siguiente modal
 
-        if (skipModal && window._simValidSheetsForPreview && window._simValidSheetsForPreview.length > 0) {
-            sheetsToProcess = window._simValidSheetsForPreview;
-            if (window._simCaciqueSheetName) caciqueName = window._simCaciqueSheetName;
-        } else {
-            if (window.currentSheetList && window.currentSheetList.length > 1) {
-                Swal.fire({
-                    title: 'Recolectando Estructura...',
-                    html: '<span class="text-slate-400">Analizando el alcance del documento multi-hoja.</span>',
-                    allowOutsideClick: false,
-                    background: '#0f172a',
-                    color: '#f8fafc'
-                });
-                Swal.showLoading();
+            // Recuperar todas las hojas
+            const allSheets = window.exportAllSheets ? await window.exportAllSheets() : [];
+            const validSheets = allSheets.filter(s => s.data && s.data.length > 0);
+            
+            Swal.hideLoading(); // Purga forzada del estado interno de loading antes del close
+            Swal.close();
 
-                // Recuperar todas las hojas
-                const allSheets = window.exportAllSheets ? await window.exportAllSheets() : [];
-                const validSheets = allSheets.filter(s => s.data && s.data.length > 0);
-                
-                // [FIX V8.8] PERSISTENCIA DURA (LOCALSTORAGE)
-                const pN = (typeof window.globalContext !== 'undefined' && window.globalContext.providerName) ? window.globalContext.providerName : 'NATIVE';
-                const lsKey = 'LAMDA_SHEET_ORDER_' + pN.replace(/\s+/g, '_');
-                try {
-                     const hardDataStr = localStorage.getItem(lsKey);
-                     if (hardDataStr) {
-                          const hardData = JSON.parse(hardDataStr);
-                          if (hardData && hardData.sheetNames && Array.isArray(hardData.sheetNames)) {
-                               validSheets.sort((a,b) => {
-                                    let ia = hardData.sheetNames.indexOf(a.name);
-                                    let ib = hardData.sheetNames.indexOf(b.name);
-                                    if(ia === -1) ia = 999;
-                                    if(ib === -1) ib = 999;
-                                    return ia - ib;
-                               });
-                               if (hardData.checks) {
-                                    validSheets.forEach(s => {
-                                         if (hardData.checks[s.name] !== undefined) s._cachedCheck = hardData.checks[s.name];
-                                    });
-                               }
-                               if (hardData.cacique && !window._simCaciqueSheetName) {
-                                    window._simCaciqueSheetName = hardData.cacique;
-                               }
-                          }
-                     }
-                } catch(e) { console.error("Error loading hard persistence", e); }
-                
-                // [FIX V8.5] RESTAURAR ORDEN Y ESTADOS PREVIOS (Persistencia de Sesión)
-                if (window._rawValidSheetsCache && window._rawValidSheetsCache.length > 0) {
-                     let merged = [];
-                     window._rawValidSheetsCache.forEach(cachedSheet => {
-                         let fresh = validSheets.find(s => s.name === cachedSheet.name);
-                         if (fresh) {
-                             if (cachedSheet.hasOwnProperty('_cachedCheck')) fresh._cachedCheck = cachedSheet._cachedCheck;
-                             merged.push(fresh);
-                         }
-                     });
-                     validSheets.forEach(fresh => {
-                         if (!merged.find(m => m.name === fresh.name)) merged.push(fresh);
-                     });
-                     window._rawValidSheetsCache = merged;
-                } else {
-                     window._rawValidSheetsCache = validSheets;
-                }
-                
-                Swal.hideLoading();
-                Swal.close();
+            if (validSheets.length > 1) {
+                const sheetsHtml = validSheets.map((s, idx) => `
+                    <div class="flex items-center gap-3 p-3 bg-slate-900 rounded-lg border border-slate-700/50 hover:border-blue-500/50 transition-colors">
+                        <input type="checkbox" id="chk_sim_sheet_${idx}" value="${s.name}" class="w-5 h-5 rounded bg-slate-800 border-slate-600 text-blue-500 cursor-pointer" ${s.name === currentSheetName ? 'checked' : ''}>
+                        <div class="flex-1 text-left cursor-pointer" onclick="document.getElementById('chk_sim_sheet_${idx}').click()">
+                            <div class="text-white text-sm font-bold flex items-center gap-2">
+                                <i data-lucide="sheet" class="w-4 h-4 text-slate-400"></i> ${s.name}
+                            </div>
+                            <div class="text-xs text-slate-500 font-mono mt-0.5">Filas crudas: ${s.data.length}</div>
+                        </div>
+                    </div>
+                `).join('');
 
-                if (window._rawValidSheetsCache.length > 1) {
-                    
-                    // Scope functions for Drag and Drop
-                    window._simSwapSheets = function(dragIdx, dropIdx) {
-                        // SYNC CURRENT DOM STATES BEFORE REWRITING
-                        window._rawValidSheetsCache.forEach((s, i) => {
-                            const cbox = document.getElementById('chk_sim_sheet_' + i);
-                            if (cbox) s._cachedCheck = cbox.checked;
-                            const rad = document.querySelector('input[name="sim_cacique"]:checked');
-                            if (rad && rad.value === s.name) window._simCaciqueSheetName = s.name;
+                const res = await Swal.fire({
+                    title: 'Alcance de la Transformación',
+                    html: `
+                        <p class="text-slate-400 text-sm mb-4">El archivo base posee múltiples pestañas. Selecciona cuáles deseas procesar simultáneamente empleando esta misma configuración del motor ETL:</p>
+                        <div class="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar text-left text-base">
+                            ${sheetsHtml}
+                        </div>
+                    `,
+                    icon: 'info',
+                    background: '#0f172a', color: '#f8fafc',
+                    showCancelButton: true,
+                    confirmButtonText: 'Generar Simulación Mixta',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#3b82f6',
+                    cancelButtonColor: '#334155',
+                    didOpen: () => { if (window.lucide) window.lucide.createIcons(); },
+                    preConfirm: () => {
+                        const selected = [];
+                        validSheets.forEach((s, idx) => {
+                            const chk = document.getElementById(`chk_sim_sheet_${idx}`);
+                            if (chk && chk.checked) selected.push(s);
                         });
-
-                        const arr = window._rawValidSheetsCache;
-                        const item = arr.splice(dragIdx, 1)[0];
-                        arr.splice(dropIdx, 0, item);
-                        const c = document.getElementById('sheets_dnd_container');
-                        if (c) c.innerHTML = window._simRenderSheetsHtml();
-                        if (window.lucide) window.lucide.createIcons();
-                    };
-
-                    window._simRenderSheetsHtml = function() {
-                        return window._rawValidSheetsCache.map((s, idx) => {
-                            let isChecked = s.hasOwnProperty('_cachedCheck') ? s._cachedCheck : (s.name === currentSheetName);
-                            let isCacique = window._simCaciqueSheetName === s.name;
-                            if (idx === 0 && !window._simCaciqueSheetName) isCacique = true; // Fallback
-                            
-                            return `
-                            <div draggable="true" ondragstart="event.dataTransfer.setData('text/plain', ${idx}); event.currentTarget.classList.add('opacity-50');" ondragend="event.currentTarget.classList.remove('opacity-50');" ondragover="event.preventDefault();" ondrop="event.preventDefault(); window._simSwapSheets(parseInt(event.dataTransfer.getData('text/plain')), ${idx});" class="flex items-center gap-3 p-3 bg-slate-900 rounded-lg border border-slate-700/50 hover:border-blue-500/50 transition-colors cursor-grab active:cursor-grabbing mb-2">
-                                <i data-lucide="grip-vertical" class="w-4 h-4 text-slate-600"></i>
-                                <input type="checkbox" id="chk_sim_sheet_${idx}" value="${s.name}" class="w-5 h-5 rounded bg-slate-800 border-slate-600 text-blue-500 cursor-pointer" ${isChecked ? 'checked' : ''}>
-                                <div class="flex-1 text-left flex flex-col justify-center">
-                                    <div class="text-white text-sm font-bold flex items-center gap-2">
-                                        <i data-lucide="sheet" class="w-4 h-4 text-slate-400"></i> ${s.name}
-                                    </div>
-                                    <div class="text-[10px] text-slate-500 font-mono mt-0.5">Filas: ${s.data.length}</div>
-                                </div>
-                                <div class="flex items-center gap-2 border-l border-slate-800 pl-3">
-                                    <label class="flex items-center gap-1.5 cursor-pointer text-[10px] text-amber-400 font-bold uppercase" title="Define la estructura base y el esquema de columnas">
-                                        <input type="radio" name="sim_cacique" value="${s.name}" class="w-3 h-3 text-amber-500 bg-slate-900 border-slate-700" ${isCacique ? 'checked' : ''}>
-                                        <i data-lucide="crown" class="w-3 h-3"></i> Cacique
-                                    </label>
-                                </div>
-                            </div>
-                        `}).join('');
-                    };
-
-                    const res = await Swal.fire({
-                        title: 'Alcance de la Transformación',
-                        html: `
-                            <p class="text-slate-400 text-sm mb-4">Selecciona el orden de ingesta y marca cuál será la hoja "Cacique" (la que rige el mapeo final maestro de todas):</p>
-                            <div id="sheets_dnd_container" class="flex flex-col text-left text-base max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                                ${window._simRenderSheetsHtml()}
-                            </div>
-                        `,
-                        icon: 'info',
-                        background: '#0f172a', color: '#f8fafc',
-                        showCancelButton: true,
-                        confirmButtonText: 'Generar Simulación Mixta',
-                        cancelButtonText: 'Cancelar',
-                        confirmButtonColor: '#3b82f6',
-                        cancelButtonColor: '#334155',
-                        didOpen: () => { if (window.lucide) window.lucide.createIcons(); },
-                        preConfirm: () => {
-                            const selected = [];
-                            const sheetNames = [];
-                            const checks = {};
-                            window._rawValidSheetsCache.forEach((s, idx) => {
-                                sheetNames.push(s.name);
-                                const chk = document.getElementById(`chk_sim_sheet_${idx}`);
-                                if (chk) {
-                                    s._cachedCheck = chk.checked;
-                                    checks[s.name] = chk.checked;
-                                    if (chk.checked) selected.push(s);
-                                }
-                            });
-                            if (selected.length === 0) {
-                                Swal.showValidationMessage('⚠️ Selecciona al menos una solapa.');
-                                return false;
-                            }
-                            const caciqueRadio = document.querySelector('input[name="sim_cacique"]:checked');
-                            if (caciqueRadio) window._simCaciqueSheetName = caciqueRadio.value;
-                            else window._simCaciqueSheetName = selected[0] ? selected[0].name : null;
-
-                            try {
-                                const pN = (typeof window.globalContext !== 'undefined' && window.globalContext.providerName) ? window.globalContext.providerName : 'NATIVE';
-                                const lsKey = 'LAMDA_SHEET_ORDER_' + pN.replace(/\s+/g, '_');
-                                localStorage.setItem(lsKey, JSON.stringify({
-                                     sheetNames: sheetNames,
-                                     checks: checks,
-                                     cacique: window._simCaciqueSheetName
-                                }));
-                            } catch(e) { console.error("Error saving hard persistence", e); }
-
-                            return selected;
+                        if (selected.length === 0) {
+                            Swal.showValidationMessage('⚠️ Tolera al menos una solapa para simular.');
+                            return false;
                         }
-                    });
+                        return selected;
+                    }
+                });
 
-                    if (!res.isConfirmed) return;
-                    sheetsToProcess = res.value;
-                    caciqueName = window._simCaciqueSheetName;
-                    
-                    // SAVE CACHE FOR SKIP MODAL
-                    window._simValidSheetsForPreview = sheetsToProcess;
-
-                } else {
-                    sheetsToProcess = window._rawValidSheetsCache.length === 1 ? window._rawValidSheetsCache : [{ name: currentSheetName || 'Principal', data: currentSheetData }];
-                    window._simValidSheetsForPreview = sheetsToProcess;
-                }
+                if (!res.isConfirmed) return;
+                sheetsToProcess = res.value;
             } else {
-                sheetsToProcess = [{ name: currentSheetName || 'Principal', data: currentSheetData }];
-                window._simValidSheetsForPreview = sheetsToProcess;
+                sheetsToProcess = validSheets.length === 1 ? validSheets : [{ name: currentSheetName || 'Principal', data: currentSheetData }];
             }
+        } else {
+            sheetsToProcess = [{ name: currentSheetName || 'Principal', data: currentSheetData }];
         }
-
-        window._isMixedSimulation = sheetsToProcess && sheetsToProcess.length > 1;
 
         const startRow = currentOffset ? currentOffset.row : 0;
         
@@ -902,93 +787,9 @@ async function generatePreview(skipModal = false) {
         const displayConfig = [];
         const sourceConfig = [];
 
-        // ---------------- SCHEMA UNION (Unión de Esquemas Inclusiva) ----------------
-        let masterVirtualCols = [];
-        let masterColumnMap = {};
-        let masterPipelines = {};
-        let seenUnionTermIds = new Set();
-        let syntheticColIdCounter = 1;
-
-        // Armamos un arreglo con TODAS las hojas a escanear (Prioridad de Orden: Cacique Primero)
-        let sheetsToScan = [];
-        const isMultiSheetSession = (sheetsToProcess && sheetsToProcess.length > 0);
-        
-        if (isMultiSheetSession) {
-            if (typeof caciqueName !== 'undefined' && caciqueName) {
-                const caciqueObj = sheetsToProcess.find(s => s.name === caciqueName);
-                if (caciqueObj) sheetsToScan.push(caciqueObj);
-            }
-            sheetsToProcess.forEach(s => {
-                if (s.name !== caciqueName) sheetsToScan.push(s);
-            });
-        } else {
-            sheetsToScan.push({ name: window.currentSheetName || 'ActiveSheet' });
-        }
-
-        sheetsToScan.forEach(sheetObj => {
-             const sName = sheetObj.name;
-             let sVirtualCols = window.virtualColumns || [];
-             let sColumnMap = (typeof columnMapping !== 'undefined') ? columnMapping : {};
-             let sPipelines = window.draftPipelines || {};
-             let sComputedCols = window.computedColumns || []; // Fantasmas!
-             
-             // Prioridad 1: Configuración en Caché Fuerte (sheetConfigStore)
-             if (window.sheetConfigStore && window.sheetConfigStore[sName]) {
-                 if (window.sheetConfigStore[sName].virtualCols && window.sheetConfigStore[sName].virtualCols.length > 0) {
-                     sVirtualCols = window.sheetConfigStore[sName].virtualCols;
-                     sColumnMap = window.sheetConfigStore[sName].columnMapping || {};
-                     sPipelines = window.sheetConfigStore[sName].pipelines || {};
-                     sComputedCols = window.sheetConfigStore[sName].computedCols || window.sheetConfigStore[sName].computedColumns || [];
-                 }
-             }
-
-             // Ayudante Unificador para ingresar Keys Válidas
-             const registerToUnion = (dictId, rawColObj) => {
-                 const idSafeKey = String(dictId).toLowerCase().trim();
-                 
-                 // [NUEVO] PURGA SANITARIA DETERMINISTA: Si no existe en el Master Dictionary, ES INVALIDA! 
-                 // (Previene fugas de columnas auxiliares de "Origen 1" o Split Transitorio)
-                 const validDictEntry = window.masterDictionary ? window.masterDictionary.find(d => d.id === dictId || String(d.id).toLowerCase().trim() === idSafeKey) : null;
-                 if (!validDictEntry) return;
-
-                 if (!seenUnionTermIds.has(idSafeKey)) {
-                      seenUnionTermIds.add(idSafeKey);
-                      
-                      const syntheticVColId = 'unionVCol_' + syntheticColIdCounter++;
-                      masterVirtualCols.push({ id: syntheticVColId, dataIdx: rawColObj.dataIdx, originalId: rawColObj.id, sourceSheet: sName, label: validDictEntry.nombre_campo });
-                      masterColumnMap[syntheticVColId] = validDictEntry.id;
-                      if (sPipelines && sPipelines[rawColObj.id]) {
-                          masterPipelines[syntheticVColId] = JSON.parse(JSON.stringify(sPipelines[rawColObj.id]));
-                      }
-                 }
-             };
-
-             // Escaneo de Columnas Únicas
-             sVirtualCols.forEach(vCol => {
-                 let localDictTermId = sColumnMap[vCol.id];
-                 if (!localDictTermId || localDictTermId === 'Ignorar Columna') return;
-                 
-                 let resolutiveTermId = localDictTermId;
-                 if (sPipelines && sPipelines[vCol.id] && sPipelines[vCol.id].masterField && sPipelines[vCol.id].masterField.id) {
-                      resolutiveTermId = sPipelines[vCol.id].masterField.id;
-                 }
-                 
-                 registerToUnion(resolutiveTermId, vCol);
-             });
-             
-             // Escaneo de Columnas Fantasmas (Cálculos Post-Mapeo)
-             if (sComputedCols && Array.isArray(sComputedCols)) {
-                 sComputedCols.forEach(cCol => {
-                      let calcId = cCol.masterField?.id || cCol.id;
-                      registerToUnion(calcId, cCol);
-                 });
-             }
-        });
-        // ---------------- FIN SCHEMA UNION ----------------
-
-        masterVirtualCols.forEach(vCol => {
+        window.virtualColumns.forEach(vCol => {
             const vColId = vCol.id;
-            const termId = masterColumnMap[vColId];
+            const termId = columnMapping[vColId];
             if (!termId || termId === 'Ignorar Columna') return;
             const dataIdx = vCol.dataIdx;
 
@@ -996,66 +797,30 @@ async function generatePreview(skipModal = false) {
                 sourceConfig.push({ index: dataIdx });
 
                 let termName = termId;
-                
-                // [FIX V8.3] SIEMPRE USAR NOMBRE DEL DICCIONARIO MAESTRO SI EXISTE
-                if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
-                    const masterObj = window.masterDictionary.find(m => String(m.id).toLowerCase() === String(termId).toLowerCase() || String(m.nombre_campo).toLowerCase() === String(termId).toLowerCase());
+                const termObj = nomenclatureCache.find(t => t.id === termId);
+                if (termObj) {
+                    termName = termObj.termino;
+                } else if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                    const masterObj = window.masterDictionary.find(m => m.id === termId);
                     if (masterObj) {
                         termName = masterObj.nombre_campo;
-                    } else {
-                        // Fallback a terminology solo si no es maestra nativa
-                        const termObj = nomenclatureCache.find(t => t.id === termId);
-                        if (termObj) {
-                            termName = termObj.termino;
-                        }
-                    }
-                }
-                
-                // [FIX V8.3] SOBREESCRITURA DINAMICA SI EL PIPELINE DEFINE OTRA MAESTRA
-                if (masterPipelines && masterPipelines[vColId]) {
-                    const pipe = masterPipelines[vColId];
-                    if (pipe && pipe.masterField && pipe.masterField.id) {
-                        const mId = pipe.masterField.id;
-                        if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
-                            const masterHit = window.masterDictionary.find(m => String(m.id).toLowerCase() === String(mId).toLowerCase() || String(m.nombre_campo).toLowerCase() === String(mId).toLowerCase());
-                            if (masterHit) {
-                                termName = masterHit.nombre_campo;
-                            }
-                        }
                     }
                 }
 
-                // [NUEVO MODELO STRICT VINCULATION V8.2]
-                let isSupportCol = true; 
-                
-                // 1. Verificación Nativa (Mapeo Directo sin Pipeline)
-                if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
-                    if (window.masterDictionary.some(m => String(m.id).toLowerCase() === String(termId).toLowerCase() || String(m.nombre_campo).toLowerCase() === String(termId).toLowerCase())) {
-                        isSupportCol = false;
-                    }
-                }
-
-                // 2. Verificación Dinámica (Pipeline)
-                if (masterPipelines && masterPipelines[vColId]) {
-                    const pipe = masterPipelines[vColId];
+                // [NUEVO MODELO STRICT VINCULATION V8]
+                // El usuario ha determinado que "Mapeada en Primera Instancia" (Nomenclature) NO ES SUFICIENTE.
+                // Para que una columna NO SEA "Basura Visual" en el Simulador, DEBE tener un vínculo de sangre explícito
+                // en el motor ETL a un Campo Maestro del Diccionario Global (Vinculada).
+                let isSupportCol = true; // Por defecto es de apoyo
+                if (window.draftPipelines && window.draftPipelines[vColId]) {
+                    const pipe = window.draftPipelines[vColId];
                     if (pipe && pipe.masterField && pipe.masterField.id) {
-                        const mId = pipe.masterField.id;
-                        isSupportCol = true; // Reset strict
-                        if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
-                            if (window.masterDictionary.some(m => String(m.id).toLowerCase() === String(mId).toLowerCase() || String(m.nombre_campo).toLowerCase() === String(mId).toLowerCase())) {
-                                isSupportCol = false;
-                            }
-                        }
+                        isSupportCol = false; // Es una maestra vinculada oficial
                     }
-                }
-                
-                // 3. Blacklist Explícito por Corrupción Histórica DB
-                if (String(termId).toLowerCase() === 'especificación' || String(termName).toLowerCase().includes('especificaci')) {
-                    isSupportCol = true;
                 }
 
                 // [V4/V5] PIPELINE HANDLING WITH LIVE WORKSHOP CONTEXT
-                const savedPipeline = masterPipelines && masterPipelines[vColId] ? masterPipelines[vColId].rules : null;
+                const savedPipeline = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
                 const pipelineData = (window.activeEtlState && window.activeEtlState.isOpen && window.activeEtlState.colIndex === vColId) ? window.activeEtlState.pipeline : savedPipeline;
                 const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
 
@@ -1170,7 +935,7 @@ async function generatePreview(skipModal = false) {
                                         if (!opColId) return;
                                         if (rCtx[opColId] === undefined) {
                                             if (window.VigiaLogger) window.VigiaLogger.log("SIMULATOR", `Inyectando Lazy Context para Preview: ${opColId}`);
-                                            const pipe = masterPipelines && masterPipelines[opColId] ? masterPipelines[opColId].rules : [];
+                                            const pipe = window.draftPipelines && window.draftPipelines[opColId] ? window.draftPipelines[opColId].rules : [];
                                             const vColOp = window.virtualColumns.find(v => v.id === opColId);
                                             if (vColOp && vColOp.dataIdx !== undefined) {
                                                 const raw = String(row[vColOp.dataIdx] || "");
@@ -1192,7 +957,7 @@ async function generatePreview(skipModal = false) {
                                 // Permite calcular si al menos cA existe (necesario para CLONE)
                                 if (cA) {
                                     // Utilizar la función unificada de matemáticas / clonación
-                                    const res = evaluateComputedColumnMath(calcConfig, cA, cB, masterPipelines, null, allOps);
+                                    const res = evaluateComputedColumnMath(calcConfig, cA, cB, window.draftPipelines, null, allOps);
                                     resultDisplay = res.resultDisplay;
                                 }
                             }
@@ -1228,259 +993,149 @@ async function generatePreview(skipModal = false) {
         const startIndex = window.currentOffset ? window.currentOffset.row : 0;
         
         let allSanitizedData = [];
-        window._purgedByCodeCount = 0; // Reset purge tracking
 
-        // ---------------- ETL SANDBOX ARCHITECTURE ----------------
-        // [FIX V8.6] Aislamiento Absoluto: Cada hoja del lote ejecuta su ciclo vital completo 
-        // de columnas base, splits y fantasmas EN PRIVADO, antes de la unificación.
-        
         for (const sheetObj of sheetsToProcess) {
             const currentSheetIterationData = sheetObj.data;
             if (!currentSheetIterationData || currentSheetIterationData.length === 0) continue;
 
-            const startIndex = window.currentOffset ? window.currentOffset.row : 0;
+            // En VIRTUAL_DB o sheets cargados, currentSheetIterationData tiene X rows
             const endIndex = window.currentEndOffset ? window.currentEndOffset.row : currentSheetIterationData.length;
             const rawSlice = currentSheetIterationData.slice(startIndex);
 
-            let localColumnMap = (typeof columnMapping !== 'undefined') ? columnMapping : {};
-            let localVirtualCols = window.virtualColumns || [];
-            let localPipelines = window.draftPipelines || {};
-            let localComputedCols = window.computedColumns || []; // Support Phantom Columns globally if Active
-            
-            // Si la hoja tiene su propia configuración (Mapeada), la usamos
-            if (window.sheetConfigStore && window.sheetConfigStore[sheetObj.name]) {
-                if (window.sheetConfigStore[sheetObj.name].virtualCols && window.sheetConfigStore[sheetObj.name].virtualCols.length > 0) {
-                    localVirtualCols = window.sheetConfigStore[sheetObj.name].virtualCols;
-                    localColumnMap = window.sheetConfigStore[sheetObj.name].columnMapping || {};
-                    localPipelines = window.sheetConfigStore[sheetObj.name].pipelines || {};
-                    localComputedCols = window.sheetConfigStore[sheetObj.name].computedCols || window.sheetConfigStore[sheetObj.name].computedColumns || [];
-                }
-            }
-            
-            // FASE 1: Construir Sandbox ETL Local para esta hoja
-            let localConfig = [];
-            
-            localVirtualCols.forEach(vCol => {
-                const vColId = vCol.id;
-                const localDictTermId = localColumnMap[vColId];
-                if (!localDictTermId || localDictTermId === 'Ignorar Columna') return;
-                
-                let resolutiveTermId = localDictTermId;
-                if (localPipelines[vColId] && localPipelines[vColId].masterField && localPipelines[vColId].masterField.id) {
-                     resolutiveTermId = localPipelines[vColId].masterField.id;
-                }
-                 
-                const rStack = localPipelines[vColId] ? localPipelines[vColId].rules : null;
-                const rulesStack = rStack ? (Array.isArray(rStack) ? rStack : [rStack]) : [];
-                
-                const splitRule = rulesStack.find(r => !r.disabled && (r.type === 'split' || r.type === 'regex_split'));
-                if (splitRule) {
-                     const sep = splitRule.type === 'regex_split' ? new RegExp(splitRule.separator, 'g') : splitRule.separator || ' ';
-                     const trg = splitRule.targetCount ? parseInt(splitRule.targetCount) : 2;
-                     for (let i = 0; i < trg; i++) {
-                         let clonedTrId = resolutiveTermId;
-                         if (splitRule.partIdentifiers && splitRule.partIdentifiers[i] && splitRule.partIdentifiers[i].id) {
-                             clonedTrId = splitRule.partIdentifiers[i].id;
-                         }
-                         localConfig.push({
-                             termId: String(clonedTrId).toLowerCase().trim(),
-                             transform: (val, rowContext) => {
-                                 let text = String(val||"");
-                                 const pRules = rulesStack.slice(0, rulesStack.indexOf(splitRule));
-                                 if (window.viewerETL) text = window.viewerETL.transformCell(text, pRules, rowContext).clean;
-                                 let parts = splitRule.type === 'regex_split' ? text.split(sep) : text.split(sep);
-                                 let pT = parts[i] || "";
-                                 const aRules = rulesStack.slice(rulesStack.indexOf(splitRule)+1);
-                                 if (window.viewerETL) {
-                                     const pR = window.viewerETL.transformCell(pT, aRules, rowContext);
-                                     pT = pR.resultDisplay || pR.result || pR.display;
-                                 }
-                                 return pT;
-                             },
-                             sourceIndex: vCol.dataIdx,
-                         });
-                     }
-                } else {
-                     localConfig.push({
-                         termId: String(resolutiveTermId).toLowerCase().trim(),
-                         transform: (val, rowContext) => {
-                             if (!window.viewerETL) return val;
-                             const res = window.viewerETL.transformCell(String(val||""), rulesStack, rowContext);
-                             return res.resultDisplay || res.result || res.display;
-                         },
-                         sourceIndex: vCol.dataIdx,
-                     });
-                }
-            });
-            
-            // Computadas Locales
-            if (localComputedCols && Array.isArray(localComputedCols)) {
-                localComputedCols.forEach(calcConfig => {
-                    let calcId = calcConfig.masterField?.id || calcConfig.id;
-                    localConfig.push({
-                        termId: String(calcId).toLowerCase().trim(),
-                        isComputed: true,
-                        transform: (val, row) => {
-                            let resultDisplay = "";
-                            try {
-                                if (calcConfig.operands && calcConfig.operands.length >= 1) {
-                                    let rCtx = row._richContext || {};
-                                    // Garantizar evaluacion previa de operando en caso lazy
-                                    calcConfig.operands.forEach(opColId => {
-                                        if (!opColId || rCtx[opColId] !== undefined) return;
-                                        const pipe = localPipelines && localPipelines[opColId] ? localPipelines[opColId].rules : [];
-                                        const vColOp = localVirtualCols.find(v => v.id === opColId);
-                                        if (vColOp && vColOp.dataIdx !== undefined) {
-                                            const raw = String(row[vColOp.dataIdx] || "");
-                                            const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || [], row);
-                                            rCtx[opColId] = { clean, display: display !== undefined ? display : result, raw };
-                                        } else {
-                                            rCtx[opColId] = { clean: "", display: "", raw: "" };
-                                        }
-                                    });
-                                    row._richContext = rCtx;
-
-                                    const cA = calcConfig.operands[0] ? rCtx[calcConfig.operands[0]] : null;
-                                    const cB = calcConfig.operands[1] ? rCtx[calcConfig.operands[1]] : null;
-                                    const allOps = calcConfig.operands.map(opIdx => rCtx[opIdx]);
-                                    
-                                    if (cA) {
-                                        const res = evaluateComputedColumnMath(calcConfig, cA, cB, localPipelines, null, allOps);
-                                        resultDisplay = res.resultDisplay;
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("Error Sandbox Math:", e);
-                            }
-                            return resultDisplay;
-                        }
-                    });
-                });
-            }
-
-            // FASE 2: Ejecutar Sandbox por cada fila
             let sanitizedData = rawSlice.filter((row, localIndex) => {
                 const absoluteRow = startIndex + localIndex;
                 if (absoluteRow > endIndex) return false;
-                return localVirtualCols.some(v => row[v.dataIdx] !== undefined && row[v.dataIdx] !== null && String(row[v.dataIdx]).trim() !== '');
+                
+                return sourceConfig.some(cfg => {
+                    const val = row[cfg.index];
+                    return val !== undefined && val !== null && String(val).trim() !== '';
+                });
             });
-
-            // AST Global Filters Sandbox
-            if (window.viewerETL && window.viewerETL.astNodeDefinitions) {
-                 sanitizedData = window.viewerETL.executeGlobalFilters(sanitizedData, localVirtualCols, localPipelines);
-            }
 
             const seenValues = new Set();
 
             sanitizedData = sanitizedData.filter(row => {
                 let keepRow = true;
-                row._unifiedOutput = {
-                     _origin: sheetObj.name
-                };
-                row._sourceSheet = sheetObj.name;
-                
-                // Pre-llenar rCtx para operandos
-                let rCtx = {};
-                localVirtualCols.forEach(vCol => {
-                    const rules = localPipelines[vCol.id] ? localPipelines[vCol.id].rules : [];
-                    const raw = String(row[vCol.dataIdx] || "");
-                    const pR = window.viewerETL ? window.viewerETL.transformCell(raw, rules, row) : { clean: raw, display: raw, result: raw };
-                    rCtx[vCol.id] = { clean: pR.clean, display: pR.display !== undefined ? pR.display : pR.result, raw: raw };
-                });
-                row._richContext = rCtx;
-                
-                // Externa duplicates filter
-                localVirtualCols.forEach(v => {
-                    const ruleStack = localPipelines[v.id] ? localPipelines[v.id].rules : null;
-                    const rS = ruleStack ? (Array.isArray(ruleStack) ? ruleStack : [ruleStack]) : [];
-                    const dRule = rS.find(r => r.type === 'remove_duplicates' && !r.disabled);
-                    if (dRule) {
-                        const cellVal = String(row[v.dataIdx] || "").trim();
-                        if (cellVal) {
-                            if (seenValues.has(cellVal)) keepRow = false;
-                            else seenValues.add(cellVal);
+                Object.keys(columnMapping).forEach(vColId => {
+                    const vCol = window.virtualColumns.find(v => v.id === vColId);
+                    if (!vCol) return;
+                    const dataIdx = vCol.dataIdx;
+
+                    const savedPipeline = window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].rules : null;
+                    const pipelineData = (window.activeEtlState && window.activeEtlState.isOpen && window.activeEtlState.colIndex === vColId) ? window.activeEtlState.pipeline : savedPipeline;
+                    const rulesStack = pipelineData ? (Array.isArray(pipelineData) ? pipelineData : [pipelineData]) : [];
+
+                    let cellValue = row[dataIdx];
+                    let display = (cellValue !== null && cellValue !== undefined) ? String(cellValue) : "";
+                    let clean = null;
+                    let rejected = false;
+
+                    if (window.viewerETL && typeof window.viewerETL.transformCell === 'function') {
+                        const result = window.viewerETL.transformCell(cellValue, rulesStack, row);
+                        display = result.display;
+                        clean = result.clean;
+                        rejected = result.rejected;
+                    } else {
+                        console.warn("[Simulador] window.viewerETL no está listo. Ignorando transformaciones.");
+                    }
+                    
+                    if (!row._richContext) row._richContext = {};
+                    row._richContext[vColId] = { clean: clean, display: display, raw: cellValue };
+
+                    let localReject = rejected;
+                    for (const rule of rulesStack) {
+                        if (rule.disabled) continue;
+                        if (rule.type === 'row_filter' || rule.type === 'filter') {
+                            if (rule.config?.exclude_empty && String(display).trim() === "") localReject = true;
+                            if (!localReject && rule.config?.exclude_regex) {
+                                try {
+                                    let p = rule.config.exclude_regex.replace(/\\/g, '\\');
+                                    if (p.startsWith('/')) p = p.slice(1, -1);
+                                    if (new RegExp(p, 'i').test(String(display))) localReject = true;
+                                } catch (e) { }
+                            }
+                        }
+                    }
+                    
+                    if (localReject) {
+                        let isRequired = false;
+                        const termId = columnMapping[vColId];
+                        if (termId && termId !== 'Ignorar Columna' && window.masterDictionary) {
+                            const mObj = window.masterDictionary.find(m => m.id === termId);
+                            if (mObj && mObj.es_requerido) isRequired = true;
+                        }
+
+                        const isCellEmpty = (display === null || display === undefined || String(display).trim() === "");
+                        if (isCellEmpty && !isRequired) {
+                            // Perdonar
+                        } else {
+                            row._rejectedSim = true;
+                        }
+                    }
+
+                    let dictTermId = columnMapping[vColId];
+                    if (dictTermId && dictTermId !== 'Ignorar Columna') {
+                        let colName = dictTermId;
+                        if (window.masterDictionary) {
+                            const mObj = window.masterDictionary.find(m => m.id === dictTermId || m.nombre_campo === dictTermId);
+                            if (mObj && mObj.nombre_campo) colName = mObj.nombre_campo;
+                        }
+                        
+                        const isCodeCol = !!String(colName).toUpperCase().trim().match(/^C[OÓ]DIGO/i);
+                        const cleanDisplay = display ? String(display).trim() : "";
+                        const hasAlphanumeric = /[a-zA-Z0-9]/.test(cleanDisplay);
+                        
+                        if (isCodeCol && !hasAlphanumeric) {
+                            row._rejectedSim = true;
+                            row._rejectedByCode = true;
                         }
                     }
                 });
-                
-                // RESOLUCION LOCAL A MATRIZ GLOBAL (TermId based)
+                return true;
+            });
+
+            sanitizedData.forEach((row, localIndex) => {
+                if (row._rejectedSim) return;
                 let isEmptyRow = true;
-                let hasCodeCol = false;
-                let codeValueStr = "";
-
-                localConfig.forEach(cfg => {
-                     let resVal = null;
-                     if (cfg.isComputed) resVal = cfg.transform(null, row);
-                     else resVal = cfg.transform(row[cfg.sourceIndex], row);
-                     
-                     if (resVal !== undefined && resVal !== null && String(resVal).trim() !== "") {
+                displayConfig.forEach(cfg => {
+                     let finalVal = null;
+                     if (cfg.isComputed) {
+                         finalVal = cfg.transform(null, row);
+                     } else {
+                         const rawVal = cfg.sourceIndex >= 0 ? row[cfg.sourceIndex] : null;
+                         finalVal = row._richContext && row._richContext[cfg.virtualColId] ? row._richContext[cfg.virtualColId].display : null;
+                         if(finalVal === null || finalVal === undefined) finalVal = cfg.transform(rawVal, row);
+                     }
+                     if (finalVal !== null && finalVal !== undefined && String(finalVal).trim() !== "") {
                          isEmptyRow = false;
-                     }
-                     row._unifiedOutput[cfg.termId] = resVal;
-                     
-                     // Detectar si la iteración corresponde a un campo "código" primario (Regla Innegociable de Integridad)
-                     let semanticName = String(cfg.termId).toLowerCase().trim();
-                     if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
-                          const mMatch = window.masterDictionary.find(d => String(d.id) === String(cfg.termId) || String(d.nombre_campo).toLowerCase().trim() === semanticName);
-                          if (mMatch) semanticName = String(mMatch.nombre_campo).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-                     }
-
-                     if (semanticName === 'codigo' || semanticName === 'art_codigo' || semanticName === 'ean' || semanticName === 'codigo de articulo') {
-                          hasCodeCol = true;
-                          codeValueStr = String(resVal || "").trim();
                      }
                 });
                 
-                // Filtro de Exclusión Absoluta (Data Cleansing Nivel Físico)
-                if (hasCodeCol && codeValueStr === "") {
-                     window._purgedByCodeCount = (window._purgedByCodeCount || 0) + 1;
-                     return false; // Purgar objeto del array nativo
+                if (isEmptyRow) {
+                     row._rejectedSim = true;
+                     row._emptySilently = true;
                 }
-
-                if (isEmptyRow) keepRow = false;
-
-                return keepRow;
+                
+                // [NUEVO] Inyectar Identidad Multi-hoja para trazabilidad y concanetación sin ID collissions
+                row._sourceSheet = sheetObj.name;
+                row._originalIndex = startIndex + localIndex;
             });
 
-            // FASE 3: Encausar los registros saneados a la tubería unificadora
+            // Concatenar el lote completado a la colección unificada
             allSanitizedData = allSanitizedData.concat(sanitizedData);
         }
-
-        // FASE 4: El HTML Grid Builder. 
-        // Sobreescribimos el 'displayConfig' para proveer una API de solo lectura
-        // basándonos en el Schema Master Union.
-        displayConfig.length = 0;
-        masterVirtualCols.forEach(mv => {
-             displayConfig.push({
-                  id: mv.originalId, // Alias for LayoutManager
-                  label: mv.label || masterColumnMap[mv.id] || "Columna",
-                  isSupportCol: false, 
-                  virtualColId: mv.originalId,
-                  transform: (val, row) => {
-                       // En este punto somos ciegos: Solo leemos de _unifiedOutput (The Resolved Cache)
-                       const safeKey = String(masterColumnMap[mv.id]).toLowerCase().trim();
-                       let out = row._unifiedOutput ? row._unifiedOutput[safeKey] : null;
-                       return out !== undefined && out !== null ? out : "";
-                  }
-             });
-        });
-
-        // Configurar renderizador web
+        
+        // Reasignamos sanitizedData consolidado para compatibilidad con el resto de la UI
         let sanitizedData = allSanitizedData;
+
+        const validRowsCount = sanitizedData.filter(r => !r._rejectedSim).length;
+        window.currentSimData = sanitizedData;
         window.currentDisplayConfig = displayConfig;
-        
-        // [FIX V8.9] APLICAR ORDEN DE LAYOUT MANAGER SOBRE CONFIGURACIÓN UNIVERSAL VIRTUAL!
-        if (window.LayoutManager) {
-             window.currentDisplayConfig = window.LayoutManager.applyOrder(window.currentDisplayConfig);
-        }
-        
-                
+
         const container = document.getElementById('simulationTableContainer');
-        if (!container) {
-            console.error("No se encontró contenedor visual para simulación");
-            return;
-        }
-        
+        if (!container) return;
+
+        // Reuse GlobalSearchFilter component
         let simOptions = [];
         displayConfig.forEach((cfg, idx) => {
             simOptions.push({ label: cfg.label, value: idx });
@@ -1543,27 +1198,17 @@ async function generatePreview(skipModal = false) {
         document.getElementById('simulationModal').classList.remove('hidden');
         if (window.lucide) window.lucide.createIcons({ root: container });
 
-        let validRowsCount = sanitizedData ? sanitizedData.filter(r => !r._rejectedSim).length : 0;
-        let originalRowsRenderCount = sanitizedData ? sanitizedData.length : 0;
-        let totalRowsCount = originalRowsRenderCount + (window._purgedByCodeCount || 0);
-
-        const simMetaEl = document.getElementById('simMeta');
-        if (simMetaEl) {
-            simMetaEl.innerHTML = `
-                <span class="text-slate-400">Filas Válidas:</span> <span class="text-emerald-400 font-bold">${validRowsCount}</span> 
-                <span class="text-red-400 font-bold ml-2">(Filas Descartadas: ${(totalRowsCount - validRowsCount)})</span>  
-                <span class="text-slate-600 mx-2">|</span> 
-                <span class="text-slate-400">Columnas Master:</span> <span class="text-white font-bold">${displayConfig.length}</span>
-            `;
-        }
+        document.getElementById('simMeta').innerHTML = `
+            <span class="text-slate-400">Filas Válidas:</span> <span class="text-emerald-400 font-bold">${validRowsCount}</span> 
+            <span class="text-red-400 font-bold ml-2">(Filas Descartadas: ${sanitizedData.length - validRowsCount})</span>  
+            <span class="text-slate-600 mx-2">|</span> 
+            <span class="text-slate-400">Columnas Master:</span> <span class="text-white font-bold">${displayConfig.length}</span>
+        `;
 
     } catch (error) {
         console.error("Critical Preview Error:", error);
         if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error en Previsualización', text: error.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
         else alert("Error en Previsualizador: " + error.message);
-        
-        const simMetaEl = document.getElementById('simMeta');
-        if (simMetaEl) simMetaEl.innerHTML = `<span class="text-red-400">Error durante la carga: ${error.message}</span>`;
     }
 }
 
@@ -1609,7 +1254,7 @@ function renderSimulationTable(data) {
 
     let html = "<table class='table-fixed text-xs text-slate-300 font-mono' style='width: max-content;'><thead><tr class='bg-slate-950 sticky top-0 z-[100] border-b border-slate-700'>";
 
-    html += "<th class='p-0 text-center font-bold border-r border-slate-700 bg-slate-900 sticky top-0 left-0 z-[110]' style='width: 30px; min-width: 30px; max-width: 30px;' title='Hoja de Origen'><div class='flex items-center justify-center w-full h-full text-blue-300 opacity-60'><i data-lucide='layers' class='w-3 h-3'></i></div></th>";
+    html += "<th class='p-2 text-left font-bold border-r border-slate-700 bg-slate-900 sticky top-0 left-0 z-[110]' style='width: 140px; min-width: 140px; max-width: 140px;'><div class='font-bold flex items-center gap-1.5 px-2 py-1 text-[10px] text-blue-300'><i data-lucide='layers' class='w-3 h-3 text-blue-400'></i> Hoja Origen</div></th>";
 
     const getRuleName = (type) => {
         switch(type) {
@@ -1642,7 +1287,7 @@ function renderSimulationTable(data) {
         const safeLabel = cfg.label ? cfg.label.replace(/'/g, "\\'") : '';
 
         // [New] Pipeline Quick Toggles
-        if (cfg.virtualColId && !window._isMixedSimulation) {
+        if (cfg.virtualColId) {
             // Generate Interactive Dropdown for Applied Rules and Remapping
             if (window.draftPipelines && window.draftPipelines[cfg.virtualColId]) {
                 let rulesStack = window.draftPipelines[cfg.virtualColId].rules || [];
@@ -1706,9 +1351,9 @@ function renderSimulationTable(data) {
         const isComputedConfig = cfg.isComputed || false;
         
         // Define click handler for the label area (Bug Fix N°2)
-        const clickHandler = (window._isMixedSimulation) ? "" : (isComputedConfig 
+        const clickHandler = isComputedConfig 
             ? `onclick="event.stopPropagation(); if(window.isRemappingFlow) return; if(window.editComputedColumn) window.editComputedColumn('${cfg.virtualColId}')"` 
-            : `onclick="event.stopPropagation(); if(window.isRemappingFlow) return; if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${cfg.virtualColId}', '${safeLabel}')"`);
+            : `onclick="event.stopPropagation(); if(window.isRemappingFlow) return; if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${cfg.virtualColId}', '${safeLabel}')"`;
 
         let thContent = `
             <div class="flex flex-col gap-1 min-h-[40px] relative w-full h-full justify-center">
@@ -1722,8 +1367,8 @@ function renderSimulationTable(data) {
             </div>
         `;
 
-        let thClass = `p-2 border border-slate-700 text-left align-top relative group ${hideClass} sticky top-0 z-[100] `;
-        thClass += cfg.isVirtual ? "bg-[rgb(8,17,26)] text-emerald-300 border-emerald-500/20" : "bg-[rgb(8,17,26)] text-blue-300";
+        let thClass = `p-2 border border-slate-700 text-left align-top relative group ${hideClass} `;
+        thClass += cfg.isVirtual ? "bg-emerald-900/10 text-emerald-300 border-emerald-500/20" : "bg-blue-900/20 text-blue-300";
         if (isSupport) thClass += " opacity-60"; // Visual clue that it's support when shown
         
         let resizeHandle = `<div onmousedown="window.initSimColResize(event, this.parentElement, ${fieldIdx}, '${cfg.virtualColId}')" class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 z-20 transition-colors"></div>`;
@@ -1747,30 +1392,16 @@ function renderSimulationTable(data) {
         let rowTitle = row._emptySilently ? "Fila 100% vacía tras extracción" : "Fila descartada matemáticamente";
         if (row._rejectedByCode) rowTitle = "Fila descartada: Carencia de Identidad (Código Vacío)";
         
-        let rowSheetName = row._sourceSheet || 'Principal';
-        let tblSheetIdx = 0;
-        if (window._simValidSheetsForPreview) {
-             const names = window._simValidSheetsForPreview.map(s => s.name);
-             tblSheetIdx = names.indexOf(rowSheetName);
-        }
-        if (tblSheetIdx === -1) tblSheetIdx = 0;
-        
-        let tonalBgClass = (tblSheetIdx % 2 !== 0) ? 'bg-slate-900/40 border-slate-700/50' : 'bg-slate-900/80 border-slate-800';
-        let badgeClass = (tblSheetIdx % 2 !== 0) ? 'bg-fuchsia-900/30 text-fuchsia-400 border-fuchsia-500/30' : 'bg-blue-900/30 text-blue-400 border-blue-500/30';
-        
-        const rowClass = isRejected ? "hover:bg-red-900/30 bg-red-950/20" : `${tonalBgClass} hover:bg-slate-800/50`;
+        const rowClass = isRejected ? "hover:bg-red-900/30 bg-red-950/20" : "hover:bg-slate-800/50";
         
         html += `<tr class='transition-colors border-b border-slate-800 ${rowClass}' ${isRejected ? `title="${rowTitle}"` : ''}>`;
 
-        // Solid vertical block for Hoja Origen instead of transparent background
-        let borderColorClass = (tblSheetIdx % 2 !== 0) ? 'border-l-[12px] border-l-fuchsia-600 text-fuchsia-400 bg-[rgb(8,17,26)]' : 'border-l-[12px] border-l-blue-600 text-blue-400 bg-[#0f172a]';
-        
         const sheetBadge = `
-            <div class="h-full w-full ${borderColorClass} flex items-center justify-center relative group cursor-help transition-all">
-                <i data-lucide="layers" class="w-3 h-3 opacity-60"></i>
-            </div>
+            <span class="px-1.5 py-0.5 rounded text-[9px] bg-blue-900/30 text-blue-400 border border-blue-500/30 uppercase font-bold tracking-wider truncate block w-full text-center" title="${row._sourceSheet || 'Principal'}">
+                ${row._sourceSheet || 'Principal'}
+            </span>
         `;
-        html += `<td class="p-0 border-r border-slate-800 ${tonalBgClass} sticky left-0 z-[105] w-[30px] max-w-[30px] overflow-hidden" title="${row._sourceSheet || 'Principal'}">${sheetBadge}</td>`;
+        html += `<td class="p-2 border-r border-slate-800 bg-slate-900/80 sticky left-0 z-10 w-[140px] max-w-[140px] overflow-hidden">${sheetBadge}</td>`;
 
         // Fase 1 - Render V5
         currentDisplayConfig.forEach(cfg => {
@@ -1810,7 +1441,7 @@ window.ViewerUI.toggleRuleInSimulation = function(vColId, ruleIndex) {
         
         // Retrigger the simulation modal processing directly
         if (typeof window.generatePreview === 'function') {
-            window.generatePreview(true); // skipModal
+            window.generatePreview();
         }
         
         // Sync the workshop left panel UI implicitly if it's currently showing that column
@@ -1833,7 +1464,7 @@ window.ViewerUI.toggleAllRulesInSimulation = function(vColId, forceEnable) {
     window.ViewerUI._keepDropdownOpen = vColId;
     
     if (typeof window.generatePreview === 'function') {
-        window.generatePreview(true); // skipModal
+        window.generatePreview();
     }
 };
 
@@ -1849,21 +1480,21 @@ window.ViewerUI.toggleRulesMenu = function(e, vColId) {
     }
     
     if (typeof window.generatePreview === 'function') {
-        window.generatePreview(true); // skipModal
+        window.generatePreview();
     }
 };
 
 window.ViewerUI.toggleRejectedRows = function() {
     window.ViewerUI._showRejectedRowsInSim = !window.ViewerUI._showRejectedRowsInSim;
-    if (typeof window.renderSimulationTable === 'function' && window.currentSimData) {
-        window.renderSimulationTable(window.currentSimData);
+    if (typeof window.generatePreview === 'function') {
+        window.generatePreview();
     }
 };
 
 window.ViewerUI.toggleSupportCols = function() {
     window.ViewerUI._showSupportColsInSim = !window.ViewerUI._showSupportColsInSim;
-    if (typeof window.renderSimulationTable === 'function' && window.currentSimData) {
-        window.renderSimulationTable(window.currentSimData);
+    if (typeof window.generatePreview === 'function') {
+        window.generatePreview();
     }
 };
 
@@ -1871,16 +1502,12 @@ window.ViewerUI.toggleSupportCols = function() {
 window.ViewerUI.draggedSimColIndex = null;
 
 window.ViewerUI.handleDragStart = function(e, index) {
-    const th = e.target.closest('th');
-    if (!th) return;
+    if (e.target.tagName !== 'TH') return;
     window.ViewerUI.draggedSimColIndex = index;
-    
+    // Efecto de movimiento
     e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', index.toString()); } catch(ex){} 
-    
     setTimeout(() => {
-        // [FIX V8.9] Aislar elemento arrastrado del motor de eventos del puntero
-        th.classList.add('opacity-40', 'pointer-events-none', 'z-50');
+        e.target.classList.add('opacity-40');
     }, 10);
 };
 
@@ -1893,22 +1520,14 @@ window.ViewerUI.handleDragOver = function(e) {
 window.ViewerUI.handleDragEnter = function(e) {
     e.preventDefault();
     let th = e.target.closest('th');
-    if (!th) return;
-    
-    // [FIX V8.9] Filtro de Bubbling
-    th._dragCounter = (th._dragCounter || 0) + 1;
-    if (th._dragCounter === 1) {
-         th.classList.add('border-emerald-400', 'border-l-[4px]', 'bg-gradient-to-r', 'from-emerald-900/60', 'to-transparent');
+    if (th) {
+        th.classList.add('border-emerald-400', 'border-l-[4px]', 'bg-gradient-to-r', 'from-emerald-900/60', 'to-transparent');
     }
 };
 
 window.ViewerUI.handleDragLeave = function(e) {
     let th = e.target.closest('th');
-    if (!th) return;
-    
-    th._dragCounter = (th._dragCounter || 0) - 1;
-    if (th._dragCounter <= 0) {
-        th._dragCounter = 0;
+    if (th) {
         th.classList.remove('border-emerald-400', 'border-l-[4px]', 'bg-gradient-to-r', 'from-emerald-900/60', 'to-transparent');
     }
 };
@@ -1945,18 +1564,9 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
             window.saveSimulationConfig(null, true);
         }
         
-        // Efectuar Desplazamiento Transaccional Físico en Memoria UI
-        if (window.currentDisplayConfig) {
-             const elementObj = window.currentDisplayConfig.splice(dragColIndex, 1)[0];
-             window.currentDisplayConfig.splice(dropColIndex, 0, elementObj);
-        }
-        
-        // Reconstruir interfaz completa reflejando nueva posición (Actualización Optimista Dinámica)
-        if (typeof window.renderSimulationTable === 'function' && window._lastSanitizedData) {
-            window.renderSimulationTable(window._lastSanitizedData);
-            if (window.lucide) window.lucide.createIcons({ root: document.getElementById('simulationTableContainer') });
-        } else if (typeof generatePreview === 'function') {
-            generatePreview(true); // Fallback
+        // Reconstruir interfaz completa reflejando nueva posición
+        if (typeof window.generatePreview === 'function') {
+            window.generatePreview();
         }
         
         // Disparar redibujado táctico del layout de Workshop (Opcional si conviven)
@@ -1970,17 +1580,10 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
 };
 
 window.ViewerUI.handleDragEnd = function(e) {
-    const th = e.target.closest('th');
-    if (th) {
-        th.classList.remove('opacity-40', 'pointer-events-none', 'z-50');
+    if (e.target.tagName === 'TH') {
+        e.target.classList.remove('opacity-40');
     }
     window.ViewerUI.draggedSimColIndex = null;
-    
-    // Purga general
-    document.querySelectorAll('th').forEach(t => {
-         t._dragCounter = 0;
-         t.classList.remove('border-emerald-400', 'border-l-[4px]', 'bg-gradient-to-r', 'from-emerald-900/60', 'to-transparent');
-    });
     
     if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncVisuals === 'function') {
         window.viewerRuleWorkshop.syncVisuals();

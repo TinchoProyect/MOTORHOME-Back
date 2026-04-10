@@ -415,40 +415,68 @@ module.exports = {
                 }
             }
 
-            // Motor de Deltas Bi-Dimensional: Recuperar último estado histórico (Foto previa)
-            const historyMap = new Map();
+            // Motor de Deltas Bi-Dimensional y Upsert: Recuperar estado histórico completo
+            const historyMap = new Map();     // Almacena el ID primario de la DB
+            const activeDataMap = new Map();  // Almacena la data 'Viva' (No BAJA) para comparar Deltas
+            
+            // Funcilla helper para resolver el código (SKU/DNI) independientemente de cómo se llame la columna
+            const getFuzzyCode = (obj) => {
+                if (!obj) return null;
+                if (obj.codigo) return obj.codigo;
+                if (obj['código']) return obj['código'];
+                for (let key in obj) {
+                    const kText = String(key).toLowerCase();
+                    if (kText === 'sku' || kText.includes('codigo') || kText.includes('código')) {
+                        return obj[key];
+                    }
+                }
+                return null;
+            };
+
             const { data: previousSnapshot, error: snapErr } = await supabase
                 .from('tabla_maestra_operativa')
-                .select('datos_maestros, timestamp_extraccion')
+                .select('id, datos_maestros, timestamp_extraccion')
                 .eq('proveedor_id', proveedor_id)
                 .order('timestamp_extraccion', { ascending: false });
                 
             if (!snapErr && previousSnapshot && previousSnapshot.length > 0) {
                 for (const row of previousSnapshot) {
-                    const code = row.datos_maestros?.codigo;
+                    const code = getFuzzyCode(row.datos_maestros);
                     if (code) {
                         const strCode = String(code).trim();
-                        // Almacenamos el payload_maestro de la versión más reciente hallada (T-1)
-                        // Aseguramos de no capturar registros que ya figuraban como BAJA en iteraciones muy remotas (filtrado lógico temporal)
-                        if (!historyMap.has(strCode) && row.datos_maestros._estado_delta !== 'BAJA') {
-                            historyMap.set(strCode, row.datos_maestros);
+                        // Almacenamos SIEMPRE el 'id' para sobreescribir ese renglón (incluso si era BAJA antes)
+                        if (!historyMap.has(strCode)) {
+                            historyMap.set(strCode, row.id);
+                        }
+                        // Solo usamos para calcular Deltas (Precio anterior) si el producto estaba vivo
+                        if (!activeDataMap.has(strCode) && row.datos_maestros._estado_delta !== 'BAJA') {
+                            activeDataMap.set(strCode, row.datos_maestros);
                         }
                     }
                 }
             }
             
             const processedCodes = new Set();
-            const inserts = [];
+            const upserts = [];
+            const intraBatchCollisions = new Set(); // Para prevenir colisión intra-lote (duplicados en el archivo Excel)
 
             // 1. Matricular las llegadas reales (Altas, Intactos y Modificados)
             records.forEach(record => {
                  let estado_delta = 'ALTA';
                  let es_delta = true;
-                 const rawCode = record.codigo ? String(record.codigo).trim() : null;
                  
-                 if (rawCode && historyMap.has(rawCode)) {
+                 const foundCodeValue = getFuzzyCode(record);
+                 const rawCode = foundCodeValue ? String(foundCodeValue).trim() : null;
+                 
+                 // [FIX Concurrencia Intra-Lote] Si encontramos duplicados dentro del MISMO archivo, evitamos insertarlos dos veces para que no choquen UUIDs.
+                 if (rawCode) {
+                     if (intraBatchCollisions.has(rawCode)) return; // Ignorar el duplicado visual del Excel
+                     intraBatchCollisions.add(rawCode);
+                 }
+                 
+                 if (rawCode && activeDataMap.has(rawCode)) {
                      processedCodes.add(rawCode);
-                     const historicalData = historyMap.get(rawCode);
+                     const historicalData = activeDataMap.get(rawCode);
                      const historicalPrice = historicalData.precio;
                      const currentPrice = record.precio;
                      
@@ -461,39 +489,55 @@ module.exports = {
                          estado_delta = 'INTACTO';
                          es_delta = false;
                      }
+                 } else if (rawCode) {
+                     // Si es ALTA pero ya existía en historyMap (era BAJA), la revive
+                     processedCodes.add(rawCode);
                  }
 
                  record._estado_delta = estado_delta;
 
-                 inserts.push({
+                 const payload = {
                      proveedor_id,
                      archivo_origen_id: archivo_id,
                      nombre_proveedor: nombre_proveedor || 'Desconocido',
                      datos_maestros: record,
                      es_delta: es_delta,
                      timestamp_extraccion: timestamp_real
-                 });
+                 };
+                 
+                 // Inyectar el ID existente para forzar UPDATE
+                 if (rawCode && historyMap.has(rawCode)) {
+                     payload.id = historyMap.get(rawCode);
+                 }
+
+                 upserts.push(payload);
             });
 
             // 2. Inyectar "Ghosts" para el tracking de Bajas (Descontinuados)
-            for (const [historicalCode, historicalData] of historyMap.entries()) {
+            for (const [historicalCode, historicalData] of activeDataMap.entries()) {
                 if (!processedCodes.has(historicalCode)) {
-                    // El producto existía vivo en T-1 pero no vino en T0. Es una BAJA definitiva para esta capa operativa.
+                    // El producto existía vivo en T-1 pero no vino en T0. Es una BAJA definitiva forzada por UPDATE.
                     const ghostPayload = { ...historicalData };
                     ghostPayload._estado_delta = 'BAJA';
                     
-                    inserts.push({
+                    const payload = {
                         proveedor_id,
-                        archivo_origen_id: archivo_id,  // Se asimila a la extracción actual para que asome en los reportes correspondientes a hoy
+                        archivo_origen_id: archivo_id,
                         nombre_proveedor: nombre_proveedor || 'Desconocido',
                         datos_maestros: ghostPayload,
                         es_delta: true,
                         timestamp_extraccion: timestamp_real
-                    });
+                    };
+                    
+                    if (historyMap.has(historicalCode)) {
+                        payload.id = historyMap.get(historicalCode);
+                    }
+                    
+                    upserts.push(payload);
                 }
             }
             
-            const { error: insertErr } = await supabase.from('tabla_maestra_operativa').insert(inserts);
+            const { error: insertErr } = await supabase.from('tabla_maestra_operativa').upsert(upserts);
             if (insertErr) {
                  if (insertErr.code === '42P01') {
                      return res.status(500).json({ success: false, error: "Tabla tabla_maestra_operativa no existe. Comuníquese con base de datos." });

@@ -337,9 +337,9 @@ window.revertExtraction = async function(fileId) {
         icon: 'warning',
         input: 'radio',
         inputOptions: {
-            'ROLLBACK': '<b>Rollback Total:</b> Mover archivo al Inbox y borrar Base de Datos.',
-            'UNLINK': '<b>Solo Desvincular:</b> Mantener archivo procesado y limpiar Base de Datos.',
-            'REMOVE_EXTRACTION': '<b>Retirar Extracción:</b> Revertir Extracción pero mantener Estado Ingestado.'
+            'ROLLBACK': '<b>Rollback Total:</b> Mover archivo al Inbox, limpiar DB Local y DB Maestra.',
+            'UNLINK': '<b>Solo Desvincular:</b> Limpiar BD Local y Maestra, archivo se marca para reprocesar.',
+            'REMOVE_EXTRACTION': '<b>Retirar Extracción (Recomendado):</b> Eliminar los registros inyectados en la Tabla Maestra y conservar pre-mapeo visual.'
         },
         inputValue: 'REMOVE_EXTRACTION',
         showCancelButton: true,

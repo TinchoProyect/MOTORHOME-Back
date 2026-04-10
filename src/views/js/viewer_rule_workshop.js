@@ -126,6 +126,12 @@ function renderRuleSelector() {
     hashOption.textContent = '⚡ Resolver duplicados por texto (Hash)';
     hashOption.className = 'font-bold text-fuchsia-400 bg-fuchsia-900/20';
     selector.appendChild(hashOption);
+
+    const discountOption = document.createElement('option');
+    discountOption.value = 'BESPOKE_MATH_DISCOUNT';
+    discountOption.textContent = '⚡ Aplicar Descuento Fijo (%)';
+    discountOption.className = 'font-bold text-cyan-400 bg-cyan-900/20';
+    selector.appendChild(discountOption);
 }
 
 // OPEN PANEL
@@ -604,6 +610,11 @@ export function addSelectedRule() {
     }
     if (ruleId === 'BESPOKE_COMBINE_HASH') {
         promptCombineHashRule();
+        selector.value = "";
+        return;
+    }
+    if (ruleId === 'BESPOKE_MATH_DISCOUNT') {
+        promptMathDiscountRule();
         selector.value = "";
         return;
     }
@@ -1569,6 +1580,65 @@ export function getActiveState() {
         masterField: activeContext.masterField,
         pipeline: currentDraftPipeline
     };
+}
+
+// [V5.31 UX] Bespoke Rule: Math Discount
+async function promptMathDiscountRule() {
+    const { value: percentageValue } = await Swal.fire({
+        title: 'Porcentaje de Descuento',
+        html: `
+            <div style="text-align: left; margin-bottom: 24px; font-size: 13px; color: rgba(203, 213, 225, 0.8); line-height: 1.6; font-weight: 300;">
+                Ingresa el valor numérico del porcentaje que se reducirá de la celda actual (ej. 10.5, 20, 5).
+                <br><br><span style="color: #94a3b8;">La celda conservará su estado original si ocurre un error (no generará un fallo NaN) y el resultado se limitará a 2 decimales.</span>
+            </div>
+            <div style="position: relative;">
+                <i data-lucide="percent" style="width: 16px; height: 16px; color: #06b6d4; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 10;"></i>
+                <input id="swal-math-discount-input" type="number" step="0.01" placeholder="Ej: 15.5" style="width: 100%; background: rgba(2, 6, 23, 0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 12px 16px 12px 36px; color: #cffafe; outline: none; font-weight: 500;">
+            </div>
+        `,
+        background: 'rgba(15, 23, 42, 0.85)',
+        color: '#ffffff',
+        customClass: {
+            title: 'text-white font-light tracking-wide text-xl',
+            confirmButton: 'bg-cyan-600/80 hover:bg-cyan-500 text-white border border-cyan-400/30 rounded-lg shadow-lg px-6 py-2 transition-all',
+            cancelButton: 'bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 border border-slate-600/50 rounded-lg px-6 py-2 transition-all'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Aplicar',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            const val = document.getElementById('swal-math-discount-input').value;
+            if (!val || isNaN(parseFloat(val))) {
+                Swal.showValidationMessage('Debes ingresar un número válido.');
+            }
+            return parseFloat(val);
+        },
+        didOpen: () => {
+            if (window.lucide) window.lucide.createIcons();
+            const popup = Swal.getPopup();
+            if (popup) {
+                popup.style.backdropFilter = 'blur(16px)';
+                popup.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                popup.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.5)';
+                popup.style.borderRadius = '1rem';
+            }
+        }
+    });
+
+    if (percentageValue !== undefined) {
+        const ruleObj = {
+            tipo: 'math_discount',
+            nombre_regla: `Aplicar Descuento (${percentageValue}%)`,
+            descripcion: `Regla Matemática: Reduce el valor numérico extraíble de la celda en un ${percentageValue}%. Mantiene nulos si es texto.`,
+            percentage: percentageValue,
+            disabled: false
+        };
+        
+        console.log(`⚡ [WORKSHOP] Aplicando Regla Math Discount | Pct: ${percentageValue}%`);
+        currentDraftPipeline.push({ ...ruleObj });
+        renderPipeline();
+        triggerPreview();
+    }
 }
 
 window.viewerRuleWorkshop = {

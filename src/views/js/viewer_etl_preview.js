@@ -207,6 +207,57 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 console.log(`[ETL DIAGNOSTIC] Trazabilidad 'combine_hash' | Ingreso: '${beforeEnrich}' -> Salida: '${currentValue}'`);
             }
         }
+        else if (rule.tipo === 'math_discount') {
+            // Paso A: Abortar celdas vacías
+            if (currentValue === "") continue;
+
+            const originalVal = currentValue;
+            
+            // Paso B: Sanitización Monetaria Regional
+            // 1. Eliminar símbolos ($, USD, letras, espacios)
+            let numericString = currentValue.replace(/[$\sA-Za-z]/g, '');
+            // 2. Eliminar cualquier cosa que no sea dígito, coma, punto o signo menos
+            numericString = numericString.replace(/[^\d.,\-]/g, '');
+            
+            // 3. Resolución de decimales (Coma vs Punto)
+            const lastComma = numericString.lastIndexOf(',');
+            const lastDot = numericString.lastIndexOf('.');
+            
+            if (lastComma > lastDot && lastComma !== -1) {
+                // Coma es decimal (E.g. 1.234,50 -> 1234.50)
+                numericString = numericString.replace(/\./g, '');
+                numericString = numericString.replace(',', '.');
+            } else if (lastDot > lastComma && lastDot !== -1) {
+                // Punto es decimal (E.g. 1,234.50 -> 1234.50)
+                numericString = numericString.replace(/,/g, '');
+            } else {
+                // Solo hay un tipo de separador o ninguno
+                if (numericString.includes(',')) {
+                    const parts = numericString.split(',');
+                    // Convención: Si solo hay una coma y le siguen 3 dígitos exactos al final, es separador de miles. Sino decimal.
+                    if (parts.length === 2 && parts[1].length === 3) {
+                        numericString = numericString.replace(',', ''); // Miles
+                    } else {
+                        numericString = numericString.replace(/,/g, '.'); // Decimal
+                    }
+                }
+            }
+
+            const floatVal = parseFloat(numericString);
+
+            // Paso C: Exclusión de Texto (Evitar NaN)
+            if (!isNaN(floatVal)) {
+                // Paso D: Cálculo y Formateo
+                const pct = parseFloat(rule.percentage) || 0;
+                const discounted = floatVal * (1 - (pct / 100));
+                currentValue = discounted.toFixed(2);
+                cleanValue = discounted;
+                
+                console.log(`[ETL DIAGNOSTIC] Trazabilidad 'math_discount' | Ingreso: '${originalVal}' -> Detectado: ${floatVal} -> Salida: '${currentValue}' (-${pct}%)`);
+            } else {
+                console.warn(`[ETL DIAGNOSTIC] 'math_discount' abortado por valor no numérico: '${originalVal}'`);
+            }
+        }
         else if (isCustomReplace) {
             try {
                 const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');

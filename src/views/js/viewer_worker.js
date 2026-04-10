@@ -72,6 +72,25 @@ window.WORKER_CODE = `
 // --- Export Function ---
 async function exportAllSheets() {
     return new Promise((resolve, reject) => {
+        // [VIRTUAL DB FALLBACK] Soporte para modo procesado / histórico
+        if (window.virtualWorkbookCache) {
+            const result = [];
+            for (const name in window.virtualWorkbookCache) {
+                let sheetData = window.virtualWorkbookCache[name];
+                if (!Array.isArray(sheetData) && typeof XLSX !== 'undefined') {
+                    try {
+                        sheetData = XLSX.utils.sheet_to_json(sheetData, { header: 1 });
+                        window.virtualWorkbookCache[name] = sheetData; // Cache hard payload for instant re-loads
+                    } catch(e) { sheetData = []; }
+                }
+                result.push({ name: name, data: sheetData });
+            }
+            if (result.length > 0) {
+                resolve(result);
+                return;
+            }
+        }
+
         if (!viewerWorker) {
             // Local Fallback (Si no hay worker activo)
             if (workbook) {
