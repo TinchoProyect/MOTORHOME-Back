@@ -46,30 +46,58 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         return { resultDisplay, mathResult: rawStringA, rejected };
     }
 
-    // --- Flujo matemático Clásico ---
-    let rawA = String(opA?.clean !== undefined && opA?.clean !== null ? opA.clean : "").trim();
-    let isOpBEmpty = (opB?.clean === null || opB?.clean === undefined || String(opB.clean).trim() === "");
-    let rawB = "0";
+    // [FIX V8.10 - DETERMINISTIC NUMERIC SANITIZER]
+    // Extractor robusto con fallback en cascada: clean -> raw -> display
+    // Nunca permite que una columna numérica llegue al motor como string vacío
+    const extractNumericSource = (op) => {
+        if (!op) return '';
+        // Cascada de candidatos: clean (valor post-ETL sin formato), raw (crudo original), display
+        const candidates = [
+            op.clean,
+            op.raw,
+            op.display,
+        ];
+        for (const c of candidates) {
+            if (c !== undefined && c !== null && String(c).trim() !== '') {
+                const s = String(c).trim();
+                // Rechazar valores que son puramente HTML (resultado de transformación visual)
+                if (s.startsWith('<')) continue;
+                return s;
+            }
+        }
+        return '';
+    };
+
+    // Sanitizador numérico modularizado (maneja locale AR: 20.618,30 -> 20618.30)
+    const safeParseFn = (strVal) => {
+        if (!strVal || strVal === '') return 0;
+        // Strip currency symbols and whitespace
+        let s = strVal.replace(/[$\s\u00A0\u202F]/g, '').trim();
+        if (s === '' || s === '-') return 0;
+        // Locale AR: punto de miles, coma decimal (20.618,30)
+        if (s.includes(',') && s.includes('.')) {
+            const lastComma = s.lastIndexOf(',');
+            const lastDot = s.lastIndexOf('.');
+            if (lastComma > lastDot) return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+            else return parseFloat(s.replace(/,/g, ''));
+        } else if (s.includes(',')) {
+            // Solo coma: puede ser decimal AR (0,1 -> 0.1)
+            return parseFloat(s.replace(',', '.'));
+        }
+        return parseFloat(s);
+    };
+
+    let rawA = extractNumericSource(opA);
+    let isOpBEmpty = (opB?.clean === null || opB?.clean === undefined || String(opB.clean).trim() === '') &&
+                     (opB?.raw === null || opB?.raw === undefined || String(opB.raw).trim() === '');
+    let rawB = '0';
 
     let shouldTolerateEmpty = calcConfig.tolerateEmpty !== false;
     if (!isOpBEmpty) {
-        rawB = String(opB.clean).trim();
+        rawB = extractNumericSource(opB);
     } else if (!shouldTolerateEmpty) {
         return { resultDisplay: "<span class='text-slate-600 italic text-[10px]'>N/A</span>", rejected: true };
     }
-
-    const safeParseFn = (strVal) => {
-        if (!strVal || strVal === "") return 0;
-        if (strVal.includes(',') && strVal.includes('.')) {
-            const lastComma = strVal.lastIndexOf(',');
-            const lastDot = strVal.lastIndexOf('.');
-            if (lastComma > lastDot) return parseFloat(strVal.replace(/\./g, '').replace(',', '.'));
-            else return parseFloat(strVal.replace(/,/g, ''));
-        } else if (strVal.includes(',')) {
-            return parseFloat(strVal.replace(',', '.'));
-        }
-        return parseFloat(strVal);
-    };
 
     let mathA = safeParseFn(rawA);
     let mathB = safeParseFn(rawB);
@@ -1325,17 +1353,40 @@ async function generatePreview(skipModal = false) {
                             try {
                                 if (calcConfig.operands && calcConfig.operands.length >= 1) {
                                     let rCtx = row._richContext || {};
-                                    // Garantizar evaluacion previa de operando en caso lazy
+                                    // [FIX V8.10] Resolver operandos con lookups robustos
                                     calcConfig.operands.forEach(opColId => {
-                                        if (!opColId || rCtx[opColId] !== undefined) return;
+                                        if (!opColId) return;
+                                        // Si ya fue resuelto con un valor no-vacío, no reescribir
+                                        if (rCtx[opColId] !== undefined && String(rCtx[opColId].raw || '').trim() !== '') return;
+                                        
                                         const pipe = localPipelines && localPipelines[opColId] ? localPipelines[opColId].rules : [];
-                                        const vColOp = localVirtualCols.find(v => v.id === opColId);
+                                        
+                                        // Lookup 1: Por ID exacto de virtual col
+                                        let vColOp = localVirtualCols.find(v => v.id === opColId);
+                                        
+                                        // Lookup 2: Por mapeo invertido (el operando puede ser el termId que apunta a la columna maestra)
+                                        if (!vColOp) {
+                                            vColOp = localVirtualCols.find(v => {
+                                                const mappedTerm = localColumnMap[v.id];
+                                                return mappedTerm && (String(mappedTerm) === String(opColId) || String(mappedTerm).toLowerCase() === String(opColId).toLowerCase());
+                                            });
+                                        }
+                                        
+                                        // Lookup 3: Buscar en _unifiedOutput por si ya fue resuelto por otra cfg
+                                        if (!vColOp && row._unifiedOutput && row._unifiedOutput[String(opColId).toLowerCase().trim()] !== undefined) {
+                                            const cached = String(row._unifiedOutput[String(opColId).toLowerCase().trim()] || '').trim();
+                                            rCtx[opColId] = { clean: cached, display: cached, raw: cached };
+                                            return;
+                                        }
+                                        
                                         if (vColOp && vColOp.dataIdx !== undefined) {
-                                            const raw = String(row[vColOp.dataIdx] || "");
-                                            const { clean, display, result } = window.viewerETL.transformCell(raw, pipe || [], row);
-                                            rCtx[opColId] = { clean, display: display !== undefined ? display : result, raw };
+                                            const raw = String(row[vColOp.dataIdx] || '');
+                                            const etlResult = window.viewerETL
+                                                ? window.viewerETL.transformCell(raw, pipe || [], row)
+                                                : { clean: raw, display: raw, result: raw };
+                                            rCtx[opColId] = { clean: etlResult.clean, display: etlResult.display !== undefined ? etlResult.display : etlResult.result, raw };
                                         } else {
-                                            rCtx[opColId] = { clean: "", display: "", raw: "" };
+                                            rCtx[opColId] = { clean: '', display: '', raw: '' };
                                         }
                                     });
                                     row._richContext = rCtx;
@@ -1467,6 +1518,7 @@ async function generatePreview(skipModal = false) {
 
         // Configurar renderizador web
         let sanitizedData = allSanitizedData;
+        window.currentSimData = sanitizedData;
         window.currentDisplayConfig = displayConfig;
         
         // [FIX V8.9] APLICAR ORDEN DE LAYOUT MANAGER SOBRE CONFIGURACIÓN UNIVERSAL VIRTUAL!
