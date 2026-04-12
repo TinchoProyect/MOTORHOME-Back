@@ -69,9 +69,21 @@ window.confirmIngestion = async function () {
             </div>
         `).join('');
 
+        // Configurar Default Timestamp Local
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        const defaultDateStr = now.toISOString().slice(0, 16); // Formato YYYY-MM-DDTHH:mm
+
         const res = await Swal.fire({
             title: 'Parámetros de Ingesta',
             html: `
+                <div class="mb-4 bg-slate-950 p-4 rounded-xl border border-slate-700/50 shadow-inner">
+                    <label class="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <i data-lucide="calendar-clock" class="w-4 h-4 text-emerald-400"></i> Fecha de Vigencia (Metadata)
+                    </label>
+                    <input type="datetime-local" id="ingestEffectiveDate" value="${defaultDateStr}"
+                        class="w-full bg-slate-800 text-white text-sm border-slate-600 rounded-lg p-2.5 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all shadow-md">
+                </div>
                 <p class="text-slate-400 text-sm mb-4">Selecciona qué hojas deseas inyectar en la base de datos:</p>
                 <div class="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar text-left text-base">
                     ${sheetsHtml}
@@ -88,6 +100,12 @@ window.confirmIngestion = async function () {
                 if (window.lucide) window.lucide.createIcons();
             },
             preConfirm: () => {
+                const effectiveDateInput = document.getElementById('ingestEffectiveDate');
+                if (!effectiveDateInput || !effectiveDateInput.value) {
+                    Swal.showValidationMessage('⚠️ Debes establecer una Fecha de Vigencia obligatoria.');
+                    return false;
+                }
+
                 const selected = [];
                 validSheets.forEach((s, idx) => {
                     const chk = document.getElementById(`chk_sheet_${idx}`);
@@ -99,39 +117,75 @@ window.confirmIngestion = async function () {
                     Swal.showValidationMessage('⚠️ Debes seleccionar al menos una solapa para continuar.');
                     return false;
                 }
-                return selected;
+                
+                return { selectedSheets: selected, effectiveDate: effectiveDateInput.value };
             }
         });
 
         if (!res.isConfirmed) return;
         
-        // Mutar el Payload con la selección determinista
-        const selectedSheetsArray = res.value;
+        // Mutar el Payload con la selección determinista y atrapar metadata
+        const selectedSheetsArray = res.value.selectedSheets;
+        const effectiveDateMetadata = res.value.effectiveDate;
         const oldTotal = finalPayload.sheets.length;
         
         finalPayload.sheets = selectedSheetsArray;
+        finalPayload.effectiveDate = effectiveDateMetadata; // Propagación
+        
         itemCount = selectedSheetsArray.reduce((acc, s) => acc + s.data.length, 0);
         
-        console.log(`[Ingest] Auditoría: Seleccionadas ${selectedSheetsArray.length} hojas de ${oldTotal}. Filas totales a procesar: ${itemCount}.`);
+        console.log(`[Ingest] Auditoría: Seleccionadas ${selectedSheetsArray.length} hojas de ${oldTotal}. Filas totales a procesar: ${itemCount}. Metadata (Vigencia): ${effectiveDateMetadata}`);
         confirmed = true;
         
     } else {
         // --- FLUJO LEGACY (Fallback Confirm Simple) ---
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        const defaultDateStr = now.toISOString().slice(0, 16);
+
         if (typeof Swal !== 'undefined') {
             const res = await Swal.fire({
                 title: '¿Confirmar Extracción?',
-                html: `¿Estás seguro de inyectar estos datos en la Tabla Maestra?<br><br><span class="text-slate-400">📊 Filas: <b>${itemCount}</b></span>`,
+                html: `
+                    <div class="mb-4 bg-slate-950 p-4 rounded-xl border border-slate-700/50 shadow-inner text-left">
+                        <label class="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <i data-lucide="calendar-clock" class="w-4 h-4 text-emerald-400"></i> Fecha de Vigencia
+                        </label>
+                        <input type="datetime-local" id="ingestEffectiveDate" value="${defaultDateStr}"
+                            class="w-full bg-slate-800 text-white text-sm border-slate-600 rounded-lg p-2.5 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all shadow-md">
+                    </div>
+                    ¿Estás seguro de inyectar estos datos en la Tabla Maestra?<br><br><span class="text-slate-400">📊 Filas: <b>${itemCount}</b></span>
+                `,
                 icon: 'question',
                 background: '#0f172a', color: '#f8fafc',
                 showCancelButton: true,
                 confirmButtonText: 'Sí, procesar',
                 cancelButtonText: 'Cancelar',
                 confirmButtonColor: '#10b981',
-                cancelButtonColor: '#334155'
+                cancelButtonColor: '#334155',
+                didOpen: () => {
+                    if (window.lucide) window.lucide.createIcons();
+                },
+                preConfirm: () => {
+                    const effectiveDateInput = document.getElementById('ingestEffectiveDate');
+                    if (!effectiveDateInput || !effectiveDateInput.value) {
+                        Swal.showValidationMessage('⚠️ La de Fecha de Vigencia es obligatoria.');
+                        return false;
+                    }
+                    return { effectiveDate: effectiveDateInput.value };
+                }
             });
             confirmed = res.isConfirmed;
+            if (confirmed) {
+                finalPayload.effectiveDate = res.value.effectiveDate;
+            }
         } else {
             confirmed = confirm(`¿Estás seguro de confirmar la extracción?\n\n📊 Filas totales: ${itemCount}\n\nEsto guardará los datos en la Base de Datos.`);
+            // Fallback total via Prompt si no hay sweet alert
+            if (confirmed) {
+                const userDate = prompt("Ingrese Fecha de Vigencia (YYYY-MM-DDTHH:mm):", defaultDateStr);
+                finalPayload.effectiveDate = userDate || defaultDateStr;
+            }
         }
         if (!confirmed) return;
     }

@@ -495,6 +495,8 @@ module.exports = {
                  }
 
                  record._estado_delta = estado_delta;
+                 // Inyección de Metadata Cronológico (Efective Date / QA Requirement)
+                 record.ultima_actualizacion_origen = timestamp_real;
 
                  const payload = {
                      proveedor_id,
@@ -521,6 +523,8 @@ module.exports = {
                     // El producto existía vivo en T-1 pero no vino en T0. Es una BAJA definitiva forzada por UPDATE.
                     const ghostPayload = { ...historicalData };
                     ghostPayload._estado_delta = 'BAJA';
+                    // Conservamos o actualizamos la fecha de vigencia al momento de convertirse en Fantasma
+                    ghostPayload.ultima_actualizacion_origen = timestamp_real;
                     
                     const payload = {
                         proveedor_id,

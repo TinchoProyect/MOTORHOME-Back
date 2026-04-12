@@ -31,6 +31,9 @@ async function processIngestion(fileId, providerId, dataSnapshot) {
 
     if (rawError) throw rawError;
 
+    // Extraer metadata temporal
+    const effectiveDateStr = dataSnapshot.effectiveDate || new Date().toISOString();
+
     if (!rawRecord) {
         // Si no existe (caso raro si vienen del visor, pero posible), lo creamos.
         console.log("   -> [INFO] Creando registro RAW on-the-fly...");
@@ -40,7 +43,9 @@ async function processIngestion(fileId, providerId, dataSnapshot) {
                 archivo_id: fileId,
                 proveedor_id: providerId,
                 status_global: 'CONFIRMED', // Set directo
-                nombre_archivo: 'Archivo extraído manualmente'
+                nombre_archivo: 'Archivo extraído manualmente',
+                fecha_vigencia: effectiveDateStr,
+                created_at: effectiveDateStr // Secreto para persistir TimeZone
             })
             .select()
             .single();
@@ -48,10 +53,14 @@ async function processIngestion(fileId, providerId, dataSnapshot) {
         if (createError) throw createError;
         rawRecord = newRaw;
     } else {
-        // Actualizamos estado
+        // Actualizamos estado y metadata
         const { error: updateError } = await supabase
             .from('proveedor_listas_raw')
-            .update({ status_global: 'CONFIRMED' })
+            .update({ 
+                status_global: 'CONFIRMED',
+                fecha_vigencia: effectiveDateStr,
+                created_at: effectiveDateStr // Secreto para persistir TimeZone
+            })
             .eq('id', rawRecord.id);
 
         if (updateError) throw updateError;
