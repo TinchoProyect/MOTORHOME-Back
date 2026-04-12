@@ -172,7 +172,38 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
     // Ordenar archivos por fecha más reciente primero
     const sortedFiles = [...files].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    let html = `<div class="flex-1 overflow-y-auto custom-scrollbar w-full pr-2 pb-10 pt-2 h-full">`;
+    // INVENTARIO DE MATRICES (TOOLBOX)
+    let toolsHtml = `
+    <div class="mb-4 bg-slate-900/40 p-3 rounded-xl border border-slate-800 flex items-center justify-between shadow-inner" id="inventoryToolbox">
+        <div class="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 flex-1" id="toolboxButtons">
+            <button onclick="window.toggleFlujoFilter('ALL', this)" class="toolbox-btn active shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 bg-blue-500/10 text-blue-400 border-blue-500 hover:bg-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                <i data-lucide="layers" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Ver Todos
+            </button>
+            <div class="w-px h-5 bg-slate-800 mx-1"></div>
+            <button onclick="window.toggleFlujoFilter('CRUDO', this)" class="toolbox-btn shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 bg-slate-800 text-slate-400 border-transparent hover:text-slate-200">
+                <i data-lucide="file-warning" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Sueltos (Crudos)
+            </button>
+    `;
+
+    if (flujosDisponibles && flujosDisponibles.length > 0) {
+        flujosDisponibles.forEach(f => {
+            toolsHtml += `
+            <button onclick="window.toggleFlujoFilter('${f.id_flujo}', this)" class="toolbox-btn shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 bg-slate-800 text-slate-400 border-transparent hover:text-indigo-300">
+                <i data-lucide="wrench" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> ${f.nombre_flujo}
+            </button>
+            `;
+        });
+    }
+
+    toolsHtml += `
+        </div>
+        <div class="shrink-0 pl-4 border-l border-slate-800 ml-2">
+            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest"><i data-lucide="hammer" class="w-3 h-3 inline-block mb-0.5 mr-1"></i> Inventario de Matrices</span>
+        </div>
+    </div>
+    `;
+
+    let html = `<div class="flex-1 overflow-y-auto custom-scrollbar w-full pr-2 pb-10 pt-2 h-full">` + toolsHtml;
 
     // Preparar opciones del select (movidas al bucle)
 
@@ -224,10 +255,12 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
             });
         }
 
+        const fileDataId = file.flujo_asignado_id || 'CRUDO';
+
         if (isExtraido) {
             // TARJETA COMPACTA (EXTRAÍDO)
             html += `
-                <div class="bg-slate-950/80 backdrop-blur-md border border-indigo-500/40 rounded-2xl p-5 flex flex-col justify-between shadow-2xl shadow-indigo-900/20 hover:border-indigo-400/60 transition-all h-full min-h-max relative overflow-hidden group">
+                <div class="file-card-item bg-slate-950/80 backdrop-blur-md border border-indigo-500/40 rounded-2xl p-5 flex flex-col justify-between shadow-2xl shadow-indigo-900/20 hover:border-indigo-400/60 transition-all h-full min-h-max relative overflow-hidden group" data-flujo-id="${fileDataId}">
                     <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
                         <input type="checkbox" 
                             class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500 cursor-pointer transition-colors"
@@ -261,7 +294,7 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
         } else {
             // TARJETA COMPLETA (PENDIENTE EXTRACCIÓN)
             html += `
-                <div class="group relative bg-slate-900/60 hover:bg-slate-900/90 border ${currentBorderClass} hover:border-emerald-400/80 rounded-2xl p-5 flex flex-col justify-between transition-all shadow-xl hover:-translate-y-1 hover:shadow-emerald-900/30 h-full min-h-max">
+                <div class="file-card-item group relative bg-slate-900/60 hover:bg-slate-900/90 border ${currentBorderClass} hover:border-emerald-400/80 rounded-2xl p-5 flex flex-col justify-between transition-all shadow-xl hover:-translate-y-1 hover:shadow-emerald-900/30 h-full min-h-max" data-flujo-id="${fileDataId}">
                     
                     ${badgeHtml}
 
@@ -692,4 +725,42 @@ window.openProcessedFile = async function (rawListId, fileName) {
         loader.classList.add('hidden');
         modal.classList.add('hidden');
     }
+};
+
+// Logic: Toggle de Filtrado Visual por Matrices de Extracción
+window.toggleFlujoFilter = function(flujoId, evtTarget) {
+    // 1. Resaltar botón activo y oscurecer los demás
+    const toolsBtns = document.querySelectorAll('.toolbox-btn');
+    toolsBtns.forEach(btn => {
+        btn.classList.remove('active', 'border-blue-500', 'bg-blue-500/10', 'text-blue-400', 'shadow-[0_0_15px_rgba(59,130,246,0.1)]', 'border-indigo-500', 'bg-indigo-500/10', 'text-indigo-400', 'shadow-[0_0_15px_rgba(99,102,241,0.1)]');
+        btn.classList.add('bg-slate-800', 'text-slate-400', 'border-transparent');
+    });
+
+    if (evtTarget) {
+        evtTarget.classList.remove('bg-slate-800', 'text-slate-400', 'border-transparent');
+        // Usar Indigo para Herramientas y Azul para Ver Todos
+        if (flujoId === 'ALL') {
+            evtTarget.classList.add('active', 'border-blue-500', 'bg-blue-500/10', 'text-blue-400', 'shadow-[0_0_15px_rgba(59,130,246,0.1)]');
+        } else {
+            evtTarget.classList.add('active', 'border-indigo-500', 'bg-indigo-500/10', 'text-indigo-400', 'shadow-[0_0_15px_rgba(99,102,241,0.1)]');
+        }
+    }
+
+    // 2. Filtrado Lógico (DOM Isolation)
+    const allCards = document.querySelectorAll('.file-card-item');
+    allCards.forEach(card => {
+        if (flujoId === 'ALL') {
+            card.classList.remove('hidden');
+            card.style.display = '';
+        } else {
+            const cardFlujo = card.getAttribute('data-flujo-id');
+            if (cardFlujo === flujoId) {
+                card.classList.remove('hidden');
+                card.style.display = '';
+            } else {
+                card.classList.add('hidden');
+                card.style.display = 'none';
+            }
+        }
+    });
 };

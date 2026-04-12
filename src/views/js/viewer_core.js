@@ -510,8 +510,16 @@ window.unifiedSaveAction = async function() {
     const activeFlujoId = window.globalContext.flujoId;
     const isCrudo = !activeFlujoId || activeFlujoId === "CRUDO";
 
+    // Requerimiento Lógica de Vinculación Automática (Auto-Naming)
+    const gProviderName = (window.globalContext && window.globalContext.providerName) 
+        ? window.globalContext.providerName.split(' ')[0].toUpperCase() 
+        : "PROVEEDOR";
+    const dateObj = new Date();
+    const monthNames = ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"];
+    const suggestedName = `${gProviderName}_EXTRACTOR_${monthNames[dateObj.getMonth()]}${String(dateObj.getFullYear()).slice(-2)}`;
+
     if (isCrudo) {
-        let nombreFlujo = prompt("🏁 Ingrese un nombre único para esta Plantilla:", "P. Ej: Lista Precios Mayorista");
+        let nombreFlujo = prompt("🏁 Bautizar Herramienta de Extracción:", suggestedName);
         if (!nombreFlujo || nombreFlujo.trim() === '') return;
         window._executeFlujoSave(null, nombreFlujo);
     } else {
