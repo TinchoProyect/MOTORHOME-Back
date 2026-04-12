@@ -173,7 +173,12 @@ async function toggleMappingMode() {
 }
 
 // [MODIFIED] Replaced inline create with Modal
-function openColumnMenu_v2(vColId, buttonElement) {
+async function openColumnMenu_v2(vColId, buttonElement) {
+    if (window.checkFlujoMutationGuard) {
+        const isSafeToEdit = await window.checkFlujoMutationGuard();
+        if (!isSafeToEdit) return; // User cancelled or aborted
+    }
+
     const existing = document.getElementById('colMenuDropdown');
     if (existing) {
         existing.remove();

@@ -244,8 +244,11 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                             </span>
                         </div>
                         <p class="text-[13px] font-bold text-slate-200 line-clamp-2 leading-snug tracking-wide" title="${displayName}">${displayName}</p>
-                        <p class="text-[10px] text-indigo-300/80 font-mono mt-2 mb-4 flex items-center gap-1.5">
+                        <p class="text-[10px] text-indigo-300/80 font-mono mt-2 flex items-center gap-1.5">
                             <i data-lucide="calendar" class="w-3 h-3"></i> ${new Date(file.created_at).toLocaleDateString()} &middot; ${file.items_count || 0} ítems
+                        </p>
+                        <p class="text-[10px] text-slate-400 font-mono font-medium mt-3 mb-4 flex items-center gap-1.5 bg-slate-900/50 px-2 py-1.5 rounded-lg border border-slate-800 shadow-inner tracking-tight" title="${file.flujo_name || 'Suelto'}">
+                            <i data-lucide="workflow" class="w-3.5 h-3.5 text-indigo-400"></i> <span class="truncate">Flujo: <span class="text-slate-300 font-bold">${file.flujo_name || 'Sin Asignar'}</span></span>
                         </p>
                     </div>
                     <div class="mt-auto">
@@ -337,9 +340,9 @@ window.revertExtraction = async function(fileId) {
         icon: 'warning',
         input: 'radio',
         inputOptions: {
-            'ROLLBACK': '<b>Rollback Total:</b> Mover archivo al Inbox, limpiar DB Local y DB Maestra.',
-            'UNLINK': '<b>Solo Desvincular:</b> Limpiar BD Local y Maestra, archivo se marca para reprocesar.',
-            'REMOVE_EXTRACTION': '<b>Retirar Extracción (Recomendado):</b> Eliminar los registros inyectados en la Tabla Maestra y conservar pre-mapeo visual.'
+            'ROLLBACK': '<div class="mb-1"><b class="text-white">Opción 1 (Rollback Físico):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Borra registros de Tabla Maestra (BD LAMDA), elimina estado en BD Auxiliar y mueve el archivo físico de vuelta a la bandeja Inbox.</div>',
+            'UNLINK': '<div class="mb-1"><b class="text-white">Opción 2 (Desvinculación Lógica):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Borra registros de Tabla Maestra (BD LAMDA) e invalida estado local. El archivo físico no se remueve de "Procesados" pero exige nuevo mapeo.</div>',
+            'REMOVE_EXTRACTION': '<div class="mb-1"><b class="text-emerald-400">Opción 3 (Reseteo de Ingesta - Recomendado):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Solo borra los registros inyectados en la Tabla Maestra (BD LAMDA). Conserva la metadata de transformación visual temporal para reinyección rápida.</div>'
         },
         inputValue: 'REMOVE_EXTRACTION',
         showCancelButton: true,
@@ -350,9 +353,28 @@ window.revertExtraction = async function(fileId) {
         background: '#0f172a',
         color: '#f8fafc',
         customClass: {
-            popup: 'border border-slate-700 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl',
+            popup: 'border border-slate-700 bg-slate-900 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-2xl',
             inputRadio: 'text-left text-sm text-slate-300 gap-4 flex flex-col pt-4',
             radioLabel: 'ml-2 leading-relaxed' 
+        },
+        didOpen: (popup) => {
+            const radioContainer = popup.querySelector('.swal2-radio');
+            if (radioContainer) {
+                radioContainer.style.background = 'transparent';
+                radioContainer.style.display = 'flex';
+                radioContainer.style.flexDirection = 'column';
+                radioContainer.style.alignItems = 'flex-start';
+                radioContainer.style.gap = '1.25rem';
+                radioContainer.style.marginTop = '1rem';
+                
+                const labels = radioContainer.querySelectorAll('.swal2-label');
+                labels.forEach(l => {
+                    l.style.textAlign = 'left';
+                    l.style.display = 'block';
+                    l.style.marginLeft = '0.5rem';
+                    l.style.lineHeight = '1.2';
+                });
+            }
         },
         inputValidator: (value) => {
             if (!value) {
@@ -396,13 +418,15 @@ window.revertExtraction = async function(fileId) {
                 }
             });
             // Refresco UX: Actualizar tab de Archivos Crudos y Procesados Activos (Card Unlocking)
-            if (window.fetchPendingFiles) window.fetchPendingFiles();
-            if (window.fetchProcessedFiles && window.globalContext && window.globalContext.providerId) {
-                window.fetchProcessedFiles(window.globalContext.providerId);
+            if (window.loadProcessedFiles) {
+                window.loadProcessedFiles();
             }
-                if (window.renderProviderData && window.globalContext && window.globalContext.providerId) {
-                    window.renderProviderData(window.globalContext.providerId);
-                }
+            if (window.loadFiles && window.currentDriveFolderId) {
+                window.loadFiles(window.currentDriveFolderId);
+            }
+            if (window.renderProviderData && window.globalContext && window.globalContext.providerId) {
+                window.renderProviderData(window.globalContext.providerId);
+            }
         } catch (e) {
             Swal.fire({
                 title: 'Error',

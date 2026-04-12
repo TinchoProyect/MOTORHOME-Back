@@ -254,57 +254,11 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
         return;
     }
 
-    // --- UX INTERCEPTOR: Prevenir Autoguardado silencioso sobre Flujos Heredados ---
-    // Si hay un flujo heredado, y no ha sido ya respondida la bifurcación
-    if (window.globalContext && window.globalContext.flujoId && window.globalContext.flujoId !== 'CRUDO') {
-        if (!window._hasPromptedFlowDerivation && !window.globalContext._isLocalSessionFlow) {
-            
-            const selectEl = document.getElementById('headerFlujoSelect');
-            let currentName = "Plantilla Activa";
-            if (selectEl && selectEl.options[selectEl.selectedIndex]) {
-                currentName = selectEl.options[selectEl.selectedIndex].text;
-            }
-
-            if (typeof Swal !== 'undefined') {
-                window._isSavingSimulationLock = true; // Lock before Swal to prevent re-entry
-                
-                const result = await Swal.fire({
-                    title: 'Modificación de Flujo',
-                    html: `Estás a punto de modificar el flujo heredado <b>${currentName}</b>.<br><br>¿Deseas aplicar estos cambios al flujo actual o crear un flujo nuevo para evitar alterar el original?`,
-                    icon: 'warning',
-                    showCancelButton: true,
-                    showDenyButton: true,
-                    confirmButtonText: '<i data-lucide="copy" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Crear Flujo Nuevo',
-                    confirmButtonColor: '#d65ce6',
-                    denyButtonText: '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Sobrescribir Actual',
-                    denyButtonColor: '#10b981',
-                    cancelButtonText: 'Cancelar'
-                });
-                
-                if (result.isConfirmed) {
-                    // "Crear Flujo Nuevo"
-                    let nombreFlujo = prompt("🏁 Ingrese un nombre único para la nueva Plantilla:", `${currentName} (Derivado)`);
-                    if (!nombreFlujo || nombreFlujo.trim() === '') {
-                        window._isSavingSimulationLock = false;
-                        return; // Aborta
-                    }
-                    // Forzar guardado profundo inicial para bifurcar el estado del sistema hacia la DB
-                    await window._executeFlujoSave(null, nombreFlujo.trim());
-                    // Marcar para no volver a molestar
-                    window.globalContext._isLocalSessionFlow = true;
-                    window._hasPromptedFlowDerivation = true;
-                } else if (result.isDenied) {
-                    // "Sobrescribir Actual"
-                    window._hasPromptedFlowDerivation = true;
-                } else {
-                    // Cancelar
-                    window._isSavingSimulationLock = false;
-                    return;
-                }
-                
-                window._isSavingSimulationLock = false; // Unlock for the real execution
-                if (window.lucide) window.lucide.createIcons();
-            }
+    // --- UX INTERCEPTOR: Prevenir Autoguardado silencioso sobre Flujos Vinculados (Vínculo Granítico) ---
+    if (window.checkFlujoMutationGuard) {
+        const isSafe = await window.checkFlujoMutationGuard();
+        if (!isSafe) {
+            return; // Aborted by user
         }
     }
     // -------------------------------------------------------------------------------
@@ -476,8 +430,82 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
 };
 
 // =============================================================================
-// --- 6.C. PERSISTENCIA DE FLUJOS (PLANTILLAS V8) ---
+// --- 6.C. PERSISTENCIA DE FLUJOS (PLANTILLAS V8) Y GUARDIAN DE MUTACIÓN ---
 // =============================================================================
+
+/**
+ * Escudo de Integridad Funcional
+ * Intercepta y bloquea ediciones a plantillas activas si tienen vínculos a la Base Maestra Histórica.
+ * @returns {Promise<boolean>} true = Seguro de proceder, false = Bloqueado/Cancelado
+ */
+window.checkFlujoMutationGuard = async function() {
+    if (!window.globalContext || !window.globalContext.flujoId) return true; 
+    if (window.globalContext.flujoId === "CRUDO") return true; 
+
+    // Si ya autorizó la mutación o ya bifurcó en esta sesión
+    if (window._mutationGuardAuthorized) return true;
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendUrl}/api/flujos/linked-status/${window.globalContext.flujoId}`);
+        if (!res.ok) return true; // Fail open for resilience
+        
+        const data = await res.json();
+
+        if (!data.success || !data.isLinked) {
+            window._mutationGuardAuthorized = true; // It is isolated, safe
+            return true; 
+        }
+
+        // --- VINCULACIÓN DETECTADA: DISPARAR IMPACT ALERT ---
+        let fileSamples = '';
+        if (data.linkedFiles && data.linkedFiles.length > 0) {
+            fileSamples = data.linkedFiles.slice(0, 3).join(', ');
+            if (data.linkedFiles.length > 3) fileSamples += '...';
+        }
+
+        const modalRes = await Swal.fire({
+            title: '⚠️ ATENCIÓN: Vínculo Granítico Detectado',
+            html: `<div class="text-sm text-slate-300 mb-4 text-left">Esta configuración ("<b>${data.flujo_name}</b>") está vinculada a <b>${data.fileCount}</b> archivo(s) histórico(s) ya extraído(s) <i>(Ej: ${fileSamples})</i>.</div>` + 
+                  `<div class="text-sm text-slate-300 text-left mb-6">Modificarla de forma arbitraria alterará la capacidad de reversión y la huella técnica de esos archivos resguardados en el Sistema. Selecciona cómo deseas proceder:</div>`,
+            icon: 'warning',
+            background: '#0f172a',
+            color: '#f8fafc',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: '<i data-lucide="unlink" class="w-4 h-4 inline mt-[-2px]"></i> Romper Vínculos y Modificar',
+            confirmButtonColor: '#ef4444', 
+            denyButtonText: '<i data-lucide="git-branch" class="w-4 h-4 inline mt-[-2px]"></i> Bifurcar (Copia Limpia)',
+            denyButtonColor: '#3b82f6',
+            cancelButtonText: 'Cancelar Operación',
+            cancelButtonColor: '#475569',
+            didOpen: () => { if (window.lucide) window.lucide.createIcons(); }
+        });
+
+        if (modalRes.isConfirmed) {
+            // Opción A: SOBRESCRIBIR -> Rompe vínculos históricos (Unlink total)
+            await fetch(`${backendUrl}/api/flujos/unlink-history/${window.globalContext.flujoId}`, { method: 'POST' });
+            window._mutationGuardAuthorized = true;
+            return true; // Procede
+        } else if (modalRes.isDenied) {
+            // Opción B: BIFURCAR -> Clona config activa
+            let nombreFlujo = prompt("🏁 Ingrese un nombre para la nueva Plantilla Independiente:", `${data.flujo_name} (Clon)`);
+            if (!nombreFlujo || nombreFlujo.trim() === '') return false; 
+            
+            // Forzar guardado inmediato como un id nuevo (fork). Esto cambiará el flujoId
+            await window._executeFlujoSave(null, nombreFlujo); 
+            window._mutationGuardAuthorized = true; 
+            return true; 
+        } else {
+            return false; // Corta la ejecución si clickea Cancelar o afuera
+        }
+
+    } catch (e) {
+        console.error("Error en Mutation Guard:", e);
+        return true; 
+    }
+};
+
 window.unifiedSaveAction = async function() {
     const activeFlujoId = window.globalContext.flujoId;
     const isCrudo = !activeFlujoId || activeFlujoId === "CRUDO";

@@ -621,7 +621,23 @@ async function listProcessedFiles(req, res) {
 
         if (error) throw error;
 
-        res.json({ success: true, files: data });
+        // Recuperar nombres de flujos para enriquecer la respuesta
+        const { data: flujos } = await supabase
+            .from('flujos_extraccion')
+            .select('id_flujo, nombre_flujo')
+            .eq('proveedor_id', providerId);
+
+        const flujosMap = {};
+        if (flujos) {
+            flujos.forEach(f => flujosMap[f.id_flujo] = f.nombre_flujo);
+        }
+
+        const enrichedData = data.map(d => ({
+            ...d,
+            flujo_name: d.flujo_asignado_id ? (flujosMap[d.flujo_asignado_id] || "Flujo Desconocido") : "Suelto (Sin Vínculo)"
+        }));
+
+        res.json({ success: true, files: enrichedData });
 
     } catch (error) {
         console.error("[FilesController] Error listing processed:", error);

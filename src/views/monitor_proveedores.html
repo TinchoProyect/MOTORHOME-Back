@@ -1683,14 +1683,16 @@
                 closeSimulationModal();
                 closeViewerModal();
                 
-                // Re-render UX (Card Unlocking)
-                if (window.fetchPendingFiles) window.fetchPendingFiles();
-                if (window.fetchProcessedFiles && window.globalContext && window.globalContext.providerId) {
-                    window.fetchProcessedFiles(window.globalContext.providerId);
+                // Re-render UX (Card Unlocking via Arquitectura Dashboard)
+                if (window.loadProcessedFiles) {
+                    window.loadProcessedFiles();
+                }
+                if (window.loadFiles && window.currentDriveFolderId) {
+                    window.loadFiles(window.currentDriveFolderId);
                 }
                 
                 // Si la vista Operativa base también debe recargar, lo exponemos:
-                if (window.renderProviderData && window.globalContext.providerId) {
+                if (window.renderProviderData && window.globalContext && window.globalContext.providerId) {
                     window.renderProviderData(window.globalContext.providerId);
                 }
                 

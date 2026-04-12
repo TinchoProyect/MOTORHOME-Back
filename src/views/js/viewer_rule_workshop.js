@@ -136,6 +136,11 @@ function renderRuleSelector() {
 
 // OPEN PANEL
 export async function open(masterField, vColId, colName) {
+    if (window.checkFlujoMutationGuard) {
+        const isSafeToEdit = await window.checkFlujoMutationGuard();
+        if (!isSafeToEdit) return; // User cancelled or aborted
+    }
+
     // Normalización Urgente (Bug Mapeo Duplicado)
     if (vColId !== null && vColId !== undefined) {
         let strId = String(vColId);

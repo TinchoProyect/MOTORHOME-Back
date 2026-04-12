@@ -8,6 +8,10 @@ router.get('/:proveedorId', flujosController.listarPorProveedor);
 // Descargar Snapshot completo para Universal Viewer
 router.get('/detalle/:idFlujo', flujosController.obtenerDetalle);
 
+// Controladores de Integridad de Dependencias (Bifurcación / Unlink)
+router.get('/linked-status/:idFlujo', flujosController.checkLinkedStatus);
+router.post('/unlink-history/:idFlujo', flujosController.unlinkHistory);
+
 // Crear o Actualizar un Flujo (Botón "Guardar Flujo")
 router.post('/', flujosController.upsertFlujo);
 

@@ -505,9 +505,11 @@ module.exports = {
                      timestamp_extraccion: timestamp_real
                  };
                  
-                 // Inyectar el ID existente para forzar UPDATE
+                 // Inyectar el ID existente para forzar UPDATE o uno nuevo (Fallback) para ALTA pura
                  if (rawCode && historyMap.has(rawCode)) {
                      payload.id = historyMap.get(rawCode);
+                 } else {
+                     payload.id = require('crypto').randomUUID(); // Fallback determinista backend
                  }
 
                  upserts.push(payload);
@@ -531,6 +533,9 @@ module.exports = {
                     
                     if (historyMap.has(historicalCode)) {
                         payload.id = historyMap.get(historicalCode);
+                    } else {
+                        // Edge case preventivo (Si por alguna razón el histórico no estaba en historyMap)
+                        payload.id = require('crypto').randomUUID();
                     }
                     
                     upserts.push(payload);

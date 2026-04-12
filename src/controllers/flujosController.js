@@ -150,4 +150,68 @@ flujosController.renombrar = async (req, res) => {
     }
 };
 
+/**
+ * GET /api/flujos/linked-status/:idFlujo
+ * Verifica si este flujo ya fue utilizado para ingestar archivos procesados.
+ */
+flujosController.checkLinkedStatus = async (req, res) => {
+    try {
+        const { idFlujo } = req.params;
+        if (!idFlujo) return res.status(400).json({ error: "Falta idFlujo" });
+
+        // Buscamos si existe alguna Lista Raw que asigne este flujo y su status sea de archivo finalizado/procesado
+        const { data, count, error } = await supabase
+            .from('proveedor_listas_raw')
+            .select('nombre_archivo', { count: 'exact' })
+            .eq('flujo_asignado_id', idFlujo)
+            .in('status_global', ['EXTRAIDO', 'CONFIRMED']);
+
+        if (error) throw error;
+
+        // Recuperamos también el nombre del flujo para la UI (opcional)
+        const { data: flujoData } = await supabase
+            .from('flujos_extraccion')
+            .select('nombre_flujo')
+            .eq('id_flujo', idFlujo)
+            .single();
+
+        return res.json({
+            success: true,
+            isLinked: (count > 0),
+            fileCount: count,
+            flujo_name: flujoData ? flujoData.nombre_flujo : "Plantilla Activa",
+            linkedFiles: data.map(d => d.nombre_archivo)
+        });
+    } catch (err) {
+        console.error("🛑 [API Flujos] Error chequeando estado vinculado:", err.message);
+        return res.status(500).json({ error: "Error de servidor", detalle: err.message });
+    }
+};
+
+/**
+ * POST /api/flujos/unlink-history/:idFlujo
+ * Rompe el vínculo de todos los archivos históricos con esta plantilla (Sobreescritura destructiva).
+ */
+flujosController.unlinkHistory = async (req, res) => {
+    try {
+        const { idFlujo } = req.params;
+        if (!idFlujo) return res.status(400).json({ error: "Falta idFlujo" });
+
+        // Hacemos que todos los históricos que miraban este ID se independicen (null)
+        const { data, error } = await supabase
+            .from('proveedor_listas_raw')
+            .update({ flujo_asignado_id: null })
+            .eq('flujo_asignado_id', idFlujo)
+            .in('status_global', ['EXTRAIDO', 'CONFIRMED']);
+
+        if (error) throw error;
+
+        console.log(`✅ [API Flujos] Vínculos históricos erradicados para ID Flujo: ${idFlujo}`);
+        return res.json({ success: true });
+    } catch (err) {
+        console.error("🛑 [API Flujos] Error ejecutando unlink histórico:", err.message);
+        return res.status(500).json({ error: "Error de base de datos", detalle: err.message });
+    }
+};
+
 module.exports = flujosController;
