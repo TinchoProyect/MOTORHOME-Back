@@ -789,7 +789,7 @@ async function rollbackFiles(req, res) {
                     const { error: masterDeleteError } = await supabase
                         .from('tabla_maestra_operativa')
                         .delete()
-                        .eq('archivo_origen_id', rawListId);
+                        .or(`archivo_origen_id.eq.${rawListId},archivo_origen_id.eq.${driveFileId}`);
 
                     if (masterDeleteError && masterDeleteError.code !== '42P01') {
                         throw new Error("Error purgado de tabla maestra: " + masterDeleteError.message);
@@ -807,7 +807,7 @@ async function rollbackFiles(req, res) {
                     const { error: masterDeleteError2 } = await supabase
                         .from('tabla_maestra_operativa')
                         .delete()
-                        .eq('archivo_origen_id', rawListId);
+                        .or(`archivo_origen_id.eq.${rawListId},archivo_origen_id.eq.${driveFileId}`);
                         
                     if (masterDeleteError2 && masterDeleteError2.code !== '42P01') {
                         throw new Error("Error purgado de tabla maestra: " + masterDeleteError2.message);

@@ -177,43 +177,26 @@ window.confirmIngestion = async function () {
             
             // Hooks a la arquitectura del Dashboard
             const providerContext = window.globalContext?.providerId || window.currentActiveProviderId;
+            
+            // [QA-2] Evitar Race Condition ("File Not Found" en Drive)
+            // En vez de recuperar "Pendientes" donde el archivo ya NO está (fue movido por Backend),
+            // Redirigimos suavemente a la pestaña "Procesados"
+            
+            // Refrescar lista de Procesados
             if (providerContext) {
-                if (window.fetchProcessedFiles) window.fetchProcessedFiles(providerContext);
-                if (window.exploreSupplierFiles) window.exploreSupplierFiles(providerContext); // Hook a Pendientes si aplica
+                if (window.loadProcessedFiles) window.loadProcessedFiles(providerContext);
             }
-            // Helper to get current Drive Folder ID (Robust Context Aware)
-            const getDriveFolderId = () => {
-                // 1. Priority: Global Memory (The "Ghost" Folder)
-                if (window.currentDriveFolderId) return window.currentDriveFolderId;
 
-                // 2. Fallback: Calculated from Provider
-                if (window.currentActiveProviderId && window.currentSuppliers) {
-                    const p = window.currentSuppliers.find(s => s.id === window.currentActiveProviderId);
-                    return p ? (p.drive_folder_prices_id || p.drive_folder_id) : null;
+            // Realizar cambio visual de pestaña
+            setTimeout(() => {
+                const tabProcesados = document.getElementById('tabProcessed');
+                if (tabProcesados && typeof tabProcesados.click === 'function') {
+                    // Simular click en la pestaña de procesados si existe en el DOM
+                    tabProcesados.click();
+                } else if (window.switchTab) {
+                    window.switchTab('tabProcessed');
                 }
-                return null;
-            };
-
-            const targetFolderId = getDriveFolderId();
-
-            // Refrescar lista de archivos (si existe la función)
-            if (window.loadFiles && targetFolderId) {
-
-                window.loadFiles(targetFolderId);
-            }
-
-            // [FIX] Dashboard Refresh Logic
-            if (window.loadProcessedFiles && window.currentActiveProviderId) {
-                const btnDrive = document.getElementById('tabPending');
-                
-                // Refresh Pendientes si está activa
-                if (btnDrive && btnDrive.classList.contains('text-blue-400')) {
-                    if (window.loadFiles && targetFolderId) window.loadFiles(targetFolderId);
-                }
-                
-                // Refresh Procesados en background para que tenga el estado actual al cambiar, o si ya está activa
-                window.loadProcessedFiles(window.currentActiveProviderId);
-            }
+            }, 100);
 
         } else {
             throw new Error(result.error || "Error desconocido en backend.");

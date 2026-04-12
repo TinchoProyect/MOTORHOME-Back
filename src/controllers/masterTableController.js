@@ -564,7 +564,23 @@ module.exports = {
         try {
             const { archivoId } = req.params;
             const supabase = require('../config/supabaseClient');
-            const { error } = await supabase.from('tabla_maestra_operativa').delete().eq('archivo_origen_id', archivoId);
+            
+            // Resolve drive file ID to guarantee determinism
+            const { data: rawRecord } = await supabase
+                .from('proveedor_listas_raw')
+                .select('archivo_id')
+                .eq('id', archivoId)
+                .maybeSingle();
+
+            const driveId = rawRecord && rawRecord.archivo_id ? rawRecord.archivo_id : null;
+            let delQuery = supabase.from('tabla_maestra_operativa').delete();
+            if (driveId) {
+                delQuery = delQuery.or(`archivo_origen_id.eq.${archivoId},archivo_origen_id.eq.${driveId}`);
+            } else {
+                delQuery = delQuery.eq('archivo_origen_id', archivoId);
+            }
+            
+            const { error } = await delQuery;
             if (error && error.code !== '42P01') throw error;
             
             await supabase.from('proveedor_listas_raw')

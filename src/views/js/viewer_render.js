@@ -229,16 +229,12 @@ function renderVirtualTable(originalData) {
     }
 
     container.innerHTML = '';
-    const scrollerContent = document.createElement('div');
-    scrollerContent.style.height = `${totalHeight}px`;
-    scrollerContent.style.position = 'relative';
-    container.appendChild(scrollerContent);
-
     const table = document.createElement('table');
-    table.className = 'border-collapse text-[11px] font-mono absolute top-0 left-0';
+    table.className = 'border-collapse text-[11px] font-mono w-full';
     table.style.tableLayout = 'fixed';
     table.style.width = '0px'; // Crucial para que el contenido no impida achicar la columna
-    scrollerContent.appendChild(table);
+    table.style.marginBottom = '20px'; // [QA-3] Ajustar padding inferior para evitar ocultamiento de la última fila
+    container.appendChild(table);
 
     const thead = document.createElement('thead');
     table.appendChild(thead);
@@ -430,12 +426,16 @@ function renderVirtualTable(originalData) {
         const viewportHeight = container.clientHeight;
         const startIndex = Math.floor(scrollTop / ROW_HEIGHT);
         const endIndex = Math.min(startIndex + Math.ceil(viewportHeight / ROW_HEIGHT) + 5, totalRows);
-        const offsetY = startIndex * ROW_HEIGHT;
-        table.style.transform = `translateY(${offsetY}px)`;
 
         let rowsHtml = '';
         let startDataIndex = Math.max(1, startIndex);
         if (startDataIndex === 0) startDataIndex = 1;
+
+        // Generar dummy row superior para desplazar el scroll (Virtual Scrolling nativo con position: sticky en thead)
+        const topPadding = (startDataIndex - 1) * ROW_HEIGHT;
+        if (topPadding > 0) {
+            rowsHtml += `<tr style="height: ${topPadding}px; border: none; pointer-events: none;"><td colspan="100%" style="border: none; padding: 0;"></td></tr>`;
+        }
 
         let activeEtlState = null;
         if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
@@ -714,6 +714,13 @@ function renderVirtualTable(originalData) {
 
             rowsHtml += '</tr>';
         }
+
+        // Generar dummy row inferior para mantener al contenedor con el totalHeight simulado
+        const bottomPadding = Math.max(0, totalRows - endIndex) * ROW_HEIGHT;
+        if (bottomPadding > 0) {
+            rowsHtml += `<tr style="height: ${bottomPadding}px; border: none; pointer-events: none;"><td colspan="100%" style="border: none; padding: 0;"></td></tr>`;
+        }
+
         tbody.innerHTML = rowsHtml;
         if (window.lucide) window.lucide.createIcons();
     };

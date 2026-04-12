@@ -57,9 +57,11 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
     }
     if (window.lucide) window.lucide.createIcons();
 
-    // [QA-3] Inicializar desplegable Header Flujos Activos
-    if (window.initViewerFlujosContext && providerId) {
-        window.initViewerFlujosContext(providerId, flujoId);
+    // [Ticket 1] Forzar el ocultamiento del selector de Flujos Activos en "Pendientes"
+    const flowContainer = document.getElementById('activeFlujoContainer');
+    if (flowContainer) {
+        flowContainer.classList.add('hidden');
+        flowContainer.classList.remove('flex');
     }
 
     // [QA-4] Establecer Flags de Contexto para Pendientes vs Procesados

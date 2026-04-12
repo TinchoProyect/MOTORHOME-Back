@@ -866,9 +866,7 @@
                      </div>
                  </div>
                  
-                 <!-- Dynamic multi-provider switch container -->
-                 <div id="fmtNavbarProviders" class="flex gap-2 items-center flex-wrap px-4 border-l border-slate-700/50">
-                 </div>
+                 <!-- Container removed in favor of Dropdown -->
 
                  <div class="flex items-center gap-3 ml-auto">
                     <!-- BI Action Pills -->
@@ -879,8 +877,17 @@
                     </div>
 
                     <div class="relative">
+                        <button onclick="window.toggleFmtProvidersDropdown()" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 flex items-center gap-2 transition-colors">
+                             <i data-lucide="users" class="w-4 h-4"></i> Proveedores
+                        </button>
+                        <div id="fmtProvidersDropdown" class="hidden absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 p-3 max-h-64 overflow-y-auto custom-scrollbar flex flex-col gap-1">
+                             <!-- checkboxes injected dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="relative">
                         <button onclick="window.toggleFmtColumnsDropdown()" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 flex items-center gap-2 transition-colors">
-                             <i data-lucide="eye-off" class="w-4 h-4"></i> Layout
+                             <i data-lucide="eye-off" class="w-4 h-4"></i> Campos
                         </button>
                         <div id="fmtColumnsDropdown" class="hidden absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 p-3 max-h-64 overflow-y-auto custom-scrollbar flex flex-col gap-1">
                              <!-- checkboxes injected dynamically -->
@@ -1294,38 +1301,58 @@
 
                 // Extract the distinct providers dynamically
                 const providersSet = new Map();
+                
+                // [FIX] Persistent Provider Skeleton
+                // Ensure all active providers are always represented in the UI (Switches/Filters)
+                if (window.currentSuppliers && Array.isArray(window.currentSuppliers)) {
+                    window.currentSuppliers.forEach(supplier => {
+                        if (supplier.activo) {
+                             providersSet.set(supplier.id, supplier.nombre);
+                        }
+                    });
+                }
+                
                 opJson.data.forEach(op => {
                     providersSet.set(op.proveedor_id, op.nombre_proveedor);
                 });
                 
-                // Add Multi-Provider Switches dynamically to the header toolbar
-                const container = document.getElementById('fmtNavbarProviders');
+                // Build Provider Dropdown
+                const container = document.getElementById('fmtProvidersDropdown');
                 if (container) {
-                    container.innerHTML = ''; // Clean up if re-rendered
+                    container.innerHTML = '<p class="text-[10px] text-slate-500 font-bold mb-2 uppercase tracking-widest px-1">Layout de Proveedores</p>';
                     
-                    // Initialize state with all ON
-                    window.activeProviderFilters = new Set(providersSet.keys());
+                    // Restore from localStorage or default to all ON
+                    let savedProviders = localStorage.getItem('lamda_v4_providers_state');
+                    if (savedProviders) {
+                        try { window.activeProviderFilters = new Set(JSON.parse(savedProviders)); }
+                        catch(e) { window.activeProviderFilters = new Set(providersSet.keys()); }
+                    } else {
+                        window.activeProviderFilters = new Set(providersSet.keys());
+                    }
 
-                    window.toggleProviderFilter = function(provId) {
-                         const btn = document.getElementById(`prov-switch-${provId}`);
-                         if (window.activeProviderFilters.has(provId)) {
-                              window.activeProviderFilters.delete(provId);
-                              btn.classList.remove('bg-purple-600', 'text-white', 'shadow-sm', 'border-purple-500/50');
-                              btn.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
-                         } else {
+                    window.toggleProviderFilter = function(provId, isChecked) {
+                         if (isChecked) {
                               window.activeProviderFilters.add(provId);
-                              btn.classList.add('bg-purple-600', 'text-white', 'shadow-sm', 'border-purple-500/50');
-                              btn.classList.remove('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
+                         } else {
+                              window.activeProviderFilters.delete(provId);
                          }
+                         localStorage.setItem('lamda_v4_providers_state', JSON.stringify(Array.from(window.activeProviderFilters)));
                          if (window.v4GridApi) window.v4GridApi.onFilterChanged();
                     };
 
-                    Array.from(providersSet.entries()).forEach(([id, name]) => {
-                        const switchHtml = `<button id="prov-switch-${id}" onclick="window.toggleProviderFilter('${id}')" title="Mostrar/Ocultar ${name}" class="prov-switch px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all bg-purple-600 text-white shadow-sm border border-purple-500/50 flex items-center gap-2">
-                             <div class="w-2 h-2 rounded-full bg-white/80"></div>
-                             ${name}
-                        </button>`;
-                        container.insertAdjacentHTML('beforeend', switchHtml);
+                    Array.from(providersSet.entries()).sort((a,b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
+                        const isChecked = window.activeProviderFilters.has(id);
+                        const label = document.createElement('label');
+                        label.className = "flex items-center justify-between p-1.5 hover:bg-slate-700/50 rounded cursor-pointer group";
+                        label.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" class="rounded border-slate-600 bg-slate-900 text-purple-500 focus:ring-purple-500 checked:bg-purple-500" 
+                                    ${isChecked ? 'checked' : ''} 
+                                    onchange="window.toggleProviderFilter('${id}', this.checked)">
+                                <span class="text-xs text-slate-300 font-bold group-hover:text-white transition-colors">${name}</span>
+                            </div>
+                        `;
+                        container.appendChild(label);
                     });
                 }
 
@@ -1339,6 +1366,21 @@
                           _precio_anterior: op.datos_maestros._precio_anterior || '',
                           ...op.datos_maestros
                      };
+                });
+                
+                // Inject empty skeletons for providers without data
+                Array.from(providersSet.entries()).forEach(([id, name]) => {
+                     const hasData = opJson.data.some(op => op.proveedor_id === id);
+                     if (!hasData) {
+                         rowData.push({
+                              _system_id: `empty_${id}`,
+                              _proveedor_id: id,
+                              _proveedor: name,
+                              _timestamp: null,
+                              _estado_delta: 'INTACTO',
+                              _is_empty_skeleton: true
+                         });
+                     }
                 });
                 
                 // Build ColDefs
@@ -1391,7 +1433,20 @@
                 });
                 
                 // Inject Provider tracking column 
-                colDefs.unshift({ headerName: 'Proveedor', field: '_proveedor', sortable: true, filter: true, pinned: 'left', width: 180 });
+                colDefs.unshift({ 
+                     headerName: 'Proveedor', 
+                     field: '_proveedor', 
+                     sortable: true, 
+                     filter: true, 
+                     pinned: 'left', 
+                     width: 180,
+                     cellRenderer: (params) => {
+                         if (params.data && params.data._is_empty_skeleton) {
+                             return `<div class="flex items-center justify-between gap-1 w-full"><span class="font-bold text-slate-300 opacity-60">${params.value}</span> <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 uppercase tracking-widest border border-slate-700">Sin Registros</span></div>`;
+                         }
+                         return `<span class="font-bold text-slate-100">${params.value}</span>`;
+                     }
+                });
                 
                 const saveGridState = () => {
                     if (!window.v4GridApi) return;
@@ -1469,6 +1524,7 @@
         window.closeFinalMasterTable = function() {
             document.getElementById('finalMasterTableModal').classList.add('hidden');
             document.getElementById('fmtColumnsDropdown').classList.add('hidden'); // auto-hide
+            document.getElementById('fmtProvidersDropdown').classList.add('hidden'); // auto-hide
             if (window.v4GridApi) {
                 window.v4GridApi.destroy();
                 window.v4GridApi = null;
@@ -1501,6 +1557,12 @@
 
         window.toggleFmtColumnsDropdown = function() {
             document.getElementById('fmtColumnsDropdown').classList.toggle('hidden');
+            document.getElementById('fmtProvidersDropdown').classList.add('hidden');
+        }
+
+        window.toggleFmtProvidersDropdown = function() {
+            document.getElementById('fmtProvidersDropdown').classList.toggle('hidden');
+            document.getElementById('fmtColumnsDropdown').classList.add('hidden');
         }
 
         // Window Controls (Maximized/Windowed)
