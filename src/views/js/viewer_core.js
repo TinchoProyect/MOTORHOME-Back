@@ -447,7 +447,9 @@ window.checkFlujoMutationGuard = async function() {
 
     try {
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const res = await fetch(`${backendUrl}/api/flujos/linked-status/${window.globalContext.flujoId}`);
+        const excludeQuery = window.globalContext.fileId ? `?excludeFileId=${window.globalContext.fileId}` : '';
+        const res = await fetch(`${backendUrl}/api/flujos/linked-status/${window.globalContext.flujoId}${excludeQuery}`);
+        
         if (!res.ok) return true; // Fail open for resilience
         
         const data = await res.json();
@@ -464,40 +466,80 @@ window.checkFlujoMutationGuard = async function() {
             if (data.linkedFiles.length > 3) fileSamples += '...';
         }
 
+        // Variable de estado para resolución asíncrona dentro del DOM
+        let forceDestructiveResolved = false;
+
         const modalRes = await Swal.fire({
-            title: '⚠️ ATENCIÓN: Vínculo Granítico Detectado',
-            html: `<div class="text-sm text-slate-300 mb-4 text-left">Esta configuración ("<b>${data.flujo_name}</b>") está vinculada a <b>${data.fileCount}</b> archivo(s) histórico(s) ya extraído(s) <i>(Ej: ${fileSamples})</i>.</div>` + 
-                  `<div class="text-sm text-slate-300 text-left mb-6">Modificarla de forma arbitraria alterará la capacidad de reversión y la huella técnica de esos archivos resguardados en el Sistema. Selecciona cómo deseas proceder:</div>`,
+            title: '⚠️ Vínculo Granítico Detectado',
+            html: `<div class="text-sm text-slate-300 mb-4 text-left">Esta configuración ("<b>${data.flujo_name}</b>") protege la integridad de <b>${data.fileCount}</b> archivo(s) histórico(s) <i>(Ej: ${fileSamples})</i>.</div>` + 
+                  `<div class="text-sm text-slate-300 text-left mb-6">Para continuar editando Mapeos o Reglas con el documento actual de forma segura sin afectar el pasado, utiliza una Variante:</div>`,
             icon: 'warning',
             background: '#0f172a',
             color: '#f8fafc',
             showCancelButton: true,
             showDenyButton: true,
-            confirmButtonText: '<i data-lucide="unlink" class="w-4 h-4 inline mt-[-2px]"></i> Romper Vínculos y Modificar',
-            confirmButtonColor: '#ef4444', 
-            denyButtonText: '<i data-lucide="git-branch" class="w-4 h-4 inline mt-[-2px]"></i> Bifurcar (Copia Limpia)',
+            confirmButtonText: '<i data-lucide="split-square-horizontal" class="w-4 h-4 inline mt-[-2px]"></i> Variante Local Continua',
+            confirmButtonColor: '#10b981', 
+            denyButtonText: '<i data-lucide="git-branch" class="w-4 h-4 inline mt-[-2px]"></i> Bifurcar (Nombrar clon)',
             denyButtonColor: '#3b82f6',
-            cancelButtonText: 'Cancelar Operación',
+            cancelButtonText: 'Cancelar Mapeo',
             cancelButtonColor: '#475569',
-            didOpen: () => { if (window.lucide) window.lucide.createIcons(); }
+            footer: '<a href="#" id="btnForceUnlink" class="text-xs text-red-500 hover:text-red-400 font-bold uppercase tracking-wider py-1 px-2 rounded hover:bg-red-950 transition-colors"><i data-lucide="alert-triangle" class="w-3 h-3 inline"></i> Riesgo: Sobrescribir Base (Romper Vínculos)</a>',
+            didOpen: () => { 
+                if (window.lucide) window.lucide.createIcons(); 
+                const forceBtn = document.getElementById('btnForceUnlink');
+                if (forceBtn) {
+                    forceBtn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        if (confirm("🚨 PELIGRO: Esto desvinculará todos los archivos históricos de esta plantilla y sobrescribirá la base original. ¿Continuar y asumir el daño a la trazabilidad histórica?")) {
+                            forceDestructiveResolved = true;
+                            Swal.close();
+                        }
+                    });
+                }
+            }
         });
 
-        if (modalRes.isConfirmed) {
-            // Opción A: SOBRESCRIBIR -> Rompe vínculos históricos (Unlink total)
+        if (forceDestructiveResolved) {
+            // Opción Z: SOBRESCRIBIR -> Rompe vínculos históricos (Unlink total)
             await fetch(`${backendUrl}/api/flujos/unlink-history/${window.globalContext.flujoId}`, { method: 'POST' });
             window._mutationGuardAuthorized = true;
             return true; // Procede
+        } else if (modalRes.isConfirmed) {
+            // Opción A: VARIANTE LOCAL -> Crea bifurcación silenciosa local "(Local)"
+            Swal.fire({title: 'Generando variante de protección...', allowOutsideClick: false, background: '#0f172a', color: '#f8fafc', didOpen: () => Swal.showLoading()});
+            const resFork = await fetch(`${backendUrl}/api/flujos/fork-local/${window.globalContext.flujoId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileId: window.globalContext.fileId })
+            });
+
+            if(!resFork.ok) {
+                 Swal.fire({title: 'Error de Bifurcación', text: 'Falló la red', icon: 'error', background: '#0f172a', color: '#f8fafc'});
+                 return false;
+            }
+            const forkData = await resFork.json();
+            
+            // Re-hidratar en memoria:
+            window.globalContext.flujoId = forkData.newFlujoId;
+            window._mutationGuardAuthorized = true;
+
+            // Actualizar Componente Visual de Identidad (UX)
+            const displayLabel = document.getElementById('headerFlujoNameDisplay');
+            if (displayLabel) displayLabel.textContent = forkData.newFlujoName;
+
+            return true; // Procede
         } else if (modalRes.isDenied) {
-            // Opción B: BIFURCAR -> Clona config activa
-            let nombreFlujo = prompt("🏁 Ingrese un nombre para la nueva Plantilla Independiente:", `${data.flujo_name} (Clon)`);
+            // Opción B: BIFURCAR TRADICIONAL -> Pide nombre
+            let nombreFlujo = prompt("🏁 Ingrese un nombre único para la nueva Matriz Independiente:", `${data.flujo_name} (Variante)`);
             if (!nombreFlujo || nombreFlujo.trim() === '') return false; 
             
-            // Forzar guardado inmediato como un id nuevo (fork). Esto cambiará el flujoId
             await window._executeFlujoSave(null, nombreFlujo); 
             window._mutationGuardAuthorized = true; 
             return true; 
         } else {
-            return false; // Corta la ejecución si clickea Cancelar o afuera
+            return false; // Corta la ejecución (Cancelar)
+
         }
 
     } catch (e) {
@@ -531,16 +573,20 @@ window.unifiedSaveAction = async function() {
 
         if (typeof Swal !== 'undefined') {
             Swal.fire({
-                title: 'Opciones de Guardado',
-                html: `Estás trabajando sobre el flujo <b>${currentName}</b>.<br><br>¿Deseas actualizarlo y sobreescribir los cambios, o crear un flujo nuevo?`,
+                title: 'Opciones de Extracción',
+                html: `<div class="text-[13px] text-slate-300 mb-2 leading-relaxed">Estás trabajando sobre el flujo maestro <b class="text-fuchsia-400">"${currentName}"</b>.</div><div class="text-[12px] text-slate-400">¿Deseas impactar los cambios sobre el actual, o bifurcar hacia un nuevo formato?</div>`,
                 icon: 'question',
+                background: '#0f172a',
+                color: '#f8fafc',
+                customClass: { popup: 'border border-slate-800 shadow-[0_0_40px_-10px_rgba(0,0,0,0.5)] rounded-2xl' },
                 showCancelButton: true,
                 showDenyButton: true,
-                confirmButtonText: '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Actualizar actual',
-                confirmButtonColor: '#10b981',
-                denyButtonText: '<i data-lucide="copy" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Guardar como nuevo',
-                denyButtonColor: '#d65ce6',
-                cancelButtonText: 'Cancelar'
+                confirmButtonText: '<i data-lucide="save" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Actualizar Actual',
+                confirmButtonColor: '#059669',
+                denyButtonText: '<i data-lucide="split-square-horizontal" class="w-4 h-4 inline-block mr-1 -mt-0.5"></i> Variante (Nuevo)',
+                denyButtonColor: '#8b5cf6',
+                cancelButtonText: 'Cancelar',
+                cancelButtonColor: '#334155'
             }).then((result) => {
                 if (result.isConfirmed) {
                     window._executeFlujoSave(activeFlujoId, currentName);
@@ -682,13 +728,20 @@ window.initViewerFlujosContext = async function (providerId, activeFlujoId) {
 
         if (flujos && flujos.length > 0) {
             let optionsHtml = `<option value="">-- Sin Flujo (Blanc Slate) --</option>`;
+            let activeFlujoName = '';
             flujos.forEach(f => {
                 const selected = (f.id_flujo === activeFlujoId) ? 'selected' : '';
+                if (selected) activeFlujoName = f.nombre_flujo;
                 optionsHtml += `<option value="${f.id_flujo}" ${selected}>${f.nombre_flujo}</option>`;
             });
             selectEl.innerHTML = optionsHtml;
             container.classList.remove('hidden');
             container.classList.add('flex');
+            
+            const displayLabel = document.getElementById('headerFlujoNameDisplay');
+            if (displayLabel) {
+                displayLabel.textContent = activeFlujoName || "Configuración Personalizada";
+            }
         } else {
             container.classList.add('hidden');
             container.classList.remove('flex');
@@ -696,6 +749,50 @@ window.initViewerFlujosContext = async function (providerId, activeFlujoId) {
 
     } catch (e) {
         console.error("Error inicializando Header Flujos Context:", e);
+    }
+};
+
+window.renameActiveFlujo = async function() {
+    const flujoId = window.globalContext?.flujoId;
+    if (!flujoId || flujoId === "CRUDO") return;
+
+    const displayLabel = document.getElementById('headerFlujoNameDisplay');
+    const currentName = displayLabel ? displayLabel.textContent : '';
+
+    const { value: newName } = await Swal.fire({
+        title: 'Renombrar Configuración',
+        input: 'text',
+        inputValue: currentName,
+        inputPlaceholder: 'Ej: Proveedor - Fecha | Lista Especial...',
+        background: '#0f172a', color: '#f8fafc',
+        showCancelButton: true, confirmButtonText: 'Actualizar', cancelButtonText: 'Cancelar', confirmButtonColor: '#4f46e5', cancelButtonColor: '#334155'
+    });
+
+    if (!newName || newName.trim() === '' || newName === currentName) return;
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendUrl}/api/flujos/${flujoId}/nombre`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nombre_flujo: newName })
+        });
+
+        if (!res.ok) throw new Error("El sistema ha impedido el renombrado (Conflicto de DB).");
+        
+        if (displayLabel) displayLabel.textContent = newName.trim();
+        
+        // Sincronizar cache y las opciones del select silenciosamente
+        if (window.cachedFlujos) {
+            const f = window.cachedFlujos.find(x => x.id_flujo === flujoId);
+            if(f) f.nombre_flujo = newName.trim();
+        }
+        const opt = document.querySelector(`#headerFlujoSelect option[value="${flujoId}"]`);
+        if (opt) opt.textContent = newName.trim();
+
+        Swal.fire({ icon: 'success', title: 'Identidad Acualizada', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, background: '#0f172a', color: '#f8fafc' });
+    } catch(e) {
+        Swal.fire({ title: 'Avertencia de Estado', text: e.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
     }
 };
 

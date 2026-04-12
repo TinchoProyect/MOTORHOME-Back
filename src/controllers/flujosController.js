@@ -159,12 +159,20 @@ flujosController.checkLinkedStatus = async (req, res) => {
         const { idFlujo } = req.params;
         if (!idFlujo) return res.status(400).json({ error: "Falta idFlujo" });
 
+        const { excludeFileId } = req.query;
+
         // Buscamos si existe alguna Lista Raw que asigne este flujo y su status sea de archivo finalizado/procesado
-        const { data, count, error } = await supabase
+        let query = supabase
             .from('proveedor_listas_raw')
             .select('nombre_archivo', { count: 'exact' })
             .eq('flujo_asignado_id', idFlujo)
             .in('status_global', ['EXTRAIDO', 'CONFIRMED']);
+
+        if (excludeFileId && excludeFileId !== 'null' && excludeFileId !== 'undefined') {
+            query = query.neq('id', excludeFileId);
+        }
+
+        const { data, count, error } = await query;
 
         if (error) throw error;
 
@@ -185,6 +193,59 @@ flujosController.checkLinkedStatus = async (req, res) => {
     } catch (err) {
         console.error("🛑 [API Flujos] Error chequeando estado vinculado:", err.message);
         return res.status(500).json({ error: "Error de servidor", detalle: err.message });
+    }
+};
+
+/**
+ * POST /api/flujos/fork-local/:idFlujo
+ * Clona el flujo base y lo asigna exclusivamente al archivo indicado (Bifurcación Silenciosa).
+ */
+flujosController.forkLocal = async (req, res) => {
+    try {
+        const { idFlujo } = req.params;
+        const { fileId } = req.body;
+        
+        if (!idFlujo || !fileId) return res.status(400).json({ error: "Faltan idFlujo o fileId" });
+
+        // 1. Obtener flujo base
+        const { data: flujoBase, error: errBase } = await supabase
+            .from('flujos_extraccion')
+            .select('*')
+            .eq('id_flujo', idFlujo)
+            .single();
+
+        if (errBase) throw errBase;
+
+        // 2. Crear clon (Variante Local)
+        const nuevoNombre = `${flujoBase.nombre_flujo} (Local)`;
+        const newFlowPayload = {
+            proveedor_id: flujoBase.proveedor_id,
+            nombre_flujo: nuevoNombre,
+            config_payload: flujoBase.config_payload,
+            activo: true
+        };
+
+        const { data: newFlujo, error: errCreate } = await supabase
+            .from('flujos_extraccion')
+            .insert([newFlowPayload])
+            .select()
+            .single();
+
+        if (errCreate) throw errCreate;
+
+        // 3. Re-Vincular fisicamente al fileId actual
+        const { error: errLink } = await supabase
+            .from('proveedor_listas_raw')
+            .update({ flujo_asignado_id: newFlujo.id_flujo })
+            .eq('id', fileId);
+
+        if (errLink) throw errLink;
+
+        console.log(`✅ [API Flujos] Bifurcación Local generada exitosamente. Nuevo Flujo: ${newFlujo.id_flujo} > File: ${fileId}`);
+        return res.json({ success: true, newFlujoId: newFlujo.id_flujo, newFlujoName: newFlujo.nombre_flujo });
+    } catch (err) {
+        console.error("🛑 [API Flujos] Error forking local:", err.message);
+        return res.status(500).json({ error: "Error al bifurcar localmente", detalle: err.message });
     }
 };
 

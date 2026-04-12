@@ -11,6 +11,7 @@ router.get('/detalle/:idFlujo', flujosController.obtenerDetalle);
 // Controladores de Integridad de Dependencias (Bifurcación / Unlink)
 router.get('/linked-status/:idFlujo', flujosController.checkLinkedStatus);
 router.post('/unlink-history/:idFlujo', flujosController.unlinkHistory);
+router.post('/fork-local/:idFlujo', flujosController.forkLocal);
 
 // Crear o Actualizar un Flujo (Botón "Guardar Flujo")
 router.post('/', flujosController.upsertFlujo);

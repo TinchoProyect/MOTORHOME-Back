@@ -350,7 +350,7 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                         </div>
                     </div>
                         
-                        <button class="w-full bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-emerald-600/40" onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}')">
+                        <button class="w-full bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-emerald-600/40" onclick="openProcessedFile('${file.id}', '${file.nombre_archivo}', '${file.created_at}')">
                             Abrir Documento <i data-lucide="arrow-right" class="w-3.5 h-3.5 relative top-px"></i>
                         </button>
                 </div>
@@ -648,8 +648,221 @@ window.editFlujoName = async function(fileId) {
     }
 }
 
+// Gateway Interceptor
+window.showConfigurationGateway = async function(rawListId, fileName, fileCreatedAt) {
+    const providerId = window.globalContext?.providerId || window.currentActiveProviderId;
+    const providerContext = window.resolveProviderContext ? window.resolveProviderContext(providerId) : null;
+    const providerName = (providerContext && providerContext.nombre) ? providerContext.nombre : (window.currentActiveProviderName || 'PROVEEDOR');
+    
+    // Generar nombre por defecto A la [PROVEEDOR] - [FECHA_INGESTA]
+    const targetDate = fileCreatedAt ? new Date(fileCreatedAt) : new Date();
+    const formattedDate = targetDate.toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit', year: 'numeric'});
+    const suggestedName = `${providerName} - ${formattedDate}`;
+
+    // Necesitamos obtener las opciones del select actual para la pestaña "Existente"
+    const selectEl = document.getElementById(`flujo_select_${rawListId}`);
+    let optionsHtml = '';
+    let hasOptions = false;
+    if (selectEl) {
+        optionsHtml = selectEl.innerHTML;
+        hasOptions = selectEl.options && selectEl.options.length > 1; // 1 is usually the empty placeholder
+    }
+
+    const { value: formValues } = await Swal.fire({
+        title: '<i data-lucide="shield-alert" class="w-8 h-8 text-indigo-400 inline-block mr-2 -mt-1"></i> Gateway de Extracción',
+        html: `
+            <div class="text-left mt-2">
+                <p class="text-[13px] text-slate-400 mb-5 leading-relaxed tracking-wide">El archivo analizado se encuentra virgen (<b>Estado Crudo</b>). Debes establecer sus reglas de lectura fundacionales antes de acceder al Visor Universal:</p>
+                
+                <div class="mb-4">
+                    <label class="flex items-center gap-3 cursor-pointer bg-slate-900 p-4 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-colors ${!hasOptions ? 'opacity-50 grayscale' : ''}">
+                        <input type="radio" name="gateway_mode" value="EXISTING" class="w-4 h-4 text-indigo-500 accent-indigo-500 focus:ring-indigo-500" ${!hasOptions ? 'disabled' : ''}>
+                        <div class="flex-1">
+                            <span class="block text-[13px] font-bold text-slate-200 tracking-wider">A. Asignar Herramienta Existente</span>
+                            <select id="gateway_existing_select" class="mt-2 w-full bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg p-2.5 outline-none focus:border-indigo-500 shadow-inner" ${!hasOptions ? 'disabled' : ''}>
+                                ${optionsHtml || '<option value="">(No hay flujos en este proveedor)</option>'}
+                            </select>
+                        </div>
+                    </label>
+                </div>
+                
+                <div>
+                    <label class="flex items-start gap-3 cursor-pointer bg-slate-900 p-4 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-colors">
+                        <input type="radio" name="gateway_mode" value="NEW" class="w-4 h-4 mt-1.5 text-emerald-500 accent-emerald-500 focus:ring-emerald-500" ${!hasOptions ? 'checked' : ''}>
+                        <div class="flex-1">
+                            <span class="block text-[13px] font-bold text-emerald-400 tracking-wider flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 inline"></i> B. Alta de Nueva Herramienta</span>
+                            <div class="mt-3 space-y-3">
+                                <div>
+                                    <label class="text-[10px] uppercase text-slate-500 font-bold mb-1 block">Nomenclatura (Sugerida)</label>
+                                    <input type="text" id="gateway_new_name" value="${suggestedName}" class="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-mono font-bold text-xs rounded-lg p-2.5 outline-none focus:border-emerald-500 shadow-inner placeholder-slate-600" placeholder="Nombre Base...">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] uppercase text-slate-500 font-bold mb-1 block">Detalle de Identidad</label>
+                                    <input type="text" id="gateway_new_detail" class="w-full bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg p-2.5 outline-none focus:border-emerald-500 shadow-inner placeholder-slate-600" placeholder="Ej: Lista de Precios de Ferretería...">
+                                </div>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+        `,
+        background: '#0f172a',
+        color: '#f8fafc',
+        showCancelButton: true,
+        confirmButtonText: 'Configurar e Ingresar',
+        cancelButtonText: 'Cancelar Ingreso',
+        confirmButtonColor: '#4f46e5',
+        cancelButtonColor: '#334155',
+        customClass: { popup: 'border border-slate-700 shadow-2xl rounded-2xl' },
+        didOpen: () => {
+            if (window.lucide) window.lucide.createIcons();
+            const radExisting = document.querySelector('input[value="EXISTING"]');
+            const radNew = document.querySelector('input[value="NEW"]');
+            
+            // Si hay opciones y no forzó New manual, checkear Existing
+            if (!radExisting.disabled && !radNew.checked) {
+                radExisting.checked = true;
+            } else if (radExisting.disabled) {
+                radNew.checked = true;
+            }
+        },
+        preConfirm: () => {
+            const modeInput = document.querySelector('input[name="gateway_mode"]:checked');
+            if(!modeInput) {
+                 Swal.showValidationMessage('Debes seleccionar una opción.');
+                 return false;
+            }
+            const mode = modeInput.value;
+            if (mode === 'EXISTING') {
+                const sel = document.getElementById('gateway_existing_select').value;
+                if (!sel) {
+                    Swal.showValidationMessage('Debes seleccionar explícitamente un flujo.');
+                    return false;
+                }
+                return { mode: 'EXISTING', flujoId: sel };
+            } else {
+                let name = document.getElementById('gateway_new_name').value.trim();
+                const detail = document.getElementById('gateway_new_detail').value.trim();
+                if (!name) {
+                    Swal.showValidationMessage('El nombre base de la herramienta es imperativo.');
+                    return false;
+                }
+                if (detail) {
+                    name += ` | ${detail}`;
+                }
+                return { mode: 'NEW', name: name };
+            }
+        }
+    });
+
+    if (!formValues) return null; // Aborto de Ingesta
+
+    // Construcción Determinista
+    let finalFlujoId = null;
+    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+
+    if (formValues.mode === 'EXISTING') {
+        finalFlujoId = formValues.flujoId;
+    } else {
+        // [MODO NEW] Inyección Inmediata de Esqueleto
+        Swal.fire({
+            title: 'Forjando Herramienta...',
+            text: 'Generando matriz de configuración...',
+            background: '#0f172a', color: '#f8fafc',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        try {
+            const createPayload = {
+                proveedor_id: providerId,
+                nombre_flujo: formValues.name,
+                config_payload: { sheets: {} }
+            };
+
+            const resFlujo = await fetch(`${backendUrl}/api/flujos`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(createPayload)
+            });
+
+            const resultFlujo = await resFlujo.json();
+            if (!resFlujo.ok) throw new Error(resultFlujo.error || "Falla nativa al crear flujo");
+            
+            finalFlujoId = resultFlujo.flujo.id_flujo;
+        } catch (e) {
+            Swal.fire({ title: 'Error de Forja', text: e.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+            return null;
+        }
+    }
+
+    // [VINCULO A FUEGO] Pinning Automático en DB
+    try {
+        Swal.fire({
+            title: 'Vinculando Archivo',
+            text: 'Estableciendo enlaces de memoria (Pinning)...',
+            background: '#0f172a', color: '#f8fafc',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        const resPin = await fetch(`${backendUrl}/api/files/processed/${rawListId}/flujo`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ flujo_id: finalFlujoId })
+        });
+        
+        if (resPin.ok) {
+            // Sincronizar el DOM para evitar que el usuario vuelva a pasar por este gateway si cierra el modal
+            if (selectEl) {
+                // Agregar la opción nueva si no existía (Modo New)
+                if (formValues.mode === 'NEW') {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = finalFlujoId;
+                    newOpt.text = formValues.name;
+                    selectEl.appendChild(newOpt);
+                }
+                selectEl.value = finalFlujoId;
+                
+                // Actualizar interfaz visual para fijarlo (Pin)
+                const pinBtn = document.getElementById(`pin_btn_${rawListId}`);
+                if (pinBtn) {
+                     pinBtn.dataset.ispinned = "true";
+                     pinBtn.className = "p-2 shrink-0 border rounded-xl transition-all flex items-center justify-center w-full py-2.5 text-fuchsia-400 bg-fuchsia-900/20 border-fuchsia-500/30 hover:border-fuchsia-500/60 hover:bg-fuchsia-900/40 shadow-inner";
+                     pinBtn.innerHTML = '<i data-lucide="pin-off" class="w-4 h-4 mr-2"></i><span class="text-[10px] font-bold uppercase tracking-wider">Desfijar Plantilla</span>';
+                }
+                const selectWrapper = document.getElementById(`flujo_selector_wrapper_${rawListId}`);
+                if(selectWrapper) selectWrapper.style.display = 'none';
+                
+                const titleLabel = document.getElementById(`flujo_title_${rawListId}`);
+                if(titleLabel) titleLabel.style.display = 'none';
+
+                // Añadir Badge
+                const labelContainer = document.getElementById(`status_label_${rawListId}`);
+                if (labelContainer) {
+                     labelContainer.innerHTML = `
+                        <div class="mt-3 flex items-start gap-2 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50 shadow-inner">
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0 mt-0.5 bg-fuchsia-900/30 text-fuchsia-400 border border-fuchsia-500/30 shadow-[0_0_10px_rgba(217,70,239,0.05)]">
+                                <i data-lucide="pin" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i>Fijado
+                            </span>
+                            <span class="text-[10px] font-medium text-slate-300 whitespace-normal break-words leading-tight" title="${formValues.name || 'Plantilla Asignada'}">${formValues.name || 'Plantilla Asignada'}</span>
+                        </div>
+                     `;
+                }
+                
+                if (window.lucide) window.lucide.createIcons();
+            }
+        }
+        Swal.close();
+    } catch (e) {
+        console.warn("⚠️ API Pinning falló", e);
+    }
+
+    return finalFlujoId;
+};
+
 // Logic: Open Processed File (Content Fetch + Adapter)
-window.openProcessedFile = async function (rawListId, fileName) {
+window.openProcessedFile = async function (rawListId, fileName, fileCreatedAt) {
     console.log(`[Dashboard] Opening processed file ${rawListId}...`);
 
     // [QA-2] Obtener flujo seleccionado del combobox si existe
@@ -660,9 +873,16 @@ window.openProcessedFile = async function (rawListId, fileName) {
             selectedFlujoId = selectEl.value;
             console.log(`[Dashboard] Se aplicará Flujo ID: ${selectedFlujoId}`);
         } else {
-            // [QA-3] Bug 3: Fuerza estado sin hidratación
             selectedFlujoId = "CRUDO";
-            console.log(`[Dashboard] Se aplicará modo puro CRUDO sin plantillas V3/V4 pre-existentes.`);
+        }
+    }
+
+    // [QA Gateway] Intercepción obligatoria si es CRUDO
+    if (selectedFlujoId === "CRUDO") {
+        selectedFlujoId = await window.showConfigurationGateway(rawListId, fileName, fileCreatedAt);
+        if (!selectedFlujoId) {
+            console.log("[Dashboard] Entrada al Visor Universal cancelada por usuario (Gateway).");
+            return; // ABORT LOGIC
         }
     }
 
