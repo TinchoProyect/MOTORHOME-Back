@@ -1455,7 +1455,10 @@ async function generatePreview(skipModal = false) {
                     if (dRule) {
                         const cellVal = String(row[v.dataIdx] || "").trim();
                         if (cellVal) {
-                            if (seenValues.has(cellVal)) keepRow = false;
+                            if (seenValues.has(cellVal)) {
+                                row._rejectedSim = true;
+                                row._rejectedByDuplicate = true;
+                            }
                             else seenValues.add(cellVal);
                         }
                     }
@@ -1489,15 +1492,18 @@ async function generatePreview(skipModal = false) {
                      }
                 });
                 
-                // Filtro de Exclusión Absoluta (Data Cleansing Nivel Físico)
+                // Filtro de Exclusión Absoluta (Data Cleansing Nivel Físico) - Ahora Conservativo en DOM
                 if (hasCodeCol && codeValueStr === "") {
                      window._purgedByCodeCount = (window._purgedByCodeCount || 0) + 1;
-                     return false; // Purgar objeto del array nativo
+                     row._rejectedSim = true;
+                     row._rejectedByCode = true;
+                } else if (isEmptyRow) {
+                     row._rejectedSim = true;
+                     row._emptySilently = true;
                 }
 
-                if (isEmptyRow) keepRow = false;
-
-                return keepRow;
+                // SIEMPRE retornar true para preservar el objeto y permitir la visibilidad on/off
+                return true;
             });
 
             // FASE 3: Encausar los registros saneados a la tubería unificadora
@@ -1549,11 +1555,19 @@ async function generatePreview(skipModal = false) {
         
         // [V8 UI] Toggle de Visibilidad de Rechazos
         window.ViewerUI._showRejectedRowsInSim = window.ViewerUI._showRejectedRowsInSim || false;
+        window.ViewerUI._groupRejectedRowsInSim = window.ViewerUI._groupRejectedRowsInSim || false;
+        
         const toggleHtml = `
-            <button onclick="window.ViewerUI.toggleRejectedRows()" class="ml-2 px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase ${window.ViewerUI._showRejectedRowsInSim ? 'bg-red-900/40 text-red-300 border border-red-500/50' : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'}" title="Alterna la visibilidad de registros descartados o completamente vacíos">
-                <i data-lucide="${window.ViewerUI._showRejectedRowsInSim ? 'eye' : 'eye-off'}" class="w-3 h-3"></i> 
-                Mostrar Descartadas
-            </button>
+            <div class="flex items-center gap-1">
+                <button id="btnToggleRejectedSimulator" onclick="window.ViewerUI.toggleRejectedRows()" class="ml-2 px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase ${window.ViewerUI._showRejectedRowsInSim ? 'bg-red-900/40 text-red-300 border border-red-500/50' : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'}" title="Alterna la visibilidad de registros descartados o completamente vacíos">
+                    <i id="iconToggleRejectedSimulator" data-lucide="${window.ViewerUI._showRejectedRowsInSim ? 'eye' : 'eye-off'}" class="w-3 h-3"></i> 
+                    Mostrar Descartadas
+                </button>
+                <button id="btnToggleGroupRejectedSimulator" onclick="window.ViewerUI.toggleGroupRejected()" class="px-3 py-1 items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase ${window.ViewerUI._showRejectedRowsInSim ? 'flex' : 'hidden'} ${window.ViewerUI._groupRejectedRowsInSim ? 'bg-orange-900/40 text-orange-300 border border-orange-500/50' : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'}" title="Agrupar descartes en la parte superior">
+                    <i id="iconToggleGroupRejectedSimulator" data-lucide="${window.ViewerUI._groupRejectedRowsInSim ? 'arrow-up-to-line' : 'list-ordered'}" class="w-3 h-3"></i>
+                    Agrupar
+                </button>
+            </div>
         `;
 
         // [V8 UI] Toggle de Visibilidad de Columnas de Apoyo
@@ -1603,8 +1617,7 @@ async function generatePreview(skipModal = false) {
         if (window.lucide) window.lucide.createIcons({ root: container });
 
         let validRowsCount = sanitizedData ? sanitizedData.filter(r => !r._rejectedSim).length : 0;
-        let originalRowsRenderCount = sanitizedData ? sanitizedData.length : 0;
-        let totalRowsCount = originalRowsRenderCount + (window._purgedByCodeCount || 0);
+        let totalRowsCount = sanitizedData ? sanitizedData.length : 0;
 
         const simMetaEl = document.getElementById('simMeta');
         if (simMetaEl) {
@@ -1799,7 +1812,18 @@ function renderSimulationTable(data) {
 
     html += "</tr></thead><tbody>";
 
-    data.forEach((row) => {
+    let rowsToRender = data;
+    if (window.ViewerUI._showRejectedRowsInSim && window.ViewerUI._groupRejectedRowsInSim) {
+        // Copia y Ordena: primero los descartados, luego el resto
+        // Javascript default .sort is stable, so original layout index inside groups is preserved
+        rowsToRender = [...data].sort((a, b) => {
+            const aRej = a._rejectedSim ? 1 : 0;
+            const bRej = b._rejectedSim ? 1 : 0;
+            return bRej - aRej;
+        });
+    }
+
+    rowsToRender.forEach((row) => {
         const isRejected = row._rejectedSim;
         if (isRejected && !window.ViewerUI._showRejectedRowsInSim) return;
 
@@ -1914,6 +1938,52 @@ window.ViewerUI.toggleRulesMenu = function(e, vColId) {
 
 window.ViewerUI.toggleRejectedRows = function() {
     window.ViewerUI._showRejectedRowsInSim = !window.ViewerUI._showRejectedRowsInSim;
+    
+    const btn = document.getElementById('btnToggleRejectedSimulator');
+    if (btn) {
+        if (window.ViewerUI._showRejectedRowsInSim) {
+             btn.className = "ml-2 px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase bg-red-900/40 text-red-300 border border-red-500/50";
+        } else {
+             btn.className = "ml-2 px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700";
+        }
+    }
+    const iconEl = document.getElementById('iconToggleRejectedSimulator');
+    if (iconEl) iconEl.setAttribute('data-lucide', window.ViewerUI._showRejectedRowsInSim ? 'eye' : 'eye-off');
+    
+    const groupBtn = document.getElementById('btnToggleGroupRejectedSimulator');
+    if (groupBtn) {
+        if (window.ViewerUI._showRejectedRowsInSim) {
+             groupBtn.classList.remove('hidden');
+             groupBtn.classList.add('flex');
+        } else {
+             groupBtn.classList.remove('flex');
+             groupBtn.classList.add('hidden');
+        }
+    }
+    
+    if (window.lucide) window.lucide.createIcons();
+
+    if (typeof window.renderSimulationTable === 'function' && window.currentSimData) {
+        window.renderSimulationTable(window.currentSimData);
+    }
+};
+
+window.ViewerUI.toggleGroupRejected = function() {
+    window.ViewerUI._groupRejectedRowsInSim = !window.ViewerUI._groupRejectedRowsInSim;
+    
+    const btn = document.getElementById('btnToggleGroupRejectedSimulator');
+    if (btn) {
+        if (window.ViewerUI._groupRejectedRowsInSim) {
+            btn.className = "px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase bg-orange-900/40 text-orange-300 border border-orange-500/50";
+        } else {
+            btn.className = "px-3 py-1 flex items-center gap-2 rounded transition-colors text-[10px] font-bold uppercase bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700";
+        }
+    }
+    const iconEl = document.getElementById('iconToggleGroupRejectedSimulator');
+    if (iconEl) iconEl.setAttribute('data-lucide', window.ViewerUI._groupRejectedRowsInSim ? 'arrow-up-to-line' : 'list-ordered');
+    
+    if (window.lucide) window.lucide.createIcons();
+
     if (typeof window.renderSimulationTable === 'function' && window.currentSimData) {
         window.renderSimulationTable(window.currentSimData);
     }

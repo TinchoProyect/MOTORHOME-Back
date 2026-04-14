@@ -3130,3 +3130,35 @@ TEXT: {
   "COCO RALLADO CUMANA S/TACC": [16],
   "CASTAÑAS DE CAJU S3": [17],
   "DATILES DEGLET NOUR CON CAROZO
+
+--- INTENTO 1 CHUNK 7 ---
+MSG: LLM Laziness Drop: Empaquetó solo 19 de 20 crudos. Dictamen Inválido.
+TEXT: {
+  "1": [
+    "120",
+    "121",
+    "123",
+    "124",
+    "125",
+    "126"
+  ],
+  "2": [
+    "130"
+  ],
+  "10": [
+    "127",
+    "128",
+    "129",
+    "131",
+    "132",
+    "133",
+    "134",
+    "135",
+    "136",
+    "137"
+  ],
+  "12": [
+    "138",
+    "139"
+  ]
+}
