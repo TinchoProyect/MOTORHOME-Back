@@ -559,7 +559,7 @@ window.ViewerUI = (function () {
 
   // --- [PHASE 7: AUDIT MODE TOOLTIP (Context Menu)] ---
   // --- [PHASE 7: AUDIT MODE CONTEXT ACTION (In-Place Edit)] ---
-  function showOriginalValue(e, rawValue, colId) {
+  function showOriginalValue(e, rawValue, colId, rowUid = -1) {
     if (e && e.preventDefault) e.preventDefault(); // Stop standard context menu
 
     // [V5.15 UX] Upgrade from passive tooltip to interactive Local Rule Creator
@@ -602,7 +602,7 @@ window.ViewerUI = (function () {
 
           // Hook into the Workshop Controller to create the rule natively
           if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
-            window.viewerRuleWorkshop.createLocalRule(safeRawValue, newVal, false, colId);
+            window.viewerRuleWorkshop.createLocalRule(safeRawValue, newVal, false, colId, rowUid);
           } else {
             Swal.fire("Error", "El Módulo de Reglas no está activo.", "error");
           }
@@ -614,7 +614,7 @@ window.ViewerUI = (function () {
       // [V5.17 UX] Allow identical values
       if (newVal !== null) {
         if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
-          window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false, colId);
+          window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false, colId, rowUid);
         }
       }
     }

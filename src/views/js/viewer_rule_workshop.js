@@ -1149,8 +1149,12 @@ export async function auditResidues() {
             let mutateResult = crudo;
             if (window.viewerETL && window.viewerETL.transformCell) {
                const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
-               mutateResult = String(tr.display || tr.result || "");
-               if (tr.rejected || mutateResult.trim() === "" || mutateResult === crudo) {
+               // [BUG-FIX: Null/Empty Persistence] Un celda vaciada intencionalmente
+               // (wasTransformed=true, resultado="") NO es un residuo. Es una transformación exitosa.
+               // Solo clasificamos como residuo si: fue rechazada, O si el valor no cambió en absoluto.
+               mutateResult = tr.wasTransformed ? (tr.display !== undefined ? tr.display : tr.result) : String(tr.display || tr.result || "");
+               const isIntentionalEmpty = tr.wasTransformed && mutateResult === "";
+               if (!isIntentionalEmpty && (tr.rejected || mutateResult === crudo)) {
                    residualSamples.push(crudo);
                }
             } else {
@@ -1276,7 +1280,7 @@ export function applyMapping() {
     }
 }
 
-export async function createLocalRule(searchStr, replaceStr, isRegex = false, colId = null) {
+export async function createLocalRule(searchStr, replaceStr, isRegex = false, colId = null, rowUid = -1) {
     if (!window.globalContext || !window.globalContext.providerId || !window.currentSheetName) {
         if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error', text: 'Falta contexto del proveedor u hoja actual.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
         else alert("Falta contexto del proveedor u hoja actual.");
@@ -1299,12 +1303,21 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false, co
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
         const searchFormatted = isRegex ? searchStr : searchStr;
 
+        let targetRegexPayload = `CUSTOM_REPLACE:${searchFormatted}|||${replaceStr}`;
+        let ruleNamePrefix = `Reemplazo Local:`;
+        
+        // [Local Override Phase]
+        if (rowUid !== -1 && rowUid !== null && rowUid !== undefined) {
+            targetRegexPayload = `CUSTOM_OVERRIDE_ROW:${rowUid}|||${replaceStr}`;
+            ruleNamePrefix = `Sobre-escritura en Fila ${rowUid}:`;
+        }
+
         const payload = {
             proveedor_id: window.globalContext.providerId,
             nombre_hoja: window.currentSheetName,
-            nombre_regla: `Reemplazo Local: ${searchStr} -> ${replaceStr}`,
-            descripcion: 'Regla personalizada local',
-            tipo_regex: `CUSTOM_REPLACE:${searchFormatted}|||${replaceStr}`
+            nombre_regla: `${ruleNamePrefix} ${searchStr} -> ${replaceStr}`,
+            descripcion: 'Regla personalizada determinista (Local Override)',
+            tipo_regex: targetRegexPayload
         };
 
         console.log(`[VIGIA AUDITOR] 2. Creando Regla Local (createLocalRule) | Payload Backend:`, { target: searchFormatted, replace: replaceStr });

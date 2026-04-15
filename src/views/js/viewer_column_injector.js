@@ -31,7 +31,8 @@ window.ViewerColumnInjector = {
         const newCol = {
             id: newColId,
             dataIdx: newDataIdx,
-            isGhostPlaceholder: true 
+            isGhostPlaceholder: true,
+            _isNewTemp: true // Permite que sobreviva hasta ser mapeada
         };
         
         window.virtualColumns.push(newCol);

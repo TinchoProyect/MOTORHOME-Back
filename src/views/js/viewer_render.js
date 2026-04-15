@@ -3,7 +3,7 @@
  * Extracted from viewer_engine_rescatado.js
  */
 
-function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, activeEtlStateVar, allOps = null) {
+function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, activeEtlStateVar, allOps = null, contextRow = null) {
     let resultDisplay = "";
     let rejected = false;
     let mathResult = 0;
@@ -34,7 +34,7 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         if (window.VigiaLogger) window.VigiaLogger.log("CLONE_OP", `Evaluando Clone: input='${rawStringA}', pipeline=${activePipeline?activePipeline.length:0}`, { opA, calcConfigId: calcConfig.id, opA_ID: calcConfig.operands?.[0] });
 
         if (activePipeline && activePipeline.length > 0 && window.viewerETL) {
-            const { result, rejected: wasRejected } = window.viewerETL.transformCell(rawStringA, activePipeline);
+            const { result, rejected: wasRejected } = window.viewerETL.transformCell(rawStringA, activePipeline, contextRow);
             if (wasRejected) rejected = true;
             resultDisplay = result;
         } else {
@@ -125,7 +125,7 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
                             ? activeEtlStateVar.pipeline : savedPipeline;
 
     if (activePipeline && activePipeline.length > 0 && window.viewerETL) {
-        const { result, rejected: wasRejected } = window.viewerETL.transformCell(String(mathResult).replace('.', ','), activePipeline);
+        const { result, rejected: wasRejected } = window.viewerETL.transformCell(String(mathResult).replace('.', ','), activePipeline, contextRow);
         if (wasRejected) rejected = true;
         resultDisplay = result;
     } else {
@@ -203,6 +203,22 @@ function renderVirtualTable(originalData) {
             window.virtualColumns.push({ id: `col_${idx}`, dataIdx: idx });
         }
     } else {
+        // [QA BUGFIX: PRE-CLEANUP DE HUÉRFANOS]
+        // Purgamos variables fantasma que no fueron mapeadas para que no contaminen la renderización ni maxCols
+        window.virtualColumns = window.virtualColumns.filter(vc => {
+            if (vc.isGhostPlaceholder) {
+                // [QA BUGFIX] Tolerar los huérfanos solo si se acaban de crear (estado efímero _isNewTemp)
+                if (vc._isNewTemp) return true;
+                
+                const isMapped = window.draftPipelines && window.draftPipelines[vc.id];
+                if (!isMapped) {
+                    console.log(`🧹 [RenderEngine] Purgando Placeholder Huérfano: ${vc.id}`);
+                    return false;
+                }
+            }
+            return true;
+        });
+
         // [V5.5 - MERGE DE ESQUEMAS] Resuelve "Schema Blindness" cruzando memoria con Raw Data
         // Aseguramos que si el archivo nuevo trajo más columnas de las que el flujo recordaba, estas se inyecten.
         for (let idx = 0; idx < maxCols; idx++) {
@@ -496,7 +512,7 @@ function renderVirtualTable(originalData) {
                 // EXCEPCIONES: Bindear click derecho para TODAS las columnas renderizadas, sin importar si el ETL o Taller están en foco (Solo si no es Modo Lectura/Pendientes)
                 let onCtx = "";
                 if (!window.isViewerReadOnly) {
-                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}')"`;
+                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}', ${row && row._rowUid !== undefined ? row._rowUid : -1})"`;
                     cellClass += " cursor-context-menu";
                 }
 
@@ -637,7 +653,7 @@ function renderVirtualTable(originalData) {
                                     resultDisplay = "<span class='text-fuchsia-500/50 italic text-[10px]'>Sin Base A</span>";
                                     cellClass += ' text-center';
                                 } else {
-                                    const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps);
+                                    const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps, row);
                                     resultDisplay = evalres.resultDisplay;
                                     mathResult = evalres.mathResult;
                                     
@@ -703,7 +719,7 @@ function renderVirtualTable(originalData) {
                         .replace(/"/g, "&quot;")
                         .replace(/\n/g, "\\n")
                         .replace(/\r/g, "\\r");
-                    let onCtxComputed = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeResultDisplay}', '${calcConfig.id}')"`;
+                    let onCtxComputed = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeResultDisplay}', '${calcConfig.id}', ${row && row._rowUid !== undefined ? row._rowUid : -1})"`;
                     
                     cellClass += " cursor-context-menu";
 
@@ -1174,6 +1190,9 @@ async function generatePreview(skipModal = false) {
                         transform: (val, rowContext) => {
                             if (!window.viewerETL) return val;
                             const res = window.viewerETL.transformCell(String(val || ""), rulesStack, rowContext);
+                            // [BUG-FIX: Null/Empty Persistence] Si el pipeline se ejecutó (wasTransformed),
+                            // respetamos el resultado aunque sea "". Solo hacemos fallback si no hubo pipeline.
+                            if (res.wasTransformed) return res.display !== undefined ? res.display : res.result;
                             return res.resultDisplay || res.result || res.display;
                         },
                         hasSwitch: false, // Legacy switch hidden, relying on Gear
@@ -1227,7 +1246,7 @@ async function generatePreview(skipModal = false) {
                                 // Permite calcular si al menos cA existe (necesario para CLONE)
                                 if (cA) {
                                     // Utilizar la función unificada de matemáticas / clonación
-                                    const res = evaluateComputedColumnMath(calcConfig, cA, cB, masterPipelines, null, allOps);
+                                    const res = evaluateComputedColumnMath(calcConfig, cA, cB, masterPipelines, null, allOps, row);
                                     resultDisplay = res.resultDisplay;
                                 }
                             }
@@ -1341,6 +1360,9 @@ async function generatePreview(skipModal = false) {
                          transform: (val, rowContext) => {
                              if (!window.viewerETL) return val;
                              const res = window.viewerETL.transformCell(String(val||""), rulesStack, rowContext);
+                             // [BUG-FIX: Null/Empty Persistence] Si el pipeline se ejecutó (wasTransformed),
+                             // respetamos el resultado aunque sea "". Solo hacemos fallback si no hubo pipeline.
+                             if (res.wasTransformed) return res.display !== undefined ? res.display : res.result;
                              return res.resultDisplay || res.result || res.display;
                          },
                          sourceIndex: vCol.dataIdx,
@@ -1403,7 +1425,7 @@ async function generatePreview(skipModal = false) {
                                     const allOps = calcConfig.operands.map(opIdx => rCtx[opIdx]);
                                     
                                     if (cA) {
-                                        const res = evaluateComputedColumnMath(calcConfig, cA, cB, localPipelines, null, allOps);
+                                        const res = evaluateComputedColumnMath(calcConfig, cA, cB, localPipelines, null, allOps, row);
                                         resultDisplay = res.resultDisplay;
                                     }
                                 }
@@ -1474,6 +1496,7 @@ async function generatePreview(skipModal = false) {
                      if (cfg.isComputed) resVal = cfg.transform(null, row);
                      else resVal = cfg.transform(row[cfg.sourceIndex], row);
                      
+
                      if (resVal !== undefined && resVal !== null && String(resVal).trim() !== "") {
                          isEmptyRow = false;
                      }

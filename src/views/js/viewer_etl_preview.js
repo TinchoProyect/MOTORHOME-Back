@@ -258,6 +258,20 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 console.warn(`[ETL DIAGNOSTIC] 'math_discount' abortado por valor no numérico: '${originalVal}'`);
             }
         }
+        const isCustomRowOverride = rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_OVERRIDE_ROW:');
+
+        if (isCustomRowOverride) {
+            const payload = rule.tipo_regex.replace('CUSTOM_OVERRIDE_ROW:', '');
+            const parts = payload.split('|||');
+            const targetRowUid = parseInt(parts[0], 10);
+            const replaceStr = parts[1] !== undefined ? parts[1] : '';
+            
+            // Evaluador hiper-restringido: Si la celda pertenece físicamente a la fila objetivo, aplicamos
+            if (contextRow && contextRow._rowUid === targetRowUid) {
+                currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
+                console.log(`[ETL PREVIEW] ⚡ Override Local aplicado en Fila [UID:${targetRowUid}] -> Salida: '${currentValue}'`);
+            }
+        }
         else if (isCustomReplace) {
             try {
                 const payload = rule.tipo_regex.replace('CUSTOM_REPLACE:', '');
@@ -465,11 +479,19 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
         cleanValue = parseFloat(currentValue.replace(/,/g, '.'));
     }
 
+    // [BUG-FIX: Null/Empty Persistence]
+    // `wasTransformed` es un flag determinista que señala que el pipeline
+    // se ejecutó activamente sobre el valor crudo, aunque el resultado sea "".
+    // Cuando este flag es `true`, el string vacío es un valor de destino LEGÍTIMO
+    // y el merger NO DEBE hacer fallback al valor original.
+    const wasTransformed = pipeline && pipeline.length > 0 && !isRejected;
+
     return {
-        result: currentValue, // [Legacy compatibility] Target string representation
-        display: currentValue, // [V5] explicit display 
-        clean: cleanValue,     // [V5] Mathematical reality 
-        rejected: isRejected
+        result: currentValue,        // [Legacy compatibility] Target string representation
+        display: currentValue,       // [V5] explicit display
+        clean: cleanValue,           // [V5] Mathematical reality
+        rejected: isRejected,
+        wasTransformed: wasTransformed // [BUG-FIX] Anti-fallback deterministic signal
     };
 }
 

@@ -114,7 +114,7 @@ window.filterVisorData = function() {
                                         opBValue.clean = row[srcB.dataIdx];
                                     }
                                     
-                                    const res = window.evaluateComputedColumnMath(compCfg, opAValue, opBValue, window.draftPipelines, window.activeEtlState);
+                                    const res = window.evaluateComputedColumnMath(compCfg, opAValue, opBValue, window.draftPipelines, window.activeEtlState, null, row);
                                     finalVal = res.resultDisplay || res.mathResult || "";
                                 }
                             }
@@ -124,8 +124,13 @@ window.filterVisorData = function() {
                             
                             const pipeline = window.draftPipelines && window.draftPipelines[vCol.id] ? window.draftPipelines[vCol.id].rules : null;
                             if (pipeline && pipeline.length > 0 && window.viewerETL) {
-                                const res = window.viewerETL.transformCell(rawVal, pipeline);
-                                finalVal = res.resultDisplay || res.result || res.display;
+                                const res = window.viewerETL.transformCell(rawVal, pipeline, row);
+                                // [BUG-FIX: Null/Empty Persistence] Respetar wasTransformed
+                                if (res.wasTransformed) {
+                                    finalVal = res.display !== undefined ? res.display : res.result;
+                                } else {
+                                    finalVal = res.resultDisplay || res.result || res.display;
+                                }
                             }
                         }
                         
@@ -311,7 +316,7 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 colWidths: window.currentColWidths || {},
                 config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
                 hiddenColumns: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {},
-                ghostCols: window.virtualColumns ? window.virtualColumns.filter(c => c.isGhostPlaceholder) : []
+                ghostCols: [] // [QA BUGFIX] Bloqueo innegociable de fuga de resaca de placeholders a DB
             }
         };
 
@@ -1146,7 +1151,17 @@ window.loadSavedConfiguration = async function () {
                             descripcion: ""
                         }));
 
-                        const vColId = `col_${m.columna_origen_index}`; // Map DB integer to valid proxy string
+                        let vColId = `col_${m.columna_origen_index}`; // Map DB integer to valid proxy string
+
+                        // [QA BUGFIX: DESACOPLE DE GHOSTS]
+                        // Si la columna física está secuestrada por un Placeholder en memoria, restaurar el Surrogate Key real.
+                        // Esto previene que el UI pierda la pista del ID dinámico y re-inyecte duplicados ("nueva vacía").
+                        if (window.virtualColumns) {
+                            const ghost = window.virtualColumns.find(v => v.dataIdx === m.columna_origen_index && v.isGhostPlaceholder);
+                            if (ghost) {
+                                vColId = ghost.id; // Volver a col_ph_17000xxxx
+                            }
+                        }
 
                         // Reconstrucción inteligente de clones visuales (si hay más de 1 regla a la misma columna)
                         let activeVColId = vColId;

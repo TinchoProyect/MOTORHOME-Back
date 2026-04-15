@@ -215,6 +215,13 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
 
                     currentSheetData = rawData.slice(0, lastRealRowIndex + 1);
 
+                    // [Local Override Fix] Inyección de Stamp Determinista de Fila
+                    if (currentSheetData && currentSheetData.length > 0) {
+                        currentSheetData.forEach((row, idx) => {
+                            if (row && typeof row === 'object') row._rowUid = idx;
+                        });
+                    }
+
                     console.log(`🛑 [VIGÍA FRONTEND] Filas crudas recibidas: ${rawData.length}, Filas efectivas tras limpieza de fantasmas: ${currentSheetData.length}`);
                     renderVirtualTable(currentSheetData);
 
@@ -293,6 +300,11 @@ function loadSheet(sheetName) {
             if (!Array.isArray(cachedData) && typeof XLSX !== 'undefined') {
                 try {
                     currentSheetData = XLSX.utils.sheet_to_json(cachedData, { header: 1 });
+                    if (currentSheetData && currentSheetData.length > 0) {
+                        currentSheetData.forEach((row, idx) => {
+                            if (row && typeof row === 'object') row._rowUid = idx;
+                        });
+                    }
                 } catch (err) {
                     console.error("Error converting sheet to json:", err);
                     currentSheetData = [];
@@ -360,6 +372,11 @@ const processLocally = (wb, sName) => {
         if (!ws) throw new Error("Hoja '" + sName + "' no encontrada.");
 
         const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (json && json.length > 0) {
+            json.forEach((row, idx) => {
+                if (row && typeof row === 'object') row._rowUid = idx;
+            });
+        }
         currentSheetData = json;
         renderVirtualTable(json);
         const loader = document.getElementById('viewerLoader');
