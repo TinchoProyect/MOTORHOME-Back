@@ -53,8 +53,41 @@
         };
         console.log("✅ [Vigía] openFileViewer instrumented.");
     } else {
-        console.error("❌ [Vigía] openFileViewer NOT found.");
+        // [MODIFICACIÓN REQUERIDA POR QA]: Muted error to clean up console
+        // console.error("❌ [Vigía] openFileViewer NOT found.");
     }
+
+    // 2.5 Vigía Depurador - Interceptor de Carro de Producción / Recetas
+    // Detecta la inyección desde la extensión content.js o flujos de red.
+    window.productionVigia = {
+        lastDetectedPayload: null,
+        status: "IDLE",
+        checkIncomingData: function(source, data) {
+            console.group(`🚨 [Vigía de Producción] Intercepción - Origen: ${source}`);
+            if (!data) {
+                 console.log("❌ FALLO: El JSON recibido está vacío o nulo.");
+                 this.status = "FAILED_NO_DATA";
+            } else {
+                 console.log("✅ ÉXITO: El JSON está llegando. Payload detectado:", data);
+                 this.status = "JSON_ARRIVED";
+                 this.lastDetectedPayload = data;
+                 
+                 // Inspect the standard properties
+                 const hasIngredients = (data.ingredientes && data.ingredientes.length > 0) || (data.receta && data.receta.length > 0);
+                 if (hasIngredients) {
+                      console.log("✅ ÉXITO (Mapeo): El JSON contiene ingredientes válidos.");
+                      this.status = "MAPPED_OK";
+
+                      // Throw custom event so components can render it
+                      window.dispatchEvent(new CustomEvent('ProductionDataReady', { detail: data }));
+                 } else {
+                      console.log("❌ FALLO (Mapeo): El JSON llegó pero carece de la propiedad 'ingredientes' o 'receta'.");
+                      this.status = "MAPPING_FAILED";
+                 }
+            }
+            console.groupEnd();
+        }
+    };
 
     // 3. Monitor Dashboard Tabs Context
     const originalResolve = window.resolveProviderContext;

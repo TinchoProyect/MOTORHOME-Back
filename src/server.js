@@ -21,6 +21,7 @@ app.use('/api/master-table', require('./routes/masterTableRoutes'));
 app.use('/api/mapping', require('./routes/mappingRuleRoutes'));
 app.use('/api/flujos', require('./routes/flujosRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
+app.use('/api/rubros', require('./routes/rubrosRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {

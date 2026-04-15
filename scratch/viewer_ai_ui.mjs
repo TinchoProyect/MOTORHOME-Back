@@ -104,8 +104,6 @@ class ViewerAiUi {
                     btn.classList.remove(hoverColorClass, 'text-white', borderColorClass);
                     btn.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
                     this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
-                    this.promptEl.value = '';
-                    this.promptEl.disabled = false;
                 } else {
                     // Limpiar todos
                     quickBtns.forEach(b => {
@@ -120,15 +118,8 @@ class ViewerAiUi {
                     this.selectedRoute = btn.dataset.route;
                     btn.classList.remove('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
                     btn.classList.add(hoverColorClass, 'text-white', borderColorClass);
-                                        if (this.selectedRoute === 'caza-rubros') {
-                        this.promptEl.value = "[Automático] Fusión Semántica Activa. El sistema evaluará el diccionario y agrupará orígenes utilizando conocimiento general guiado por el contexto de la regla.";
-                        this.promptEl.disabled = true;
-                    } else {
-                        this.promptEl.value = '';
-                        this.promptEl.disabled = false;
-                        if(btn.dataset.placeholder) {
-                            this.promptEl.placeholder = btn.dataset.placeholder;
-                        }
+                    if(btn.dataset.placeholder) {
+                        this.promptEl.placeholder = btn.dataset.placeholder;
                     }
                     this.promptEl.focus();
                 }
@@ -370,7 +361,7 @@ class ViewerAiUi {
             
             // Si el chip seleccionado exige AST => fuerza AST. Si exige Cluster => fuerza Cluster.
             const forceAstMode = this.selectedRoute === 'ast' || (!this.selectedRoute && isFormattingPattern && this.selectedRoute !== 'literal');
-            const forceClusterMode = this.selectedRoute === 'cluster' || this.selectedRoute === 'caza-rubros';
+            const forceClusterMode = this.selectedRoute === 'cluster';
             const forceLiteralMode = this.selectedRoute === 'literal';
             
             // Si el diccionario es enorme, obligatoriamente se usa AST para evitar OOM, excepto que lo forcemos

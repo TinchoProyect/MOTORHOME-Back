@@ -220,12 +220,27 @@ async function openColumnMenu_v2(vColId, buttonElement) {
                     }
                     // 2. Map Column
                     columnMapping[vColId] = newTermName.toUpperCase();
+                    // [V8 STRUCTURAL FIX] Promover a draftPipelines
+                    if (!window.draftPipelines) window.draftPipelines = {};
+                    if (!window.draftPipelines[vColId]) {
+                        window.draftPipelines[vColId] = {
+                            masterField: { id: 'pending', nombre_campo: newTermName.toUpperCase() },
+                            colName: newTermName.toUpperCase(),
+                            rules: []
+                        };
+                    }
                     // 3. Refresh & Save
                     renderVirtualTable(currentSheetData);
                     saveSheetState(currentSheetName);
                     renderSheetTabs();
-                    // 4. Update Cache (Silent Reload)
-                    loadNomenclature();
+                    // 4. Update Cache & resolve real masterField.id
+                    loadNomenclature().then(() => {
+                        const term = nomenclatureCache.find(t => t.termino === newTermName.toUpperCase() || t.termino === newTermName);
+                        if (term && window.draftPipelines[vColId]) {
+                            window.draftPipelines[vColId].masterField.id = term.id;
+                            console.log(`🔗 [MAPPING V8] masterField.id resuelto para '${vColId}': ${term.id}`);
+                        }
+                    });
                 }
             });
         } else {
@@ -299,6 +314,31 @@ async function openColumnMenu_v2(vColId, buttonElement) {
 
             columnMapping[vColId] = term.termino;
             
+            // [V8 STRUCTURAL FIX] Registrar inmediatamente en draftPipelines para que la columna
+            // sea ciudadana de primera clase en el sistema V4. Esto habilita nativamente el
+            // Workshop (Editor de Fórmulas, IA Copilot) sin parches visuales.
+            if (!window.draftPipelines) window.draftPipelines = {};
+            if (!window.draftPipelines[vColId]) {
+                window.draftPipelines[vColId] = {
+                    masterField: { id: term.id, nombre_campo: term.termino },
+                    colName: term.termino,
+                    rules: []
+                };
+                console.log(`🔗 [MAPPING V8] Columna '${vColId}' promovida a draftPipelines (masterField: ${term.termino})`);
+            } else {
+                // Actualizar masterField si ya existía
+                window.draftPipelines[vColId].masterField = { id: term.id, nombre_campo: term.termino };
+            }
+
+            // [V8] Consumir _isNewTemp ahora que la columna está mapeada — ya no necesita inmunidad
+            if (window.virtualColumns) {
+                const vc = window.virtualColumns.find(c => c.id === vColId);
+                if (vc && vc._isNewTemp) {
+                    delete vc._isNewTemp;
+                    console.log(`🔄 [MAPPING V8] Flag _isNewTemp consumido para '${vColId}' (columna ahora mapeada)`);
+                }
+            }
+
             // [V7] Computed Column Mapping Sync
             if (window.computedColumns) {
                 const compDef = window.computedColumns.find(c => c.id === vColId);

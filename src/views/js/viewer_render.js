@@ -207,7 +207,9 @@ function renderVirtualTable(originalData) {
         // Purgamos variables fantasma que no fueron mapeadas para que no contaminen la renderización ni maxCols
         window.virtualColumns = window.virtualColumns.filter(vc => {
             if (vc.isGhostPlaceholder) {
-                // [QA BUGFIX] Tolerar los huérfanos solo si se acaban de crear (estado efímero _isNewTemp)
+                // Tolerar ghosts recién creados (_isNewTemp) hasta que sean mapeados.
+                // El flag NO se consume aquí porque el injector dispara múltiples renders
+                // durante la fase de creación, antes de que el usuario pueda mapear.
                 if (vc._isNewTemp) return true;
                 
                 const isMapped = window.draftPipelines && window.draftPipelines[vc.id];
@@ -221,7 +223,19 @@ function renderVirtualTable(originalData) {
 
         // [V5.5 - MERGE DE ESQUEMAS] Resuelve "Schema Blindness" cruzando memoria con Raw Data
         // Aseguramos que si el archivo nuevo trajo más columnas de las que el flujo recordaba, estas se inyecten.
+        // [QA BUGFIX] Guardia defensiva: no re-inyectar dataIdx que fueron consumidos por computedColumns
+        const consumedDataIdxSet = new Set();
+        if (window.computedColumns) {
+            window.computedColumns.forEach(cc => {
+                // Las computed columns que nacieron de ghosts almacenan el dataIdx consumido
+                if (cc._consumedDataIdx !== undefined) {
+                    consumedDataIdxSet.add(cc._consumedDataIdx);
+                }
+            });
+        }
+
         for (let idx = 0; idx < maxCols; idx++) {
+            if (consumedDataIdxSet.has(idx)) continue; // Ya fue absorbido por una computed column
             const exists = window.virtualColumns.some(vc => vc.dataIdx === idx);
             if (!exists) {
                 window.virtualColumns.push({ id: `col_${idx}`, dataIdx: idx });
@@ -954,6 +968,26 @@ async function generatePreview(skipModal = false) {
         const sourceConfig = [];
 
         // ---------------- SCHEMA UNION (Unión de Esquemas Inclusiva) ----------------
+        // [FIX V8.11] Funcionalidad Resolutiva Cruzada (Nomenclatura -> Master Dictionary)
+        const resolveToMasterId = (termId) => {
+             const safeT = String(termId).toLowerCase().trim();
+             let resName = safeT;
+             if (typeof nomenclatureCache !== 'undefined' && Array.isArray(nomenclatureCache)) {
+                 const nCache = nomenclatureCache.find(n => String(n.id).toLowerCase().trim() === safeT);
+                 if (nCache && nCache.termino) resName = String(nCache.termino).toLowerCase().trim();
+             }
+             if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                 const m = window.masterDictionary.find(d => 
+                     d.id === termId || 
+                     String(d.id).toLowerCase().trim() === safeT || 
+                     String(d.nombre_campo).toLowerCase().trim() === safeT || 
+                     String(d.nombre_campo).toLowerCase().trim() === resName
+                 );
+                 if (m) return m.id;
+             }
+             return termId;
+        };
+
         let masterVirtualCols = [];
         let masterColumnMap = {};
         let masterPipelines = {};
@@ -995,11 +1029,11 @@ async function generatePreview(skipModal = false) {
 
              // Ayudante Unificador para ingresar Keys Válidas
              const registerToUnion = (dictId, rawColObj) => {
-                 const idSafeKey = String(dictId).toLowerCase().trim();
+                 const masterId = resolveToMasterId(dictId);
+                 const idSafeKey = String(masterId).toLowerCase().trim();
                  
-                 // [NUEVO] PURGA SANITARIA DETERMINISTA: Si no existe en el Master Dictionary, ES INVALIDA! 
-                 // (Previene fugas de columnas auxiliares de "Origen 1" o Split Transitorio)
-                 const validDictEntry = window.masterDictionary ? window.masterDictionary.find(d => d.id === dictId || String(d.id).toLowerCase().trim() === idSafeKey) : null;
+                 // [NUEVO] PURGA SANITARIA DETERMINISTA: Ya protegida por resolveToMasterId
+                 const validDictEntry = window.masterDictionary ? window.masterDictionary.find(d => d.id === masterId || String(d.id).toLowerCase().trim() === idSafeKey) : null;
                  if (!validDictEntry) return;
 
                  if (!seenUnionTermIds.has(idSafeKey)) {
@@ -1024,7 +1058,28 @@ async function generatePreview(skipModal = false) {
                       resolutiveTermId = sPipelines[vCol.id].masterField.id;
                  }
                  
-                 registerToUnion(resolutiveTermId, vCol);
+                 // [BUGFIX: RECONOCIMIENTO DE SPLITS (CAJITAS HIJAS)]
+                 const rStack = sPipelines && sPipelines[vCol.id] ? sPipelines[vCol.id].rules : null;
+                 const rulesStack = rStack ? (Array.isArray(rStack) ? rStack : [rStack]) : [];
+                 const activeSplit = rulesStack.find(r => !r.disabled && (r.type === 'split' || r.type === 'regex_split'));
+                 
+                 if (activeSplit) {
+                      let tIds = [];
+                      if (activeSplit.fields && Array.isArray(activeSplit.fields)) {
+                          tIds = activeSplit.fields;
+                      } else if (activeSplit.partIdentifiers && Array.isArray(activeSplit.partIdentifiers)) {
+                          tIds = activeSplit.partIdentifiers.map(p => typeof p === 'object' ? p.id : p);
+                      }
+                      
+                      if (tIds.length > 0) {
+                          tIds.forEach(tId => registerToUnion(tId, vCol));
+                      } else {
+                          // Si no hay targets definidos, intentar fallback al resolutivo
+                          registerToUnion(resolutiveTermId, vCol);
+                      }
+                 } else {
+                      registerToUnion(resolutiveTermId, vCol);
+                 }
              });
              
              // Escaneo de Columnas Fantasmas (Cálculos Post-Mapeo)
@@ -1330,14 +1385,22 @@ async function generatePreview(skipModal = false) {
                 const splitRule = rulesStack.find(r => !r.disabled && (r.type === 'split' || r.type === 'regex_split'));
                 if (splitRule) {
                      const sep = splitRule.type === 'regex_split' ? new RegExp(splitRule.separator, 'g') : splitRule.separator || ' ';
-                     const trg = splitRule.targetCount ? parseInt(splitRule.targetCount) : 2;
+                     
+                     let tIds = [];
+                     if (splitRule.fields && Array.isArray(splitRule.fields)) {
+                         tIds = splitRule.fields;
+                     } else if (splitRule.partIdentifiers && Array.isArray(splitRule.partIdentifiers)) {
+                         tIds = splitRule.partIdentifiers.map(p => typeof p === 'object' ? p.id : p);
+                     }
+                     
+                     const trg = splitRule.targetCount ? parseInt(splitRule.targetCount) : (tIds.length > 0 ? tIds.length : 2);
                      for (let i = 0; i < trg; i++) {
                          let clonedTrId = resolutiveTermId;
-                         if (splitRule.partIdentifiers && splitRule.partIdentifiers[i] && splitRule.partIdentifiers[i].id) {
-                             clonedTrId = splitRule.partIdentifiers[i].id;
+                         if (tIds[i]) {
+                             clonedTrId = tIds[i];
                          }
                          localConfig.push({
-                             termId: String(clonedTrId).toLowerCase().trim(),
+                             termId: String(resolveToMasterId(clonedTrId)).toLowerCase().trim(),
                              transform: (val, rowContext) => {
                                  let text = String(val||"");
                                  const pRules = rulesStack.slice(0, rulesStack.indexOf(splitRule));
@@ -1356,7 +1419,7 @@ async function generatePreview(skipModal = false) {
                      }
                 } else {
                      localConfig.push({
-                         termId: String(resolutiveTermId).toLowerCase().trim(),
+                         termId: String(resolveToMasterId(resolutiveTermId)).toLowerCase().trim(),
                          transform: (val, rowContext) => {
                              if (!window.viewerETL) return val;
                              const res = window.viewerETL.transformCell(String(val||""), rulesStack, rowContext);
@@ -1375,7 +1438,7 @@ async function generatePreview(skipModal = false) {
                 localComputedCols.forEach(calcConfig => {
                     let calcId = calcConfig.masterField?.id || calcConfig.id;
                     localConfig.push({
-                        termId: String(calcId).toLowerCase().trim(),
+                        termId: String(resolveToMasterId(calcId)).toLowerCase().trim(),
                         isComputed: true,
                         transform: (val, row) => {
                             let resultDisplay = "";

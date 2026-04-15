@@ -64,9 +64,14 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 optionA.text = `${termName}${suffix}`;
 
                 const optionB = optionA.cloneNode(true);
+                const optionSemantic = optionA.cloneNode(true);
 
                 selectA.appendChild(optionA);
                 selectB.appendChild(optionB);
+                
+                const selectSemantic = document.getElementById('calcFieldSemanticKey');
+                if (selectSemantic) selectSemantic.appendChild(optionSemantic);
+                
                 hasOptions = true;
             }
         });
@@ -86,14 +91,31 @@ async function openCalculationModal(fromRuleWorkshop = false) {
             const containerTol = document.getElementById('calcTolerateEmpty') ? document.getElementById('calcTolerateEmpty').parentElement : null;
             const cloneAddBtn = document.getElementById('cloneAddBtnContainer');
             
-            if (opValue === 'CLONE') {
-                if(labelA) labelA.innerText = "Columna Origen (Clonada)";
-                if(containerB) containerB.style.display = 'none';
+            if (opValue === 'CLONE' || opValue === 'CLONE_SEMANTIC') {
+                if(labelA) labelA.innerText = opValue === 'CLONE_SEMANTIC' ? "Semántica Origen (Principal)" : "Columna Origen (Clonada)";
+                if(containerB) containerB.style.display = 'none'; // Se devuelve el campo secundario a la normalidad
+                
+                const masterKeyContainer = document.getElementById('calcMasterKeyContainer');
+                if (masterKeyContainer) {
+                    if (opValue === 'CLONE_SEMANTIC') {
+                        masterKeyContainer.style.display = 'block';
+                    } else {
+                        masterKeyContainer.style.display = 'none';
+                    }
+                }
+                
                 if(containerTol) containerTol.style.display = 'none';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'block';
             } else {
                 if(labelA) labelA.innerText = "Precio Base (A)";
-                if(containerB) containerB.style.display = 'block';
+                if(containerB) {
+                    containerB.style.display = 'block';
+                    const labelB = containerB.querySelector('label');
+                    if(labelB) labelB.innerText = "Descuento (B)";
+                }
+                const masterKeyContainer = document.getElementById('calcMasterKeyContainer');
+                if (masterKeyContainer) masterKeyContainer.style.display = 'none';
+                
                 if(containerTol) containerTol.style.display = 'flex';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'none';
                 // Reset clones on math operation
@@ -101,7 +123,7 @@ async function openCalculationModal(fromRuleWorkshop = false) {
             }
         };
         // Limpiamos la basura visual del estado anterior forzándolo al disparar el trigger
-        setTimeout(() => selOp.onchange(), 50);
+        setTimeout(() => { selOp.onchange(); if (window.lucide) window.lucide.createIcons(); }, 50);
     }
 }
 
@@ -143,12 +165,17 @@ function saveComputedColumn(closeModal = true) {
     
     let operandsList = [];
 
-    if (op === 'CLONE') {
+    if (op === 'CLONE' || op === 'CLONE_SEMANTIC') {
         const selects = document.querySelectorAll('.calc-source-dyn');
         selects.forEach(s => {
             if(s.value && s.value.trim() !== '') operandsList.push(s.value);
         });
         
+        if (op === 'CLONE_SEMANTIC') {
+            const vColIdSemanticKey = document.getElementById('calcFieldSemanticKey') ? document.getElementById('calcFieldSemanticKey').value : null;
+            if (vColIdSemanticKey && vColIdSemanticKey.trim() !== '') operandsList.push(vColIdSemanticKey);
+        }
+
         if (operandsList.length === 0) {
             if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Por favor completá al menos una Columna Origen a Clonar.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
             else alert("Por favor completá al menos una Columna Origen a Clonar.");
@@ -192,17 +219,40 @@ function saveComputedColumn(closeModal = true) {
             // [V5.20 FIX UX] Convert Ghost Placeholder natively into a Computed Column
             // Remove from virtualColumns so it doesn't render as physical anymore
             const ghostIdx = window.virtualColumns.findIndex(c => c.id === id);
+            let ghostDataIdx = undefined;
             if (ghostIdx !== -1) {
+                ghostDataIdx = window.virtualColumns[ghostIdx].dataIdx;
                 window.virtualColumns.splice(ghostIdx, 1);
+                
+                // [QA BUGFIX] Limpiar residuo físico en currentSheetData para que
+                // el Schema Merge del render engine no re-inyecte una columna huérfana.
+                if (ghostDataIdx !== undefined && window.currentSheetData && Array.isArray(window.currentSheetData)) {
+                    window.currentSheetData.forEach(row => {
+                        if (Array.isArray(row) && row.length > ghostDataIdx) {
+                            row[ghostDataIdx] = undefined;
+                        }
+                    });
+                    // Recalcular longitud efectiva eliminando undefineds trailing
+                    window.currentSheetData.forEach(row => {
+                        if (Array.isArray(row)) {
+                            while (row.length > 0 && row[row.length - 1] === undefined) {
+                                row.pop();
+                            }
+                        }
+                    });
+                    console.log(`🧹 [COMPUTED] Residuo físico limpiado en currentSheetData (dataIdx: ${ghostDataIdx})`);
+                }
             }
             
-            // Push to computed array
+            // Push to computed array — almacenar _consumedDataIdx para que el Schema Merge
+            // del render engine sepa no re-inyectar esta posición como columna virtual
             window.computedColumns.push({
                 id: id,
                 masterField: targetMasterField,
                 macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT',
                 operands: operandsList,
-                tolerateEmpty: tolerateEmpty
+                tolerateEmpty: tolerateEmpty,
+                _consumedDataIdx: ghostDataIdx // Marca de posición consumida para Schema Merge guard
             });
             console.log("✅ Ghost Column convertido exitosamente a Columna Calculada!");
         }
@@ -227,6 +277,19 @@ function saveComputedColumn(closeModal = true) {
         }
         // Limpiar busqueda
         window._activeComputedContext = null;
+    }
+
+    // [QA BUGFIX DEFINITIVO] Limpiar el draftPipeline huérfano del ghost DESPUÉS de que
+    // applyMapping()/close() lo re-crearon. Si la columna convertida era un ghost (col_ph_),
+    // su pipeline ya no debe existir — la columna ahora vive en computedColumns.
+    if (window._activeComputedContext === null && window.draftPipelines) {
+        const savedId = window.computedColumns && window.computedColumns.length > 0
+            ? window.computedColumns[window.computedColumns.length - 1].id
+            : null;
+        if (savedId && savedId.startsWith('col_ph_') && window.draftPipelines[savedId]) {
+            delete window.draftPipelines[savedId];
+            console.log(`🧹 [COMPUTED] Pipeline huérfano post-close '${savedId}' eliminado de draftPipelines`);
+        }
     }
 
     // Disparar Render Phase 1 & Phase 2 in-place (V5 Canvas)

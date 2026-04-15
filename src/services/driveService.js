@@ -4,7 +4,7 @@ const fs = require('fs');
 const { PassThrough } = require('stream');
 
 // Config
-const OAUTH_FILE_PATH = path.join(__dirname, '../../oauth2_tokens.json');
+const OAUTH_FILE_PATH = path.join(__dirname, '../../service-account.json');
 
 // State
 let driveClient = null;
@@ -13,26 +13,26 @@ async function getDriveClient() {
     if (driveClient) return driveClient;
 
     if (!fs.existsSync(OAUTH_FILE_PATH)) {
-        throw new Error(`[DriveService] Falta oauth2_tokens.json en: ${OAUTH_FILE_PATH}`);
+        throw new Error(`[DriveService] Falta service-account.json en: ${OAUTH_FILE_PATH}`);
     }
 
     // Read Key File
     const keys = JSON.parse(fs.readFileSync(OAUTH_FILE_PATH, 'utf8'));
 
-    console.log("[DriveService] Inicializando OAuth2 Auth con Cuota de Google One...");
+    console.log("[DriveService] Inicializando JWT Auth con Cuenta de Servicio de Google...");
 
-    const oauth2Client = new google.auth.OAuth2(
-        keys.client_id,
-        keys.client_secret,
-        'http://localhost'
-    );
-    
-    oauth2Client.setCredentials({ 
-        refresh_token: keys.refresh_token 
+    const privateKey = keys.private_key;
+
+    const jwtClient = new google.auth.JWT({
+        email: keys.client_email,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly']
     });
 
-    driveClient = google.drive({ version: 'v3', auth: oauth2Client });
-    console.log("   [DriveService] Cliente OAuth2 Autenticado OK.");
+    await jwtClient.authorize();
+
+    driveClient = google.drive({ version: 'v3', auth: jwtClient });
+    console.log("   [DriveService] Cliente JWT de Servicio Autenticado OK.");
     return driveClient;
 }
 

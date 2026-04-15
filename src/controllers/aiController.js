@@ -222,6 +222,70 @@ const aiController = {
             console.error('[AI Controller] ❌ Falla en Data Profiling (discoverEntities):', error.message);
             res.status(500).json({ error: error.message || 'Error in Data Profiling phase' });
         }
+    },
+
+    /**
+     * Endpoint: POST /api/ai/categorize-rubros
+     * Determina los rubros basándose en el diccionario y el Cuaderno Maestro
+     */
+    categorizeRubros: async (req, res) => {
+        try {
+            const { samples, forceIncrementalMap } = req.body;
+            if (!samples || !Array.isArray(samples)) {
+                return res.status(400).json({ error: 'Faltan muestras paramétricas (samples) o están mal formateadas.' });
+            }
+
+            // Filtrado estricto (ignorado pasivo de nulos/vacíos)
+            const cleanSamples = samples
+                .map(s => s ? String(s).trim() : '')
+                .filter(s => s !== '' && s !== 'null' && s !== 'undefined');
+                
+            // Deduplicación para enviar unique values a la IA (minimizar tokens)
+            const uniqueSamples = Array.from(new Set(cleanSamples));
+
+            if (uniqueSamples.length === 0) {
+                 return res.status(200).json({ cluster: forceIncrementalMap || {} });
+            }
+
+            const { createClient } = require('@supabase/supabase-js');
+            const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+            // Obtener el cuaderno maestro
+            const { data: currentRubros, error } = await supabase
+                .from('maestro_rubros')
+                .select('*')
+                .eq('es_activo', true);
+
+            if (error && error.code !== '42P01') {
+                throw error;
+            }
+
+            const activeRubros = currentRubros || [];
+            
+            // Si no hay rubros en la BBDD sugeriremos todo como nuevo (o devolvemos vacío)
+            if (activeRubros.length === 0) {
+                 console.warn("[AI Controller] Cuaderno Maestro vacío. Todo derivará a Bandeja Pendientes.");
+            }
+
+            const AI_Response = await aiService.executeCategorization(uniqueSamples, activeRubros);
+            
+            // Merge con el mapa incremental (si existiera algo antes)
+            let resultCluster = forceIncrementalMap ? { ...forceIncrementalMap } : {};
+            
+            // Inject new ones
+            for (const [rawKey, rubroValue] of Object.entries(AI_Response.translationMap)) {
+               resultCluster[rawKey] = rubroValue;
+            }
+
+            res.status(200).json({
+                success: true,
+                cluster: resultCluster
+            });
+
+        } catch (error) {
+            console.error('[AI Controller] ❌ Falla en Categorización de Rubros:', error.message);
+            res.status(500).json({ error: error.message || 'Error categorization phase' });
+        }
     }
 };
 

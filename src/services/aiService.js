@@ -441,8 +441,95 @@ Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcia
             }
         }
         
+        return {
+            translationMap: finalMap,
+            dictionaryRef: dictionarySamples
+        };
+    },
 
+    executeCategorization: async (dictionarySamples, contextRubros) => {
+        if (!genAI) throw new Error("Gemini API no inicializada");
+        
+        console.log(`[AI Service - Fase Caza-Rubros] ⏱️ Categorizando (Total: ${dictionarySamples.length} uniques) contra ${contextRubros.length} rubros base...`);
+        
+        let CHUNK_SIZE = 25; 
+        let chunks = [];
+        for (let i = 0; i < dictionarySamples.length; i++) {
+            let chunkIdx = Math.floor(i / CHUNK_SIZE);
+            if (!chunks[chunkIdx]) chunks[chunkIdx] = {};
+            chunks[chunkIdx][i] = dictionarySamples[i];
+        }
 
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash", 
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
+        });
+
+        let finalMap = {};
+        
+        // Estructurar el contexto de rubros para el prompt
+        const rubrosString = contextRubros.map(r => `[${r.nombre_rubro}]: ${r.descripcion_narrativa}`).join('\n');
+
+        for (let index = 0; index < chunks.length; index++) {
+            const chunkDict = chunks[index];
+            const systemInstruction = `Eres un categorizador determinista de datos maestros.
+Se te proporciona una lista finita y estricta de rubros con sus descripciones ("EL CUADERNO MAESTRO").
+
+[CUADERNO MAESTRO DE RUBROS ACTIVOS]
+${rubrosString}
+
+DIRECTIVAS ABSOLUTAS:
+1. Debes leer cada ítem del diccionario y asignarlo ÚNICAMENTE a un rubro del Cuaderno Maestro, basándote en la narrativa descriptiva.
+2. LIMITACIONES: NO TIENES AUTORIZACIÓN PARA INVENTAR UN RUBRO NUEVO NI DEFORMAR SU ESCRITURA. Usa exactamente el "[Nombre_Rubro]" especificado.
+3. EXCEPCIÓN DE FALLO CATASTRÓFICO: Si y sólo si el ítem no encaja bajo ningún criterio en ninguno de los rubros existentes de forma remota, devolverás EXACTAMENTE: "[NUEVO_RUBRO_PROPUESTO]: (Tu sugerencia corta de 1 a 3 palabras)". Esto pasará a auditoría humana.
+
+DICCIONARIO A EVALUAR (Chunk ${index + 1}/${chunks.length}):
+${JSON.stringify(chunkDict, null, 2)}
+
+Estructura de Salida OBLIGATORIA (Un objeto JSON estructurado cuyas llaves sean exactamente los índices numéricos pasados, y el valor un sub-objeto con "rubro" y "narrativa"):
+{
+  "0": { "rubro": "CONDIMENTOS" },
+  "1": { "rubro": "SEMILLAS" },
+  "2": { "rubro": "[NUEVO_RUBRO_PROPUESTO]: Limpieza", "narrativa": "Agrupa cloros, desinfectantes y afines al aseo." }
+}
+Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO A EVALUAR como llaves. Ninguna puede faltar.`;
+
+            let success = false;
+            let retries = 0;
+            const maxRetries = 2;
+
+            while (!success && retries <= maxRetries) {
+                try {
+                    const result = await model.generateContent(systemInstruction);
+                    let text = result.response.text();
+                    let extractedText = module.exports.extractJSONFromInference(text);
+                    
+                    let parsedObj = JSON.parse(extractedText);
+                    for (let key in parsedObj) {
+                        const numKey = parseInt(key);
+                        if (!isNaN(numKey) && dictionarySamples[numKey] !== undefined) {
+                            let obj = parsedObj[key];
+                            if (typeof obj === 'string') {
+                                finalMap[dictionarySamples[numKey]] = obj;
+                            } else if (obj && obj.rubro) {
+                                let valString = obj.rubro;
+                                if (obj.narrativa) {
+                                    valString += `|NARRATIVA|${obj.narrativa}`;
+                                }
+                                finalMap[dictionarySamples[numKey]] = valString;
+                            }
+                        }
+                    }
+                    success = true;
+                } catch(e) {
+                    retries++;
+                    console.warn(`[AI Service] Rate Limit en Caza-Rubros chunk ${index + 1}. Intento: ${retries}/${maxRetries}.`);
+                    if (retries > maxRetries) throw new Error(`Fallo en categorizar el Chunk ${index + 1}. Abortando para mantener consistencia.`);
+                    await new Promise(resolve => setTimeout(resolve, 3000 * retries));
+                }
+            }
+        }
+        
         return {
             translationMap: finalMap,
             dictionaryRef: dictionarySamples

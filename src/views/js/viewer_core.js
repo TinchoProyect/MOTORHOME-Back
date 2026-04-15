@@ -344,8 +344,12 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 // Backward compatibility & Virtual Columns support
                 let dataIdx;
                 
-                // [NEW] Omitir guardado en DB origen físico para Columnas Calculadas y Fantasmas:
-                if (vColId.startsWith('comp_') || vColId.startsWith('col_calc_') || vColId.startsWith('col_ph_')) continue;
+                // [V8 FIX] Omitir Columnas Calculadas y sus variantes de ID:
+                // - comp_* / col_calc_* → siempre son calculadas
+                // - col_ph_* → solo omitir si están registradas en computedColumns (fórmulas)
+                //   Los ghosts mapeados a campos maestros regulares (Marca, Rubro) SÍ deben persistirse.
+                if (vColId.startsWith('comp_') || vColId.startsWith('col_calc_')) continue;
+                if (vColId.startsWith('col_ph_') && window.computedColumns && window.computedColumns.find(c => c.id === vColId)) continue;
 
                 if (window.virtualColumns && window.virtualColumns.length > 0) {
                     const vCol = window.virtualColumns.find(v => v.id === vColId);

@@ -25,7 +25,9 @@ window.ViewerColumnInjector = {
         });
         
         const newDataIdx = maxDataIdx + 1;
-        const newColId = `col_ph_${Date.now()}`;
+        // [V9 FIX DETERMINISTA] Usar el dataIdx físico asegura que el ID de la columna
+        // sea inmutable durante la rehidratación o recarga, previniendo colisiones de reglas.
+        const newColId = `col_ph_${newDataIdx}`;
         
         // 2. Crear Columna Virtual "Placeholder" Física (Trata la nueva columna como dato orgánico)
         const newCol = {

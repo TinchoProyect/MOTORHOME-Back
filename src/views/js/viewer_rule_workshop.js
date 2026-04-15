@@ -419,13 +419,15 @@ export async function open(masterField, vColId, colName) {
     // Evaluamos si estrictamente estamos frente a una columna matemática/virtual (Virtual/Fantasma)
     const isComputedConfig = window.computedColumns && window.computedColumns.find(c => c.id === activeVColId);
     const isVirtualPlaceholder = window.virtualColumns && window.virtualColumns.find(c => c.id === activeVColId && (c.isGhostPlaceholder === true || c.isCalculated === true));
+    // [QA BUGFIX] Detección estructural: si el ID empieza con col_ph_, es un ghost por definición
+    // independientemente de si el flag isGhostPlaceholder sobrevivió los ciclos de serialización
+    const isGhostById = activeVColId && activeVColId.startsWith('col_ph_');
     
     // VIGÍA DE QA EXIGIDO
-    // (Alerta extraída por validación exitosa de Hotfix Arquitectónico)
-    console.error("🚨 VIGÍA DE ALERTA ROJA - DIAGNÓSTICO UI - Evaluando Columna:", activeVColId, {isComputedConfig, isVirtualPlaceholder, activeContext: window._activeComputedContext});
+    console.error("🚨 VIGÍA DE ALERTA ROJA - DIAGNÓSTICO UI - Evaluando Columna:", activeVColId, {isComputedConfig, isVirtualPlaceholder, isGhostById, activeContext: window._activeComputedContext});
 
     // Si la columna es Fantasma/Virtual -> Editor Matemático ON. Si es Nativa -> Editor OFF.
-    if (isComputedConfig || isVirtualPlaceholder || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId)) {
+    if (isComputedConfig || isVirtualPlaceholder || isGhostById || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId)) {
         switchToComputedMode();
     } else {
         switchToStandardMode();
@@ -439,6 +441,9 @@ export async function open(masterField, vColId, colName) {
     // Init AI Copilot UI dynamically (Cero Totem UI Injection)
     if (window.viewerAiUi && typeof window.viewerAiUi.init === 'function') {
         window.viewerAiUi.init();
+    } else {
+        if (window.originalConsoleLog) window.originalConsoleLog("🚨 VIGÍA DEPURADOR CRÍTICO: window.viewerAiUi NO EXISTE o init no es función. El archivo js pudo fallar su parseo inicial.");
+        if (typeof alert !== 'undefined') alert("🚨 VIGÍA DEPURADOR: El módulo Chofer IA no se exportó correctamente. Bloqueado en fase 0.");
     }
 
     // Trigger Preview Immediately
@@ -506,14 +511,19 @@ export function switchToComputedMode() {
                 // Op A es la primera de cualquier tipo (CLONE o Normal)
                 if (elA && compConfig.operands[0]) elA.value = compConfig.operands[0];
                 
-                if (compConfig.macro === 'CLONE') {
+                if (compConfig.macro === 'CLONE' || compConfig.macro === 'CLONE_SEMANTIC') {
                     // Si hay multiples origenes, recrear dropdowns y valorizarlos
                     for (let i = 1; i < compConfig.operands.length; i++) {
-                        if (window.addCloneSourceUI) window.addCloneSourceUI();
-                        // Al re-queryear tomará las dinamicas (y baseSel no cuenta en querySelectorAll en V8 normal, a menos que el codigo lo haya incluido. wait! calcFieldA SI tiene la clase)
-                        const allSelects = document.querySelectorAll('.calc-source-dyn');
-                        if (allSelects[i]) {
-                            allSelects[i].value = compConfig.operands[i];
+                        if (compConfig.macro === 'CLONE_SEMANTIC' && i === compConfig.operands.length - 1) {
+                            const elSemanticKey = document.getElementById('calcFieldSemanticKey');
+                            if (elSemanticKey) elSemanticKey.value = compConfig.operands[i];
+                        } else {
+                            if (window.addCloneSourceUI) window.addCloneSourceUI();
+                            // Al re-queryear tomará las dinamicas
+                            const allSelects = document.querySelectorAll('.calc-source-dyn');
+                            if (allSelects[i]) {
+                                allSelects[i].value = compConfig.operands[i];
+                            }
                         }
                     }
                 } else if (compConfig.operands.length === 2 && elB) {
@@ -1246,6 +1256,14 @@ export function applyMapping() {
         rules: [...currentDraftPipeline]
     };
 
+    // [V8] Consumir _isNewTemp al mapear — la columna ya tiene draftPipeline y no necesita inmunidad
+    if (window.virtualColumns) {
+        const vc = window.virtualColumns.find(c => c.id === activeContext.colIndex);
+        if (vc && vc._isNewTemp) {
+            delete vc._isNewTemp;
+        }
+    }
+
     console.log(`✅ [WORKSHOP] Mapeo guardado en RAM: Columna ${activeContext.colIndex} -> ${activeContext.masterField.nombre_campo}`);
 
     // Commit visual changes in the main Table (Header naming)
@@ -1254,6 +1272,12 @@ export function applyMapping() {
     }
 
     close();
+
+    // [V9 FIX] Sincronizar Caché Maestro Local ANTES de disparar guardados al backend o simulaciones
+    // Previene el bug donde el Simulador no ve las nuevas reglas porque lee un sheetConfigStore desfasado
+    if (typeof window.saveSheetState === 'function' && window.currentSheetName) {
+        window.saveSheetState(window.currentSheetName);
+    }
 
     console.log('🛑 [VIGÍA] Botón Enlazar clickeado');
     console.log('🛑 [VIGÍA] Verificando window.saveSimulationConfig: ', typeof window.saveSimulationConfig);

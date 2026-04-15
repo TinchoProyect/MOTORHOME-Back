@@ -2,6 +2,14 @@
 <html lang="es">
 
 <head>
+    <script src="js/network_sentinel.js"></script>
+    <script>
+        // VIGÍA DEPURADOR - SILENCIO DE RADIO EXTREMO (QA Req)
+        window.originalConsoleLog = console.log;
+        window.originalConsoleWarn = console.warn;
+        console.log = function() {};
+        console.warn = function() {};
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LAMDA | Terminal de Control de Distribución</title>
@@ -691,6 +699,7 @@
                                         class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-colors">
                                         <option value="PRICE_MINUS_DISCOUNT_PERCENT">Descuento (A - B%)</option>
                                         <option value="CLONE">Obtener de otra columna (Clonar A)</option>
+                                        <option value="CLONE_SEMANTIC">Fusión Semántica (IA / Caza-Rubros)</option>
                                     </select>
                                 </div>
                 
@@ -704,8 +713,19 @@
                                         <select id="calcFieldB" class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none"></select>
                                     </div>
                                 </div>
-                                <div id="cloneAddBtnContainer" class="hidden mt-1">
+                                <div id="cloneAddBtnContainer" class="hidden mt-1 pb-2">
                                     <button type="button" onclick="window.addCloneSourceUI && window.addCloneSourceUI()" class="px-2 py-1.5 bg-slate-900 border border-slate-700 hover:border-fuchsia-500/50 text-[10px] text-fuchsia-400 hover:text-fuchsia-300 rounded-lg transition-colors flex items-center gap-1 font-bold uppercase tracking-widest"><i data-lucide="plus" class="w-3 h-3"></i> Añadir origen cruzado</button>
+                                </div>
+                                
+                                <!-- BLOQUE EXCLUSIVO PARA FUSIÓN SEMÁNTICA (IDENTIDAD 1 A 1) -->
+                                <div id="calcMasterKeyContainer" class="hidden mt-1 pt-3 border-t border-slate-700/50 bg-slate-900/40 rounded-lg p-2 border-l border-l-orange-500/50">
+                                    <div class="space-y-1">
+                                        <label class="text-[10px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-1">
+                                            <i data-lucide="key" class="w-3 h-3"></i> Columna de Código (SKU)
+                                        </label>
+                                        <p class="text-[9px] text-slate-500 mb-2">Llave primaria requerida para Caza-Rubros y anclaje determinista.</p>
+                                        <select id="calcFieldSemanticKey" class="w-full bg-slate-950 border border-orange-500/30 focus:border-orange-500 rounded-lg px-2 py-2 text-xs text-orange-100 outline-none shadow-[0_0_10px_rgba(249,115,22,0.1)]"></select>
+                                    </div>
                                 </div>
                                     
                                     <div class="flex items-center gap-2 mt-2 py-1">

@@ -268,3 +268,63 @@ window.viewerLeftPanel = {
     init: initLeftPanel,
     toggle: togglePanel
 };
+
+// =========================================================================
+// 6. PRODUCCIÓN EXTERNA (Recipe Render)
+// =========================================================================
+window.addEventListener('ProductionDataReady', (e) => {
+    const data = e.detail;
+    const header = document.getElementById('vlpTabsHeader');
+    const content = document.getElementById('vlpTabsContent');
+    
+    // Purge logic dict UI and switch to Recipe mode
+    if (header && content) {
+        header.innerHTML = '<div class="px-4 py-3 text-[10px] font-black tracking-widest uppercase text-emerald-400 flex items-center gap-2"><i data-lucide="beaker" class="w-4 h-4 text-emerald-400"></i> RECETA DE PRODUCCIÓN</div>';
+        
+        content.innerHTML = `
+           <div class="p-4 space-y-4">
+               <div class="p-3 bg-slate-900 border border-emerald-500/30 rounded-xl relative overflow-hidden shadow-lg">
+                   <div class="absolute -top-2 -right-2 opacity-10 pointer-events-none"><i data-lucide="package-search" class="w-20 h-20 text-emerald-500"></i></div>
+                   <h4 class="text-[9px] uppercase text-emerald-500 font-bold tracking-widest mb-1 title-shadow">Artículo Vinculado</h4>
+                   <p class="text-xs text-slate-200 font-black tracking-wide">${data.articulo_nombre || data.articulo || 'Sin denominación'}</p>
+               </div>
+               
+               <h4 class="text-[10px] text-slate-400 font-bold uppercase tracking-widest border-b border-slate-700/50 pb-2 mb-2">Ingredientes Requeridos</h4>
+               <div class="space-y-2" id="vlpRecipeIngredients">
+                   <!-- Ingredients Dynamic Render -->
+               </div>
+               
+               <div class="p-3 bg-slate-950/80 border border-slate-800 rounded-lg text-center mt-4">
+                   <p class="text-[9px] text-slate-500 uppercase tracking-widest mb-1">Cálculo de Retorno</p>
+                   <p class="text-[10px] text-slate-400 italic">A la espera de ingreso de Kilos producidos para estipular merma final.</p>
+               </div>
+           </div>
+        `;
+        
+        const ingList = document.getElementById('vlpRecipeIngredients');
+        let mapped = data.ingredientes || data.receta || [];
+        
+        if (!Array.isArray(mapped) || mapped.length === 0) {
+            ingList.innerHTML = `<p class="text-[10px] text-slate-500 mt-4 text-center italic">Este artículo no posee una receta asignada o hubo un error de mapeo.</p>`;
+        } else {
+            mapped.forEach(ing => {
+                let stockVal = ing.stock !== undefined ? ing.stock : '0.00';
+                let propVal = ing.proporcion_kilo !== undefined ? `${ing.proporcion_kilo} Kg` : '0.00 Kg';
+                let nombreIng = ing.nombre || ing.insumo || 'Ingrediente Base';
+                
+                let el = document.createElement('div');
+                el.className = "flex flex-col p-3 bg-slate-800/60 border border-slate-700 rounded-lg hover:border-emerald-500/40 hover:bg-slate-800 transition-all shadow-sm";
+                el.innerHTML = `
+                    <p class="text-[11px] font-bold text-slate-200 uppercase truncate mb-3" title="${nombreIng}">${nombreIng}</p>
+                    <div class="flex justify-between items-center text-[10px] font-bold tracking-wide">
+                        <span class="text-amber-400 bg-amber-950/40 px-2.5 py-1 rounded border border-amber-500/20 tooltip" title="Stock actual en depósito central">📦 Depósito: ${stockVal}</span>
+                        <span class="text-emerald-400 bg-emerald-950/40 px-2.5 py-1 rounded border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.15)]">⚖️ Req/Kg: ${propVal}</span>
+                    </div>
+                `;
+                ingList.appendChild(el);
+            });
+        }
+        
+        if (window.lucide) window.lucide.createIcons();
+    }
+});

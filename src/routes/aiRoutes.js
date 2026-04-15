@@ -7,5 +7,6 @@ router.get('/health', aiController.healthCheck);
 router.post('/generate-etl-rule', aiController.generateRule);
 router.post('/refine-rule', aiController.refineRule);
 router.post('/discover-entities', aiController.discoverEntities);
+router.post('/categorize-rubros', aiController.categorizeRubros);
 
 module.exports = router;
