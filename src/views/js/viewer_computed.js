@@ -280,15 +280,20 @@ function saveComputedColumn(closeModal = true) {
     }
 
     // [QA BUGFIX DEFINITIVO] Limpiar el draftPipeline huérfano del ghost DESPUÉS de que
-    // applyMapping()/close() lo re-crearon. Si la columna convertida era un ghost (col_ph_),
-    // su pipeline ya no debe existir — la columna ahora vive en computedColumns.
+    // applyMapping()/close() lo re-crearon.
     if (window._activeComputedContext === null && window.draftPipelines) {
-        const savedId = window.computedColumns && window.computedColumns.length > 0
-            ? window.computedColumns[window.computedColumns.length - 1].id
+        const lastCompConfig = window.computedColumns && window.computedColumns.length > 0
+            ? window.computedColumns[window.computedColumns.length - 1]
             : null;
-        if (savedId && savedId.startsWith('col_ph_') && window.draftPipelines[savedId]) {
-            delete window.draftPipelines[savedId];
-            console.log(`🧹 [COMPUTED] Pipeline huérfano post-close '${savedId}' eliminado de draftPipelines`);
+        
+        if (lastCompConfig && lastCompConfig.id.startsWith('col_ph_')) {
+            const isTextMacro = (lastCompConfig.macro === 'CLONE' || lastCompConfig.macro === 'CLONE_SEMANTIC');
+            // FIX QA AMNESIA: Si es un texto o fusión semántica, la regla de transformación 
+            // (el diccionario generado por AST) DEBE vivir en draftPipelines. Solo eliminamos para cálculo duro.
+            if (!isTextMacro && window.draftPipelines[lastCompConfig.id]) {
+                delete window.draftPipelines[lastCompConfig.id];
+                console.log(`🧹 [COMPUTED] Pipeline huérfano matemático post-close '${lastCompConfig.id}' eliminado de draftPipelines`);
+            }
         }
     }
 

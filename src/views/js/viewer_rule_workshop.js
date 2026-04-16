@@ -1593,10 +1593,15 @@ async function promptCombineHashRule() {
 }
 
 // [V5.22 UI] Direct Injection API from AI Copilot (Headless)
-export async function createLocalRuleDirect(ruleObj) {
+export async function createLocalRuleDirect(ruleObj, clearFirst = false) {
     if (!ruleObj) return false;
     
     console.log(`🤖 [WORKSHOP] Chofer IA Inyectando regla generada:`, ruleObj);
+    
+    if (clearFirst) {
+        currentDraftPipeline.length = 0; // Se asegura destrucción pura de residuos (Falla 2 QA)
+    }
+    
     currentDraftPipeline.push({ ...ruleObj });
     renderPipeline();
     triggerPreview();

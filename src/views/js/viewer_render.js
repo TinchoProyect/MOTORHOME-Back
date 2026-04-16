@@ -9,7 +9,8 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
     let mathResult = 0;
     
     // [NUEVO CASO CLON] Manejo puramente de String, no matemático
-    if (calcConfig.macro === "CLONE") {
+    // Aceptamos CLONE_SEMANTIC para que el Módulo Caza-rubros (Chofer IA) no termine fundiéndose en 0,00 al parsear texto
+    if (calcConfig.macro === "CLONE" || calcConfig.macro === "CLONE_SEMANTIC") {
         let rawStringA = "";
         
         if (allOps && Array.isArray(allOps) && allOps.length > 0) {
@@ -490,6 +491,15 @@ function renderVirtualTable(originalData) {
                 let dataIdx = vCol.dataIdx;
                 let cellVal = row[dataIdx] !== undefined ? row[dataIdx] : '';
 
+                // [SchemaSanitizer] Cast Fuerte heredado del ColMapping
+                if (window.columnMapping && window.columnMapping[j] && window.masterDictionary && window.SchemaSanitizer) {
+                    const mappedType = window.columnMapping[j];
+                    const mObj = window.masterDictionary.find(m => String(m.id) === String(mappedType));
+                    if (mObj) {
+                        cellVal = window.SchemaSanitizer.cast(cellVal, mObj);
+                    }
+                }
+
                 const colWidth = window.currentColWidths && window.currentColWidths[j] ? window.currentColWidths[j] : 150;
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
 
@@ -660,10 +670,13 @@ function renderVirtualTable(originalData) {
 
                             // Allow processing if at least opA exists
                             if (opA) {
-                                // Bug Fix N°2: Check strict condition. If Preis Base is empty, Math FAILS (Returns NULL/Empty).
-                                const isOpAEmpty = (opA.clean === null || opA.clean === undefined || String(opA.clean).trim() === "");
+                                // Bug Fix N°2 & QA FIX: Check strict conditionals depending on Macro Type.
+                                const isCloneOp = (calcConfig.macro === "CLONE" || calcConfig.macro === "CLONE_SEMANTIC");
+                                const isOpAEmpty = isCloneOp 
+                                      ? (opA.raw === null || opA.raw === undefined || String(opA.raw).trim() === "")
+                                      : (opA.clean === null || opA.clean === undefined || String(opA.clean).trim() === "");
                                 
-                                if (isOpAEmpty && calcConfig.macro !== "CLONE") {
+                                if (isOpAEmpty && !isCloneOp) {
                                     resultDisplay = "<span class='text-fuchsia-500/50 italic text-[10px]'>Sin Base A</span>";
                                     cellClass += ' text-center';
                                 } else {
@@ -1690,17 +1703,22 @@ async function generatePreview(skipModal = false) {
             const searchInp = document.getElementById('simSearchInput');
             if (searchInp && state.query) searchInp.value = state.query;
             
-            if (state.query && state.query !== "") {
-                filterSimulationData();
-            } else {
-                renderSimulationTable(sanitizedData);
+            if (!skipModal) {
+                if (state.query && state.query !== "") {
+                    filterSimulationData();
+                } else {
+                    renderSimulationTable(sanitizedData);
+                }
             }
         } else {
-            renderSimulationTable(sanitizedData);
+            if (!skipModal) renderSimulationTable(sanitizedData);
         }
 
-        document.getElementById('simulationModal').classList.remove('hidden');
-        if (window.lucide) window.lucide.createIcons({ root: container });
+        // [UX FIX] Si es una invocación silenciosa (ej. Chofer IA sync), mantener en background
+        if (!skipModal) {
+             document.getElementById('simulationModal').classList.remove('hidden');
+             if (window.lucide) window.lucide.createIcons({ root: container });
+        }
 
         let validRowsCount = sanitizedData ? sanitizedData.filter(r => !r._rejectedSim).length : 0;
         let totalRowsCount = sanitizedData ? sanitizedData.length : 0;

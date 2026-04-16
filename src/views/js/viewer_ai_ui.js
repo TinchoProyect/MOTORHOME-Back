@@ -186,8 +186,54 @@ class ViewerAiUi {
     }
 
     async _buildUniqueSet(dataIdx, pipeline) {
+        // [UNIFICACIÓN ESTRUCTURAL] El Chofer IA deja de tener su propio motor de lectura en crudo.
+        // Forzamos la actualización silenciosa del Sandbox del Visor de Extracción
+        // para absorber todas las lógicas de limpieza, vacíos y flags de rechazo.
+        if (typeof window.generatePreview === 'function') {
+            try {
+                console.log("[Chofer IA] Pidiendo sincronización con la Tubería Central de Extracción...");
+                await window.generatePreview(true); // skipModal = true
+            } catch (e) {
+                console.warn("[Chofer IA] Warning al sincronizar con Extracción:", e);
+            }
+        }
+
         return new Promise((resolve) => {
-            const rawRows = window.currentSheetData.slice(1);
+            let rawRows = [];
+            
+            // Consumir EXCLUSIVAMENTE el array ya procesado o hacer fallback a crudo si falla el visor
+            if (window.currentSimData && Array.isArray(window.currentSimData)) {
+                 // Filtrar de raíz la basura detectada (Filas sin código, completamente vacías, etc.)
+                 rawRows = window.currentSimData.filter(row => !row._rejectedSim);
+                 console.log(`[Chofer IA - Sincronizado] Heredando ${rawRows.length} registros purificados desde el Visor de Extracción.`);
+            } else {
+                 const currentOffset = (window.currentOffset && typeof window.currentOffset.row === 'number') ? window.currentOffset.row : 0;
+                 rawRows = window.currentSheetData ? window.currentSheetData.slice(currentOffset + 1) : [];
+                 console.warn(`[Chofer IA - Alerta] Visor de Extracción inaccesible. Modo de lectura Cruda Fallback (${rawRows.length} registros).`);
+            }
+            
+            // Obtener Master Key Index (Resolución Determinista desde Virtual Column ID)
+            // calcFieldSemanticKey contiene un Virtual Column ID (ej. "col_0"),
+            // NO un UUID de campo maestro. Debemos resolver el dataIdx físico
+            // buscando esa columna virtual en window.virtualColumns.
+            let masterKeyDataIdx = null;
+            let masterFieldObj = null; // Para SchemaSanitizer
+            const elSemanticKey = document.getElementById('calcFieldSemanticKey');
+            if (elSemanticKey && elSemanticKey.value && window.virtualColumns) {
+                 const semanticVCol = window.virtualColumns.find(v => v.id === elSemanticKey.value);
+                 if (semanticVCol && semanticVCol.dataIdx !== undefined && semanticVCol.dataIdx !== null) {
+                     masterKeyDataIdx = semanticVCol.dataIdx;
+                 }
+                 // Resolver también el masterFieldObj para SchemaSanitizer
+                 if (window.draftPipelines && window.draftPipelines[elSemanticKey.value]) {
+                     const mfId = window.draftPipelines[elSemanticKey.value].masterField?.id;
+                     if (mfId && window.masterDictionary) {
+                         masterFieldObj = window.masterDictionary.find(m => String(m.id) === String(mfId));
+                     }
+                 }
+            }
+            console.log(`[Chofer IA - Guardián] masterKeyDataIdx=${masterKeyDataIdx}, masterField=${masterFieldObj?.nombre_campo || 'N/A'}, tipo_dato=${masterFieldObj?.tipo_dato || 'N/A'}`);
+
             const total = rawRows.length;
             const uniqueSet = new Set();
             const chunkSize = 5000;
@@ -196,6 +242,18 @@ class ViewerAiUi {
             const processChunk = () => {
                 const end = Math.min(i + chunkSize, total);
                 for (; i < end; i++) {
+                    if (masterKeyDataIdx !== null) {
+                        let mVal = String(rawRows[i][masterKeyDataIdx] || "").trim();
+                        
+                        // [SchemaSanitizer] Casteo Estricto desde la Definición del Maestro (ya resuelto arriba)
+                        if (window.SchemaSanitizer && masterFieldObj) {
+                             mVal = window.SchemaSanitizer.cast(mVal, masterFieldObj);
+                        }
+                        
+                        // Guardián Absolutista: Si el código está vacío, tiene espacios ocultos, o puros símbolos (ej. "-"), se aborta.
+                        if (!mVal || !/[a-zA-Z0-9]/.test(mVal)) continue;
+                    }
+
                     let val = "";
                     if (Array.isArray(dataIdx)) {
                         val = dataIdx.map(idx => String(rawRows[i][idx] || "").trim()).filter(v => v).join(" ");
@@ -207,11 +265,13 @@ class ViewerAiUi {
                     let effectiveVal = val;
                     if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
                         const mutateRs = window.viewerETL.transformCell(val, pipeline);
-                        
-                        if (this.incrementalMode) {
+                        // [FIX DELTA QA] Siempre usar modo incremental estricto (Delta vacío) para Caza-rubros
+                        if (this.incrementalMode || this.selectedRoute === 'caza-rubros') {
                             const outVal = String(mutateRs.display || mutateRs.result || "").trim();
+                            // El motor ETL (tras remediación previa) tira "" a lo no procesado.
+                            // Si outVal tiene texto (ej: "Conservas"), YA ESTÁ MAPTEADO y sale del Delta.
                             if (!mutateRs.rejected && outVal !== "") {
-                                continue; // Bypassed! Already successful
+                                continue; // ¡Cruce de PK superado! Delta bypassing
                             }
                         } else {
                             if (mutateRs.rejected) continue;
@@ -323,7 +383,48 @@ class ViewerAiUi {
             // FASE 2: Data Profiling Activo (Extracción Silente Completa)
             this._setStatus('Extrayendo Perfil...', 'working');
             
-                        // Inyectar GUI Loader Inmediato Bloqueante
+            const incrementalCheckbox = document.getElementById('vaiIncrementalMode');
+            this.incrementalMode = incrementalCheckbox ? incrementalCheckbox.checked : false;
+            
+            // [FIX MERGE LÓGICA] Decisión Dinámica de Operatividad
+            this._crystalizeMergeMode = true; // Safe merge por defecto
+            let bypassPipelineForAI = /CLONE_SEMANTIC/i.test(promptText) ? [] : state.pipeline;
+            
+            // Modal interceptor para Caza-Rubros
+            if ((this.selectedRoute === 'caza-rubros' || /caza-rubros/i.test(this.promptEl.value)) && window.Swal) {
+                // Suspender disablement un momento si eligen salir
+                const decision = await Swal.fire({
+                    title: 'Gestión de Extracción Semántica',
+                    html: '<p class="text-[13px] text-slate-300">Elija cómo desea que el Chofer procese los datos en esta ejecución.</p>',
+                    icon: 'question',
+                    background: '#0f172a',
+                    color: '#f8fafc',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: '<i data-lucide="filter" class="w-4 h-4"></i> Procesar solo Faltantes',
+                    denyButtonText: '<i data-lucide="refresh-cw" class="w-4 h-4"></i> Reprocesar Todo',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#059669',
+                    denyButtonColor: '#be123c',
+                    customClass: { confirmButton: 'flex items-center gap-2', denyButton: 'flex items-center gap-2' },
+                    didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
+                });
+
+                if (decision.isDismissed && decision.dismiss !== Swal.DismissReason.timer) {
+                    this.btnEl.disabled = false;
+                    return;
+                }
+
+                if (decision.isConfirmed) {
+                    this._crystalizeMergeMode = true;
+                    bypassPipelineForAI = state.pipeline; // Aplicar Delta estricto
+                } else if (decision.isDenied) {
+                    this._crystalizeMergeMode = false;
+                    bypassPipelineForAI = []; // Bypass destructivo de todo el pipeline anterior
+                }
+            }
+
+            // Loader visual re-ubicado DENTRO de la cadena de ejecución inquebrantable
             if (window.Swal) {
                 Swal.fire({
                     title: 'Despertando Chofer IA...',
@@ -335,14 +436,11 @@ class ViewerAiUi {
                 });
             }
 
-            const incrementalCheckbox = document.getElementById('vaiIncrementalMode');
-            this.incrementalMode = incrementalCheckbox ? incrementalCheckbox.checked : false;
+            const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, bypassPipelineForAI);
             
-            const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, state.pipeline);
-            
-                        if (uniqueDictionary.length === 0) {
+            if (uniqueDictionary.length === 0) {
                  if (window.Swal) Swal.close();
-                 throw new Error("La columna carece de datos parseables.");
+                 throw new Error("La columna carece de datos parseables bajo este contexto.");
             }
             
             // Update Overlay
@@ -428,7 +526,11 @@ class ViewerAiUi {
                 const clusterMap = responseData.cluster;
                 if (Object.keys(clusterMap).length === 0) throw new Error("La IA no detectó ninguna coincidencia.");
                 
-                await this._displayConsensusModal(clusterMap, promptText, vCol);
+                if (this.selectedRoute === 'caza-rubros' || /CLONE_SEMANTIC/i.test(promptText)) {
+                    await this._displaySemanticAuditTray(clusterMap, promptText, vCol);
+                } else {
+                    await this._displayConsensusModal(clusterMap, promptText, vCol);
+                }
 
             } else {
                 // === RUTA RÁPIDA: GENERATE ETL RULE (AST TRANSLATION) ===
@@ -1269,7 +1371,564 @@ class ViewerAiUi {
          }
          return { ...base, ...newObj };
     }
+
+    async _displaySemanticAuditTray(clusterMap, promptText, vCol) {
+        if (window.Swal && Swal.isVisible()) Swal.close();
+        this._setStatus('Construyendo Bandeja...', 'working');
+
+        // Obtener Lotes Maestros Oficiales (Evitar parches)
+        let rubrosOficiales = [];
+        try {
+            const backendUrl = (typeof window.CONFIG !== 'undefined' && window.CONFIG.BACKEND_URL) ? window.CONFIG.BACKEND_URL : 'http://localhost:5655';
+            const res = await fetch(`${backendUrl}/api/rubros`);
+            if (res.ok) {
+                const payload = await res.json();
+                rubrosOficiales = payload.data || [];
+            } else {
+                rubrosOficiales = [{nombre_rubro: "SEMILLAS"}, {nombre_rubro: "CONDIMENTOS"}, {nombre_rubro: "LÁCTEOS"}, {nombre_rubro: "OTROS"}];
+            }
+        } catch(e) {
+            rubrosOficiales = [{nombre_rubro: "SEMILLAS"}, {nombre_rubro: "CONDIMENTOS"}, {nombre_rubro: "LÁCTEOS"}, {nombre_rubro: "OTROS"}];
+        }
+
+        // Estado en Memoria (UI Tracker)
+        this.currentAuditState = {};
+        this.discardedItems = new Set();
+        for (const masterVal in clusterMap) {
+            this.currentAuditState[masterVal] = {
+                deleted: false,
+                items: [...clusterMap[masterVal]]
+            };
+        }
+
+        let existingTray = document.getElementById('semanticAuditTray');
+        if (existingTray) existingTray.remove();
+
+        const trayHtml = `
+        <div id="semanticAuditTray" class="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-xl flex flex-col p-6 shadow-[inset_0_0_100px_rgba(249,115,22,0.1)]">
+            <div class="flex items-center justify-between border-b border-orange-500/30 pb-4 mb-4 shrink-0">
+                <div>
+                    <h2 class="text-2xl font-black text-orange-400 flex items-center gap-2"><i data-lucide="scan-line" class="w-6 h-6"></i> Consola Semántica (Caza-Rubros)</h2>
+                    <p class="text-xs text-slate-400 mt-1 uppercase tracking-widest font-mono">Bandeja Jerárquica de Mapeo Determinista</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="satCancelBtn" class="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded font-bold transition">Cancelar</button>
+                    <button id="satSaveBtn" class="px-6 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded font-bold shadow-lg shadow-orange-900/50 transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled><i data-lucide="merge" class="w-4 h-4"></i> Cristalizar AST</button>
+                </div>
+            </div>
+
+            <!-- Toolbar Dinámica -->
+            <div class="flex items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800 mb-4 shrink-0">
+                <div class="flex items-center gap-4">
+                    <span class="text-xs text-slate-400 font-mono" id="satSelectionCounter">0 SKUs seleccionados</span>
+                    <div class="h-4 w-px bg-slate-700"></div>
+                    <select id="satTransferSelect" class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1.5 focus:border-orange-500 outline-none max-w-[200px]" onchange="if(window.viewerAiUi && window.viewerAiUi._checkEditRubroState) window.viewerAiUi._checkEditRubroState()">
+                        <option value="">-- Mover SKUs a Maestro Oficial... --</option>
+                        ${rubrosOficiales.map(r => `<option value="${r.nombre_rubro.replace(/"/g, '&quot;')}" data-id="${r.id || ''}" data-narrative="${(r.descripcion_narrativa || '').replace(/"/g, '&quot;')}">${r.nombre_rubro}</option>`).join('')}
+                    </select>
+                    <button onclick="window.viewerAiUi._openCreateRubroModal()" class="px-2 py-1.5 bg-emerald-900/30 hover:bg-emerald-600 border border-emerald-500/30 text-emerald-400 hover:text-white rounded text-xs transition shadow-lg shadow-emerald-900/20" title="Crear Nuevo Rubro Maestro (In-Line)"><i data-lucide="plus" class="w-3 h-3"></i></button>
+                    <button id="satEditRubroBtn" onclick="window.viewerAiUi._openEditRubroModal()" class="px-2 py-1.5 bg-sky-900/30 hover:bg-sky-600 border border-sky-500/30 text-sky-400 hover:text-white rounded text-xs transition shadow-lg shadow-sky-900/20 disabled:opacity-50" title="Editar Rubro Seleccionado (In-Line)" disabled><i data-lucide="edit-3" class="w-3 h-3"></i></button>
+                    <button id="satTransferBtn" class="px-3 py-1.5 bg-indigo-900/50 hover:bg-indigo-600 border border-indigo-500/30 text-indigo-300 hover:text-white rounded text-xs font-bold transition disabled:opacity-50 ml-1">Transferir</button>
+                </div>
+                <div>
+                    <button id="satDeleteBtn" class="px-3 py-1.5 bg-rose-900/30 hover:bg-rose-600 border border-rose-500/30 text-rose-400 hover:text-white rounded text-xs transition flex items-center gap-2 disabled:opacity-50"><i data-lucide="trash-2" class="w-3 h-3"></i> Desechar Elementos</button>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4" id="satAccordionContainer">
+                <!-- Se inyecta por JS -->
+            </div>
+        </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', trayHtml);
+        if(window.lucide) window.lucide.createIcons();
+
+        this._renderSemanticAuditTray();
+
+        // Eventos Globales de Toolbar
+        document.getElementById('satCancelBtn').onclick = () => {
+             document.getElementById('semanticAuditTray').remove();
+             this._setStatus('Descartado', 'success');
+        };
+
+        const getSelectedItems = () => {
+             const checks = document.querySelectorAll('.sat-raw-chk:checked');
+             return Array.from(checks).map(c => ({
+                 val: decodeURIComponent(c.value), // [FIX QA] Decodifica el string raw exacto preservando espacios/newlines
+                 master: c.getAttribute('data-master')
+             }));
+        };
+
+        // Evento Transferir
+        document.getElementById('satTransferBtn').onclick = () => {
+             const items = getSelectedItems();
+             const targetMaster = document.getElementById('satTransferSelect').value;
+             if (!targetMaster || items.length === 0) return;
+
+             // Modify Tracking State
+             if (!this.currentAuditState[targetMaster]) {
+                 this.currentAuditState[targetMaster] = { deleted: false, items: [] };
+             }
+             
+             items.forEach(it => {
+                 // Remueve del origin
+                 this.currentAuditState[it.master].items = this.currentAuditState[it.master].items.filter(x => x !== it.val);
+                 // Agrega al destino
+                 if (!this.currentAuditState[targetMaster].items.includes(it.val)) {
+                     this.currentAuditState[targetMaster].items.push(it.val);
+                 }
+             });
+
+             // Limpiar grupos vacíos
+             for(let m in this.currentAuditState) {
+                 if (this.currentAuditState[m].items.length === 0) delete this.currentAuditState[m];
+             }
+
+             document.getElementById('satTransferSelect').value = "";
+             this._renderSemanticAuditTray();
+        };
+
+        // Evento Desechar (Basura a RAM)
+        document.getElementById('satDeleteBtn').onclick = () => {
+             const items = getSelectedItems();
+             if(items.length === 0) return;
+             
+             items.forEach(it => {
+                 this.discardedItems.add(it.val);
+                 this.currentAuditState[it.master].items = this.currentAuditState[it.master].items.filter(x => x !== it.val);
+             });
+             for(let m in this.currentAuditState) {
+                 if (this.currentAuditState[m].items.length === 0) delete this.currentAuditState[m];
+             }
+             this._renderSemanticAuditTray();
+        };
+
+        // COMPILAR AST
+        const satSaveBtn = document.getElementById('satSaveBtn');
+        satSaveBtn.disabled = true; // [FIX UX SEGURIDAD] Disable by default
+        
+        satSaveBtn.onclick = async () => {
+             const finalMap = {};
+             let mappedCount = 0;
+             const masterSet = new Set();
+             
+             // [FIX QA] Constraint Determinista: Solo cristaliza los Clusters que el usuario tildó explícitamente
+             const checkedGlobally = Array.from(document.querySelectorAll('.sat-global-chk:checked')).map(chk => chk.getAttribute('data-master'));
+             
+             if (checkedGlobally.length === 0) {
+                 if (window.Swal) Swal.fire('Error', 'Debe seleccionar al menos un bloque consolidado para cristalizar.', 'warning');
+                 return;
+             }
+
+             for(const m in this.currentAuditState) {
+                 if(this.currentAuditState[m].deleted || !checkedGlobally.includes(m)) continue;
+                 this.currentAuditState[m].items.forEach(crudo => {
+                     finalMap[crudo] = m;
+                     masterSet.add(m);
+                     mappedCount++;
+                 });
+             }
+
+             if (mappedCount === 0) {
+                 if (window.Swal) Swal.fire('Vacío', 'No hay registros mapeados.', 'warning');
+                 return;
+             }
+
+             const logica = [];
+             
+             let mergedMap = { ...finalMap };
+             let mergedDiscarded = Array.from(this.discardedItems);
+
+             // [FIX LÓGICA MERGE] Unir de forma no destructiva si el usuario eligió Procesar Faltantes
+             if (this._crystalizeMergeMode) {
+                  let existingPipeline = null;
+                  if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+                       const actState = window.viewerRuleWorkshop.getActiveState();
+                       if (actState) existingPipeline = actState.pipeline;
+                  }
+                  
+                  if (existingPipeline) {
+                       const ruleArr = Array.isArray(existingPipeline) ? existingPipeline : [existingPipeline];
+                       ruleArr.forEach(r => {
+                           if (r.logica && Array.isArray(r.logica)) {
+                               r.logica.forEach(b => {
+                                   if (b.condicion && b.condicion.operador === 'IN_DICT_KEYS' && b.accion && b.accion.tipo_accion === 'DICTIONARY_REPLACE') {
+                                       mergedMap = { ...b.accion.valor, ...mergedMap };
+                                   }
+                                   if (b.condicion && b.condicion.operador === 'IN_LIST' && b.accion && b.accion.tipo_accion === 'DROP') {
+                                       mergedDiscarded = [...new Set([...(b.condicion.valor || []), ...mergedDiscarded])];
+                                   }
+                               });
+                           }
+                       });
+                       console.log(`[Chofer IA - Merge] Consolidando diccionarios semánticos. AST previos mapeados integrados.`);
+                  }
+             }
+
+             if (mergedDiscarded.length > 0) {
+                 logica.push({
+                      condicion: { operador: "IN_LIST", valor: mergedDiscarded },
+                      accion: { tipo_accion: "DROP", valor: null }
+                 });
+             }
+             
+             logica.push({
+                  condicion: { operador: "IN_DICT_KEYS", valor: mergedMap },
+                  accion: { tipo_accion: "DICTIONARY_REPLACE", valor: mergedMap }
+             });
+             
+             logica.push({
+                  condicion: { operador: "DEFAULT" },
+                  accion: this.incrementalMode ? { tipo_accion: "PASS" } : { tipo_accion: "SET_VALUE", valor: "" }
+             });
+
+             const aiRuleObj = {
+                 nombre_regla: `[IA] Caza Rubros: ${promptText}`,
+                 descripcion: `Validado por Auditoría (HITL V2-C). Relacionó ${mappedCount} sub-items -> ${masterSet.size} Clústeres Oficiales. Desechó ${this.discardedItems.size} ítems sucios.`,
+                 tipo: 'ast_conditional',
+                 logica: logica,
+                 fromAI: true
+             };
+
+             document.getElementById('semanticAuditTray').remove();
+             this._setStatus('Aterrizando AST Estructural...', 'working');
+
+             // [FIX QA 2] Inyección Visible y Sincronizada en el DOM del Taller.
+             // Para que no se pise la memoria al presionar "Guardar" en el Taller y para resolver 
+             // el "Type Casting" a 0,00 que sufría la persistencia por falta de regla activa.
+             if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+                 const destState = window.viewerRuleWorkshop.getActiveState();
+                 if (destState && destState.colIndex) {
+                     
+                     // Invocamos la API nativa con el flag clearFirst = true
+                     // Esto elimina la basura local y ancla visualmente la regla al UI.
+                     window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj, true);
+
+                     console.log(`🤖 [CHOFER] Regla Caza-Rubro Inyectada estructuralmente en la UI Activa (${destState.colIndex}).`);
+                     this._setStatus('Persistencia Sincronizada', 'success');
+
+                     // Trigger safe flush of Universal Views if headless
+                     if (!destState.isOpen && typeof window.triggerSafeRender === 'function') {
+                          window.triggerSafeRender();
+                     }
+
+                 } else {
+                     console.warn("🤖 [CHOFER] No hay contexto activo para inyectar Rubro.");
+                     if (window.Swal) Swal.fire('Contexto Perdido', 'Abra el Taller en la columna deseada antes de cristalizar.', 'error');
+                     this._setStatus('Error de Bind', 'error');
+                 }
+             } else {
+                 console.error("API Error - Workshop Desconectado");
+             }
+
+             this.promptEl.value = "";
+             if (this.selectedIntent) {
+                 this.selectedIntent = null;
+                 this.selectedRoute = null;
+                 document.querySelectorAll('.vai-quick-btn').forEach(b => {
+                     b.className = "vai-quick-btn px-2 py-1 bg-slate-800/80 hover:bg-slate-700/80 text-[10px] text-slate-400 hover:text-slate-200 border border-slate-700/50 hover:border-slate-500 rounded transition font-medium flex items-center";
+                 });
+             }
+        };
+    }
+
+    _renderSemanticAuditTray() {
+        const container = document.getElementById('satAccordionContainer');
+        if(!container) return;
+        
+        let html = '';
+        let groupIdx = 0;
+        
+        for (const masterVal in this.currentAuditState) {
+             const group = this.currentAuditState[masterVal];
+             if (group.deleted || group.items.length === 0) continue;
+             
+             let childrenHtml = group.items.map((val, idx) => {
+                 // [FIX QA] Proteger el string en el atributo DOM con encodeURIComponent para evitar su sanitización de espacios c.value DOM.
+                 const b64Val = encodeURIComponent(val);
+                 return `
+                 <div class="flex items-center gap-2 mb-1 pl-3 p-1 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition truncate">
+                     <input type="checkbox" id="sat_chk_${groupIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${b64Val}" class="sat-raw-chk form-checkbox h-3.5 w-3.5 text-orange-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
+                     <label for="sat_chk_${groupIdx}_${idx}" class="text-xs text-slate-400 cursor-pointer select-none font-mono tracking-tight">${val}</label>
+                 </div>
+                 `;
+             }).join('');
+
+             html += `
+             <div class="bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden shrink-0 shadow-lg" data-group-name="${masterVal.replace(/"/g, '&quot;')}">
+                 <div class="bg-slate-800 p-2 border-b border-slate-700/50 flex items-center justify-between hover:bg-slate-700/80 transition">
+                     <label class="flex items-center gap-2 cursor-pointer w-full" for="sat_global_${groupIdx}">
+                         <input type="checkbox" id="sat_global_${groupIdx}" class="sat-global-chk form-checkbox h-4 w-4 text-orange-500 rounded border-orange-500/50 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer" data-group="${groupIdx}" data-master="${masterVal.replace(/"/g, '&quot;')}">
+                         <span class="text-sm font-black text-orange-300 font-mono tracking-widest truncate pr-2 select-none flex items-center gap-2"><i data-lucide="layers" class="w-4 h-4 text-orange-500/50"></i> ${masterVal}</span>
+                     </label>
+                     <div class="flex items-center gap-2">
+                         <span class="text-xs bg-black/30 text-slate-300 px-2 py-0.5 rounded-full font-bold shadow-inner shrink-0 border border-white/5">${group.items.length} SKUs</span>
+                         <button class="sat-group-del bg-rose-900/20 hover:bg-rose-600 text-rose-500 hover:text-white p-1 rounded transition border border-rose-500/20" title="Desechar Grupo Mapeo" data-master="${masterVal.replace(/"/g, '&quot;')}">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                         </button>
+                     </div>
+                 </div>
+                 <div class="p-2 py-2 bg-slate-950/50 max-h-[250px] overflow-y-auto custom-scrollbar">
+                    ${childrenHtml}
+                 </div>
+             </div>
+             `;
+             groupIdx++;
+        }
+        
+        container.innerHTML = html;
+        if(window.lucide) window.lucide.createIcons({root: container});
+
+        // Sub-Eventos
+        const updateCounter = () => {
+            const checks = container.querySelectorAll('.sat-raw-chk:checked').length;
+            document.getElementById('satSelectionCounter').innerText = `${checks} SKUs seleccionados`;
+            const dis = checks === 0;
+            document.getElementById('satTransferBtn').disabled = dis;
+            document.getElementById('satDeleteBtn').disabled = dis;
+            
+            // [FIX UX SEGURIDAD] Activar Cristalizar solo si hay grupos maestros tildados explícitamente
+            const globalChecks = container.querySelectorAll('.sat-global-chk:checked').length;
+            const saveBtn = document.getElementById('satSaveBtn');
+            if(saveBtn) saveBtn.disabled = (globalChecks === 0);
+        };
+        
+        updateCounter(); // Force enforcement en el render inicial
+
+        // Master Checks
+        container.querySelectorAll('.sat-global-chk').forEach(chk => {
+            chk.onchange = (e) => {
+                const gIdx = e.target.getAttribute('data-group');
+                container.querySelectorAll(`.sat-raw-chk[id^="sat_chk_${gIdx}_"]`).forEach(c => c.checked = e.target.checked);
+                updateCounter();
+            };
+        });
+
+        // Individual Checks
+        container.querySelectorAll('.sat-raw-chk').forEach(chk => {
+            chk.onchange = () => updateCounter();
+        });
+
+        // Group Delete
+        container.querySelectorAll('.sat-group-del').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const m = btn.getAttribute('data-master');
+                this.currentAuditState[m].deleted = true;
+                this.currentAuditState[m].items.forEach(it => this.discardedItems.add(it));
+                this._renderSemanticAuditTray();
+            };
+        });
+        
+        updateCounter();
+    }
+    
+    async _openCreateRubroModal() {
+        const modalHtml = `
+        <div id="satCreateRubroModal" class="fixed inset-0 z-[10000] bg-slate-950/80 backdrop-blur flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md">
+                <h3 class="text-xl font-bold text-orange-400 mb-4 flex items-center gap-2"><i data-lucide="tag" class="w-5 h-5"></i> Crear Nuevo Rubro Maestro</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-slate-400 mb-1">Nombre del Rubro <span class="text-red-500">*</span></label>
+                    <input type="text" id="satNewRubroName" class="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded px-3 py-2 outline-none focus:border-orange-500" placeholder="Ej: FERRETERÍA">
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-slate-400 mb-1">Descripción Narrativa (Contexto Semántico) <span class="text-red-500">*</span></label>
+                    <textarea id="satNewRubroNarrative" rows="3" class="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded px-3 py-2 outline-none focus:border-orange-500" placeholder="Ej: Herramientas, clavos, tornillos, materiales de construcción..."></textarea>
+                </div>
+                
+                <div class="flex justify-end gap-3">
+                    <button onclick="document.getElementById('satCreateRubroModal').remove()" class="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded font-bold transition">Cancelar</button>
+                    <button id="satSubmitRubroBtn" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold shadow-lg shadow-emerald-900/50 transition">Crear y Usar</button>
+                </div>
+            </div>
+        </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        if(window.lucide) window.lucide.createIcons({root: document.getElementById('satCreateRubroModal')});
+        
+        document.getElementById('satSubmitRubroBtn').onclick = async () => {
+             const nombre_rubro = document.getElementById('satNewRubroName').value.trim();
+             const descripcion_narrativa = document.getElementById('satNewRubroNarrative').value.trim();
+             
+             if(!nombre_rubro || !descripcion_narrativa) {
+                 if(window.Swal) Swal.fire({icon: 'warning', title: 'Campos Incompletos', text: 'El Nombre y la Narrativa son obligatorios.', background: '#0f172a', color: '#f8fafc'});
+                 else alert('El Nombre y la Narrativa son obligatorios.');
+                 return;
+             }
+             
+             const btnEl = document.getElementById('satSubmitRubroBtn');
+             btnEl.disabled = true;
+             btnEl.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin inline mr-2"></i> Creando...`;
+             if(window.lucide) window.lucide.createIcons({root: document.getElementById('satCreateRubroModal')});
+             
+             try {
+                 const backendUrl = (typeof window.CONFIG !== 'undefined' && window.CONFIG.BACKEND_URL) ? window.CONFIG.BACKEND_URL : 'http://localhost:5655';
+                 const res = await fetch(`${backendUrl}/api/rubros`, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ nombre_rubro, descripcion_narrativa })
+                 });
+                 const data = await res.json();
+                 
+                 if(data.success) {
+                      // Recargar la lista de rubros dinámicamente
+                      const backendUrl = (typeof window.CONFIG !== 'undefined' && window.CONFIG.BACKEND_URL) ? window.CONFIG.BACKEND_URL : 'http://localhost:5655';
+                      const rubrosRes = await fetch(`${backendUrl}/api/rubros`);
+                      if(rubrosRes.ok) {
+                          const payload = await rubrosRes.json();
+                          const rubrosOficiales = payload.data || [];
+                          const selectEl = document.getElementById('satTransferSelect');
+                          if(selectEl) {
+                              selectEl.innerHTML = '<option value="">-- Mover SKUs a Maestro Oficial... --</option>' + 
+                                  rubrosOficiales.map(r => `<option value="${r.nombre_rubro.replace(/"/g, '&quot;')}">${r.nombre_rubro}</option>`).join('');
+                              
+                              // Auto-seleccionar el recién creado
+                              selectEl.value = nombre_rubro.replace(/"/g, '&quot;');
+                           }
+                      }
+                      
+                      document.getElementById('satCreateRubroModal').remove();
+                      if(window.Swal) Swal.fire({icon: 'success', title: 'Rubro Creado', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, background: '#0f172a', color: '#10b981'});
+                 } else {
+                      throw new Error(data.error || "Error al crear el Rubro");
+                 }
+             } catch(e) {
+                 console.error(e);
+                 if(window.Swal) Swal.fire({icon: 'error', title: 'Error In-Line', text: e.message, background: '#0f172a', color: '#f8fafc'});
+                 else alert('Error: ' + e.message);
+                 
+                 btnEl.disabled = false;
+                 btnEl.innerHTML = 'Crear y Usar';
+             }
+        };
+    }
+
+    _checkEditRubroState() {
+        const selectEl = document.getElementById('satTransferSelect');
+        const editBtn = document.getElementById('satEditRubroBtn');
+        if (selectEl && editBtn) {
+            const selectedOpt = selectEl.options[selectEl.selectedIndex];
+            const hasId = selectedOpt && selectedOpt.getAttribute('data-id') && selectedOpt.getAttribute('data-id') !== "";
+            editBtn.disabled = !hasId;
+        }
+    }
+
+    async _openEditRubroModal() {
+        const selectEl = document.getElementById('satTransferSelect');
+        if (!selectEl) return;
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        if (!selectedOpt || !selectedOpt.value) return;
+
+        const id = selectedOpt.getAttribute('data-id');
+        const currentName = selectedOpt.textContent || selectedOpt.value;
+        const currentNarrative = selectedOpt.getAttribute('data-narrative') || '';
+
+        if (!id) {
+            if(window.Swal) Swal.fire({icon: 'warning', title: 'Edición no permitida', text: 'El rubro seleccionado se creó estáticamente o no tiene ID.', background: '#0f172a', color: '#f8fafc'});
+            else alert("Rubro sin ID oficial");
+            return;
+        }
+
+        const modalHtml = `
+        <div id="satEditRubroModal" class="fixed inset-0 z-[10000] bg-slate-950/80 backdrop-blur flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md">
+                <h3 class="text-xl font-bold text-sky-400 mb-4 flex items-center gap-2"><i data-lucide="edit-3" class="w-5 h-5"></i> Editar Rubro Maestro</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-slate-400 mb-1">Nombre del Rubro <span class="text-red-500">*</span></label>
+                    <input type="text" id="satEditRubroName" class="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded px-3 py-2 outline-none focus:border-sky-500" value="${currentName.replace(/"/g, '&quot;')}">
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-slate-400 mb-1">Descripción Narrativa (Contexto Semántico) <span class="text-red-500">*</span></label>
+                    <textarea id="satEditRubroNarrative" rows="3" class="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded px-3 py-2 outline-none focus:border-sky-500">${currentNarrative.replace(/&quot;/g, '"')}</textarea>
+                </div>
+                
+                <div class="flex justify-end gap-3">
+                    <button onclick="document.getElementById('satEditRubroModal').remove()" class="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded font-bold transition">Cancelar</button>
+                    <button id="satSubmitEditRubroBtn" class="px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded font-bold shadow-lg shadow-sky-900/50 transition">Guardar Cambios</button>
+                </div>
+            </div>
+        </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        if(window.lucide) window.lucide.createIcons({root: document.getElementById('satEditRubroModal')});
+
+        document.getElementById('satSubmitEditRubroBtn').onclick = async () => {
+             const nombre_rubro = document.getElementById('satEditRubroName').value.trim();
+             const descripcion_narrativa = document.getElementById('satEditRubroNarrative').value.trim();
+             
+             if(!nombre_rubro || !descripcion_narrativa) {
+                 if(window.Swal) Swal.fire({icon: 'warning', title: 'Campos Incompletos', text: 'El Nombre y la Narrativa son obligatorios.', background: '#0f172a', color: '#f8fafc'});
+                 else alert('El Nombre y la Narrativa son obligatorios.');
+                 return;
+             }
+             
+             const btnEl = document.getElementById('satSubmitEditRubroBtn');
+             btnEl.disabled = true;
+             btnEl.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin inline mr-2"></i> Guardando...`;
+             if(window.lucide) window.lucide.createIcons({root: document.getElementById('satEditRubroModal')});
+             
+             try {
+                 const backendUrl = (typeof window.CONFIG !== 'undefined' && window.CONFIG.BACKEND_URL) ? window.CONFIG.BACKEND_URL : 'http://localhost:5655';
+                 const res = await fetch(`${backendUrl}/api/rubros/${id}`, {
+                     method: 'PUT',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ nombre_rubro, descripcion_narrativa })
+                 });
+                 const data = await res.json();
+                 
+                 if(data.success) {
+                      // Recargar la lista de rubros dinámicamente
+                      const backendUrl = (typeof window.CONFIG !== 'undefined' && window.CONFIG.BACKEND_URL) ? window.CONFIG.BACKEND_URL : 'http://localhost:5655';
+                      const rubrosRes = await fetch(`${backendUrl}/api/rubros`);
+                      if(rubrosRes.ok) {
+                          const payload = await rubrosRes.json();
+                          const rubrosOficiales = payload.data || [];
+                          const selectEl = document.getElementById('satTransferSelect');
+                          if(selectEl) {
+                              selectEl.innerHTML = '<option value="">-- Mover SKUs a Maestro Oficial... --</option>' + 
+                                  rubrosOficiales.map(r => `<option value="${r.nombre_rubro.replace(/"/g, '&quot;')}" data-id="${r.id || ''}" data-narrative="${(r.descripcion_narrativa || '').replace(/"/g, '&quot;')}">${r.nombre_rubro}</option>`).join('');
+                              
+                              // Re-seleccionar
+                              selectEl.value = nombre_rubro.replace(/"/g, '&quot;');
+                           }
+                      }
+                      
+                      document.getElementById('satEditRubroModal').remove();
+                      if(window.Swal) Swal.fire({icon: 'success', title: 'Rubro Actualizado', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, background: '#0f172a', color: '#10b981'});
+                 } else {
+                      throw new Error(data.error || "Error al actualizar el Rubro");
+                 }
+             } catch(e) {
+                 console.error(e);
+                 if(window.Swal) Swal.fire({icon: 'error', title: 'Error In-Line', text: e.message, background: '#0f172a', color: '#f8fafc'});
+                 else alert('Error: ' + e.message);
+                 
+                 btnEl.disabled = false;
+                 btnEl.innerHTML = 'Guardar Cambios';
+             }
+        };
+    }
 }
 const viewerAiUi = new ViewerAiUi();
 window.viewerAiUi = viewerAiUi;
+
+// Auto-Sincronización Transversal: Escucha los cambios del modal Gestor Central de Rubros
+document.addEventListener('lamda:rubros-updated', () => {
+    if (viewerAiUi.isConsoleActive || document.getElementById('aiSemanticOverlay')) {
+        // Si la UI AI está mínimamente activa, forzamos recarga sigilosa de los selectores.
+        if (typeof viewerAiUi._loadRubros === 'function') {
+            viewerAiUi._loadRubros();
+        }
+    }
+});
+
 export default viewerAiUi;

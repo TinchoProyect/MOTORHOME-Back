@@ -18,7 +18,45 @@ window.globalContext = {
     providerName: '',
     fileId: null,
     fileType: null,
-    timestamp: null
+};
+
+// --- 2.5 SCHEMA SANITIZER GLOBAL ---
+window.SchemaSanitizer = {
+    cast: function(val, masterFieldObj) {
+        if (!masterFieldObj || !masterFieldObj.tipo_dato) return val;
+        let sVal = String(val !== undefined && val !== null ? val : "").trim();
+        if (!sVal) return "";
+        
+        const tipo = String(masterFieldObj.tipo_dato).toUpperCase();
+        
+        // Reglas de Sanitización de Tipos Fuertes
+        switch(tipo) {
+            case "NUMERICO":
+            case "NUMÉRICO":
+            case "PRECIO":
+            case "MONEDA":
+                // Quitamos espacios y símbolos de moneda
+                let stripped = sVal.replace(/[$€\s\u00A0\u202F]/g, '');
+                // Si la cadena restante no tiene ni un solo número natural o separador decimal válido, es basura
+                if (!/^[0-9.,\-]+$/.test(stripped)) return "";
+                // Controlar si sigue siendo inparseable
+                let forParse = stripped.replace(/\./g, "").replace(",", ".");
+                if (isNaN(parseFloat(forParse))) return "";
+                return sVal; // Devolvemos el sVal original para que no se destrocen los decimales/formatos originales todavía
+
+            case "ALFANUMERICO":
+            case "ALFANUMÉRICO":
+            case "CODIGO":
+            case "SKU":
+                // Los códigos deben poseer inquebrantablemente al menos un dígito o una letra válida. No se admiten guiones vacíos.
+                if (!/[a-zA-Z0-9]/.test(sVal)) return "";
+                return sVal;
+                
+            default:
+                // Para tipos "TEXTO" o ausentes, dejamos pasar todo excepto un string full vacío
+                return sVal;
+        }
+    }
 };
 
 // --- 3. MAPPING & RULES STATE (Lógica de Negocio) ---
@@ -316,7 +354,8 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                 colWidths: window.currentColWidths || {},
                 config_visual: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
                 hiddenColumns: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {},
-                ghostCols: [] // [QA BUGFIX] Bloqueo innegociable de fuga de resaca de placeholders a DB
+                ghostCols: [], // [QA BUGFIX] Bloqueo innegociable de fuga de resaca de placeholders a DB
+                draftPipelines: window.draftPipelines || {} // [FIX PERSISTENCE] Exportación explícita del estado en-memoria (AST) para rehidratación V3
             }
         };
 
@@ -406,16 +445,25 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
 
         // 5. Success
         if (!silent) {
+            // [FIX UX] Evitar robar el foco / destruir modales abiertos (Swal Singleton rule)
             if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Configuración Guardada',
-                    text: hasPipelines ? 'Formato base y reglas ETL guardados exitosamente.' : 'Formato de encabezados guardado exitosamente.',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
+                if (!Swal.isVisible()) {
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: 'success',
+                        title: 'Configuración Guardada',
+                        text: hasPipelines ? 'Reglas ETL guardadas exitosamente.' : 'Formato de encabezados guardado.',
+                        timer: 2000,
+                        showConfirmButton: false,
+                        background: '#0f172a',
+                        color: '#f8fafc'
+                    });
+                } else {
+                    console.log("💿 (Autoguardado completado en segundo plano, modal ocupado)");
+                }
             } else {
-                alert("¡Configuración guardada exitosamente!");
+                console.log("¡Configuración guardada exitosamente!");
             }
         }
 

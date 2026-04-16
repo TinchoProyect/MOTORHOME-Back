@@ -98,6 +98,10 @@ class ViewerEtlAstParser {
             case "DROP":
                 return { result: "", handled: true, rejected: true };
                 
+            case "PASS":
+            case "BLANK":
+                return { result: "", handled: true, rejected: false }; // FIX: Prevents passthrough data leaks in unmapped rules
+                
             case "SET_VALUE":
                 return { result: action.valor !== undefined ? String(action.valor) : "", handled: true, rejected: false };
                 
@@ -119,12 +123,12 @@ class ViewerEtlAstParser {
                 return { result: m && m[0] ? m[0] : "", handled: true, rejected: !m };
                 
             case "DICTIONARY_REPLACE":
-                if (!action.valor || typeof action.valor !== 'object') return { result: val, handled: true, rejected: false };
+                if (!action.valor || typeof action.valor !== 'object') return { result: "", handled: true, rejected: false };
                 const keyToCheck = val.trim();
                 if (Object.prototype.hasOwnProperty.call(action.valor, keyToCheck)) {
                     return { result: action.valor[keyToCheck], handled: true, rejected: false };
                 }
-                return { result: val, handled: true, rejected: false };
+                return { result: "", handled: true, rejected: false }; // FIX: No leak definition
                 
             case "LOWERCASE":
                 return { result: val.toLowerCase(), handled: true, rejected: false };

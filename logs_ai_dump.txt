@@ -3162,3 +3162,35 @@ TEXT: {
     "139"
   ]
 }
+
+--- INTENTO 1 CHUNK 5 ---
+MSG: LLM Laziness Drop: Empaquetó solo 19 de 20 crudos. Dictamen Inválido.
+TEXT: {
+  "Pimienta": [80, 81, 82, 83, 84, 85, 86, 87, 88, 89],
+  "Pimentón": [91, 92],
+  "Perejil": [93, 98],
+  "Provenzal": [94, 95],
+  "Condimento para Pizza": [96],
+  "Condimento para Arroz": [97],
+  "Cebolla en Polvo": [99]
+}
+
+--- INTENTO 2 CHUNK 5 ---
+MSG: LLM Laziness Drop: Empaquetó solo 19 de 20 crudos. Dictamen Inválido.
+TEXT: {
+  "PIMIENTA": [80, 81, 82, 83, 84, 85, 86, 87, 88, 89],
+  "PIMENTON": [91, 92],
+  "PEREJIL": [93, 98],
+  "PROVENZAL": [94, 95],
+  "CONDIMENTO PARA PIZZA": [96],
+  "CONDIMENTO PARA ARROZ": [97],
+  "CEBOLLA EN POLVO": [99]
+}
+
+--- INTENTO 1 CHUNK 10 ---
+MSG: LLM Laziness Drop: Empaquetó solo 19 de 20 crudos. Dictamen Inválido.
+TEXT: {
+  "Frutas Secas y Frutos Secos": [180],
+  "Harinas Especiales": [181, 182, 183, 184, 185, 186, 187, 198],
+  "Especias": [189, 190, 191, 192, 193, 194, 195, 196, 197, 199]
+}
