@@ -521,6 +521,8 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
                                     valString += `|ARGUMENTO|${obj.argumentacion_ia}`;
                                 } else if (obj.narrativa) {
                                     valString += `|ARGUMENTO|${obj.narrativa}`;
+                                } else {
+                                    valString += `|ARGUMENTO|No se especificó argumentación para este cruce.`;
                                 }
                                 finalMap[dictionarySamples[numKey]] = valString;
                             }

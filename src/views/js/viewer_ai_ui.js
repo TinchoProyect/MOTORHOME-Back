@@ -1576,11 +1576,16 @@ class ViewerAiUi {
             rubrosOficiales = [{nombre_rubro: "SEMILLAS"}, {nombre_rubro: "CONDIMENTOS"}, {nombre_rubro: "LÁCTEOS"}, {nombre_rubro: "OTROS"}];
         }
 
-        // Estado en Memoria (UI Tracker)
-        this.currentAuditState = {};
+        // Estado en Memoria (UI Tracker Dual-State)
+        this.sourceAuditState = {};
+        this.confirmedState = {};
         this.discardedItems = new Set();
+        this.satCheckedItems = new Set();
+        this.satGlobalChecked = new Set();
+        
         for (const masterVal in clusterMap) {
-            this.currentAuditState[masterVal] = {
+            // Se inyecta la inferencia en state de "Origen" o pendientes
+            this.sourceAuditState[masterVal] = {
                 deleted: false,
                 items: [...clusterMap[masterVal]]
             };
@@ -1607,7 +1612,7 @@ class ViewerAiUi {
                 <div class="flex items-center gap-4">
                     <span class="text-xs text-slate-400 font-mono" id="satSelectionCounter">0 SKUs seleccionados</span>
                     <div class="h-4 w-px bg-slate-700"></div>
-                    <select id="satTransferSelect" class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1.5 focus:border-orange-500 outline-none max-w-[200px]" onchange="if(window.viewerAiUi && window.viewerAiUi._checkEditRubroState) window.viewerAiUi._checkEditRubroState()">
+                    <select id="satTransferSelect" class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1.5 focus:border-orange-500 outline-none max-w-[200px]">
                         <option value="">-- Mover SKUs a Maestro Oficial... --</option>
                         ${rubrosOficiales.map(r => `<option value="${r.nombre_rubro.replace(/"/g, '&quot;')}" data-id="${r.id || ''}" data-narrative="${(r.descripcion_narrativa || '').replace(/"/g, '&quot;')}">${r.nombre_rubro}</option>`).join('')}
                     </select>
@@ -1620,9 +1625,19 @@ class ViewerAiUi {
                 </div>
             </div>
 
-            <!-- Content Area -->
-            <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4" id="satAccordionContainer">
-                <!-- Se inyecta por JS -->
+            <!-- Content Area (Dual Panel) -->
+            <div class="flex-1 flex flex-col min-h-0 space-y-4">
+                <!-- PANEL: Pendientes -->
+                <div class="flex flex-col h-1/2 bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden shrink-0 shadow-lg" style="height: calc(50% - 0.5rem);">
+                    <div class="bg-indigo-950/50 p-2 text-[10px] uppercase tracking-widest font-black text-indigo-400 border-b border-indigo-500/20 shrink-0"><i data-lucide="list-tree" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Sugerencias del Chofer IA (Pendientes de Asignación)</div>
+                    <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3" id="satSourceContainer"></div>
+                </div>
+                
+                <!-- PANEL: Confirmados -->
+                <div class="flex flex-col h-1/2 bg-slate-900 border border-orange-500/50 rounded-lg overflow-hidden shrink-0 shadow-[0_0_15px_rgba(249,115,22,0.1)] relative" style="height: calc(50% - 0.5rem);">
+                    <div class="bg-orange-950/50 p-2 text-[10px] uppercase tracking-widest font-black text-orange-400 border-b border-orange-500/20 shrink-0"><i data-lucide="inbox" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Bandeja Abierta (Confirmados listos para Cristalizar)</div>
+                    <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3 relative" id="satConfirmedContainer"></div>
+                </div>
             </div>
         </div>
         `;
@@ -1646,32 +1661,41 @@ class ViewerAiUi {
              }));
         };
 
-        // Evento Transferir
+        // Evento Transferir (POP & PUSH)
         document.getElementById('satTransferBtn').onclick = () => {
              const items = getSelectedItems();
              const targetMaster = document.getElementById('satTransferSelect').value;
-             if (!targetMaster || items.length === 0) return;
+             if (!targetMaster) {
+                 if (window.Swal) Swal.fire('Error', 'Debe elegir un Rubro Maestro de destino en el desplegable.', 'warning');
+                 return;
+             }
+             if (items.length === 0) return;
 
-             // Modify Tracking State
-             if (!this.currentAuditState[targetMaster]) {
-                 this.currentAuditState[targetMaster] = { deleted: false, items: [] };
+             // Modificamos estado Destino (Confirmed)
+             if (!this.confirmedState[targetMaster]) {
+                 this.confirmedState[targetMaster] = { items: [] };
              }
              
              items.forEach(it => {
-                 // Remueve del origin
-                 this.currentAuditState[it.master].items = this.currentAuditState[it.master].items.filter(x => x !== it.val);
-                 // Agrega al destino
-                 if (!this.currentAuditState[targetMaster].items.includes(it.val)) {
-                     this.currentAuditState[targetMaster].items.push(it.val);
+                 // Remueve de Source iterando todas las llaves posibles
+                 for (const m in this.sourceAuditState) {
+                     this.sourceAuditState[m].items = this.sourceAuditState[m].items.filter(x => x !== it.val);
                  }
+                 // Agrega a destino
+                 if (!this.confirmedState[targetMaster].items.includes(it.val)) {
+                     this.confirmedState[targetMaster].items.push(it.val);
+                 }
+                 // Borra de estados seleccionados
+                 this.satCheckedItems.delete(encodeURIComponent(it.val));
              });
 
              // Limpiar grupos vacíos
-             for(let m in this.currentAuditState) {
-                 if (this.currentAuditState[m].items.length === 0) delete this.currentAuditState[m];
+             for(let m in this.sourceAuditState) {
+                 if (this.sourceAuditState[m].items.length === 0) delete this.sourceAuditState[m];
              }
 
              document.getElementById('satTransferSelect').value = "";
+             this.satGlobalChecked.clear();
              this._renderSemanticAuditTray();
         };
 
@@ -1682,11 +1706,15 @@ class ViewerAiUi {
              
              items.forEach(it => {
                  this.discardedItems.add(it.val);
-                 this.currentAuditState[it.master].items = this.currentAuditState[it.master].items.filter(x => x !== it.val);
+                 for (const m in this.sourceAuditState) {
+                     this.sourceAuditState[m].items = this.sourceAuditState[m].items.filter(x => x !== it.val);
+                 }
+                 this.satCheckedItems.delete(encodeURIComponent(it.val));
              });
-             for(let m in this.currentAuditState) {
-                 if (this.currentAuditState[m].items.length === 0) delete this.currentAuditState[m];
+             for(let m in this.sourceAuditState) {
+                 if (this.sourceAuditState[m].items.length === 0) delete this.sourceAuditState[m];
              }
+             this.satGlobalChecked.clear();
              this._renderSemanticAuditTray();
         };
 
@@ -1698,26 +1726,19 @@ class ViewerAiUi {
              const finalMap = {};
              let mappedCount = 0;
              const masterSet = new Set();
-             
-             // [FIX QA] Constraint Determinista: Solo cristaliza los Clusters que el usuario tildó explícitamente
-             const checkedGlobally = Array.from(document.querySelectorAll('.sat-global-chk:checked')).map(chk => chk.getAttribute('data-master'));
-             
-             if (checkedGlobally.length === 0) {
-                 if (window.Swal) Swal.fire('Error', 'Debe seleccionar al menos un bloque consolidado para cristalizar.', 'warning');
-                 return;
-             }
-
-             for(const m in this.currentAuditState) {
-                 if(this.currentAuditState[m].deleted || !checkedGlobally.includes(m)) continue;
-                 this.currentAuditState[m].items.forEach(crudo => {
-                     finalMap[crudo] = m;
-                     masterSet.add(m);
-                     mappedCount++;
-                 });
+             // [CRITICAL UX FIX] Compilador lee exclusivamente el ConfirmedState.
+             for(const m in this.confirmedState) {
+                 if(this.confirmedState[m].items.length > 0) {
+                     this.confirmedState[m].items.forEach(crudo => {
+                         finalMap[crudo] = m;
+                         masterSet.add(m);
+                         mappedCount++;
+                     });
+                 }
              }
 
              if (mappedCount === 0) {
-                 if (window.Swal) Swal.fire('Vacío', 'No hay registros mapeados.', 'warning');
+                 if (window.Swal) Swal.fire('Bandeja Vacía', 'Debe transferir artículos a la bandeja confirmada.', 'warning');
                  return;
              }
 
@@ -1820,100 +1841,172 @@ class ViewerAiUi {
     }
 
     _renderSemanticAuditTray() {
-        const container = document.getElementById('satAccordionContainer');
-        if(!container) return;
+        const sourceContainer = document.getElementById('satSourceContainer');
+        const confirmedContainer = document.getElementById('satConfirmedContainer');
+        if(!sourceContainer || !confirmedContainer) return;
         
-        let html = '';
-        let groupIdx = 0;
+        // --- 1. RENDER SOURCE PANEL ---
+        let sourceHtml = '';
+        let sourceGroupIdx = 0;
         
-        for (const masterVal in this.currentAuditState) {
-             const group = this.currentAuditState[masterVal];
+        for (const masterVal in this.sourceAuditState) {
+             const group = this.sourceAuditState[masterVal];
              if (group.deleted || group.items.length === 0) continue;
              
              let childrenHtml = group.items.map((val, idx) => {
-                 // [FIX QA] Proteger el string en el atributo DOM con encodeURIComponent para evitar su sanitización de espacios c.value DOM.
                  const b64Val = encodeURIComponent(val);
                  const argInfo = this.argumentationMap && this.argumentationMap[val] 
-                     ? `<i data-lucide="info" class="w-3.5 h-3.5 text-sky-400 hover:text-sky-300 ml-2 shrink-0 cursor-help" title="Justificación IA:\n${this.argumentationMap[val].replace(/"/g, '&quot;')}"></i>` 
+                     ? `<span title="Justificación IA:\n${this.argumentationMap[val].replace(/"/g, '&quot;')}"><i data-lucide="info" class="w-3.5 h-3.5 text-sky-400 hover:text-sky-300 ml-2 shrink-0 cursor-help"></i></span>` 
                      : '';
                  return `
                  <div class="flex items-center justify-between mb-1 pl-3 p-1 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
                      <div class="flex items-center gap-2 truncate">
-                         <input type="checkbox" id="sat_chk_${groupIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${b64Val}" class="sat-raw-chk form-checkbox h-3.5 w-3.5 text-orange-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer mt-0.5">
-                         <label for="sat_chk_${groupIdx}_${idx}" class="text-xs text-slate-400 cursor-pointer select-none font-mono tracking-tight truncate" title="${val.replace(/"/g, '&quot;')}">${val}</label>
+                         <input type="checkbox" id="sat_chk_${sourceGroupIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${b64Val}" class="sat-raw-chk form-checkbox h-3.5 w-3.5 text-indigo-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer mt-0.5" ${this.satCheckedItems && this.satCheckedItems.has(b64Val) ? 'checked' : ''}>
+                         <label for="sat_chk_${sourceGroupIdx}_${idx}" class="text-xs text-slate-400 cursor-pointer select-none font-mono tracking-tight truncate" title="${val.replace(/"/g, '&quot;')}">${val}</label>
                      </div>
                      ${argInfo}
                  </div>
                  `;
              }).join('');
 
-             html += `
-             <div class="bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden shrink-0 shadow-lg" data-group-name="${masterVal.replace(/"/g, '&quot;')}">
+             sourceHtml += `
+             <div class="bg-slate-800/50 border border-slate-700/30 rounded overflow-hidden shrink-0">
                  <div class="bg-slate-800 p-2 border-b border-slate-700/50 flex items-center justify-between hover:bg-slate-700/80 transition">
-                     <label class="flex items-center gap-2 cursor-pointer w-full" for="sat_global_${groupIdx}">
-                         <input type="checkbox" id="sat_global_${groupIdx}" class="sat-global-chk form-checkbox h-4 w-4 text-orange-500 rounded border-orange-500/50 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer" data-group="${groupIdx}" data-master="${masterVal.replace(/"/g, '&quot;')}">
-                         <span class="text-sm font-black text-orange-300 font-mono tracking-widest truncate pr-2 select-none flex items-center gap-2"><i data-lucide="layers" class="w-4 h-4 text-orange-500/50"></i> ${masterVal}</span>
+                     <label class="flex items-center gap-2 cursor-pointer w-full" for="sat_global_${sourceGroupIdx}">
+                         <input type="checkbox" id="sat_global_${sourceGroupIdx}" class="sat-global-chk form-checkbox h-4 w-4 text-indigo-500 rounded border-indigo-500/50 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer" data-group="${sourceGroupIdx}" data-master="${masterVal.replace(/"/g, '&quot;')}" ${this.satGlobalChecked && this.satGlobalChecked.has(masterVal) ? 'checked' : ''}>
+                         <span class="text-sm font-black text-indigo-300 font-mono tracking-widest truncate pr-2 select-none flex items-center gap-2"><i data-lucide="sparkles" class="w-4 h-4 text-indigo-500/50"></i> ${masterVal}</span>
                      </label>
                      <div class="flex items-center gap-2">
                          <span class="text-xs bg-black/30 text-slate-300 px-2 py-0.5 rounded-full font-bold shadow-inner shrink-0 border border-white/5">${group.items.length} SKUs</span>
-                         <button class="sat-group-del bg-rose-900/20 hover:bg-rose-600 text-rose-500 hover:text-white p-1 rounded transition border border-rose-500/20" title="Desechar Grupo Mapeo" data-master="${masterVal.replace(/"/g, '&quot;')}">
-                            <i data-lucide="trash-2" class="w-3 h-3"></i>
-                         </button>
                      </div>
                  </div>
-                 <div class="p-2 py-2 bg-slate-950/50 max-h-[250px] overflow-y-auto custom-scrollbar">
+                 <div class="p-2 py-2 bg-slate-950/50">
                     ${childrenHtml}
                  </div>
              </div>
              `;
-             groupIdx++;
+             sourceGroupIdx++;
         }
         
-        container.innerHTML = html;
-        if(window.lucide) window.lucide.createIcons({root: container});
+        if (sourceHtml === '') {
+             sourceHtml = `<div class="flex items-center justify-center p-8 text-slate-500 text-xs font-mono"><i data-lucide="check-circle" class="w-4 h-4 mr-2"></i> No hay ítems pendientes de curaduría.</div>`;
+        }
+        sourceContainer.innerHTML = sourceHtml;
+
+        // --- 2. RENDER CONFIRMED PANEL ---
+        let confirmedHtml = '';
+        let confGroupIdx = 0;
+        let confirmedCount = 0;
+        
+        for (const masterVal in this.confirmedState) {
+             const group = this.confirmedState[masterVal];
+             if (group.items.length === 0) continue;
+             confirmedCount += group.items.length;
+             
+             let childrenHtml = group.items.map((val, idx) => {
+                 const b64Val = encodeURIComponent(val);
+                 const argInfo = this.argumentationMap && this.argumentationMap[val] 
+                     ? `<span title="Justificación IA:\n${this.argumentationMap[val].replace(/"/g, '&quot;')}"><i data-lucide="info" class="w-3.5 h-3.5 text-sky-400 hover:text-sky-300 ml-2 shrink-0 cursor-help"></i></span>` 
+                     : '';
+                 return `
+                 <div class="flex items-center justify-between mb-1 pl-3 p-1 border-l-2 border-orange-700/50 hover:bg-slate-800 transition group">
+                     <span class="text-xs text-orange-100 font-mono tracking-tight truncate flex-1 block overflow-hidden text-ellipsis whitespace-nowrap min-w-0" title="${val.replace(/"/g, '&quot;')}">${val}</span>
+                     <div class="flex items-center gap-2 shrink-0 ml-2">
+                         ${argInfo}
+                         <button class="sat-item-restore opacity-0 group-hover:opacity-100 bg-rose-900/30 hover:bg-rose-600 text-rose-500 hover:text-white p-0.5 rounded transition" title="Quitar de la bandeja y devolver a Pendientes" data-master="${masterVal.replace(/"/g, '&quot;')}" data-val="${b64Val}">
+                             <i data-lucide="x" class="w-3 h-3"></i>
+                         </button>
+                     </div>
+                 </div>
+                 `;
+             }).join('');
+
+             confirmedHtml += `
+             <div class="bg-orange-950/20 border border-orange-500/30 rounded overflow-hidden shrink-0">
+                 <div class="bg-orange-900/40 p-2 border-b border-orange-500/30 flex items-center justify-between">
+                     <span class="text-sm font-black text-white font-mono tracking-widest truncate pr-2 flex items-center gap-2"><i data-lucide="check-circle-2" class="w-4 h-4 text-orange-400"></i> ${masterVal}</span>
+                     <span class="text-xs bg-black/50 text-orange-200 px-2 py-0.5 rounded-full font-bold shadow-inner shrink-0 border border-orange-500/20">${group.items.length} SKUs Confirmados</span>
+                 </div>
+                 <div class="p-2 py-2 bg-slate-950/80">
+                    ${childrenHtml}
+                 </div>
+             </div>
+             `;
+             confGroupIdx++;
+        }
+        
+        if (confirmedHtml === '') {
+             confirmedHtml = `<div class="absolute inset-0 flex flex-col items-center justify-center text-orange-500/50 pt-8" style="pointer-events:none;"><i data-lucide="inbox" class="w-12 h-12 mb-3 opacity-20"></i><span class="text-xs font-mono font-bold">BANDEJA VACÍA</span><p class="text-[10px] text-orange-500/30 w-1/2 text-center mt-1">Transfiere ítems desde la bandeja superior para cristalizarlos.</p></div>`;
+        }
+        confirmedContainer.innerHTML = confirmedHtml;
+        
+        if(window.lucide) {
+            window.lucide.createIcons({root: sourceContainer});
+            window.lucide.createIcons({root: confirmedContainer});
+        }
 
         // Sub-Eventos
         const updateCounter = () => {
-            const checks = container.querySelectorAll('.sat-raw-chk:checked').length;
+            const checks = sourceContainer.querySelectorAll('.sat-raw-chk:checked').length;
             document.getElementById('satSelectionCounter').innerText = `${checks} SKUs seleccionados`;
             const dis = checks === 0;
             document.getElementById('satTransferBtn').disabled = dis;
             document.getElementById('satDeleteBtn').disabled = dis;
             
-            // [FIX UX SEGURIDAD] Activar Cristalizar solo si hay grupos maestros tildados explícitamente
-            const globalChecks = container.querySelectorAll('.sat-global-chk:checked').length;
+            // Validador AST Final (Se habilita basado en Contenidos Confirmados)
             const saveBtn = document.getElementById('satSaveBtn');
-            if(saveBtn) saveBtn.disabled = (globalChecks === 0);
+            if(saveBtn) saveBtn.disabled = (confirmedCount === 0);
         };
         
-        updateCounter(); // Force enforcement en el render inicial
+        updateCounter();
 
-        // Master Checks
-        container.querySelectorAll('.sat-global-chk').forEach(chk => {
+        // Checkboxes Source Logic
+        sourceContainer.querySelectorAll('.sat-raw-chk').forEach(chk => {
             chk.onchange = (e) => {
-                const gIdx = e.target.getAttribute('data-group');
-                container.querySelectorAll(`.sat-raw-chk[id^="sat_chk_${gIdx}_"]`).forEach(c => c.checked = e.target.checked);
+                if (e.target.checked) this.satCheckedItems.add(e.target.value);
+                else this.satCheckedItems.delete(e.target.value);
                 updateCounter();
             };
         });
 
-        // Individual Checks
-        container.querySelectorAll('.sat-raw-chk').forEach(chk => {
-            chk.onchange = () => updateCounter();
+        sourceContainer.querySelectorAll('.sat-global-chk').forEach(chk => {
+            chk.onchange = (e) => {
+                const gIdx = e.target.getAttribute('data-group');
+                const mVal = e.target.getAttribute('data-master');
+                const isChecked = e.target.checked;
+                
+                if (isChecked) this.satGlobalChecked.add(mVal);
+                else this.satGlobalChecked.delete(mVal);
+                
+                sourceContainer.querySelectorAll(`.sat-raw-chk[id^="sat_chk_${gIdx}_"]`).forEach(c => {
+                    c.checked = isChecked;
+                    if (isChecked) this.satCheckedItems.add(c.value);
+                    else this.satCheckedItems.delete(c.value);
+                });
+                updateCounter();
+            };
         });
 
-        // Group Delete
-        container.querySelectorAll('.sat-group-del').forEach(btn => {
+        // Restore Items Logic (From Confirmed back to Source)
+        confirmedContainer.querySelectorAll('.sat-item-restore').forEach(btn => {
             btn.onclick = (e) => {
-                e.stopPropagation();
-                const m = btn.getAttribute('data-master');
-                this.currentAuditState[m].deleted = true;
-                this.currentAuditState[m].items.forEach(it => this.discardedItems.add(it));
+                const master = e.currentTarget.getAttribute('data-master');
+                const val = decodeURIComponent(e.currentTarget.getAttribute('data-val'));
+                
+                // Remueve de confirmed
+                this.confirmedState[master].items = this.confirmedState[master].items.filter(x => x !== val);
+                
+                // Agrega a source ("Restituidos" si no recordamos rubro orginal)
+                if (!this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"]) {
+                    this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"] = { deleted: false, items: [] };
+                }
+                if (!this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"].items.includes(val)) {
+                    this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"].items.push(val);
+                }
+                
                 this._renderSemanticAuditTray();
             };
         });
-        
-        updateCounter();
     }
     
     async _openCreateRubroModal() {
