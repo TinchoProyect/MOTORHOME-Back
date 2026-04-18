@@ -973,6 +973,7 @@ async function renderCacheMissGatillo(container) {
     if (physicalIdx === null || physicalIdx === undefined) return;
     
     let codeDataIdx = -1;
+    let codePipeline = [];
     if (window.virtualColumns && window.draftPipelines) {
         for (const vCol of window.virtualColumns) {
             const draft = window.draftPipelines[vCol.id];
@@ -980,6 +981,7 @@ async function renderCacheMissGatillo(container) {
                 const lowerName = String(draft.masterField.nombre_campo || "").toLowerCase().trim();
                 if (lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku') {
                     codeDataIdx = vCol.dataIdx;
+                    codePipeline = draft.rules || [];
                     break;
                 }
             }
@@ -992,6 +994,13 @@ async function renderCacheMissGatillo(container) {
         if (codeDataIdx >= 0) {
             let skuVal = resolveRawValueForRow(row, codeDataIdx);
             if (!skuVal || !String(skuVal).trim()) continue;
+            
+            if (window.viewerETL && window.viewerETL.transformCell && codePipeline.length > 0) {
+                const skuTr = window.viewerETL.transformCell(skuVal, codePipeline, row);
+                if (skuTr.rejected || !String(skuTr.display || skuTr.result || "").trim()) {
+                    continue; // The row is logically dead due to Master SKU filtering
+                }
+            }
         }
 
         let crudo = resolveRawValueForRow(row, physicalIdx);
@@ -1040,6 +1049,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
     if (!libretaDict && originalRule.logica && originalRule.logica[0] && originalRule.logica[0].accion) libretaDict = originalRule.logica[0].accion.valor;
     
     let codeDataIdx = -1;
+    let codePipeline = [];
     if (window.virtualColumns && window.draftPipelines) {
         for (const vCol of window.virtualColumns) {
             const draft = window.draftPipelines[vCol.id];
@@ -1047,6 +1057,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
                 const lowerName = String(draft.masterField.nombre_campo || "").toLowerCase().trim();
                 if (lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku') {
                     codeDataIdx = vCol.dataIdx;
+                    codePipeline = draft.rules || [];
                     break;
                 }
             }
@@ -1059,6 +1070,13 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         if (codeDataIdx >= 0) {
             let skuVal = resolveRawValueForRow(row, codeDataIdx);
             if (!skuVal || !String(skuVal).trim()) continue;
+            
+            if (window.viewerETL && window.viewerETL.transformCell && codePipeline.length > 0) {
+                const skuTr = window.viewerETL.transformCell(skuVal, codePipeline, row);
+                if (skuTr.rejected || !String(skuTr.display || skuTr.result || "").trim()) {
+                    continue;
+                }
+            }
         }
 
         let crudo = resolveRawValueForRow(row, physicalIdx);
