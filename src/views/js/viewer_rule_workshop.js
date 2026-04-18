@@ -464,7 +464,7 @@ export async function open(masterField, vColId, colName) {
     // [V5.20 Requerimiento UI: Trazabilidad Triple]
     let origenTexto = "Origen Desconocido";
     if (activeVColId.startsWith('col_ph_')) {
-        origenTexto = "Columna Fantasma";
+        origenTexto = "Fantasma: " + (colName || 'Sin Nombre');
     } else if (activeVColId.startsWith('comp_')) {
         origenTexto = "Columna Calculada";
     } else if (activeVColId.startsWith('col_clone_')) {
@@ -1015,7 +1015,9 @@ async function renderCacheMissGatillo(container) {
         }
         
         let isUnmapped = libretaDict && libretaDict[crudo.trim()] === undefined;
-        if (rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo)) {
+        let isExplicitlyCleared = libretaDict && libretaDict[crudo.trim()] === "";
+        
+        if (!isExplicitlyCleared && (rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo))) {
             misses.push(crudo.trim());
         }
     }
@@ -1084,8 +1086,9 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
         let outVal = String(tr.display || tr.result || "");
         let isUnmapped = libretaDict && libretaDict[crudo.trim()] === undefined;
+        let isExplicitlyCleared = libretaDict && libretaDict[crudo.trim()] === "";
         
-        if (tr.rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo)) {
+        if (!isExplicitlyCleared && (tr.rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo))) {
             misses.push(crudo.trim());
         }
     }
@@ -1155,7 +1158,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
                     <input type="checkbox" id="gatillo_chk_${gIdx}_${idx}" data-raw="${val.replace(/"/g, '&quot;')}" value="${masterVal.replace(/"/g, '&quot;')}" checked class="gatillo-raw-chk form-checkbox h-3.5 w-3.5 text-amber-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
                     <label for="gatillo_chk_${gIdx}_${idx}" class="text-[11px] text-slate-400 cursor-pointer select-none truncate font-mono pl-1">${val.replace(/</g, "&lt;")}</label>
                     <button type="button" class="ml-auto flex items-center gap-1 px-2 py-0.5 bg-blue-900/30 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/20 rounded transition-colors text-[9px] font-bold uppercase tracking-wider hitl-view-row-btn" data-raw="${val.replace(/"/g, '&quot;')}">
-                        <i data-lucide="eye" class="w-3 h-3"></i> Fila
+                        <i data-lucide="eye" class="w-3 h-3"></i> Ver fila completa
                     </button>
                 </div>
                 <div id="row_preview_${gIdx}_${idx}" class="hidden w-full mt-1 p-2 bg-slate-950 border border-slate-700/50 rounded-lg text-left text-[10px] text-slate-300 font-mono overflow-x-auto"></div>
@@ -1271,6 +1274,8 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         document.querySelectorAll('.gatillo-raw-chk').forEach(chk => {
              if (chk.checked) {
                  userApprovedMap[chk.getAttribute('data-raw')] = chk.value;
+             } else {
+                 userApprovedMap[chk.getAttribute('data-raw')] = ""; // Explicitly mapped to empty
              }
         });
 
