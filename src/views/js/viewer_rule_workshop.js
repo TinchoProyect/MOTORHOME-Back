@@ -1113,7 +1113,9 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         const isCluster = originalRule.logica[0].accion && originalRule.logica[0].accion.tipo_accion === 'DICTIONARY_REPLACE' && !isLiteral && !isCazaRubros;
         
         let apiEndpoint = '/api/ai/discover-entities';
-        // El enrutamiento debe ser puramente UI; el backend siempre usa discover-entities para clustering
+        if (isCazaRubros) {
+            apiEndpoint = '/api/ai/categorize-rubros';
+        }
         
         const payload = {
             column_name: activeContext.colName || "Columna",
@@ -1142,7 +1144,19 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
 
         // [ENRUTAMIENTO CONDICIONAL PERSISTENTE]
         if (isCazaRubros && window.viewerAiUi && typeof window.viewerAiUi._displaySemanticAuditTray === 'function') {
-            await window.viewerAiUi._displaySemanticAuditTray(newDict, originalPrompt, vCol);
+            // Caza Rubros devuelve translationMap { "sku": "Rubro|ARGUMENTO|Razón" }
+            const clusterMap = {};
+            window.viewerAiUi.argumentationMap = {};
+            for (const [rawKey, valString] of Object.entries(newDict)) {
+                const parts = String(valString).split('|ARGUMENTO|');
+                const rubro = parts[0];
+                const arg = parts.length > 1 ? parts[1] : '';
+                
+                if (!clusterMap[rubro]) clusterMap[rubro] = [];
+                clusterMap[rubro].push(rawKey);
+                if (arg) window.viewerAiUi.argumentationMap[rawKey] = arg;
+            }
+            await window.viewerAiUi._displaySemanticAuditTray(clusterMap, originalPrompt, vCol);
             return;
         }
         if (isLiteral && window.viewerAiUi && typeof window.viewerAiUi._displayLiteralModal === 'function') {

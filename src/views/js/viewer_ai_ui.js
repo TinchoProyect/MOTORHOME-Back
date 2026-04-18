@@ -666,21 +666,41 @@ class ViewerAiUi {
                 await this._displayLiteralModal(translationMap, promptText, vCol);
 
             } else if (useClustering) {
-                // === RUTA LENTA: DISCOVER ENTITIES (CLUSTERING) ===
-                const responseData = await aiService.discoverEntities(payload);
+                // === DISCOVER ENTITIES O CATEGORIZACIÓN MAESTRA ===
+                const isCazaRubros = this.selectedRoute === 'caza-rubros' || /CLONE_SEMANTIC/i.test(promptText);
+                
+                let responseData;
+                if (isCazaRubros) {
+                    responseData = await aiService.categorizeRubros(payload);
+                } else {
+                    responseData = await aiService.discoverEntities(payload);
+                }
+                
                 if (window.Swal && Swal.isVisible()) Swal.close();
                 
                 if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
                     throw new Error("El modelo retornó formato de cluster inválido.");
                 }
                 
-                const clusterMap = responseData.cluster;
-                if (Object.keys(clusterMap).length === 0) throw new Error("La IA no detectó ninguna coincidencia.");
+                if (Object.keys(responseData.cluster).length === 0) throw new Error("La IA no detectó ninguna coincidencia.");
                 
-                if (this.selectedRoute === 'caza-rubros' || /CLONE_SEMANTIC/i.test(promptText)) {
+                if (isCazaRubros) {
+                    // Caza Rubros devuelve translationMap { "sku": "Rubro|ARGUMENTO|Razón" }
+                    // Preservamos clusterMap como arreglo de Strings y guardamos el argumento en un mapa global.
+                    const clusterMap = {};
+                    this.argumentationMap = {};
+                    for (const [rawKey, valString] of Object.entries(responseData.cluster)) {
+                        const parts = String(valString).split('|ARGUMENTO|');
+                        const rubro = parts[0];
+                        const arg = parts.length > 1 ? parts[1] : '';
+                        
+                        if (!clusterMap[rubro]) clusterMap[rubro] = [];
+                        clusterMap[rubro].push(rawKey);
+                        if (arg) this.argumentationMap[rawKey] = arg;
+                    }
                     await this._displaySemanticAuditTray(clusterMap, promptText, vCol);
                 } else {
-                    await this._displayConsensusModal(clusterMap, promptText, vCol);
+                    await this._displayConsensusModal(responseData.cluster, promptText, vCol);
                 }
 
             } else {
@@ -1813,10 +1833,16 @@ class ViewerAiUi {
              let childrenHtml = group.items.map((val, idx) => {
                  // [FIX QA] Proteger el string en el atributo DOM con encodeURIComponent para evitar su sanitización de espacios c.value DOM.
                  const b64Val = encodeURIComponent(val);
+                 const argInfo = this.argumentationMap && this.argumentationMap[val] 
+                     ? `<i data-lucide="info" class="w-3.5 h-3.5 text-sky-400 hover:text-sky-300 ml-2 shrink-0 cursor-help" title="Justificación IA:\n${this.argumentationMap[val].replace(/"/g, '&quot;')}"></i>` 
+                     : '';
                  return `
-                 <div class="flex items-center gap-2 mb-1 pl-3 p-1 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition truncate">
-                     <input type="checkbox" id="sat_chk_${groupIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${b64Val}" class="sat-raw-chk form-checkbox h-3.5 w-3.5 text-orange-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
-                     <label for="sat_chk_${groupIdx}_${idx}" class="text-xs text-slate-400 cursor-pointer select-none font-mono tracking-tight">${val}</label>
+                 <div class="flex items-center justify-between mb-1 pl-3 p-1 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
+                     <div class="flex items-center gap-2 truncate">
+                         <input type="checkbox" id="sat_chk_${groupIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${b64Val}" class="sat-raw-chk form-checkbox h-3.5 w-3.5 text-orange-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer mt-0.5">
+                         <label for="sat_chk_${groupIdx}_${idx}" class="text-xs text-slate-400 cursor-pointer select-none font-mono tracking-tight truncate" title="${val.replace(/"/g, '&quot;')}">${val}</label>
+                     </div>
+                     ${argInfo}
                  </div>
                  `;
              }).join('');

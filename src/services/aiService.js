@@ -483,16 +483,18 @@ ${rubrosString}
 DIRECTIVAS ABSOLUTAS:
 1. Debes leer cada ítem del diccionario y asignarlo ÚNICAMENTE a un rubro del Cuaderno Maestro, basándote en la narrativa descriptiva.
 2. LIMITACIONES: NO TIENES AUTORIZACIÓN PARA INVENTAR UN RUBRO NUEVO NI DEFORMAR SU ESCRITURA. Usa exactamente el "[Nombre_Rubro]" especificado.
-3. EXCEPCIÓN DE FALLO CATASTRÓFICO: Si y sólo si el ítem no encaja bajo ningún criterio en ninguno de los rubros existentes de forma remota, devolverás EXACTAMENTE: "[NUEVO_RUBRO_PROPUESTO]: (Tu sugerencia corta de 1 a 3 palabras)". Esto pasará a auditoría humana.
+3. EXCEPCIÓN DE INCERTIDUMBRE CRÍTICA: Si el artículo es indescifrable, incomprensible, o carece de contexto suficiente para determinar un rubro lógico, DEBES clasificarlo bajo la etiqueta exacta "[Desconocido / Requiere Revisión Humana]". ¡No alucines rubros forzados!
+4. EXCEPCIÓN DE NUEVO RUBRO VÁLIDO: Si y sólo si entiendes perfectamente qué es el artículo pero no encaja lógicamente en NINGUNO de los rubros existentes, devolverás EXACTAMENTE: "[NUEVO_RUBRO_PROPUESTO]: (Tu sugerencia corta de 1 a 3 palabras)".
+5. ARGUMENTACIÓN: Por cada ítem, debes proporcionar una breve justificación (1-2 líneas) de por qué elegiste ese rubro.
 
 DICCIONARIO A EVALUAR (Chunk ${index + 1}/${chunks.length}):
 ${JSON.stringify(chunkDict, null, 2)}
 
-Estructura de Salida OBLIGATORIA (Un objeto JSON estructurado cuyas llaves sean exactamente los índices numéricos pasados, y el valor un sub-objeto con "rubro" y "narrativa"):
+Estructura de Salida OBLIGATORIA (Un objeto JSON estructurado cuyas llaves sean exactamente los índices numéricos pasados, y el valor un sub-objeto con "rubro" y "argumentacion_ia"):
 {
-  "0": { "rubro": "CONDIMENTOS" },
-  "1": { "rubro": "SEMILLAS" },
-  "2": { "rubro": "[NUEVO_RUBRO_PROPUESTO]: Limpieza", "narrativa": "Agrupa cloros, desinfectantes y afines al aseo." }
+  "0": { "rubro": "CONDIMENTOS", "argumentacion_ia": "El artículo es orégano, listado explícitamente en el cuaderno maestro bajo Condimentos." },
+  "1": { "rubro": "[NUEVO_RUBRO_PROPUESTO]: Limpieza", "argumentacion_ia": "Es un desinfectante de pisos, no existe rubro idóneo en el cuaderno actual." },
+  "2": { "rubro": "[Desconocido / Requiere Revisión Humana]", "argumentacion_ia": "El artículo 'XYZ-90' no aporta información léxica suficiente para deducir su naturaleza." }
 }
 Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO A EVALUAR como llaves. Ninguna puede faltar.`;
 
@@ -515,8 +517,10 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
                                 finalMap[dictionarySamples[numKey]] = obj;
                             } else if (obj && obj.rubro) {
                                 let valString = obj.rubro;
-                                if (obj.narrativa) {
-                                    valString += `|NARRATIVA|${obj.narrativa}`;
+                                if (obj.argumentacion_ia) {
+                                    valString += `|ARGUMENTO|${obj.argumentacion_ia}`;
+                                } else if (obj.narrativa) {
+                                    valString += `|ARGUMENTO|${obj.narrativa}`;
                                 }
                                 finalMap[dictionarySamples[numKey]] = valString;
                             }

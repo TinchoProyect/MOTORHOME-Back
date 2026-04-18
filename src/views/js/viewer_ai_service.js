@@ -94,6 +94,31 @@ class ViewerAiService {
             this.isProcessing = false;
         }
     }
+
+    async categorizeRubros(payload) {
+        if (this.isProcessing) throw new Error("Operación de categorización en progreso");
+
+        this.isProcessing = true;
+        this.lastCallTime = Date.now();
+
+        try {
+            const response = await fetch(`${this.backendUrl}/api/ai/categorize-rubros`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+            }
+
+            return data;
+        } finally {
+            this.isProcessing = false;
+        }
+    }
 }
 
 // Singleton local
