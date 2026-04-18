@@ -1107,17 +1107,24 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
             background: '#0f172a', color: '#f8fafc'
         });
         
-        const isCluster = originalRule.logica[0].accion && originalRule.logica[0].accion.tipo_accion === 'DICTIONARY_REPLACE';
+        const ruleName = originalRule.nombre_regla || "";
+        const isCazaRubros = ruleName.includes('[IA] Caza Rubros') || ruleName.includes('Caza-rubros') || /CLONE_SEMANTIC/i.test(originalPrompt);
+        const isLiteral = ruleName.includes('[IA] Limpieza Literal');
+        const isCluster = originalRule.logica[0].accion && originalRule.logica[0].accion.tipo_accion === 'DICTIONARY_REPLACE' && !isLiteral && !isCazaRubros;
+        
+        let apiEndpoint = '/api/ai/discover-entities';
+        // El enrutamiento debe ser puramente UI; el backend siempre usa discover-entities para clustering
+        
         const payload = {
             column_name: activeContext.colName || "Columna",
             prompt: originalPrompt,
             samples: uniqueMisses.slice(0, 500),
             require_ast: false,
-            literal_mode: !isCluster
+            literal_mode: isLiteral
         };
         
         let backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const response = await fetch(`${backendUrl}/api/ai/discover-entities`, {
+        const response = await fetch(`${backendUrl}${apiEndpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -1126,9 +1133,24 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Fallo de servidor al resolver entidades.");
         
-        const newDict = data.cluster;
+        let newDict = data.cluster;
         if (!newDict || Object.keys(newDict).length === 0) throw new Error("La IA evaluó los registros pero no formuló derivaciones nuevas.");
         
+        if (window.Swal) Swal.close();
+        
+        const vCol = window.virtualColumns ? window.virtualColumns.find(c => c.dataIdx === physicalIdx || c.id === physicalIdx) : null;
+
+        // [ENRUTAMIENTO CONDICIONAL PERSISTENTE]
+        if (isCazaRubros && window.viewerAiUi && typeof window.viewerAiUi._displaySemanticAuditTray === 'function') {
+            await window.viewerAiUi._displaySemanticAuditTray(newDict, originalPrompt, vCol);
+            return;
+        }
+        if (isLiteral && window.viewerAiUi && typeof window.viewerAiUi._displayLiteralModal === 'function') {
+            await window.viewerAiUi._displayLiteralModal(newDict, originalPrompt, vCol);
+            return;
+        }
+
+        // Si no es Caza Rubros ni Literal, procesamos MapToInject para el modal genérico (Consenso/Fusión)
         let mapToInject = {};
         if (isCluster) {
             Object.keys(newDict).forEach(master => {
@@ -1140,9 +1162,13 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
             mapToInject = newDict;
         }
 
-        // [Fase 5.2] Modal de Aprobación LAMDA
-        if (window.Swal) Swal.close();
-        
+        // Delegar a la UI Original de Consenso si existe, garantizando continuidad de funcionalidad
+        if (isCluster && window.viewerAiUi && typeof window.viewerAiUi._displayConsensusModal === 'function') {
+             await window.viewerAiUi._displayConsensusModal(mapToInject, originalPrompt, vCol);
+             return;
+        }
+
+        // [Fase 5.2] Modal Fallback LAMDA
         const clusterMap = {};
         Object.entries(mapToInject).forEach(([raw, clean]) => {
             if (!clusterMap[clean]) clusterMap[clean] = [];
