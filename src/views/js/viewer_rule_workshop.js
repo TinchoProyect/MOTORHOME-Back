@@ -605,7 +605,7 @@ export function switchToComputedMode(forceUserActivate = false) {
     }
     
     const applyBtnTxt = document.getElementById('vrwBtnApplyText');
-    if (applyBtnTxt) applyBtnTxt.innerText = "Guardar Ecuación";
+    if (applyBtnTxt) applyBtnTxt.innerText = "Guardar cambios";
 
     const applyBtn = document.getElementById('vrwBtnApply');
     if (applyBtn) {
@@ -716,7 +716,7 @@ export function switchToStandardMode(userOptOut = true) {
     document.getElementById('vrwComputedMode').classList.add('hidden');
 
     const applyBtnTxt = document.getElementById('vrwBtnApplyText');
-    if (applyBtnTxt) applyBtnTxt.innerText = "Enlazar Columna";
+    if (applyBtnTxt) applyBtnTxt.innerText = "Guardar cambios";
 
     const applyBtn = document.getElementById('vrwBtnApply');
     if (applyBtn) {
@@ -901,12 +901,16 @@ function renderPipeline() {
         const chip = document.createElement('div');
         chip.className = "vrw-rule-chip bg-slate-950 border border-emerald-500/30 p-2.5 rounded-lg flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-right-4";
 
+        const intentBadge = rule.fromAI && rule.promptData && rule.promptData.intent
+            ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase flex-shrink-0">${rule.promptData.intent}</span>`
+            : '';
+
         chip.innerHTML = `
             <div class="flex items-center gap-3">
                 <div class="bg-slate-800 text-slate-400 font-mono text-[9px] w-5 h-5 flex items-center justify-center rounded-full border border-slate-700">${index + 1}</div>
-                <div>
-                    <h4 class="text-xs font-bold text-emerald-400">${rule.nombre_regla}</h4>
-                    <p class="text-[10px] text-slate-500 mt-0.5 leading-snug" title="${rule.descripcion || 'Regla de limpieza nativa.'}">${rule.descripcion || 'Regla de limpieza nativa.'}</p>
+                <div class="min-w-0 pr-2">
+                    <h4 class="text-xs font-bold text-emerald-400 flex items-center break-words whitespace-normal">${rule.nombre_regla} ${intentBadge}</h4>
+                    <p class="text-[10px] text-slate-500 mt-0.5 leading-snug break-words whitespace-normal" title="${rule.descripcion || 'Regla de limpieza nativa.'}">${rule.descripcion || 'Regla de limpieza nativa.'}</p>
                 </div>
             </div>
             <div class="flex items-center gap-1">
@@ -968,9 +972,28 @@ async function renderCacheMissGatillo(container) {
     let physicalIdx = activeContext.colIndex;
     if (physicalIdx === null || physicalIdx === undefined) return;
     
+    let codeDataIdx = -1;
+    if (window.virtualColumns && window.draftPipelines) {
+        for (const vCol of window.virtualColumns) {
+            const draft = window.draftPipelines[vCol.id];
+            if (draft && draft.masterField) {
+                const lowerName = String(draft.masterField.nombre_campo || "").toLowerCase().trim();
+                if (lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku') {
+                    codeDataIdx = vCol.dataIdx;
+                    break;
+                }
+            }
+        }
+    }
+
     let misses = [];
     const rawRows = window.currentSheetData.slice(1);
     for(let row of rawRows) {
+        if (codeDataIdx >= 0) {
+            let skuVal = resolveRawValueForRow(row, codeDataIdx);
+            if (!skuVal || !String(skuVal).trim()) continue;
+        }
+
         let crudo = resolveRawValueForRow(row, physicalIdx);
         if (!crudo.trim()) continue;
         
@@ -991,7 +1014,7 @@ async function renderCacheMissGatillo(container) {
     let uniqueMisses = [...new Set(misses)].filter(x => x);
     if (uniqueMisses.length > 0) {
         const btnHtml = `
-            <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.processCacheMiss('${encodeURIComponent(libretaPrompt)}', ${libretaRuleIdx})" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/50 rounded text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none">
+            <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.processCacheMiss('${encodeURIComponent(libretaPrompt).replace(/'/g, '%27')}', ${libretaRuleIdx})" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/50 rounded text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none">
                 <i data-lucide="rocket" class="w-3.5 h-3.5"></i> Procesar registros nuevos (${uniqueMisses.length})
             </button>
         `;
@@ -1016,9 +1039,28 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
     let libretaDict = originalRule.logica && originalRule.logica[0] && originalRule.logica[0].condicion ? originalRule.logica[0].condicion.valor : null;
     if (!libretaDict && originalRule.logica && originalRule.logica[0] && originalRule.logica[0].accion) libretaDict = originalRule.logica[0].accion.valor;
     
+    let codeDataIdx = -1;
+    if (window.virtualColumns && window.draftPipelines) {
+        for (const vCol of window.virtualColumns) {
+            const draft = window.draftPipelines[vCol.id];
+            if (draft && draft.masterField) {
+                const lowerName = String(draft.masterField.nombre_campo || "").toLowerCase().trim();
+                if (lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku') {
+                    codeDataIdx = vCol.dataIdx;
+                    break;
+                }
+            }
+        }
+    }
+
     let misses = [];
     const rawRows = window.currentSheetData.slice(1);
     for(let row of rawRows) {
+        if (codeDataIdx >= 0) {
+            let skuVal = resolveRawValueForRow(row, codeDataIdx);
+            if (!skuVal || !String(skuVal).trim()) continue;
+        }
+
         let crudo = resolveRawValueForRow(row, physicalIdx);
         if (!crudo.trim()) continue;
         const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
@@ -1093,8 +1135,12 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
              let childrenHtml = rawValues.map((val, idx) => `
                 <div class="flex items-center gap-2 mb-1.5 pl-3 p-1.5 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
                     <input type="checkbox" id="gatillo_chk_${gIdx}_${idx}" data-raw="${val.replace(/"/g, '&quot;')}" value="${masterVal.replace(/"/g, '&quot;')}" checked class="gatillo-raw-chk form-checkbox h-3.5 w-3.5 text-amber-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
-                    <label for="gatillo_chk_${gIdx}_${idx}" class="text-[11px] text-slate-400 cursor-pointer select-none truncate font-mono">${val.replace(/</g, "&lt;")}</label>
+                    <label for="gatillo_chk_${gIdx}_${idx}" class="text-[11px] text-slate-400 cursor-pointer select-none truncate font-mono pl-1">${val.replace(/</g, "&lt;")}</label>
+                    <button type="button" class="ml-auto flex items-center gap-1 px-2 py-0.5 bg-blue-900/30 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/20 rounded transition-colors text-[9px] font-bold uppercase tracking-wider hitl-view-row-btn" data-raw="${val.replace(/"/g, '&quot;')}">
+                        <i data-lucide="eye" class="w-3 h-3"></i> Fila
+                    </button>
                 </div>
+                <div id="row_preview_${gIdx}_${idx}" class="hidden w-full mt-1 p-2 bg-slate-950 border border-slate-700/50 rounded-lg text-left text-[10px] text-slate-300 font-mono overflow-x-auto"></div>
              `).join('');
 
              return `
@@ -1147,6 +1193,45 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
                                 parentChk.checked = allChecked;
                                 parentChk.indeterminate = someChecked && !allChecked;
                             }
+                        }
+                    }
+                });
+
+                container.addEventListener('click', (e) => {
+                    if (e.target.closest('.hitl-view-row-btn')) {
+                        const btn = e.target.closest('.hitl-view-row-btn');
+                        const rawVal = btn.getAttribute('data-raw');
+                        const previewDiv = btn.parentElement.nextElementSibling;
+                        
+                        if (!previewDiv.classList.contains('hidden')) {
+                            previewDiv.classList.add('hidden');
+                            return;
+                        }
+                        
+                        // Hide all other previews first to keep it clean
+                        container.querySelectorAll('[id^="row_preview_"]').forEach(el => el.classList.add('hidden'));
+                        
+                        // Find row in window.currentSheetData
+                        let targetRow = null;
+                        const headers = window.currentSheetData[0];
+                        if (window.currentSheetData && window.currentSheetData.length > 1) {
+                            targetRow = window.currentSheetData.slice(1).find(r => {
+                                const val = resolveRawValueForRow(r, physicalIdx);
+                                return val && val.trim() === rawVal.trim();
+                            });
+                        }
+                        
+                        if (targetRow && headers) {
+                            let html = '<table class="w-full text-left border-collapse"><tbody>';
+                            for (let i = 0; i < headers.length; i++) {
+                                html += `<tr class="border-b border-slate-800"><td class="py-1 pr-2 text-indigo-400 opacity-80">${headers[i]}:</td><td class="py-1 break-all">${targetRow[i] !== undefined && targetRow[i] !== null ? targetRow[i] : ''}</td></tr>`;
+                            }
+                            html += '</tbody></table>';
+                            previewDiv.innerHTML = html;
+                            previewDiv.classList.remove('hidden');
+                        } else {
+                            previewDiv.innerHTML = '<span class="text-slate-500">No se pudo encontrar la fila original en memoria.</span>';
+                            previewDiv.classList.remove('hidden');
                         }
                     }
                 });
