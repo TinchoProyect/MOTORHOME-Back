@@ -13,11 +13,130 @@ class ViewerAiUi {
         this.promptEl = null;
         this.feedbackEl = null;
         this.btnEl = null;
+        this.setupBindings();
+        
+        this.isInitialized = true;
     }
 
-    async init() {
+    /**
+     * Muestra la librería de prompts asociada al Campo Maestro Activo
+     */
+    async showPromptLibrary() {
+        if (!this.activeMasterFieldId) {
+            Swal.fire({ title: 'Atención', text: 'No hay una Columna Maestra ACTIVA para buscar el historial.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+            return;
+        }
+
+        Swal.fire({
+            title: 'Cargando Librería...',
+            background: '#0f172a', color: '#f8fafc',
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        try {
+            const backendUrl = (typeof window.CONFIG !== 'undefined' && window.CONFIG.BACKEND_URL) ? window.CONFIG.BACKEND_URL : 'http://localhost:5655';
+            const res = await fetch(`${backendUrl}/api/ai/prompts/${encodeURIComponent(this.activeMasterFieldId)}`);
+            if (!res.ok) throw new Error("Fetch failed");
+            const prompts = await res.json();
+
+            if (!prompts || prompts.length === 0) {
+                Swal.fire({
+                    title: '<span class="text-indigo-300">Librería Vacía</span>',
+                    html: '<p class="text-sm text-slate-400">Aún no hay prompts guardados exitosamente para este Campo Maestro.</p>',
+                    icon: 'info',
+                    background: '#0f172a', color: '#f8fafc',
+                    confirmButtonColor: '#4f46e5'
+                });
+                return;
+            }
+
+            let htmlList = `<div class="flex flex-col gap-3 mt-4 text-left max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
+            prompts.forEach((p, idx) => {
+                const dateStr = new Date(p.lastUsed).toLocaleDateString();
+                // Escape de comillas para onclick
+                const safePrompt = p.prompt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                htmlList += `
+                    <div class="group bg-slate-900 border border-slate-700/50 hover:border-indigo-500/50 rounded-lg p-3 transition-colors cursor-pointer relative" onclick="window._vaiSelectPrompt('${safePrompt}', '${p.intent || ''}')">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">${p.intent || 'General'}</span>
+                            <span class="text-[9px] text-slate-500 font-mono">${dateStr}</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-mono italic">"${p.prompt}"</p>
+                        <div class="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg pointer-events-none"></div>
+                    </div>
+                `;
+            });
+            htmlList += `</div>`;
+            
+            // Función Helper global para la selección
+            window._vaiSelectPrompt = (promptText, intentVal) => {
+                const txtArea = document.getElementById('vaiPrompt');
+                if(txtArea) {
+                    txtArea.value = promptText;
+                    if (intentVal) {
+                        this.selectedIntent = intentVal;
+                        // Forzar estilo visual en los chips (simular click)
+                        document.querySelectorAll('.vai-quick-btn').forEach(b => {
+                            if (b.dataset.intent === intentVal) {
+                                b.classList.replace('bg-slate-800/80', 'bg-indigo-600');
+                                b.classList.replace('text-slate-400', 'text-white');
+                            } else {
+                                b.classList.replace('bg-indigo-600', 'bg-slate-800/80');
+                                b.classList.replace('text-white', 'text-slate-400');
+                            }
+                        });
+                    }
+                }
+                Swal.close();
+            };
+
+            Swal.fire({
+                title: '<span class="text-xl text-indigo-300 font-light">Librería de Prompts</span><br><span class="text-xs text-slate-400">Campo Maestro Destino</span>',
+                html: htmlList,
+                width: '600px',
+                background: '#0f172a',
+                color: '#f8fafc',
+                showConfirmButton: false,
+                showCloseButton: true,
+                customClass: { popup: 'border border-indigo-500/30' }
+            });
+
+        } catch (err) {
+            console.error("Error cargando librería:", err);
+            Swal.fire({ title: 'Error', text: 'No se pudo cargar el historial de Prompts.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        }
+    }
+
+    /**
+     * Define el contexto del Campo Maestro activo para asociarlo a las operaciones del Chofer IA.
+     */
+    setActiveMasterField(masterFieldObj) {
+        // [GLOBAL SCOPE QA FIX] Change from local UUID to universal semantic name
+        this.activeMasterFieldId = masterFieldObj ? String(masterFieldObj.nombre_campo).toUpperCase().trim() : null;
+        
+        // Habilitar o deshabilitar boton de libreria
+        const historyBtn = document.getElementById('vaiHistoryBtn');
+        if (historyBtn) {
+            if (this.activeMasterFieldId) {
+                historyBtn.classList.remove('hidden');
+                historyBtn.classList.add('flex');
+            } else {
+                historyBtn.classList.add('hidden');
+                historyBtn.classList.remove('flex');
+            }
+        }
+    }
+
+    setupBindings() {
         // Enforce DOM completely mounted
         setTimeout(() => this._mountComponent(), 500);
+    }
+
+    /**
+     * Entrypoint called by ViewerRuleWorkshop when the modal opens
+     */
+    init() {
+        this._mountComponent();
     }
 
     _mountComponent() {
@@ -39,6 +158,9 @@ class ViewerAiUi {
                     <i data-lucide="bot" class="w-3.5 h-3.5 text-indigo-400"></i> Chofer IA Copilot
                 </label>
                 <div class="flex items-center gap-2">
+                    <button id="vaiHistoryBtn" class="hidden items-center justify-center gap-1 px-2 py-1 bg-indigo-900/30 hover:bg-indigo-500/40 border border-indigo-500/30 text-indigo-200 hover:text-white rounded transition-colors text-[9px] font-bold tracking-wider" title="Ver Prompts Exitosos para esta Columna Maestra">
+                        <i data-lucide="library" class="w-3 h-3"></i> Librería
+                    </button>
                     <i id="vaiHealthIndicator" data-lucide="activity" class="w-3 h-3 text-slate-600 animate-pulse"></i>
                     <span id="vaiStatus" class="text-[9px] text-slate-500 font-mono">Buscando Nodo...</span>
                 </div>
@@ -78,6 +200,14 @@ class ViewerAiUi {
         if (window.lucide) window.lucide.createIcons();
 
         // Bindings
+        
+        const historyBtn = document.getElementById('vaiHistoryBtn');
+        if (historyBtn) {
+            historyBtn.addEventListener('click', () => {
+                this.showPromptLibrary();
+            });
+        }
+
         this.statusEl = document.getElementById('vaiStatus');
         this.promptEl = document.getElementById('vaiPrompt');
         this.feedbackEl = document.getElementById('vaiFeedback');
@@ -85,6 +215,15 @@ class ViewerAiUi {
         this.healthIcon = document.getElementById('vaiHealthIndicator');
 
         this.btnEl.onclick = () => this.handleGenerate();
+        
+        // [BUGFIX] Habilitar botón instantáneamente si el usuario escribe o pega texto (siempre que el vigía haya dado OK previo)
+        this.promptEl.addEventListener('input', () => {
+            if (this.btnEl.disabled && this.promptEl.value.trim() !== '' && this.statusEl.innerText === 'Conectado') {
+                this.btnEl.disabled = false;
+            } else if (this.promptEl.value.trim() === '') {
+                this.btnEl.disabled = true;
+            }
+        });
 
         this.selectedIntent = null;
         this.selectedRoute = null;
@@ -185,7 +324,7 @@ class ViewerAiUi {
         this.feedbackEl.classList.remove('hidden');
     }
 
-    async _buildUniqueSet(dataIdx, pipeline) {
+    async _buildUniqueSet(extractionDataIdx, pipeline) {
         // [UNIFICACIÓN ESTRUCTURAL] El Chofer IA deja de tener su propio motor de lectura en crudo.
         // Forzamos la actualización silenciosa del Sandbox del Visor de Extracción
         // para absorber todas las lógicas de limpieza, vacíos y flags de rechazo.
@@ -203,9 +342,18 @@ class ViewerAiUi {
             
             // Consumir EXCLUSIVAMENTE el array ya procesado o hacer fallback a crudo si falla el visor
             if (window.currentSimData && Array.isArray(window.currentSimData)) {
-                 // Filtrar de raíz la basura detectada (Filas sin código, completamente vacías, etc.)
-                 rawRows = window.currentSimData.filter(row => !row._rejectedSim);
-                 console.log(`[Chofer IA - Sincronizado] Heredando ${rawRows.length} registros purificados desde el Visor de Extracción.`);
+                 // [V8 - SCOPE AISLANTE MULTI-HOJA] Garantizar extracción determinista de la solapa activa
+                 const activeSheetName = window.currentSheetName || null;
+                 
+                 rawRows = window.currentSimData.filter(row => {
+                     // 1. Filtrar basura subyacente (Rechazados, Vacíos)
+                     if (row._rejectedSim) return false;
+                     // 2. Firewall Multi-Hoja (Evita purgar OTRAS solapas con diferentes columnas)
+                     if (row._sourceSheet && activeSheetName && row._sourceSheet !== activeSheetName) return false;
+                     
+                     return true;
+                 });
+                 console.log(`[Chofer IA - Sincronizado] Saneamiento Estricto: Heredando ${rawRows.length} registros purificados (Aislados a Hoja: ${activeSheetName || 'Principal'}).`);
             } else {
                  const currentOffset = (window.currentOffset && typeof window.currentOffset.row === 'number') ? window.currentOffset.row : 0;
                  rawRows = window.currentSheetData ? window.currentSheetData.slice(currentOffset + 1) : [];
@@ -255,10 +403,10 @@ class ViewerAiUi {
                     }
 
                     let val = "";
-                    if (Array.isArray(dataIdx)) {
-                        val = dataIdx.map(idx => String(rawRows[i][idx] || "").trim()).filter(v => v).join(" ");
+                    if (Array.isArray(extractionDataIdx)) {
+                        val = extractionDataIdx.map(idx => String(rawRows[i][idx] || "").trim()).filter(v => v).join(" ");
                     } else {
-                        val = String(rawRows[i][dataIdx] || "").trim();
+                        val = String(rawRows[i][extractionDataIdx] || "").trim();
                     }
                     if (!val) continue;
                     
@@ -300,6 +448,9 @@ class ViewerAiUi {
         if (!promptText) return;
 
         this.btnEl.disabled = true;
+        
+        console.log(`[Chofer IA] 🚀 Ejecutando handleGenerate(). Prompt detectado: "${promptText.substring(0, 30)}..."`);
+        console.log(`[Chofer IA] Evaluando conectividad contra ActiveState del ViewerRuleWorkshop...`);
         
         try {
             if (!window.viewerRuleWorkshop || typeof window.viewerRuleWorkshop.getActiveState !== 'function') {
@@ -553,8 +704,15 @@ class ViewerAiUi {
                          this._setStatus('Aterrizando Regla...', 'working');
                          for (let rule of responseData.rules) {
                              rule.fromAI = true;
+                             rule.promptData = { prompt: promptText, intent: this.selectedIntent || "Traductor AST" };
                              await window.viewerRuleWorkshop.createLocalRuleDirect(rule);
                          }
+                         
+                         // Guardar en el Historial Backend
+                         if (this.activeMasterFieldId) {
+                             this._savePromptToHistory(promptText, this.selectedIntent || 'General');
+                         }
+
                          this.promptEl.value = "";
                          this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
                          if (this.selectedIntent) {
@@ -693,11 +851,18 @@ class ViewerAiUi {
                          accion: { tipo_accion: this.incrementalMode ? "PASS" : "DROP" } // "PASS" excludes alienígenas but keeps previous valid in Merge mode
                      }
                 ],
-                fromAI: true
+                fromAI: true,
+                promptData: { prompt: promptText, intent: this.selectedIntent || "Clustering Semántico" }
             };
             
             if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
                 await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                
+                // Guardar en el Historial Backend
+                if (this.activeMasterFieldId) {
+                    this._savePromptToHistory(promptText, this.selectedIntent || 'General');
+                }
+
                 this.promptEl.value = "";
                 this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
                 if (this.selectedIntent) {
@@ -1916,6 +2081,25 @@ class ViewerAiUi {
                  btnEl.innerHTML = 'Guardar Cambios';
              }
         };
+    }
+
+    async _savePromptToHistory(promptText, intentVal) {
+        if (!this.activeMasterFieldId || !promptText) return;
+        try {
+            const backendUrl = (typeof window.CONFIG !== 'undefined' && window.CONFIG.BACKEND_URL) ? window.CONFIG.BACKEND_URL : 'http://localhost:5655';
+            await fetch(`${backendUrl}/api/ai/prompts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    masterFieldId: this.activeMasterFieldId,
+                    prompt: promptText,
+                    intent: intentVal || 'General'
+                })
+            });
+            console.log(`[Chofer IA] Prompt guardado exitosamente en historial para maestro ${this.activeMasterFieldId}`);
+        } catch(e) {
+            console.warn("[Chofer IA] Prompt no pudo guardarse en el historial", e);
+        }
     }
 }
 const viewerAiUi = new ViewerAiUi();

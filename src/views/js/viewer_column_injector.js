@@ -19,15 +19,20 @@ window.ViewerColumnInjector = {
         // 1. Encontrar el índice más alto actualmente en uso por el dataset
         let maxDataIdx = -1;
         window.virtualColumns.forEach(c => {
-            if (c.dataIdx !== undefined && c.dataIdx > maxDataIdx) {
-                maxDataIdx = c.dataIdx;
+            const parsedIdx = parseInt(c.dataIdx, 10);
+            if (!isNaN(parsedIdx) && parsedIdx > maxDataIdx) {
+                maxDataIdx = parsedIdx;
             }
         });
         
         const newDataIdx = maxDataIdx + 1;
-        // [V9 FIX DETERMINISTA] Usar el dataIdx físico asegura que el ID de la columna
-        // sea inmutable durante la rehidratación o recarga, previniendo colisiones de reglas.
-        const newColId = `col_ph_${newDataIdx}`;
+        // [V10 FIX DETERMINISTA] Usar Date.now() para generar el ID de la columna,
+        // garantizando aislamiento total en memoria y previniendo reciclaje de mapeos "Zombies".
+        const newColId = `col_ph_${Date.now()}`;
+        
+        // Limpiador defensivo por si hubiera un milisegundo gemelo (imposible)
+        if (window.draftPipelines && window.draftPipelines[newColId]) delete window.draftPipelines[newColId];
+        if (window.columnMapping && window.columnMapping[newColId]) delete window.columnMapping[newColId];
         
         // 2. Crear Columna Virtual "Placeholder" Física (Trata la nueva columna como dato orgánico)
         const newCol = {

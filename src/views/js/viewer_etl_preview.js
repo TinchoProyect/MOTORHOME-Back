@@ -259,8 +259,84 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
             }
         }
         const isCustomRowOverride = rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_OVERRIDE_ROW:');
+        const isCustomSkuOverride = rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_OVERRIDE_SKU:');
 
-        if (isCustomRowOverride) {
+        if (isCustomSkuOverride) {
+            const payload = rule.tipo_regex.replace('CUSTOM_OVERRIDE_SKU:', '');
+            const separatorIdx = payload.indexOf('|||');
+            const targetSku = separatorIdx >= 0 ? payload.substring(0, separatorIdx) : payload;
+            const replaceStr = separatorIdx >= 0 ? payload.substring(separatorIdx + 3) : '';
+
+            if (contextRow) {
+                // [REQ QA] Resolver dinámicamente el SKU físico de la fila activa
+                let codeDataIdx = -1;
+                
+                const isMasterIdentifier = (masterId, masterName) => {
+                    if (!window.masterDictionary) return false;
+                    const mObj = window.masterDictionary.find(m => String(m.id) === String(masterId));
+                    if (mObj && mObj.es_identificador === true) return true;
+                    if (mObj && mObj.nombre_campo) masterName = mObj.nombre_campo;
+                    if (!masterName) return false;
+                    const lowerName = masterName.toLowerCase().trim();
+                    return lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku';
+                };
+
+                if (window.draftPipelines) {
+                    for (let cId in window.draftPipelines) {
+                        const pipe = window.draftPipelines[cId];
+                        if (pipe && pipe.masterField && isMasterIdentifier(pipe.masterField.id, pipe.masterField.nombre_campo)) {
+                            if (window.virtualColumns && typeof cId === 'string') {
+                                const vCol = window.virtualColumns.find(c => String(c.id) === String(cId));
+                                if (vCol && vCol.dataIdx !== undefined) codeDataIdx = vCol.dataIdx;
+                            }
+                            if (codeDataIdx === -1 && typeof cId === 'string' && cId.startsWith('col_')) {
+                                codeDataIdx = parseInt(cId.replace('col_', ''), 10);
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                if (codeDataIdx === -1 && window.columnMapping) {
+                    for (let cId in window.columnMapping) {
+                        const mappedVal = window.columnMapping[cId];
+                        let isId = false;
+                        if (isMasterIdentifier(mappedVal, mappedVal)) {
+                            isId = true;
+                        } else if (window.nomenclatureCache) {
+                            const term = window.nomenclatureCache.find(t => String(t.termino).toLowerCase().trim() === String(mappedVal).toLowerCase().trim());
+                            if (term && (term.termino.toLowerCase().trim() === 'código' || term.termino.toLowerCase().trim() === 'codigo' || term.termino.toLowerCase().trim() === 'sku')) {
+                                isId = true;
+                            }
+                        }
+                        if (!isId) {
+                            const lowerName = String(mappedVal).toLowerCase().trim();
+                            if (lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku') {
+                                isId = true;
+                            }
+                        }
+                        if (isId) {
+                            if (window.virtualColumns && typeof cId === 'string') {
+                                const vCol = window.virtualColumns.find(c => String(c.id) === String(cId));
+                                if (vCol && vCol.dataIdx !== undefined) codeDataIdx = vCol.dataIdx;
+                            }
+                            if (codeDataIdx === -1 && typeof cId === 'string' && cId.startsWith('col_')) {
+                                codeDataIdx = parseInt(cId.replace('col_', ''), 10);
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                const currentSku = codeDataIdx >= 0 && contextRow[codeDataIdx] !== undefined ? String(contextRow[codeDataIdx]).trim() : "";
+                
+                if (currentSku === targetSku) {
+                    currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
+                    console.log(`[ETL PREVIEW] ⚡ Override por SKU aplicado [SKU:${targetSku}] -> Salida: '${currentValue}'`);
+                }
+            }
+        }
+        else if (isCustomRowOverride) {
             const payload = rule.tipo_regex.replace('CUSTOM_OVERRIDE_ROW:', '');
             const parts = payload.split('|||');
             const targetRowUid = parseInt(parts[0], 10);
@@ -350,6 +426,16 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 if (!/^\d+$/.test(currentValue)) {
                     currentValue = "";
                     isRejected = true;
+                }
+            }
+            else if (rule.tipo_regex === 'VALIDATE_NUMERIC_STRICT') {
+                // [NUEVA REGLA] Condicional de exclusión estricta para IDs/Códigos puros
+                // Si la celda contiene cualquier carácter que no sea un dígito numérico (letras, símbolos, espacios, puntuación), se descarta.
+                if (!/^\d+$/.test(currentValue)) {
+                    currentValue = "";
+                    isRejected = true;
+                    // También aseguramos purgar el cleanValue heredado si hubo intentos de cast previos
+                    cleanValue = null;
                 }
             }
             else if (rule.tipo_regex === 'EXTRACT_DESCRIPTION_PACKAGE') {

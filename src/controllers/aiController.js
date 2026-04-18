@@ -1,4 +1,16 @@
 const aiService = require('../services/aiService');
+const fs = require('fs');
+const path = require('path');
+
+const PROMPT_LIB_PATH = path.join(__dirname, '../../data', 'ai_prompt_library.json');
+
+// Helper para asegurar la existencia del directorio data/
+function ensurePromptLibExists() {
+    const dir = path.dirname(PROMPT_LIB_PATH);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+}
 
 const aiController = {
     /**
@@ -283,8 +295,174 @@ const aiController = {
             });
 
         } catch (error) {
-            console.error('[AI Controller] ❌ Falla en Categorización de Rubros:', error.message);
+            console.error("❌ [AI Controller] API Error:", error);
             res.status(500).json({ error: error.message || 'Error categorization phase' });
+        }
+    },
+
+    // -----------------------------------------------------
+    // Librería de Prompts Contextual (Chofer IA History)
+    // -----------------------------------------------------
+
+    /**
+     * Obtiene el historial de prompts para una Columna Maestra específica.
+     */
+    getPromptLibrary: async (req, res) => {
+        try {
+            const { masterFieldId } = req.params;
+            if (!masterFieldId) return res.status(400).json({ error: "Falta masterFieldId" });
+            
+            ensurePromptLibExists();
+            
+            const supabase = require('../config/supabaseClient');
+            
+            // 1. Obtener desde el archivo Local Global (Lo actual)
+            let localPrompts = [];
+            try {
+                if (fs.existsSync(PROMPT_LIB_PATH)) {
+                    const fileContent = fs.readFileSync(PROMPT_LIB_PATH, 'utf8') || '{}';
+                    const data = JSON.parse(fileContent);
+                    if (data[masterFieldId]) localPrompts = data[masterFieldId];
+                }
+            } catch(e) { console.warn("Fallo lectura de json library", e); }
+
+            // 2. Extraer del Historial de Pipeline Global (de todos los proveedores)
+            let dbPrompts = [];
+            try {
+                const { data: flujos, error } = await supabase.from('flujos_extraccion').select('config_payload');
+                if (error) throw new Error(error.message);
+                if (flujos) {
+                    flujos.forEach(flujo => {
+                        const parsed = typeof flujo.config_payload === 'string' ? JSON.parse(flujo.config_payload) : flujo.config_payload;
+                        if (parsed && typeof parsed === 'object') {
+                            const extractPromptsDeeply = (node) => {
+                                if (!node || typeof node !== 'object') return;
+                                
+                                // Check if this node is a matching pipeline column
+                                if (node.masterField && (node.masterField.id === masterFieldId || String(node.masterField.nombre_campo).toUpperCase() === String(masterFieldId).toUpperCase() || String(node.masterField.id) === String(masterFieldId))) {
+                                    if (node.rules && Array.isArray(node.rules)) {
+                                        node.rules.forEach(rule => {
+                                            if (rule.fromAI) {
+                                                let extractedPrompt = "";
+                                                let intentVal = "Generativo";
+                                                
+                                                if (rule.promptData && rule.promptData.prompt) {
+                                                    extractedPrompt = rule.promptData.prompt;
+                                                    intentVal = rule.promptData.intent || intentVal;
+                                                } else if (rule.nombre_regla && String(rule.nombre_regla).includes("[IA]")) {
+                                                    extractedPrompt = String(rule.nombre_regla).replace(/\[IA\][^:]*:\s*/i, "").trim();
+                                                } else if (rule.descripcion) {
+                                                    extractedPrompt = rule.descripcion;
+                                                } else {
+                                                    extractedPrompt = rule.nombre_regla || "Regla Inteligente Genérica";
+                                                }
+                                                
+                                                if (extractedPrompt) {
+                                                    dbPrompts.push({
+                                                        prompt: extractedPrompt,
+                                                        intent: intentVal,
+                                                        lastUsed: Date.now() - 1000
+                                                    });
+                                                }
+                                            } else if (rule.comment && String(rule.comment).includes("Chofer:")) {
+                                                dbPrompts.push({
+                                                    prompt: String(rule.comment).replace("Chofer:", "").trim(),
+                                                    intent: "Legacy",
+                                                    lastUsed: Date.now() - 2000
+                                                });
+                                            }
+                                        });
+                                    }
+                                }
+                                
+                                // Recurse into children
+                                for (const key in node) {
+                                    if (node.hasOwnProperty(key) && typeof node[key] === 'object') {
+                                        extractPromptsDeeply(node[key]);
+                                    }
+                                }
+                            };
+                            
+                            extractPromptsDeeply(parsed);
+                        }
+                    });
+                }
+            } catch(e) { console.error("Error consultando DB de flujos para prompts", e); }
+
+            // 3. Unificar y desduplicar
+            const merged = [...localPrompts, ...dbPrompts];
+            const uniqueMap = {};
+            merged.forEach(p => {
+                const key = (p.prompt||"").trim().toLowerCase();
+                if (!uniqueMap[key] || uniqueMap[key].lastUsed < p.lastUsed) {
+                    uniqueMap[key] = p;
+                }
+            });
+
+            const prompts = Object.values(uniqueMap);
+            prompts.sort((a, b) => b.lastUsed - a.lastUsed);
+            
+            return res.status(200).json(prompts);
+        } catch (error) {
+            console.error("❌ [AI Controller] Error leyendo librería:", error);
+            res.status(500).json({ error: 'Error leyendo librería de prompts' });
+        }
+    },
+
+    /**
+     * Guarda un nuevo prompt exitoso en el historial de la Columna Maestra.
+     */
+    savePromptToLibrary: async (req, res) => {
+        try {
+            const { masterFieldId, prompt, intent } = req.body;
+            if (!masterFieldId || !prompt) {
+                return res.status(400).json({ error: "Faltan datos obligatorios (masterFieldId, prompt)" });
+            }
+            
+            ensurePromptLibExists();
+            
+            let data = {};
+            if (fs.existsSync(PROMPT_LIB_PATH)) {
+                try {
+                    const content = fs.readFileSync(PROMPT_LIB_PATH, 'utf8');
+                    data = JSON.parse(content || '{}');
+                } catch (e) {
+                    console.warn("[AI Controller] No se pudo leer el historial pre-existente, se reinicializa.");
+                }
+            }
+            
+            if (!data[masterFieldId]) {
+                data[masterFieldId] = [];
+            }
+            
+            // Chequear si el prompt ya existe textualmente
+            const existingIdx = data[masterFieldId].findIndex(p => p.prompt.trim().toLowerCase() === prompt.trim().toLowerCase());
+            
+            if (existingIdx !== -1) {
+                // Actualizar timestamp
+                data[masterFieldId][existingIdx].lastUsed = Date.now();
+                if (intent) data[masterFieldId][existingIdx].intent = intent;
+            } else {
+                // Nuevo
+                data[masterFieldId].push({
+                    prompt: prompt.trim(),
+                    intent: intent || 'General',
+                    lastUsed: Date.now()
+                });
+                
+                // Limitar histórico a los últimos 30 por columna para prevenir archivo gigante
+                if (data[masterFieldId].length > 30) {
+                    data[masterFieldId].sort((a, b) => b.lastUsed - a.lastUsed);
+                    data[masterFieldId] = data[masterFieldId].slice(0, 30);
+                }
+            }
+            
+            fs.writeFileSync(PROMPT_LIB_PATH, JSON.stringify(data, null, 2));
+            return res.status(200).json({ status: 'saved' });
+            
+        } catch (error) {
+            console.error("❌ [AI Controller] Error guardando prompt:", error);
+            res.status(500).json({ error: 'Error guardando prompt en librería' });
         }
     }
 };

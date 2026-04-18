@@ -559,7 +559,7 @@ window.ViewerUI = (function () {
 
   // --- [PHASE 7: AUDIT MODE TOOLTIP (Context Menu)] ---
   // --- [PHASE 7: AUDIT MODE CONTEXT ACTION (In-Place Edit)] ---
-  function showOriginalValue(e, rawValue, colId, rowUid = -1) {
+  function showOriginalValue(e, rawValue, colId, rowUid = -1, skuContext = null) {
     if (e && e.preventDefault) e.preventDefault(); // Stop standard context menu
 
     // [V5.15 UX] Upgrade from passive tooltip to interactive Local Rule Creator
@@ -571,15 +571,32 @@ window.ViewerUI = (function () {
         console.log(`[UX DIAGNOSTIC] Right Click on cell. Payload received: '${rawValue}', Length: ${rawValue ? rawValue.length : 0}, Parsed Safe Value: '${safeRawValue}', Length: ${safeRawValue.length}`);
       }
 
+      let skuBadgeHtml = "";
+      if (skuContext && skuContext.trim() !== "") {
+          skuBadgeHtml = `
+            <div class="mb-5 flex flex-col justify-center items-start p-3 bg-indigo-950/80 border-2 border-indigo-500/60 rounded-xl shadow-lg relative overflow-hidden select-text group">
+                <div class="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-transparent pointer-events-none"></div>
+                <div class="flex items-center gap-1.5 text-indigo-300 text-xs font-bold uppercase tracking-widest relative z-10 mb-1">
+                    <i data-lucide="tag" class="w-4 h-4"></i>
+                    Anclaje a Código Maestro (SKU)
+                </div>
+                <div class="text-emerald-300 text-2xl font-black font-mono tracking-widest relative z-10 break-all select-all bg-emerald-950/30 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                    ${skuContext}
+                </div>
+            </div>
+          `;
+      }
+
       Swal.fire({
         title: 'Valor Original',
         html: `
           <div class="text-left mb-4">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Texto de Origen:</label>
+            ${skuBadgeHtml}
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block">Texto de Origen:</label>
             <div class="bg-slate-900 border border-slate-700 p-2 text-white font-italic text-sm rounded mt-1 break-all mb-4 select-text">
               <span class="${safeRawValue === "" ? 'text-slate-500 italic' : ''}">${safeRawValue === "" ? '[Celda Vacía]' : safeRawValue}</span>
             </div>
-            <label class="text-xs font-bold text-blue-400 uppercase tracking-wider">Nuevo Valor (Reemplazo):</label>
+            <label class="text-xs font-bold text-blue-400 uppercase tracking-wider block">Nuevo Valor (Reemplazo):</label>
             <input type="text" id="swalOverrideInput" class="w-full mt-1 bg-slate-900 border border-blue-500/50 rounded p-2 text-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400" value="${safeRawValue}" placeholder="Escribe el valor corregido...">
           </div>
         `,
@@ -602,7 +619,7 @@ window.ViewerUI = (function () {
 
           // Hook into the Workshop Controller to create the rule natively
           if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
-            window.viewerRuleWorkshop.createLocalRule(safeRawValue, newVal, false, colId, rowUid);
+            window.viewerRuleWorkshop.createLocalRule(safeRawValue, newVal, false, colId, rowUid, skuContext);
           } else {
             Swal.fire("Error", "El Módulo de Reglas no está activo.", "error");
           }
@@ -614,7 +631,7 @@ window.ViewerUI = (function () {
       // [V5.17 UX] Allow identical values
       if (newVal !== null) {
         if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.createLocalRule === 'function') {
-          window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false, colId, rowUid);
+          window.viewerRuleWorkshop.createLocalRule(rawValue, newVal, false, colId, rowUid, skuContext);
         }
       }
     }

@@ -373,9 +373,9 @@ window.revertExtraction = async function(fileId) {
         icon: 'warning',
         input: 'radio',
         inputOptions: {
-            'ROLLBACK': '<div class="mb-1"><b class="text-white">Opción 1 (Rollback Físico):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Borra registros de Tabla Maestra (BD LAMDA), elimina estado en BD Auxiliar y mueve el archivo físico de vuelta a la bandeja Inbox.</div>',
-            'UNLINK': '<div class="mb-1"><b class="text-white">Opción 2 (Desvinculación Lógica):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Borra registros de Tabla Maestra (BD LAMDA) e invalida estado local. El archivo físico no se remueve de "Procesados" pero exige nuevo mapeo.</div>',
-            'REMOVE_EXTRACTION': '<div class="mb-1"><b class="text-emerald-400">Opción 3 (Reseteo de Ingesta - Recomendado):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Solo borra los registros inyectados en la Tabla Maestra (BD LAMDA). Conserva la metadata de transformación visual temporal para reinyección rápida.</div>'
+            'ROLLBACK': '<div class="mb-1"><b class="text-white">Opción 1 (Rollback Físico):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Borra toda la información extraída del sistema y mueve físicamente el archivo de vuelta a la carpeta de "Pendientes" en Drive. Útil para empezar de cero cuando la extracción fue un error total.</div>',
+            'UNLINK': '<div class="mb-1"><b class="text-white">Opción 2 (Desvinculación Lógica):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Borra toda la información extraída de la base de datos, pero no toca el archivo en Drive. El archivo queda archivado en "Procesados" y el sistema se olvida de su existencia. Útil para descartar listas que no sirven.</div>',
+            'REMOVE_EXTRACTION': '<div class="mb-1"><b class="text-emerald-400">Opción 3 (Reseteo de Ingesta - Recomendado):</b></div><div class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Borra los productos de la Tabla Maestra, pero conserva la lectura inicial que hizo la IA. El archivo NO se mueve de la carpeta de "Procesados", solo retrocede su estado a "Confirmado". Útil para volver a inyectar los datos corregidos sin tener que reprocesar el archivo original.</div>'
         },
         inputValue: 'REMOVE_EXTRACTION',
         showCancelButton: true,
@@ -777,7 +777,7 @@ window.showConfigurationGateway = async function(rawListId, fileName, fileCreate
             const createPayload = {
                 proveedor_id: providerId,
                 nombre_flujo: formValues.name,
-                config_payload: { sheets: {} }
+                config_payload: { isMultiSheet: true, sheets: {} }
             };
 
             const resFlujo = await fetch(`${backendUrl}/api/flujos`, {
@@ -790,6 +790,15 @@ window.showConfigurationGateway = async function(rawListId, fileName, fileCreate
             if (!resFlujo.ok) throw new Error(resultFlujo.error || "Falla nativa al crear flujo");
             
             finalFlujoId = resultFlujo.flujo.id_flujo;
+            
+            // FIX: Actualizar caché global para evitar "Blank State" y Amnesia en el Header
+            if (window.cachedFlujos && Array.isArray(window.cachedFlujos)) {
+                window.cachedFlujos.push({
+                    id_flujo: finalFlujoId,
+                    nombre_flujo: formValues.name,
+                    proveedor_id: providerId
+                });
+            }
         } catch (e) {
             Swal.fire({ title: 'Error de Forja', text: e.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
             return null;

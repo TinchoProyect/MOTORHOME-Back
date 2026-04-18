@@ -9,4 +9,8 @@ router.post('/refine-rule', aiController.refineRule);
 router.post('/discover-entities', aiController.discoverEntities);
 router.post('/categorize-rubros', aiController.categorizeRubros);
 
+// Librería de Prompts Contextual (Chofer IA History)
+router.get('/prompts/:masterFieldId', aiController.getPromptLibrary);
+router.post('/prompts', aiController.savePromptToLibrary);
+
 module.exports = router;

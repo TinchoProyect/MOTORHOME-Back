@@ -132,6 +132,21 @@ function renderRuleSelector() {
     discountOption.textContent = '⚡ Aplicar Descuento Fijo (%)';
     discountOption.className = 'font-bold text-cyan-400 bg-cyan-900/20';
     selector.appendChild(discountOption);
+
+    // [REQ QA] Inyección de Regla de Limpieza Local (Scoping Exclusivo)
+    // Sólo debe existir y ser visible si la columna destino es "código"
+    if (currentMasterId || activeContext.masterField) {
+        const targetName = String(activeContext.masterField.nombre_campo || '').toLowerCase().trim();
+        // Fallback: el API puede devolver IDs alfanuméricos como diccionarios, o nombres directos.
+        if (targetName === 'código' || targetName === 'codigo') {
+            const strictNumericOption = document.createElement('option');
+            strictNumericOption.value = 'BESPOKE_STRICT_NUMERIC';
+            strictNumericOption.textContent = '⚡ Validador Numérico Estricto (Limpieza)';
+            strictNumericOption.className = 'font-bold text-rose-400 bg-rose-900/20';
+            strictNumericOption.title = 'Conserva la celda solo si es 100% números. Vacía si contiene letras o símbolos.';
+            selector.appendChild(strictNumericOption);
+        }
+    }
 }
 
 // OPEN PANEL
@@ -152,13 +167,56 @@ export async function open(masterField, vColId, colName) {
     }
 
     if (!masterField) {
-        // [V5.14 FIX] Allow opening existing mapped columns without passing masterField
-        if (window.draftPipelines && window.draftPipelines[vColId]) {
+        // Validación de existencia en pipeline previo
+        if (window.draftPipelines && window.draftPipelines[vColId] && window.draftPipelines[vColId].masterField) {
             masterField = window.draftPipelines[vColId].masterField;
-        } else {
-            console.warn("Workshop abierto sin masterField y sin pipeline previo.");
-            return;
+        } else if (window.columnMapping && window.columnMapping[vColId] && window.columnMapping[vColId] !== 'Ignorar Columna') {
+            // [UX FIX] Cobertura Extrema: Rehidratar masterField desde un Mapeo Primario puro
+            masterField = { id: window.columnMapping[vColId] };
         }
+    }
+
+    // [V8 ARCHITECTURE STRICT SHIELD] Validador Universal de Capa 2
+    // Todo acceso al Taller de Transformación REQUIERE vinculación granítica (Capa 2 confirmada).
+    let isMasterLinked = false;
+    
+    if (masterField && masterField.id) {
+        // 1. Verificación Empírica Estricta: Cruce con Diccionario Maestro
+        // Un campo maestro real DEBE existir en masterDictionary.
+        if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+            const match = window.masterDictionary.find(m => 
+                String(m.id) === String(masterField.id) || 
+                String(m.nombre_campo) === String(masterField.nombre_campo) ||
+                String(m.nombre_campo) === String(masterField.id)
+            );
+            if (match) {
+                isMasterLinked = true;
+                // Saneamiento estructural
+                masterField.id = match.id;
+                masterField.nombre_campo = match.nombre_campo;
+            }
+        }
+    }
+
+    // BLOQUEO ESTRUCTURAL: Carece de Capa 2 (Solo Mapeo Primario o Nulo)
+    if (!isMasterLinked) {
+        console.error("🚨 VIGÍA DE ALERTA ROJA - ACCESO RECHAZADO: Columna sin Vinculación Maestra (Solo Mapeo Primario detectado).", { masterField, vColId });
+        
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'warning',
+                title: '<span style="color: #e2e8f0; font-weight: 800; letter-spacing: 0.05em;">ACCESO BLOQUEADO</span>',
+                html: '<span style="color: #94a3b8; font-size: 13px;">Para acceder al Taller de Transformación, primero debe vincular esta columna mapeada a una Columna Maestra.</span>',
+                background: 'rgba(15, 23, 42, 0.85)',
+                backdrop: 'rgba(0, 0, 0, 0.65)',
+                customClass: {
+                    popup: 'border border-slate-700/50 shadow-[0_0_30px_rgba(0,0,0,0.8)] backdrop-blur-md rounded-xl',
+                    confirmButton: 'bg-blue-600/80 hover:bg-blue-500 text-white font-bold tracking-widest text-[11px] uppercase border border-blue-500/50 backdrop-blur-sm'
+                },
+                confirmButtonText: 'Entendido'
+            });
+        }
+        return; // Interceptor de Flujo
     }
 
     // [NEW] Prevención Estricta de Doble Mapeo (Validación 1 a 1)
@@ -247,12 +305,24 @@ export async function open(masterField, vColId, colName) {
         }
     }
 
+    // --- [BUGFIX UI/UX] Restaurar Persistencia de Apagado de Editor Matemático ---
+    try {
+        const lsGlobKey = 'LAMDA_MATH_OPTOUT_' + (window.globalContext && window.globalContext.providerName ? window.globalContext.providerName.replace(/\s+/g,'_') : 'GLOBAL');
+        const storedStr = localStorage.getItem(lsGlobKey);
+        if (storedStr) {
+            const arr = JSON.parse(storedStr);
+            if (!window.m_optOutComputed) window.m_optOutComputed = new Set();
+            arr.forEach(id => window.m_optOutComputed.add(id));
+        }
+    } catch(e) { console.warn("No se pudo leer LocalStorage para Math Opt-Out", e); }
+    // ---------------------------------------------------------------------------------
+
     // Check if we need to CLONE or OVERWRITE
     let activeVColId = vColId;
     let hasConflict = false;
 
     // V4 Conflict (Pipeline)
-    if (window.draftPipelines && window.draftPipelines[vColId] && masterField.id !== window.draftPipelines[vColId].masterField.id) {
+    if (window.draftPipelines && window.draftPipelines[vColId] && window.draftPipelines[vColId].masterField && masterField.id !== window.draftPipelines[vColId].masterField.id) {
         hasConflict = true;
     }
     // V3 Conflict (Legacy Mapping)
@@ -391,15 +461,43 @@ export async function open(masterField, vColId, colName) {
         currentDraftPipeline = [];
     }
 
+    // [V5.20 Requerimiento UI: Trazabilidad Triple]
+    let origenTexto = "Origen Desconocido";
+    if (activeVColId.startsWith('col_ph_')) {
+        origenTexto = "Columna Fantasma";
+    } else if (activeVColId.startsWith('comp_')) {
+        origenTexto = "Columna Calculada";
+    } else if (activeVColId.startsWith('col_clone_')) {
+        origenTexto = "Columna Clonada";
+    } else {
+        const vCol = window.virtualColumns ? window.virtualColumns.find(c => c.id === activeVColId) : null;
+        if (vCol && vCol.dataIdx !== undefined) {
+             let physicalColNumber = parseInt(vCol.dataIdx) + 1;
+             origenTexto = `Col ${physicalColNumber}`;
+        } else if (activeVColId.startsWith('col_')) {
+             let n = activeVColId.replace('col_', '');
+             if (!isNaN(n)) origenTexto = `Col ${parseInt(n) + 1}`;
+        }
+    }
+
+    const primaryMappingName = colName ? colName : "Sin Mapeo Primario";
+    const masterDestName = masterField ? masterField.nombre_campo : "Sin Destino";
+
     // UI Updates
     document.getElementById('vrwCurrentMappingInfo').innerHTML = `
-        <div class="flex items-center justify-between w-full">
-            <div class="flex flex-col">
-                <span class="text-slate-400 text-xs">Enlazando columna:</span>
-                <span class="text-white text-sm font-bold truncate max-w-[200px]" title="${colName}">"${colName}" <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-400 inline mx-1"></i> ${masterField.nombre_campo}</span>
+        <div class="flex flex-row items-center justify-between w-full gap-4">
+            <div class="flex flex-col min-w-0 flex-1">
+                <span class="text-slate-400 text-xs mb-1">Trazabilidad de la Columna:</span>
+                <div class="flex items-center gap-2 text-[11px] font-mono bg-slate-950/50 p-1.5 rounded border border-slate-700/50 w-full overflow-hidden flex-wrap">
+                    <span class="text-slate-300 font-bold bg-slate-800 px-2 py-0.5 rounded shadow-sm shrink-0" title="Base: ${activeVColId}">[${origenTexto}]</span>
+                    <i data-lucide="arrow-right" class="w-3 h-3 text-slate-500 shrink-0"></i>
+                    <span class="text-emerald-300 font-bold bg-emerald-900/30 px-2 py-0.5 rounded border border-emerald-500/20 truncate max-w-[150px] shadow-sm shrink-0" title="Mapeo Primario: ${primaryMappingName}">${primaryMappingName}</span>
+                    <i data-lucide="arrow-right" class="w-3 h-3 text-blue-400 shrink-0"></i>
+                    <span class="text-blue-300 font-bold bg-blue-900/30 px-2 py-0.5 rounded border border-blue-500/20 truncate min-w-[50px] flex-1 shadow-sm shrink-0" title="Columna Maestra: ${masterDestName}">${masterDestName}</span>
+                </div>
             </div>
-            <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.unlinkCurrentCol()" class="shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-red-500/30 bg-red-500/5 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all hover:shadow-lg shadow-red-900/20" title="Eliminar este mapeo y devolver a su estado original">
-                <i data-lucide="unlink" class="w-3 h-3"></i> Quitar Mapeo
+            <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.unlinkCurrentCol()" class="shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-red-500/30 bg-red-500/5 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all hover:shadow-lg shadow-red-900/20" title="Romper la vinculación maestra de esta columna">
+                <i data-lucide="unlink" class="w-3 h-3"></i> Desvincular
             </button>
         </div>
     `;
@@ -419,18 +517,51 @@ export async function open(masterField, vColId, colName) {
     // Evaluamos si estrictamente estamos frente a una columna matemática/virtual (Virtual/Fantasma)
     const isComputedConfig = window.computedColumns && window.computedColumns.find(c => c.id === activeVColId);
     const isVirtualPlaceholder = window.virtualColumns && window.virtualColumns.find(c => c.id === activeVColId && (c.isGhostPlaceholder === true || c.isCalculated === true));
+    
     // [QA BUGFIX] Detección estructural: si el ID empieza con col_ph_, es un ghost por definición
-    // independientemente de si el flag isGhostPlaceholder sobrevivió los ciclos de serialización
     const isGhostById = activeVColId && activeVColId.startsWith('col_ph_');
     
-    // VIGÍA DE QA EXIGIDO
-    console.error("🚨 VIGÍA DE ALERTA ROJA - DIAGNÓSTICO UI - Evaluando Columna:", activeVColId, {isComputedConfig, isVirtualPlaceholder, isGhostById, activeContext: window._activeComputedContext});
+    // [QA FIX] Validation of Origin: Only default to math if not a raw physical column
+    let isPhysicallyPhantom = false;
+    let isNativeRaw = window.rawHeaders !== undefined && window.rawHeaders[activeVColId] !== undefined;
 
-    // Si la columna es Fantasma/Virtual -> Editor Matemático ON. Si es Nativa -> Editor OFF.
-    if (isComputedConfig || isVirtualPlaceholder || isGhostById || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId)) {
+    if (!isNativeRaw && window.currentSheetData && window.currentSheetData.length > 0) {
+        const vCol = window.virtualColumns ? window.virtualColumns.find(c => c.id === activeVColId) : null;
+        let dataIdx = -1;
+        if (vCol && vCol.dataIdx !== undefined) dataIdx = vCol.dataIdx;
+        else if (String(activeVColId).startsWith('col_')) dataIdx = parseInt(String(activeVColId).replace('col_', '').replace('ph_', ''));
+        
+        if (!isNaN(dataIdx)) {
+            // Check signature of Injection
+            if (window.currentSheetData[0] && window.currentSheetData[0][dataIdx] === 'NUEVA (VACÍA)') {
+                isPhysicallyPhantom = true;
+            }
+            else if (vCol && vCol.isGhostPlaceholder) {
+                isPhysicallyPhantom = true;
+            }
+            else if (dataIdx >= window.currentSheetData[0].length) {
+               // Out of bounds detection for physical phantom
+               isPhysicallyPhantom = true;
+            }
+        }
+    }
+    
+    // VIGÍA DE QA EXIGIDO
+    console.error("🚨 VIGÍA DE ALERTA ROJA - DIAGNÓSTICO UI - Evaluando Columna:", activeVColId, {isNativeRaw, isComputedConfig, isVirtualPlaceholder, isGhostById, isPhysicallyPhantom});
+
+    // Modificación de Bugfix (Exigencia QA): El Editor Matemático no debe encenderse por defecto
+    // solo por ser una columna vacía (Ghost/Phantom). Solo debe encenderse si tiene una configuración
+    // matemática activa guardada (isComputedConfig) o si el usuario clickeó forzarlo.
+    let isMathOptOut = false;
+    if (window.m_optOutComputed) {
+        if (window.m_optOutComputed.has(activeVColId)) isMathOptOut = true;
+        if (masterField && (window.m_optOutComputed.has(masterField.id) || window.m_optOutComputed.has(masterField.nombre_campo))) isMathOptOut = true;
+    }
+
+    if (!isMathOptOut && (isComputedConfig || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId))) {
         switchToComputedMode();
     } else {
-        switchToStandardMode();
+        switchToStandardMode(false);
     }
     
     // [V5.x FIX] Repintar combobox filtrado por Scope (campo_maestro_id) para el campo abierto
@@ -441,6 +572,9 @@ export async function open(masterField, vColId, colName) {
     // Init AI Copilot UI dynamically (Cero Totem UI Injection)
     if (window.viewerAiUi && typeof window.viewerAiUi.init === 'function') {
         window.viewerAiUi.init();
+        if (typeof window.viewerAiUi.setActiveMasterField === 'function') {
+            window.viewerAiUi.setActiveMasterField(masterField);
+        }
     } else {
         if (window.originalConsoleLog) window.originalConsoleLog("🚨 VIGÍA DEPURADOR CRÍTICO: window.viewerAiUi NO EXISTE o init no es función. El archivo js pudo fallar su parseo inicial.");
         if (typeof alert !== 'undefined') alert("🚨 VIGÍA DEPURADOR: El módulo Chofer IA no se exportó correctamente. Bloqueado en fase 0.");
@@ -453,7 +587,12 @@ export async function open(masterField, vColId, colName) {
 /**
  * Switches the Workshop Panel visual state to Computed Editor 
  */
-export function switchToComputedMode() {
+export function switchToComputedMode(forceUserActivate = false) {
+    if (forceUserActivate && activeContext && activeContext.colIndex) {
+        if (window.m_optOutComputed) {
+            window.m_optOutComputed.delete(activeContext.colIndex);
+        }
+    }
 
     // BUG FIX Nº3: Mantenemos visible el modo estándar de reglas por debajo del panel matemático
     document.getElementById('vrwStandardMode').classList.remove('hidden');
@@ -540,8 +679,38 @@ export function switchToComputedMode() {
 /**
  * Switches the Workshop Panel back to Standard ETL Rules
  */
-export function switchToStandardMode() {
+export function switchToStandardMode(userOptOut = true) {
     window._activeComputedContext = null;
+
+    // [QA BUGFIX] Limpieza profunda del estado matemático si el usuario desactiva el editor
+    if (window.computedColumns && activeContext && activeContext.colIndex) {
+        window.computedColumns = window.computedColumns.filter(c => c.id !== activeContext.colIndex);
+    }
+
+    // Guardar preferencia del usuario en esta sesión si lo apagó manualmente
+    if (userOptOut && activeContext && activeContext.colIndex) {
+        window.m_optOutComputed = window.m_optOutComputed || new Set();
+        window.m_optOutComputed.add(activeContext.colIndex);
+        
+        let pKey = activeContext.colIndex;
+        if (activeContext.masterField && activeContext.masterField.id) {
+            window.m_optOutComputed.add(activeContext.masterField.id);
+            pKey = activeContext.masterField.id;
+        } else if (activeContext.colName) {
+             window.m_optOutComputed.add(activeContext.colName);
+             pKey = activeContext.colName;
+        }
+        
+        try {
+            const cacheKey = 'LAMDA_MATH_OPTOUT_' + (window.globalContext && window.globalContext.providerName ? window.globalContext.providerName.replace(/\s+/g,'_') : 'GLOBAL');
+            const dataStr = localStorage.getItem(cacheKey);
+            let pArr = dataStr ? JSON.parse(dataStr) : [];
+            if (!pArr.includes(pKey)) {
+                pArr.push(pKey);
+                localStorage.setItem(cacheKey, JSON.stringify(pArr));
+            }
+        } catch(e) { console.warn("Fallo persisitiendo UI OptOut", e); }
+    }
 
     document.getElementById('vrwStandardMode').classList.remove('hidden');
     document.getElementById('vrwComputedMode').classList.add('hidden');
@@ -617,7 +786,24 @@ export function addSelectedRule() {
 
     const ruleId = selector.value;
     
-    // CASO A: Regla Bespoke Local
+    // CASO A: Reglas Bespoke Locales
+    if (ruleId === 'BESPOKE_STRICT_NUMERIC') {
+        const strictRule = {
+            id: 'BESPOKE_STRICT_NUMERIC',
+            tipo: 'validate_numeric_strict',
+            tipo_regex: 'VALIDATE_NUMERIC_STRICT',
+            nombre_regla: 'Validador Numérico Estricto',
+            descripcion: 'Limpieza Excluyente: Conserva el valor únicamente si contiene dígitos numéricos puros. Si la celda contiene al menos una letra, símbolo o espacio, se vaciará por completo.',
+            campo_maestro_id: activeContext.masterField ? activeContext.masterField.id : null
+        };
+        console.log(`➕ [WORKSHOP] Añadiendo Regla Dinámica (Scoping Exclusivo): ${strictRule.nombre_regla}`);
+        currentDraftPipeline.push(strictRule);
+        renderPipeline();
+        selector.value = "";
+        triggerPreview();
+        return;
+    }
+
     if (ruleId === 'BESPOKE_COMBINE_NUMERIC') {
         promptCombineNumericRule();
         selector.value = "";
@@ -805,8 +991,8 @@ async function renderCacheMissGatillo(container) {
     let uniqueMisses = [...new Set(misses)].filter(x => x);
     if (uniqueMisses.length > 0) {
         const btnHtml = `
-            <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.processCacheMiss('${encodeURIComponent(libretaPrompt)}', ${libretaRuleIdx})" class="w-full mt-3 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/50 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none">
-                <i data-lucide="rocket" class="w-4 h-4"></i> Procesar registros nuevos (${uniqueMisses.length})
+            <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.processCacheMiss('${encodeURIComponent(libretaPrompt)}', ${libretaRuleIdx})" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/50 rounded text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none">
+                <i data-lucide="rocket" class="w-3.5 h-3.5"></i> Procesar registros nuevos (${uniqueMisses.length})
             </button>
         `;
         container.insertAdjacentHTML('beforeend', btnHtml);
@@ -1052,7 +1238,7 @@ export async function unlinkCurrentCol() {
         if (typeof Swal !== 'undefined') {
             const result = await Swal.fire({
                 title: '¿Destruir Taller de Reglas?',
-                text: `La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas. Al quitar el mapeo se destruirán de forma irreversible.`,
+                text: `La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas. Al desvincular se destruirán de forma irreversible.`,
                 icon: 'warning',
                 background: '#0f172a', color: '#f8fafc',
                 showCancelButton: true,
@@ -1063,7 +1249,7 @@ export async function unlinkCurrentCol() {
             });
             if (!result.isConfirmed) return;
         } else {
-            if (!confirm(`La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas.\nAl quitar el mapeo se destruirán todas las reglas.\n\n¿Estás seguro de proceder?`)) return;
+            if (!confirm(`La columna "${activeContext.colName}" tiene ${currentDraftPipeline.length} reglas ETL aplicadas.\nAl desvincular se destruirán todas las reglas.\n\n¿Estás seguro de proceder?`)) return;
         }
     } else {
         if (typeof Swal !== 'undefined') {
@@ -1088,11 +1274,10 @@ export async function unlinkCurrentCol() {
     console.log(`🗑️ [WORKSHOP] UX Unlink: Purgando mapeo de ${vColId}`);
     
     if (vColId) {
-        // Purgar de los diccionarios de memoria
+        // Purgar de los diccionarios de memoria la vinculación maestra, pero conservando el mapeo base local
         if (window.draftPipelines) delete window.draftPipelines[vColId];
         if (window.processingRules) delete window.processingRules[vColId];
-        if (window.columnMapping) delete window.columnMapping[vColId];
-
+        
         // Purgar si era computed (Calculada Matemática)
         if (window.computedColumns) {
             const idx = window.computedColumns.findIndex(c => c.id === vColId);
@@ -1304,7 +1489,7 @@ export function applyMapping() {
     }
 }
 
-export async function createLocalRule(searchStr, replaceStr, isRegex = false, colId = null, rowUid = -1) {
+export async function createLocalRule(searchStr, replaceStr, isRegex = false, colId = null, rowUid = -1, skuContext = null) {
     if (!window.globalContext || !window.globalContext.providerId || !window.currentSheetName) {
         if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error', text: 'Falta contexto del proveedor u hoja actual.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
         else alert("Falta contexto del proveedor u hoja actual.");
@@ -1331,7 +1516,10 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false, co
         let ruleNamePrefix = `Reemplazo Local:`;
         
         // [Local Override Phase]
-        if (rowUid !== -1 && rowUid !== null && rowUid !== undefined) {
+        if (skuContext && skuContext.trim() !== "") {
+            targetRegexPayload = `CUSTOM_OVERRIDE_SKU:${skuContext.trim()}|||${replaceStr}`;
+            ruleNamePrefix = `Override por SKU [${skuContext.trim().substring(0, 15)}]:`;
+        } else if (rowUid !== -1 && rowUid !== null && rowUid !== undefined) {
             targetRegexPayload = `CUSTOM_OVERRIDE_ROW:${rowUid}|||${replaceStr}`;
             ruleNamePrefix = `Sobre-escritura en Fila ${rowUid}:`;
         }

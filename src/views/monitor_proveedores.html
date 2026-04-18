@@ -687,9 +687,14 @@
                         <!-- CONTROLES MODO CALCULADORA (V5 Computed) -->
                         <div id="vrwComputedMode" class="hidden shrink-0 flex flex-col space-y-4">
                             <div class="bg-purple-900/10 p-4 rounded-xl border border-purple-500/30 flex flex-col gap-3">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <i data-lucide="calculator" class="w-4 h-4 text-purple-400"></i>
-                                    <label class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Editor de Fórmula Matemática</label>
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center gap-2">
+                                        <i data-lucide="calculator" class="w-4 h-4 text-purple-400"></i>
+                                        <label class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Editor de Fórmula Matemática</label>
+                                    </div>
+                                    <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.switchToStandardMode()" class="px-2 py-1 bg-red-900/20 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 rounded text-[10px] font-semibold transition-colors" title="Desactivar Editor Matemático y Limpiar Configuración Péndulo">
+                                        Desactivar Editor
+                                    </button>
                                 </div>
                                 
                                 <div class="space-y-1">
@@ -742,6 +747,11 @@
 
                             <!-- CONTROLES MODO ESTÁNDAR (Pipeline de Reglas) -->
                             <div id="vrwStandardMode" class="flex flex-col shrink-0 space-y-6">
+                                <div class="flex justify-end pr-2">
+                                    <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.switchToComputedMode(true)" class="text-[9px] font-bold text-purple-400 hover:text-purple-300 uppercase tracking-widest flex items-center gap-1.5 transition-colors bg-purple-900/20 hover:bg-purple-900/40 px-3 py-1.5 rounded-lg border border-purple-500/30">
+                                        <i data-lucide="calculator" class="w-3.5 h-3.5"></i> Activar Editor de Fórmulas Matemáticas
+                                    </button>
+                                </div>
                                 <!-- Selector de Reglas -->
                                 <div class="bg-slate-900/40 p-3 rounded-xl border border-slate-800/50 shrink-0">
                                     <div class="flex items-center justify-between mb-2">
@@ -799,26 +809,30 @@
                                 </div>
                         </div>
 
-                        <div class="p-4 border-t border-slate-800 bg-slate-900/70 flex flex-col gap-3 shrink-0 backdrop-blur-md z-20 shadow-[0_-10px_15px_rgba(0,0,0,0.3)]">
-                            <div
-                                class="flex text-[9px] text-slate-500 items-start gap-2 bg-slate-950/50 p-2 rounded border border-slate-800/50">
-                                <i data-lucide="info" class="w-3 h-3 shrink-0 mt-0.5"></i>
-                                <p>Confirmar aplicará este pipeline a la columna seleccionada.</p>
+                        <div class="p-3 border-t border-slate-800 bg-slate-900/90 flex flex-wrap items-center justify-between gap-3 shrink-0 backdrop-blur-xl z-20 shadow-[0_-10px_25px_rgba(0,0,0,0.5)]">
+                            <!-- Info Icon -->
+                            <div class="flex text-[9px] text-slate-500 items-center justify-center gap-1 shrink-0 px-2 py-1 bg-slate-800/50 rounded border border-slate-700/50" title="Confirmar aplicará este pipeline a la columna seleccionada.">
+                                <i data-lucide="info" class="w-3.5 h-3.5 text-blue-400"></i>
+                                <span class="uppercase tracking-widest font-mono hidden xl:inline">Aplica a Columna Activa</span>
                             </div>
-                            <!-- [PHASE 3] Botón de Bucle de Auditoría Activa -->
-                        <div id="vrwAuditContainer" class="hidden mb-3">
-                            <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.auditResidues()" class="w-full py-2.5 bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.15)] hover:shadow-[0_0_15px_rgba(245,158,11,0.3)]">
-                                <i data-lucide="search-check" class="w-4 h-4"></i> Auditar Residuos
-                            </button>
-                        </div>
-                        <div class="flex gap-2">
+                            
+                            <!-- Dynamic Audit/Process Container -->
+                            <div id="vrwAuditContainer" class="hidden flex items-center gap-2 flex-grow overflow-x-auto custom-scrollbar pb-1 -mb-1">
+                                <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.auditResidues()" class="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 border border-amber-500/30 rounded text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.15)] hover:shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+                                    <i data-lucide="search-check" class="w-3.5 h-3.5"></i> Auditar Residuos
+                                </button>
+                                <!-- vrwCacheMissBtn injected here -->
+                            </div>
+
+                            <!-- Cancel & Apply Container -->
+                            <div class="flex items-center gap-2 shrink-0 ml-auto">
                                 <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.close()"
-                                    class="w-1/3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold uppercase transition-colors">
+                                    class="px-4 py-1.5 bg-transparent hover:bg-red-500/10 text-slate-400 hover:text-red-400 border border-transparent hover:border-red-500/30 rounded text-[10px] font-bold uppercase tracking-widest transition-colors shrink-0">
                                     Cancelar
                                 </button>
                                 <button id="vrwBtnApply" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.applyMapping()"
-                                    class="flex-grow py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.3)] border border-emerald-400/20 flex items-center justify-center gap-2">
-                                    <i data-lucide="check" class="w-4 h-4 text-emerald-200"></i> <span id="vrwBtnApplyText">Enlazar Columna</span>
+                                    class="px-6 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.3)] border border-emerald-400/20 flex items-center justify-center gap-2 shrink-0">
+                                    <i data-lucide="check" class="w-3.5 h-3.5 text-emerald-200"></i> <span id="vrwBtnApplyText">Guardar Ecuación</span>
                                 </button>
                             </div>
                         </div>
@@ -956,6 +970,32 @@
                     <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-30"></i>
                     <p class="text-sm font-bold text-slate-300">Molde de Tabla Vacío</p>
                     <p class="text-xs text-slate-500 mt-2">La estructura de la vista está lista. Registre nuevos campos maestros para ver las columnas.</p>
+                </div>
+                
+                <!-- Action Bar Flotante: Bulk Rubro Update -->
+                <div id="fmtBulkActionBar" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-900 border border-purple-500/50 shadow-[0_10px_40px_rgba(168,85,247,0.3)] rounded-2xl p-4 z-50 flex items-center gap-4 transition-all duration-300 translate-y-32 opacity-0 pointer-events-none">
+                    <div class="flex items-center gap-3 pr-4 border-r border-slate-700">
+                        <div class="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center border border-purple-500/30">
+                            <i data-lucide="check-square" class="w-5 h-5 text-purple-400"></i>
+                        </div>
+                        <div>
+                            <p class="text-white font-bold text-sm tracking-wide leading-none mb-1"><span id="fmtBulkCount" class="text-purple-400">0</span> filas</p>
+                            <p class="text-[10px] text-slate-400 font-mono uppercase tracking-widest leading-none">Seleccionadas</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-3 pl-2">
+                        <label class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Reasignar Semántica:</label>
+                        <select id="fmtBulkRubroSelect" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-4 py-2.5 outline-none focus:border-purple-500 shadow-inner w-56 appearance-none cursor-pointer">
+                            <option value="">Cargando Rubros...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="pl-2">
+                        <button onclick="window.executeBulkRubroUpdate()" class="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors shadow-lg shadow-purple-900/40 flex items-center gap-2">
+                            <i data-lucide="zap" class="w-4 h-4"></i> Aplicar
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1476,19 +1516,32 @@
                      sortable: true, 
                      filter: true, 
                      pinned: 'left', 
-                     width: 180,
+                     width: 250,
+                     headerCheckboxSelection: true,
+                     checkboxSelection: (params) => {
+                         // No permitir seleccionar skeletons u obsoletos sin ID real
+                         return params.data && !params.data._is_empty_skeleton;
+                     },
                      cellRenderer: (params) => {
                          if (params.data && params.data._is_empty_skeleton) {
                              return `<div class="flex items-center justify-between gap-1 w-full"><span class="font-bold text-slate-300 opacity-60">${params.value}</span> <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 uppercase tracking-widest border border-slate-700">Sin Registros</span></div>`;
                          }
-                         return `<span class="font-bold text-slate-100">${params.value}</span>`;
+                         
+                         let lockPill = '';
+                         if (params.data._bloqueo_edicion_manual) {
+                             lockPill = `<div title="Protegido por Edición Semántica Manual" class="flex items-center justify-center px-1.5 py-0.5 rounded bg-purple-900/30 border border-purple-500/50 text-purple-400 text-[10px]"><i data-lucide="lock" class="w-3 h-3"></i></div>`;
+                         }
+                         
+                         return `<div class="flex items-center gap-2 w-full"><span class="font-bold text-slate-100 flex-1 truncate">${params.value}</span>${lockPill}</div>`;
                      }
                 });
                 
                 const saveGridState = () => {
                     if (!window.v4GridApi) return;
                     const state = window.v4GridApi.getColumnState();
+                    const filterModel = window.v4GridApi.getFilterModel();
                     localStorage.setItem('lamda_v4_grid_state', JSON.stringify(state));
+                    localStorage.setItem('lamda_v4_filter_state', JSON.stringify(filterModel));
                 };
 
                 const gridOptions = {
@@ -1496,6 +1549,8 @@
                     rowData: rowData,
                     rowDragManaged: true,
                     animateRows: true,
+                    rowSelection: 'multiple',
+                    suppressRowClickSelection: true,
                     isExternalFilterPresent: () => {
                         return true; // Obligamos siempre al filtrado para gestionar el aislamiento del ruido
                     },
@@ -1532,21 +1587,37 @@
                     },
                     onModelUpdated: () => {
                         window.updateFmtStatusBar();
+                        if (window.lucide) window.lucide.createIcons();
+                    },
+                    onSelectionChanged: () => {
+                        window.onFmtSelectionChanged();
                     }
                 };
                 
                 window.v4GridApi = agGrid.createGrid(gridContainer, gridOptions);
                 
-                // Restoring State
+                // Restoring State & Filters
                 const savedState = localStorage.getItem('lamda_v4_grid_state');
+                const savedFilters = localStorage.getItem('lamda_v4_filter_state');
+                
                 if (savedState) {
                     window.v4GridApi.applyColumnState({ state: JSON.parse(savedState), applyOrder: true });
                 }
+                if (savedFilters) {
+                    window.v4GridApi.setFilterModel(JSON.parse(savedFilters));
+                }
+                
+                // Clear Bulk Panel State if it was open
+                const bar = document.getElementById('fmtBulkActionBar');
+                if (bar) bar.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
                 
                 gridContainer.classList.remove('hidden');
                 
                 // Populate Dropdown
                 window.renderFmtColumnsDropdown(fields);
+                
+                // Preload Rubros for Bulk Action
+                window.loadRubrosForBulk();
                 
             } catch(e) {
                 console.error("Error cargando estructura para V4.1:", e);
@@ -1562,10 +1633,19 @@
             document.getElementById('finalMasterTableModal').classList.add('hidden');
             document.getElementById('fmtColumnsDropdown').classList.add('hidden'); // auto-hide
             document.getElementById('fmtProvidersDropdown').classList.add('hidden'); // auto-hide
+            
+            const bar = document.getElementById('fmtBulkActionBar');
+            if (bar) {
+                bar.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
+            }
+            
             if (window.v4GridApi) {
                 window.v4GridApi.destroy();
                 window.v4GridApi = null;
             }
+            
+            // INCIDENCIA 1: Limpiar cache de filtros para no arrastrarlos en sesiones nuevas
+            localStorage.removeItem('lamda_v4_filter_state');
         }
         
         window.renderFmtColumnsDropdown = function(fields) {
@@ -1670,6 +1750,120 @@
         };
 
         // ==========================================
+        // LÓGICA BULK EDIT (EDICIÓN MASIVA DE RUBROS)
+        // ==========================================
+        window.loadRubrosForBulk = async function() {
+            try {
+                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const res = await fetch(`${backendUrl}/api/rubros`);
+                if (res.ok) {
+                    const json = await res.json();
+                    const rubros = json.data || [];
+                    const select = document.getElementById('fmtBulkRubroSelect');
+                    if (select) {
+                        select.innerHTML = '<option value="">-- Seleccionar Rubro --</option>';
+                        select.innerHTML += '<option value="UNASSIGN" class="text-rose-400 font-bold bg-rose-950/20">🧹 DESASIGNAR (Vaciar Registro)</option>';
+                        rubros.filter(r => r.es_activo).forEach(r => {
+                            select.innerHTML += `<option value="${r.id}">${r.nombre_rubro}</option>`;
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error("Error loading rubros for bulk:", e);
+            }
+        };
+
+        window.onFmtSelectionChanged = function() {
+            if (!window.v4GridApi) return;
+            const selectedRows = window.v4GridApi.getSelectedRows();
+            const bar = document.getElementById('fmtBulkActionBar');
+            const countSpan = document.getElementById('fmtBulkCount');
+            
+            if (!bar || !countSpan) return;
+            
+            if (selectedRows.length > 0) {
+                countSpan.innerText = selectedRows.length;
+                bar.classList.remove('translate-y-32', 'opacity-0', 'pointer-events-none');
+            } else {
+                bar.classList.add('translate-y-32', 'opacity-0', 'pointer-events-none');
+            }
+        };
+
+        window.executeBulkRubroUpdate = async function() {
+            if (!window.v4GridApi) return;
+            const selectedRows = window.v4GridApi.getSelectedRows();
+            const selectDiv = document.getElementById('fmtBulkRubroSelect');
+            const targetRubroId = selectDiv ? selectDiv.value : null;
+
+            if (selectedRows.length === 0) {
+                Swal.fire('Error', 'Debe seleccionar al menos un producto.', 'error');
+                return;
+            }
+
+            if (!targetRubroId) {
+                Swal.fire('Atención', 'Seleccione el Rubro destino.', 'warning');
+                return;
+            }
+
+            const itemIds = selectedRows.map(r => r._system_id);
+
+            const result = await Swal.fire({
+                title: '¿Confirmar Reasignación?',
+                html: `Vas a reasignar <b>${selectedRows.length}</b> productos al nuevo rubro.<br><br><span class="text-xs text-amber-500"><i data-lucide="shield-check" class="w-4 h-4 inline"></i> Esta acción fijará la selección manualmente y estará protegida de futuras ingestas automáticas del extractor.</span>`,
+                icon: 'warning',
+                background: '#0f172a',
+                color: '#f8fafc',
+                showCancelButton: true,
+                confirmButtonColor: '#9333ea',
+                cancelButtonColor: '#334155',
+                confirmButtonText: 'Sí, Ejecutar',
+                cancelButtonText: 'Cancelar',
+                customClass: { popup: 'border border-slate-700 shadow-2xl rounded-2xl' }
+            });
+
+            if (result.isConfirmed) {
+                try {
+                    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                    
+                    Swal.fire({
+                        title: 'Aplicando Cambios...',
+                        allowOutsideClick: false,
+                        background: '#0f172a',
+                        color: '#f8fafc',
+                        didOpen: () => Swal.showLoading()
+                    });
+
+                    const res = await fetch(`${backendUrl}/api/master-table/operativa/bulk-rubro`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ itemIds: itemIds, target_rubro_id: targetRubroId })
+                    });
+                    
+                    const json = await res.json();
+                    
+                    if (res.ok && json.success) {
+                        Swal.fire({
+                            title: '¡Sincronización Exitosa!',
+                            text: `${json.count} registros reasignados.`,
+                            icon: 'success',
+                            background: '#0f172a',
+                            color: '#f8fafc',
+                            timer: 2500,
+                            showConfirmButton: false
+                        });
+                        
+                        // Recargar tabla completa para aplicar candado UI
+                        if (window.openFinalMasterTable) {
+                            window.openFinalMasterTable();
+                        }
+                    } else {
+                        throw new Error(json.error || 'Error desconocido.');
+                    }
+                } catch (e) {
+                    Swal.fire('Error de Red', e.message, 'error');
+                }
+            }
+        };
         // EXTRACCIÓN OPERATIVA (FASE 5)
         // ==========================================
         window.executeExtraction = async function(forceOverwrite = false) {

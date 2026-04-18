@@ -137,6 +137,67 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
 }
 
 function renderVirtualTable(originalData) {
+    // [REQ QA] Resolución anticipada de la columna 'código' para el anclaje SKU de reemplazos manuales
+    // [REQ QA] Resolución anticipada de la columna 'código' para el anclaje SKU de reemplazos manuales
+    let codeDataIdx = -1;
+    
+    const isMasterIdentifier = (masterId, masterName) => {
+        if (!window.masterDictionary) return false;
+        const mObj = window.masterDictionary.find(m => String(m.id) === String(masterId));
+        if (mObj && mObj.es_identificador === true) return true;
+        if (mObj && mObj.nombre_campo) masterName = mObj.nombre_campo;
+        if (!masterName) return false;
+        const lowerName = masterName.toLowerCase().trim();
+        return lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku';
+    };
+
+    if (window.draftPipelines) {
+        for (let cId in window.draftPipelines) {
+            const pipe = window.draftPipelines[cId];
+            if (pipe && pipe.masterField && isMasterIdentifier(pipe.masterField.id, pipe.masterField.nombre_campo)) {
+                if (window.virtualColumns && typeof cId === 'string') {
+                    const vCol = window.virtualColumns.find(c => String(c.id) === String(cId));
+                    if (vCol && vCol.dataIdx !== undefined) codeDataIdx = vCol.dataIdx;
+                }
+                if (codeDataIdx === -1 && typeof cId === 'string' && cId.startsWith('col_')) {
+                    codeDataIdx = parseInt(cId.replace('col_', ''), 10);
+                }
+                break;
+            }
+        }
+    }
+    
+    if (codeDataIdx === -1 && window.columnMapping) {
+        for (let cId in window.columnMapping) {
+            const mappedVal = window.columnMapping[cId];
+            let isId = false;
+            if (isMasterIdentifier(mappedVal, mappedVal)) {
+                isId = true;
+            } else if (window.nomenclatureCache) {
+                const term = window.nomenclatureCache.find(t => String(t.termino).toLowerCase().trim() === String(mappedVal).toLowerCase().trim());
+                if (term && (term.termino.toLowerCase().trim() === 'código' || term.termino.toLowerCase().trim() === 'codigo' || term.termino.toLowerCase().trim() === 'sku')) {
+                    isId = true;
+                }
+            }
+            if (!isId) {
+                const lowerName = String(mappedVal).toLowerCase().trim();
+                if (lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku') {
+                    isId = true;
+                }
+            }
+            if (isId) {
+                if (window.virtualColumns && typeof cId === 'string') {
+                    const vCol = window.virtualColumns.find(c => String(c.id) === String(cId));
+                    if (vCol && vCol.dataIdx !== undefined) codeDataIdx = vCol.dataIdx;
+                }
+                if (codeDataIdx === -1 && typeof cId === 'string' && cId.startsWith('col_')) {
+                    codeDataIdx = parseInt(cId.replace('col_', ''), 10);
+                }
+                break;
+            }
+        }
+    }
+
     // [V5.19 UX] Global Trim for Phantom Rows (bottom-up filtering)
     let cleanedData = [...(originalData || [])];
     let lastRealRowIndex = cleanedData.length - 1;
@@ -328,9 +389,10 @@ function renderVirtualTable(originalData) {
                 const pipe = window.draftPipelines[j];
                 const pipeName = getHumanName(pipe.masterField ? (pipe.masterField.nombre_campo || pipe.masterField.id) : mappedType);
                 const safeOriginVal = originalVal ? originalVal.replace(/'/g, "\\'") : '';
+                const safePipeName = pipeName ? pipeName.replace(/'/g, "\\'") : '';
                 thContent = `
                     <div class="flex items-center justify-between w-full gap-1 group relative">
-                        <div class="flex items-center gap-1.5 flex-1 cursor-pointer text-emerald-300 hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors truncate" onclick="if(window.isRemappingFlow) return; if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${safeOriginVal}')">
+                        <div class="flex items-center gap-1.5 flex-1 cursor-pointer text-emerald-300 hover:bg-emerald-900/30 px-1 py-0.5 rounded transition-colors truncate" onclick="if(window.isRemappingFlow) return; if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.open(null, '${j}', '${safePipeName}')">
                             <i data-lucide="link-2" class="w-3 h-3 shrink-0"></i>
                             <span class="truncate font-bold text-[10px] uppercase" title="${pipeName}">${pipeName}</span>
                             <div class="bg-emerald-800 text-emerald-200 text-[8px] font-bold px-1.5 rounded-full shrink-0">${pipe.rules ? pipe.rules.length : 0}R</div>
@@ -476,6 +538,9 @@ function renderVirtualTable(originalData) {
         for (let i = startDataIndex; i < endIndex; i++) {
             const row = data[i] || [];
 
+            // [V8.15 UX FIX] Visually disappear manually resolved or pipeline-discarded rows from Universal Viewer
+            if (row._rejectedSim || row._rejectedByCode) continue;
+
             let rowStyle = `height: ${ROW_HEIGHT}px;`;
             let rowClass = "hover:bg-slate-800/50";
 
@@ -536,7 +601,16 @@ function renderVirtualTable(originalData) {
                 // EXCEPCIONES: Bindear click derecho para TODAS las columnas renderizadas, sin importar si el ETL o Taller están en foco (Solo si no es Modo Lectura/Pendientes)
                 let onCtx = "";
                 if (!window.isViewerReadOnly) {
-                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}', ${row && row._rowUid !== undefined ? row._rowUid : -1})"`;
+                    // [REQ QA] Pasar contexto SKU al Modal
+                    let rawSkuValue = "";
+                    if (codeDataIdx >= 0 && row && row[codeDataIdx] !== undefined) {
+                        rawSkuValue = String(row[codeDataIdx]).trim();
+                    }
+                    const safeSkuContext = rawSkuValue
+                        .replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+                        .replace(/"/g, "&quot;").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+
+                    onCtx = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeRawVal}', '${j}', ${row && row._rowUid !== undefined ? row._rowUid : -1}, '${safeSkuContext}')"`;
                     cellClass += " cursor-context-menu";
                 }
 
@@ -746,7 +820,17 @@ function renderVirtualTable(originalData) {
                         .replace(/"/g, "&quot;")
                         .replace(/\n/g, "\\n")
                         .replace(/\r/g, "\\r");
-                    let onCtxComputed = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeResultDisplay}', '${calcConfig.id}', ${row && row._rowUid !== undefined ? row._rowUid : -1})"`;
+                    
+                    // [REQ QA] Pasar contexto SKU al Modal (Computed Columns)
+                    let rawSkuValueComp = "";
+                    if (codeDataIdx >= 0 && row && row[codeDataIdx] !== undefined) {
+                        rawSkuValueComp = String(row[codeDataIdx]).trim();
+                    }
+                    const safeSkuContextComp = rawSkuValueComp
+                        .replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+                        .replace(/"/g, "&quot;").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+
+                    let onCtxComputed = ` oncontextmenu="window.ViewerUI.showOriginalValue(event, '${safeResultDisplay}', '${calcConfig.id}', ${row && row._rowUid !== undefined ? row._rowUid : -1}, '${safeSkuContextComp}')"`;
                     
                     cellClass += " cursor-context-menu";
 
@@ -796,7 +880,15 @@ async function generatePreview(skipModal = false) {
             if (window._simCaciqueSheetName) caciqueName = window._simCaciqueSheetName;
         } else {
             if (window.currentSheetList && window.currentSheetList.length > 1) {
-                Swal.fire({
+                if (skipModal) {
+                    const allSheets = window.exportAllSheets ? await window.exportAllSheets() : [];
+                    const validSheets = allSheets.filter(s => s.data && s.data.length > 0);
+                    sheetsToProcess = validSheets;
+                    caciqueName = window._simCaciqueSheetName || (validSheets.length > 0 ? validSheets[0].name : null);
+                    window._simValidSheetsForPreview = validSheets;
+                    window._rawValidSheetsCache = validSheets;
+                } else {
+                    Swal.fire({
                     title: 'Recolectando Estructura...',
                     html: '<span class="text-slate-400">Analizando el alcance del documento multi-hoja.</span>',
                     allowOutsideClick: false,
@@ -965,6 +1057,7 @@ async function generatePreview(skipModal = false) {
                     sheetsToProcess = window._rawValidSheetsCache.length === 1 ? window._rawValidSheetsCache : [{ name: currentSheetName || 'Principal', data: currentSheetData }];
                     window._simValidSheetsForPreview = sheetsToProcess;
                 }
+                } // Close the 'else' block from 'if (skipModal)'!
             } else {
                 sheetsToProcess = [{ name: currentSheetName || 'Principal', data: currentSheetData }];
                 window._simValidSheetsForPreview = sheetsToProcess;
@@ -1551,7 +1644,8 @@ async function generatePreview(skipModal = false) {
                     const rS = ruleStack ? (Array.isArray(ruleStack) ? ruleStack : [ruleStack]) : [];
                     const dRule = rS.find(r => r.type === 'remove_duplicates' && !r.disabled);
                     if (dRule) {
-                        const cellVal = String(row[v.dataIdx] || "").trim();
+                        // [UX FIX] Read the ETL Transformed value (richContext) to evaluate duplicates on processed data, not raw initial data
+                        const cellVal = rCtx && rCtx[v.id] ? String(rCtx[v.id].display).trim() : String(row[v.dataIdx] || "").trim();
                         if (cellVal) {
                             if (seenValues.has(cellVal)) {
                                 row._rejectedSim = true;
@@ -1599,6 +1693,9 @@ async function generatePreview(skipModal = false) {
                 } else if (isEmptyRow) {
                      row._rejectedSim = true;
                      row._emptySilently = true;
+                } else if (row._rejectedByCode) {
+                     // Catch-all para rejections inyectados manualmente desde la UI (ej. unifyDuplicates)
+                     row._rejectedSim = true;
                 }
 
                 // SIEMPRE retornar true para preservar el objeto y permitir la visibilidad on/off
@@ -1680,14 +1777,21 @@ async function generatePreview(skipModal = false) {
             </button>
         ` : '';
 
+        // Pre-compute Valid Row count directly to establish psychological UI confirmation 
+        let currentValidRowsCount = sanitizedData ? sanitizedData.filter(r => !r._rejectedSim).length : 0;
+        let totalRawRowsCount = sanitizedData ? sanitizedData.length : 0;
+
         const toolbar = `
             <div class="flex items-center gap-3 mb-2 p-2 bg-slate-900 border-b border-slate-700 sticky top-0 z-10 w-full">
                 ${filterHTML}
                 ${toggleHtml}
                 ${supportToggleHtml}
                 
-                <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700 ml-auto">
-                    <span id="simFilteredCount">${sanitizedData.length}</span> / ${sanitizedData.length}
+                <div class="text-[10px] text-slate-500 font-mono px-2 border-l border-slate-700 ml-auto flex items-center">
+                    <span id="simFilteredCount" class="text-emerald-400 font-bold">${currentValidRowsCount}</span> 
+                    <span class="mx-1">/</span> 
+                    ${currentValidRowsCount} 
+                    <span class="text-slate-600 italic ml-2">(${totalRawRowsCount} En Matriz)</span>
                 </div>
             </div>
             <div id="simTableScrollArea" class="flex-1 w-full min-h-[300px] overflow-auto custom-scrollbar relative p-0 m-0 bg-slate-900">
@@ -1791,6 +1895,7 @@ function renderSimulationTable(data) {
         switch(type) {
             case 'split': case 'regex_split': return 'Dividir Texto';
             case 'sanitize_numbers': return 'Extraer Numéricos';
+            case 'VALIDATE_NUMERIC_STRICT': return 'Validador Numérico Estricto';
             case 'remove_zeros': return 'Quitar Ceros Iniciales';
             case 'uppercase': return 'Mayúsculas';
             case 'lowercase': return 'Minúsculas';
@@ -2185,8 +2290,8 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
         }
         
         // Reconstruir interfaz completa reflejando nueva posición (Actualización Optimista Dinámica)
-        if (typeof window.renderSimulationTable === 'function' && window._lastSanitizedData) {
-            window.renderSimulationTable(window._lastSanitizedData);
+        if (typeof window.renderSimulationTable === 'function' && window.currentSimData) {
+            window.renderSimulationTable(window.currentSimData);
             if (window.lucide) window.lucide.createIcons({ root: document.getElementById('simulationTableContainer') });
         } else if (typeof generatePreview === 'function') {
             generatePreview(true); // Fallback
@@ -2386,11 +2491,29 @@ function onColMouseUp(e) {
         window.saveSheetState(window.currentSheetName);
     }
 
+    // Capture visual context to prevent scroll jumping
+    const container = document.getElementById('excelContainer');
+    const scrollPos = container ? container.scrollTop : 0;
+    const scrollLeft = container ? container.scrollLeft : 0;
+
     // Force full table re-render to propagate width to all body cells, preserving state
     if (typeof window.triggerSafeRender === 'function') {
         window.triggerSafeRender();
     } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
         window.renderVirtualTable(window.currentSheetData);
+    }
+
+    // Restore visual context
+    if (container) {
+        container.scrollTop = scrollPos;
+        container.scrollLeft = scrollLeft;
+        container.dispatchEvent(new Event('scroll')); // Resync Virtual Scroller
+        
+        requestAnimationFrame(() => {
+            container.scrollTop = scrollPos;
+            container.scrollLeft = scrollLeft;
+            container.dispatchEvent(new Event('scroll'));
+        });
     }
 
     // Silent auto-save to backend
@@ -2564,9 +2687,14 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
 
         // Build conflict UI HTML
         let conflictHtml = toggleHtml + `
-            <div class="mb-5 bg-amber-900/40 border border-amber-500/40 shadow-lg shadow-amber-900/20 rounded-lg p-4 text-left">
-                <div class="flex items-center gap-2 text-amber-400 font-bold mb-2 text-[11px] uppercase tracking-wider">
-                    <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Resumen Analítico
+            <div class="mb-5 bg-amber-900/40 border border-amber-500/40 shadow-lg shadow-amber-900/20 rounded-lg p-4 text-left relative">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2 text-amber-400 font-bold text-[11px] uppercase tracking-wider">
+                        <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Resumen Analítico
+                    </div>
+                    <button onclick="window.unifyDuplicates('${colId}', '${viewMode}')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold text-xs shadow-lg shadow-rose-900/50 transition-transform active:scale-95 flex items-center gap-2">
+                        <i data-lucide="scissors" class="w-3.5 h-3.5"></i> Purificar Duplicados (Conservar Únicos)
+                    </button>
                 </div>
                 <div class="text-amber-200/90 text-[13px] leading-relaxed">
                     Se encontraron ${freqSentence}. Total de filas afectadas: <b class="text-amber-400 text-sm bg-amber-500/10 px-1 rounded">${totalAffected}</b>.
@@ -2620,7 +2748,64 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
                 color: '#f8fafc',
                 confirmButtonText: 'Entendido',
                 confirmButtonColor: '#3b82f6',
+                didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
             });
         }
     }
+};
+
+window.unifyDuplicates = function(colId, viewMode) {
+    if (!window.viewerState || !window.viewerState.data) return;
+    
+    Swal.fire({
+        title: '¿Confirmar Purificación Estricta?',
+        html: '<div class="text-[13px] text-slate-300">Se conservará secuencialmente el <b>primer registro</b> de cada bloque de duplicados por esta columna, filtrando y descartando el resto permanentemente de la vista activa.</div>',
+        icon: 'warning',
+        background: '#0f172a', color: '#f8fafc',
+        showCancelButton: true,
+        confirmButtonColor: '#e11d48',
+        cancelButtonColor: '#334155',
+        confirmButtonText: '<i data-lucide="scissors" class="inline w-4 h-4 mr-1 mt-[-2px]"></i> Sí, Purificar Matriz',
+        cancelButtonText: 'Cancelar',
+        didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            
+            if (!window.draftPipelines) window.draftPipelines = {};
+            if (!window.draftPipelines[colId]) {
+                 // Prevent crashing if no pipeline is attached to the column yet 
+                 window.draftPipelines[colId] = { rules: [] };
+            }
+            
+            const existingDupl = window.draftPipelines[colId].rules.find(r => r.type === 'remove_duplicates');
+            if (existingDupl) {
+                Swal.fire({ title: 'Atención', text: 'La regla de purificación única ya se encuentra activa en esta columna.', icon: 'info', background: '#0f172a', color: '#f8fafc' });
+                return;
+            }
+            
+            window.draftPipelines[colId].rules.push({
+                type: 'remove_duplicates',
+                nombre_regla: 'Eliminar Duplicados',
+                descripcion: 'Elimina las filas que repitan exactamente el mismo valor de identidad en esta columna.',
+                disabled: false
+            });
+            
+            Swal.fire({
+                title: 'Regla Inyectada',
+                text: 'Se inyectó la regla de Depuración Unificada en la memoria de esta columna.',
+                icon: 'success',
+                background: '#0f172a', color: '#10b981',
+                confirmButtonColor: '#3b82f6',
+                timer: 3000
+            });
+            
+            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
+                window.viewerRuleWorkshop.syncToGlobalState();
+            } else if (typeof window.triggerSafeRender === 'function') {
+                window.triggerSafeRender();
+            } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+                window.renderVirtualTable(window.currentSheetData);
+            }
+        }
+    });
 };

@@ -300,7 +300,9 @@ Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcia
                         parsed = JSON.parse(extractedText);
                     } catch (parseError) {
                         const fs = require('fs');
-                        fs.appendFileSync('./logs_ai_dump.txt', `\n\n=== DIAGNOSTICO LIMIT ROOTO [CHUNK ${chunkIndex + 1}] ====
+                        const path = require('path');
+                        const dumpPath = path.join(__dirname, '../../data/logs_ai_dump.txt');
+                        fs.appendFileSync(dumpPath, `\n\n=== DIAGNOSTICO LIMIT ROOTO [CHUNK ${chunkIndex + 1}] ====
 - TIEMPO DE RESPUESTA: ${runTime.toFixed(2)} ms
 - FINISH_REASON DE GOOGLE: ${finishReason}
 - RAW STRING (Extraido):

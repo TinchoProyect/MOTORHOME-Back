@@ -414,10 +414,28 @@ module.exports = {
                     timestamp_real = rawFileMetas.created_at;
                 }
             }
+            
+            // [VINCULACIÓN ESTRUCTURAL] Cargar diccionario de Rubros Activos
+            const { data: rubrosActivos } = await supabase.from('maestro_rubros').select('id, nombre_rubro').eq('es_activo', true);
+            const rubrosMap = new Map();
+            if (rubrosActivos) {
+                rubrosActivos.forEach(r => rubrosMap.set(String(r.nombre_rubro).trim().toLowerCase(), r.id));
+            }
+
+            const getFuzzyRubro = (obj) => {
+                if (!obj) return null;
+                for (let key in obj) {
+                    if (String(key).toLowerCase().includes('rubro')) {
+                        return obj[key];
+                    }
+                }
+                return null;
+            };
 
             // Motor de Deltas Bi-Dimensional y Upsert: Recuperar estado histórico completo
             const historyMap = new Map();     // Almacena el ID primario de la DB
             const activeDataMap = new Map();  // Almacena la data 'Viva' (No BAJA) para comparar Deltas
+            const lockedMap = new Map();      // Almacena rubros fijados manualmente
             
             // Funcilla helper para resolver el código (SKU/DNI) independientemente de cómo se llame la columna
             const getFuzzyCode = (obj) => {
@@ -435,7 +453,7 @@ module.exports = {
 
             const { data: previousSnapshot, error: snapErr } = await supabase
                 .from('tabla_maestra_operativa')
-                .select('id, datos_maestros, timestamp_extraccion')
+                .select('id, datos_maestros, timestamp_extraccion, rubro_id, bloqueo_edicion_manual')
                 .eq('proveedor_id', proveedor_id)
                 .order('timestamp_extraccion', { ascending: false });
                 
@@ -448,6 +466,12 @@ module.exports = {
                         if (!historyMap.has(strCode)) {
                             historyMap.set(strCode, row.id);
                         }
+                        
+                        // Guardar estado de bloqueo semántico
+                        if (row.bloqueo_edicion_manual) {
+                            lockedMap.set(strCode, row.rubro_id);
+                        }
+
                         // Solo usamos para calcular Deltas (Precio anterior) si el producto estaba vivo
                         if (!activeDataMap.has(strCode) && row.datos_maestros._estado_delta !== 'BAJA') {
                             activeDataMap.set(strCode, row.datos_maestros);
@@ -504,8 +528,26 @@ module.exports = {
                      nombre_proveedor: nombre_proveedor || 'Desconocido',
                      datos_maestros: record,
                      es_delta: es_delta,
-                     timestamp_extraccion: timestamp_real
+                     timestamp_extraccion: timestamp_real,
+                     rubro_id: null
                  };
+                 
+                 // [VINCULACIÓN ESTRUCTURAL] Mapear Rubro Name a UUID Relacional (Sólo si NO está bloqueado)
+                 if (rawCode && lockedMap.has(rawCode)) {
+                     // Conservar el UUID que fijó el Humano, descartar inferencia text de la IA.
+                     payload.rubro_id = lockedMap.get(rawCode);
+                     // También mantenemos encendido el flag, porque la operación de Postgres UPSERT lo pisaría por omisión (PostgREST omite lo no declarado pero por las dudas).
+                     payload.bloqueo_edicion_manual = true;
+                     console.log(`[ETL Protector] Respetando bloqueo manual para ${rawCode}`);
+                 } else {
+                     const nombreRubroDetectado = getFuzzyRubro(record);
+                     if (nombreRubroDetectado && typeof nombreRubroDetectado === 'string') {
+                         const testClave = nombreRubroDetectado.split('|')[0].trim().toLowerCase(); // Limpiar artifacts textuales del Chofer IA si quedaron
+                         if (rubrosMap.has(testClave)) {
+                             payload.rubro_id = rubrosMap.get(testClave);
+                         }
+                     }
+                 }
                  
                  // Inyectar el ID existente para forzar UPDATE o uno nuevo (Fallback) para ALTA pura
                  if (rawCode && historyMap.has(rawCode)) {
@@ -532,8 +574,18 @@ module.exports = {
                         nombre_proveedor: nombre_proveedor || 'Desconocido',
                         datos_maestros: ghostPayload,
                         es_delta: true,
-                        timestamp_extraccion: timestamp_real
+                        timestamp_extraccion: timestamp_real,
+                        rubro_id: null
                     };
+                    
+                    // Asegurar que el fantasma también mapee su rubro histórico
+                    const nombreRubroFantasma = getFuzzyRubro(ghostPayload);
+                    if (nombreRubroFantasma && typeof nombreRubroFantasma === 'string') {
+                        const testClaveFuego = nombreRubroFantasma.split('|')[0].trim().toLowerCase();
+                        if (rubrosMap.has(testClaveFuego)) {
+                            payload.rubro_id = rubrosMap.get(testClaveFuego);
+                        }
+                    }
                     
                     if (historyMap.has(historicalCode)) {
                         payload.id = historyMap.get(historicalCode);
@@ -561,6 +613,35 @@ module.exports = {
             return res.json({ success: true, message: "Extracción exitosa." });
         } catch(e) {
             console.error("[MasterTableController] extractToMasterTable error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+    bulkUpdateRubro: async (req, res) => {
+        try {
+            const { itemIds, target_rubro_id } = req.body;
+            
+            if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+                return res.status(400).json({ success: false, error: "IDs no proporcionados." });
+            }
+
+            const supabase = require('../config/supabaseClient');
+            
+            const real_rubro_id = target_rubro_id === 'UNASSIGN' ? null : target_rubro_id;
+
+            // Actualizamos en base de datos. Usando IN para el array de IDs
+            const { data, error } = await supabase
+                .from('tabla_maestra_operativa')
+                .update({ 
+                    rubro_id: real_rubro_id,
+                    bloqueo_edicion_manual: true // Active integrity lock
+                })
+                .in('id', itemIds);
+
+            if (error) throw error;
+
+            return res.json({ success: true, message: "Reasignación Semántica Aplicada Exitosamente.", count: itemIds.length });
+        } catch(e) {
+            console.error("[MasterTableController] bulkUpdateRubro error:", e);
             return res.status(500).json({ success: false, error: e.message });
         }
     },
@@ -600,9 +681,11 @@ module.exports = {
     getOperativaRecords: async (req, res) => {
         try {
             const supabase = require('../config/supabaseClient');
+            
+            // [VINCULACIÓN ESTRUCTURAL] Ahora hacemos query incluyendo maestro_rubros
             const { data, error } = await supabase
                 .from('tabla_maestra_operativa')
-                .select('id, proveedor_id, archivo_origen_id, nombre_proveedor, timestamp_extraccion, datos_maestros, es_delta')
+                .select('id, proveedor_id, archivo_origen_id, nombre_proveedor, timestamp_extraccion, datos_maestros, es_delta, rubro_id, bloqueo_edicion_manual, maestro_rubros(id, nombre_rubro)')
                 .order('timestamp_extraccion', { ascending: false });
             
             if (error) {
@@ -612,7 +695,37 @@ module.exports = {
                  throw error;
             }
             
-            return res.json({ success: true, data: data || [] });
+            // Re-inyección semántica (Transversalidad en FrontEnd)
+            // Aseguramos que la llave "Rubro" de datos_maestros tenga el nombre actual desde maestro_rubros
+            const mappedData = (data || []).map(row => {
+                const outRow = { ...row };
+                if (outRow.maestro_rubros && outRow.maestro_rubros.nombre_rubro) {
+                    // Buscar si existe una key que hable de rubro y usar la Capitalizada si existe
+                    let foundKey = "Rubro";
+                    for (let key in outRow.datos_maestros) {
+                        if (String(key).toLowerCase() === 'rubro') {
+                            foundKey = key;
+                            break;
+                        }
+                    }
+                    outRow.datos_maestros[foundKey] = outRow.maestro_rubros.nombre_rubro;
+                } else if (!outRow.rubro_id && outRow.bloqueo_edicion_manual) {
+                    // INCIDENCIA 2: Vaciamiento Manual de Rubro (Falso Positivo silencioso)
+                    // Si el operario eligió "Desasignar" (Null), purificamos el JSONB para que AG-Grid reciba el campo vacío
+                    // en vez de visualizar el fantasma del texto original inyectado por el CSV
+                    for (let key in outRow.datos_maestros) {
+                        if (String(key).toLowerCase().includes('rubro') || String(key).toLowerCase() === 'categoría') {
+                            outRow.datos_maestros[key] = "";
+                        }
+                    }
+                }
+                
+                // Cleanup relacional crudo para no contaminar la UI grid
+                delete outRow.maestro_rubros;
+                return outRow;
+            });
+            
+            return res.json({ success: true, data: mappedData });
         } catch(e) {
             console.error("[MasterTableController] getOperativaRecords error:", e);
             return res.status(500).json({ success: false, error: e.message });

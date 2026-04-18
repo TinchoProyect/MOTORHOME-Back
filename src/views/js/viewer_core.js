@@ -253,6 +253,7 @@ window.resetViewerState = function (preserveData = false) {
         currentSheetName = null;
         currentFileBuffer = null;
         workbook = null;
+        window.virtualWorkbookCache = null;
     }
 
     // Variables de Mapeo
@@ -373,12 +374,10 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
         console.log("✅ [V3] Formato base guardado:", templateResult);
 
         // ==========================================
-        // GUARDADO V4: MOTOR ETL (Solo si hay pipilines definidos en el taller)
+        // GUARDADO V4: MOTOR ETL (Siempre debemos notificar al server, incluso si mapeos están vacíos para purgar)
         // ==========================================
-        const hasPipelines = window.draftPipelines && Object.keys(window.draftPipelines).length > 0;
-
-        if (hasPipelines) {
-            const mapeosPayload = [];
+        const mapeosPayload = [];
+        if (window.draftPipelines) {
             for (const [vColId, config] of Object.entries(window.draftPipelines)) {
                 // Backward compatibility & Virtual Columns support
                 let dataIdx;
@@ -412,36 +411,43 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                     columna_origen_index: dataIdx, // This is the physical index for the DB
                     columna_origen_nombre: config.colName || `Columna ${dataIdx}`,
                     campo_maestro_id: config.masterField.id,
-                    reglas: (config.rules || []).filter(r => r && r.id).map(r => {
+                    reglas: (config.rules || []).filter(r => {
+                        if (!r || !r.id) return false;
+                        if (r.es_local) return false;
+                        if (String(r.id) === 'BESPOKE_STRICT_NUMERIC') return false;
+                        if (String(r.id).startsWith('local_') || String(r.id).startsWith('CUSTOM_')) return false;
+                        return true;
+                    }).map(r => {
                         // [MIGRACIÓN DE REGLA IN-MEM A UUID FÍSICA] Evita 400 Bad Request
                         if (r.id === 'sys_sanitize_decimal_fill') return '895e8e7d-11c9-439f-a98b-d9c0edf65f5d';
                         return r.id;
+                    }).filter(uuid => {
+                        // Resguardo final: garantizar compatibilidad estricta con UUID Postgres
+                        return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(uuid);
                     })
                 });
             }
-
-            const payloadV4 = {
-                proveedor_id: providerId,
-                nombre_hoja: sheetName,
-                mapeos: mapeosPayload
-            };
-
-            console.log("💾 [V4] Guardando Pipeline ETL en el servidor...", payloadV4);
-            console.log('🛑 [VIGÍA SAVE] Payload enviado al backend: \n', JSON.stringify(payloadV4, null, 2));
-            const responseV4 = await fetch(`${backendUrl}/api/mapping/save`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payloadV4)
-            });
-
-            const resultV4 = await responseV4.json();
-            if (!responseV4.ok) {
-                throw new Error(resultV4.error || "Error al guardar pipelines ETL.");
-            }
-            console.log("✅ [V4] Motor ETL guardado:", resultV4);
-        } else {
-            console.log("⏭️ [V4] No hay reglas ETL configuradas, omitiendo guardado de mappings avanzados.");
         }
+
+        const payloadV4 = {
+            proveedor_id: providerId,
+            nombre_hoja: sheetName,
+            mapeos: mapeosPayload
+        };
+
+        console.log("💾 [V4] Guardando Pipeline ETL en el servidor...", payloadV4);
+        console.log('🛑 [VIGÍA SAVE] Payload enviado al backend: \n', JSON.stringify(payloadV4, null, 2));
+        const responseV4 = await fetch(`${backendUrl}/api/mapping/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payloadV4)
+        });
+
+        const resultV4 = await responseV4.json();
+        if (!responseV4.ok) {
+            throw new Error(resultV4.error || "Error al guardar pipelines ETL.");
+        }
+        console.log("✅ [V4] Motor ETL guardado:", resultV4);
 
         // 5. Success
         if (!silent) {
@@ -453,7 +459,7 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
                         position: 'top-end',
                         icon: 'success',
                         title: 'Configuración Guardada',
-                        text: hasPipelines ? 'Reglas ETL guardadas exitosamente.' : 'Formato de encabezados guardado.',
+                        text: (Object.keys(window.draftPipelines || {}).length > 0) ? 'Reglas ETL guardadas exitosamente.' : 'Formato de encabezados guardado.',
                         timer: 2000,
                         showConfirmButton: false,
                         background: '#0f172a',
@@ -732,9 +738,25 @@ window._executeFlujoSave = async function (id_flujo, nombreFlujo) {
 
         // Si se creó uno nuevo, actualizar el contexto con su ID
         if (!id_flujo || window.globalContext.flujoId !== result.flujo.id_flujo) {
-            window.globalContext.flujoId = result.flujo.id_flujo;
+            const newFlujoId = result.flujo.id_flujo;
+
+            // [QA BUGFIX V9] Amarrar el archivo actual físicamente a la nueva Variante (Evita el "Blank Slate")
+            if (window.globalContext.fileId) {
+                try {
+                    await fetch(`${backendUrl}/api/files/processed/${window.globalContext.fileId}/flujo`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ flujo_id: newFlujoId })
+                    });
+                    console.log(`✅ [UX FIX] Archivo actual (${window.globalContext.fileId}) anclado exitosamente a la Variante ${newFlujoId}`);
+                } catch(e) {
+                    console.error("Fallo anclando archivo a Variante:", e);
+                }
+            }
+
+            window.globalContext.flujoId = newFlujoId;
             if (window.initViewerFlujosContext) {
-                await window.initViewerFlujosContext(providerId, result.flujo.id_flujo);
+                await window.initViewerFlujosContext(providerId, newFlujoId);
             }
         }
 

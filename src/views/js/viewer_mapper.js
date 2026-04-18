@@ -110,6 +110,16 @@ export function activatePointerMode(masterField) {
             const th = thead.querySelectorAll('th')[colIndex];
             if (th) {
                 vColId = th.dataset.colId || vColId;
+            }
+        }
+        
+        // [FIX] Abstract Capa 1 mapping name against DOM failures
+        if (window.columnMapping && window.columnMapping[vColId]) {
+            if (window.getHumanName) colName = window.getHumanName(window.columnMapping[vColId]); 
+            else colName = window.columnMapping[vColId];
+        } else if (thead) {
+            const th = thead.querySelectorAll('th')[colIndex];
+            if (th) {
                 const spanNodes = th.querySelectorAll('span');
                 if (spanNodes.length > 0) {
                     colName = spanNodes[0].innerText || colName;

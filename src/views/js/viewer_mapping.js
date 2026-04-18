@@ -169,7 +169,7 @@ async function toggleMappingMode() {
         btn.classList.remove('bg-blue-600', 'border-blue-500', 'shadow-[0_0_15px_rgba(37,99,235,0.3)]');
         btn.classList.add('bg-slate-800', 'border-slate-700');
     }
-    if (currentSheetData) renderVirtualTable(currentSheetData);
+    if (window.currentSheetData) window.renderVirtualTable(window.currentSheetData);
 }
 
 // [MODIFIED] Replaced inline create with Modal
@@ -220,26 +220,14 @@ async function openColumnMenu_v2(vColId, buttonElement) {
                     }
                     // 2. Map Column
                     columnMapping[vColId] = newTermName.toUpperCase();
-                    // [V8 STRUCTURAL FIX] Promover a draftPipelines
-                    if (!window.draftPipelines) window.draftPipelines = {};
-                    if (!window.draftPipelines[vColId]) {
-                        window.draftPipelines[vColId] = {
-                            masterField: { id: 'pending', nombre_campo: newTermName.toUpperCase() },
-                            colName: newTermName.toUpperCase(),
-                            rules: []
-                        };
-                    }
+                    
                     // 3. Refresh & Save
-                    renderVirtualTable(currentSheetData);
-                    saveSheetState(currentSheetName);
-                    renderSheetTabs();
-                    // 4. Update Cache & resolve real masterField.id
+                    window.renderVirtualTable(window.currentSheetData);
+                    window.saveSheetState(window.currentSheetName);
+                    window.renderSheetTabs();
+                    // 4. Update Cache
                     loadNomenclature().then(() => {
-                        const term = nomenclatureCache.find(t => t.termino === newTermName.toUpperCase() || t.termino === newTermName);
-                        if (term && window.draftPipelines[vColId]) {
-                            window.draftPipelines[vColId].masterField.id = term.id;
-                            console.log(`🔗 [MAPPING V8] masterField.id resuelto para '${vColId}': ${term.id}`);
-                        }
+                        console.log(`🔗 [MAPPING] Mapeo Primario guardado en Cache local.`);
                     });
                 }
             });
@@ -312,22 +300,22 @@ async function openColumnMenu_v2(vColId, buttonElement) {
                 }
             }
 
-            columnMapping[vColId] = term.termino;
-            
-            // [V8 STRUCTURAL FIX] Registrar inmediatamente en draftPipelines para que la columna
-            // sea ciudadana de primera clase en el sistema V4. Esto habilita nativamente el
-            // Workshop (Editor de Fórmulas, IA Copilot) sin parches visuales.
-            if (!window.draftPipelines) window.draftPipelines = {};
-            if (!window.draftPipelines[vColId]) {
+            // [QA FIX] Global Assignment and Native Implicit Persistence
+            window.columnMapping[vColId] = term.termino;
+            console.log(`🔗 [MAPPING CAPA 1] Mapeo Primario asignado a '${vColId}' (${term.termino}). Esperando vinculación a Capa 2.`);
+
+            // [QA BUGFIX CRÍTICO V9]: Si es una columna fantasma, debemos inyectarla forzosamente en draftPipelines.
+            // Si no lo hacemos, el renderVirtualTable la destruirá por considerarla "Huerfana" al haber consumido
+            // el flag _isNewTemp, provocando desincronización DOM (el encabezado vuelve vacío) y error "Mapeo Duplicado".
+            if (vColId.startsWith('col_ph_')) {
+                if (!window.draftPipelines) window.draftPipelines = {};
+                // Forzar persistencia del máster field para evitar el 'Acceso Bloqueado' al intentar abrir el Taller.
                 window.draftPipelines[vColId] = {
-                    masterField: { id: term.id, nombre_campo: term.termino },
                     colName: term.termino,
-                    rules: []
+                    masterField: { id: term.id, nombre_campo: term.termino },
+                    rules: (window.draftPipelines[vColId] && window.draftPipelines[vColId].rules) ? window.draftPipelines[vColId].rules : []
                 };
-                console.log(`🔗 [MAPPING V8] Columna '${vColId}' promovida a draftPipelines (masterField: ${term.termino})`);
-            } else {
-                // Actualizar masterField si ya existía
-                window.draftPipelines[vColId].masterField = { id: term.id, nombre_campo: term.termino };
+                console.log(`🛠️ [UX FIX] Ghost Column '${vColId}' anclado nativamente a draftPipelines para evitar purga del DOM y habilitar Taller.`);
             }
 
             // [V8] Consumir _isNewTemp ahora que la columna está mapeada — ya no necesita inmunidad
@@ -346,16 +334,17 @@ async function openColumnMenu_v2(vColId, buttonElement) {
                     compDef.masterField = { id: term.id, nombre_campo: term.termino };
                 }
             }
+            
             if (term.reglas_procesamiento) {
-                processingRules[vColId] = Array.isArray(term.reglas_procesamiento)
+                window.processingRules[vColId] = Array.isArray(term.reglas_procesamiento)
                     ? term.reglas_procesamiento
                     : [term.reglas_procesamiento];
             } else {
-                if (processingRules[vColId]) delete processingRules[vColId];
+                if (window.processingRules && window.processingRules[vColId]) delete window.processingRules[vColId];
             }
-            renderVirtualTable(currentSheetData);
-            saveSheetState(currentSheetName);
-            renderSheetTabs();
+            window.renderVirtualTable(window.currentSheetData);
+            window.saveSheetState(window.currentSheetName);
+            window.renderSheetTabs();
             menu.remove();
         };
 
@@ -396,9 +385,9 @@ async function openColumnMenu_v2(vColId, buttonElement) {
             if (idx !== -1) window.virtualColumns.splice(idx, 1);
         }
 
-        renderVirtualTable(currentSheetData);
-        saveSheetState(currentSheetName);
-        renderSheetTabs();
+        window.renderVirtualTable(window.currentSheetData);
+        window.saveSheetState(window.currentSheetName);
+        window.renderSheetTabs();
         menu.remove();
 
         // Silent save to backend to persist deletion
@@ -479,7 +468,7 @@ async function openEditTermModal(term, vColId) {
                 // Clear mapping if it was this term
                 if (columnMapping[vColId] === term.termino) {
                     columnMapping[vColId] = 'Ignorar Columna'; // Or empty
-                    renderVirtualTable(currentSheetData);
+                    window.renderVirtualTable(window.currentSheetData);
                 }
             } else {
                 // Term Updated. Refresh Cache
@@ -487,7 +476,7 @@ async function openEditTermModal(term, vColId) {
                     // Update mapping if name changed
                     if (columnMapping[vColId] !== result) {
                         columnMapping[vColId] = result;
-                        renderVirtualTable(currentSheetData);
+                        window.renderVirtualTable(window.currentSheetData);
                     }
                 });
             }
@@ -621,7 +610,7 @@ function toggleProcessingRule(vColId) {
         const rules = Array.isArray(processingRules[vColId]) ? processingRules[vColId] : [processingRules[vColId]];
         if (rules.length > 0) {
             rules[0].disabled = !rules[0].disabled;
-            renderVirtualTable(currentSheetData);
+            window.renderVirtualTable(window.currentSheetData);
         }
     }
 }

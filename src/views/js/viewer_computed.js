@@ -33,24 +33,18 @@ async function openCalculationModal(fromRuleWorkshop = false) {
             const vColId = vCol.id;
             let termName = null;
 
-            // 1. Check if it's currently actively mapped in draft mode
-            if (window.draftPipelines && window.draftPipelines[vColId]) {
-                const pipe = window.draftPipelines[vColId];
-                termName = pipe.masterField?.nombre_campo || pipe.colName;
-
-                // V5 Resolve Generic Names ("Campo ID 5a6b...") back to Human Readable via Master Dictionary
-                if (termName && termName.startsWith('Campo ID') && pipe.masterField?.id && window.masterDictionary) {
-                    const realField = window.masterDictionary.find(f => f.id === pipe.masterField.id);
-                    if (realField) termName = realField.nombre_campo;
-                }
+            // 1. Obtener el Mapeo Primario como fuente principal prioritaria (Materia Prima)
+            termName = window.columnMapping ? window.columnMapping[vColId] : null;
+            
+            // 2. Resguardo: Si la columna no está en columnMapping global, buscar el nombre mapeado nativo en el draft
+            if (!termName && window.draftPipelines && window.draftPipelines[vColId]) {
+                termName = window.draftPipelines[vColId].colName;
             }
-            // 2. Fallback to confirmed global mapping (can sometimes be the UUID in V4 DB!)
-            else if (window.columnMapping) {
-                termName = window.columnMapping[vColId];
-                if (termName && termName.length === 36 && termName.includes('-') && window.masterDictionary) {
-                    const realField = window.masterDictionary.find(f => f.id === termName);
-                    if (realField) termName = realField.nombre_campo;
-                }
+            
+            // 3. Resguardo V4 DB UUID: Si por arrastre legacy se guardó el ID maestro en lugar del nombre primario
+            if (termName && termName.length === 36 && termName.includes('-') && window.masterDictionary) {
+                const realField = window.masterDictionary.find(f => f.id === termName);
+                if (realField) termName = realField.nombre_campo;
             }
 
             // Validar que no sea ignorada ni sea ella misma una columna calculada ya resuelta (evitar recursión inf.)
@@ -58,10 +52,29 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 const optionA = document.createElement('option');
                 optionA.value = vColId; // Usamos la ID virtual
 
-                // Mostrar si es la columna nativa o un clon/fantasma
-                const suffix = (typeof vCol.dataIdx !== 'number' && vCol.dataIdx === null) ? '' : (vColId.includes('clone') ? ' (Clon)' : ' (Ref)');
+                // --- Trazabilidad Triple ---
+                let origenTexto = vColId;
+                if (vColId.startsWith('ghost_')) {
+                    origenTexto = "VARIANTE AÑADIDA";
+                } else if (vColId.startsWith('calc_')) {
+                    origenTexto = "VARIANTE CALCULADA";
+                } else if (vColId.includes('__clone')) {
+                    const baseIdStr = vColId.split('__')[0];
+                    const baseName = window.rawHeaders && window.rawHeaders[baseIdStr] ? window.rawHeaders[baseIdStr] : baseIdStr;
+                    origenTexto = baseName + " (Clonado)";
+                } else {
+                    origenTexto = window.rawHeaders && window.rawHeaders[vColId] ? window.rawHeaders[vColId] : vColId;
+                }
 
-                optionA.text = `${termName}${suffix}`;
+                let maestroTexto = "SIN MAESTRO";
+                if (window.draftPipelines && window.draftPipelines[vColId] && window.draftPipelines[vColId].masterField) {
+                    maestroTexto = window.draftPipelines[vColId].masterField.nombre_campo || "SIN MAESTRO";
+                }
+
+                const traceString = `[${origenTexto}] ➜ [${termName}] ➜ [${maestroTexto}]`;
+
+                optionA.text = traceString;
+                optionA.className = "text-[10px] sm:text-[11px] font-mono leading-tight truncate";
 
                 const optionB = optionA.cloneNode(true);
                 const optionSemantic = optionA.cloneNode(true);
