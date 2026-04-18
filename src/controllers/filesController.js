@@ -765,13 +765,15 @@ async function rollbackFiles(req, res) {
                 }
 
                 // C. Integridad Referencial (Borrado Manual en Cascada)
-                // Paso 1: Hijos (Items Extraídos)
-                const { error: delItemsError } = await supabase
-                    .from('proveedor_items_extraidos')
-                    .delete()
-                    .eq('lista_raw_id', rawListId);
+                // Paso 1: Hijos (Items Extraídos) -> La INGESTA se borra SOLO si anulación es total (Opción 1 y 2)
+                if (action !== 'REMOVE_EXTRACTION') {
+                    const { error: delItemsError } = await supabase
+                        .from('proveedor_items_extraidos')
+                        .delete()
+                        .eq('lista_raw_id', rawListId);
 
-                if (delItemsError) throw new Error("Error borrando items hijos: " + delItemsError.message);
+                    if (delItemsError) throw new Error("Error borrando items hijos: " + delItemsError.message);
+                }
 
                 // Paso 2: Padre (Lista Raw o Degradación Lógica)
                 if (action === 'REMOVE_EXTRACTION') {
