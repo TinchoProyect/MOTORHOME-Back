@@ -1419,6 +1419,7 @@
                 const opRes = await fetch(`${backendUrl}/api/master-table/operativa`);
                 let opJson = { data: [] };
                 if (opRes.ok) opJson = await opRes.json();
+                window._rawLamdaData = opJson.data;
                 
                 let currentDeltaFilter = 'ALL';
                 window.setDeltaFilter = function(filter) {
@@ -2384,15 +2385,15 @@
             const uniqueUnidades = new Set();
             
             // FILTRADO ANULADO: EXTRACCIÓN CRUDA Y GLOBAL DE TODOS LOS NODOS EN MEMORIA (Requerimiento Estricto QA)
-            const globalNodes = window.v4GridApi.getModel().getRootNode().allLeafChildren;
+            const globalNodes = window._rawLamdaData || [];
             if (!globalNodes || globalNodes.length === 0) {
                 logFn("Auditoría de Inyección UI - El modelo de datos está completamente vacío.");
             } else {
                 globalNodes.forEach(node => {
-                    if (node.data && node.data.datos_maestros) {
-                        let dm = node.data.datos_maestros;
+                    if (node && node.datos_maestros) {
+                        let dm = node.datos_maestros;
                         for (let key in dm) {
-                            if (String(key).toLowerCase() === 'unidad') {
+                            if (String(key).trim().toLowerCase() === 'unidad') {
                                 const rawVal = dm[key];
                                 if (rawVal !== null && rawVal !== undefined) {
                                     const cleanVal = String(rawVal).trim();
