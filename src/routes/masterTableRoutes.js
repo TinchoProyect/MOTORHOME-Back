@@ -18,6 +18,13 @@ router.patch('/dictionary/:id/toggle', masterTableController.toggleMasterFieldSt
 router.delete('/dictionary/:id', masterTableController.deleteMasterField);
 
 // ==========================================
+// V4.1: PRESETS DE FILTROS EN TABLA MAESTRA
+// ==========================================
+router.get('/presets', masterTableController.getPresets);
+router.post('/presets', masterTableController.savePreset);
+router.delete('/presets/:id', masterTableController.deletePreset);
+
+// ==========================================
 // WIDGETS DATA
 // ==========================================
 router.get('/providers/active-count', masterTableController.getActiveProvidersCount);

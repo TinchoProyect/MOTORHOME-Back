@@ -730,5 +730,62 @@ module.exports = {
             console.error("[MasterTableController] getOperativaRecords error:", e);
             return res.status(500).json({ success: false, error: e.message });
         }
+    },
+
+    // ==========================================
+    // V4.1: PRESETS DE FILTROS CASCADA
+    // ==========================================
+    getPresets: async (req, res) => {
+        try {
+            console.log(`[MasterTableController] 🔍 Solicitando presets de filtrado...`);
+            const { data, error } = await supabase
+                .from('master_table_presets')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return res.json({ success: true, data: data || [] });
+        } catch (e) {
+            console.error("[MasterTableController] getPresets error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+
+    savePreset: async (req, res) => {
+        try {
+            const { nombre_preset, filter_state } = req.body;
+            if (!nombre_preset || !filter_state) {
+                return res.status(400).json({ success: false, error: "Parámetros incompletos." });
+            }
+
+            console.log(`[MasterTableController] 💾 Guardando nuevo preset: ${nombre_preset}`);
+            const { data, error } = await supabase
+                .from('master_table_presets')
+                .insert([{ nombre_preset, filter_state }])
+                .select();
+
+            if (error) throw error;
+            return res.json({ success: true, data: data[0] });
+        } catch (e) {
+            console.error("[MasterTableController] savePreset error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+
+    deletePreset: async (req, res) => {
+        try {
+            const { id } = req.params;
+            console.log(`[MasterTableController] 🗑️ Eliminando preset: ${id}`);
+            const { error } = await supabase
+                .from('master_table_presets')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            return res.json({ success: true });
+        } catch (e) {
+            console.error("[MasterTableController] deletePreset error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
     }
 };
