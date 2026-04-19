@@ -22,6 +22,7 @@ router.delete('/dictionary/:id', masterTableController.deleteMasterField);
 // ==========================================
 router.get('/presets', masterTableController.getPresets);
 router.post('/presets', masterTableController.savePreset);
+router.put('/presets/:id', masterTableController.updatePreset);
 router.delete('/presets/:id', masterTableController.deletePreset);
 
 // ==========================================

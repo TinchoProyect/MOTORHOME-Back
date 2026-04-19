@@ -772,6 +772,31 @@ module.exports = {
         }
     },
 
+    updatePreset: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { nombre_preset, filter_state } = req.body;
+            
+            console.log(`[MasterTableController] ✏️ Actualizando preset: ${id}`);
+            
+            const payload = {};
+            if (nombre_preset) payload.nombre_preset = nombre_preset;
+            if (filter_state) payload.filter_state = filter_state;
+
+            const { data, error } = await supabase
+                .from('master_table_presets')
+                .update(payload)
+                .eq('id', id)
+                .select();
+
+            if (error) throw error;
+            return res.json({ success: true, data: data[0] });
+        } catch (e) {
+            console.error("[MasterTableController] updatePreset error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+
     deletePreset: async (req, res) => {
         try {
             const { id } = req.params;

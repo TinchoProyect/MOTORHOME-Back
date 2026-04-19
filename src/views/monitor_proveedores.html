@@ -935,9 +935,12 @@
                              <button onclick="window.saveCurrentFmtPreset && window.saveCurrentFmtPreset()" class="w-full py-2 bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 rounded hover:bg-emerald-600/40 text-[10px] uppercase font-bold tracking-widest flex items-center justify-center gap-2 mb-2 transition-colors">
                                  <i data-lucide="save" class="w-4 h-4"></i> Guardar Filtro Actual
                              </button>
-                             <div id="fmtPresetsList" class="flex flex-col gap-1 w-full text-slate-300">
+                             <div id="fmtPresetsList" class="flex flex-col gap-1 w-full text-slate-300 border-b border-slate-700 pb-2 mb-1">
                                 <!-- injected via js -->
                              </div>
+                             <button onclick="window.openFmtPresetsManager && window.openFmtPresetsManager()" class="w-full py-2 bg-slate-700/50 border border-slate-600 text-slate-300 rounded hover:bg-slate-600 hover:text-white text-[10px] uppercase font-bold tracking-widest flex items-center justify-center gap-2 transition-colors">
+                                 <i data-lucide="settings-2" class="w-4 h-4"></i> Gestionar Presets
+                             </button>
                         </div>
                     </div>
 
@@ -1187,6 +1190,38 @@
                         <i data-lucide="save" class="w-4 h-4"></i> Guardar
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRESETS MANAGER MODAL [V4.1] -->
+    <div id="fmtPresetsManagerModal" class="hidden fixed inset-0 z-[300] flex items-center justify-center p-4 modal-blur overflow-y-auto">
+        <div class="glass-panel w-full max-w-2xl max-h-[90vh] rounded-2xl border border-fuchsia-500/30 flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <div class="p-6 border-b border-slate-700 bg-slate-950/50 flex justify-between items-center rounded-t-2xl shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-fuchsia-500/10 rounded-lg text-fuchsia-400">
+                        <i data-lucide="settings-2" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center">Gestor de Presets</h2>
+                        <p class="text-[10px] text-slate-400 font-mono tracking-widest mt-1">ADMINISTRACIÓN DE FILTROS</p>
+                    </div>
+                </div>
+                <button onclick="window.closeFmtPresetsManager()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 flex flex-col overflow-hidden bg-slate-900 border-b border-slate-800">
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-6">
+                    <div id="fmtPresetsManagerList" class="space-y-3">
+                        <!-- JS injected rows -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-6 bg-slate-950/50 flex justify-end rounded-b-2xl">
+                <button onclick="window.closeFmtPresetsManager()" class="px-6 py-2 text-xs text-slate-400 hover:text-white font-bold uppercase tracking-widest transition-colors bg-slate-800 hover:bg-slate-700 rounded-lg">Cerrar</button>
             </div>
         </div>
     </div>
@@ -1848,6 +1883,7 @@
         // V4.1: FUNCIONES DE FETCH Y APLICACIÓN DE PRESETS
         // ===============================================
         window.currentMasterTablePresets = [];
+        window.activeFmtPresetId = null; // Track current active preset to allow overwrite
         
         window.loadFmtPresets = async function() {
             try {
@@ -1875,13 +1911,15 @@
             window.currentMasterTablePresets.forEach(preset => {
                 const div = document.createElement('div');
                 div.className = "flex items-center justify-between p-1.5 hover:bg-slate-700/50 rounded group";
+                
+                // Highlight active preset
+                const isActive = window.activeFmtPresetId === preset.id;
+                const textColor = isActive ? "text-fuchsia-400" : "text-slate-300";
+                
                 div.innerHTML = `
                     <button onclick="window.applyFmtPreset('${preset.id}')" class="flex-1 text-left flex items-center gap-2 truncate">
                         <i data-lucide="filter" class="w-3 h-3 text-fuchsia-400 shrink-0"></i>
-                        <span class="text-xs text-slate-300 font-bold group-hover:text-fuchsia-300 transition-colors truncate">${preset.nombre_preset}</span>
-                    </button>
-                    <button onclick="window.deleteFmtPreset('${preset.id}')" class="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded transition-colors" title="Eliminar Preset">
-                        <i data-lucide="x" class="w-3 h-3"></i>
+                        <span class="text-xs ${textColor} font-bold group-hover:text-fuchsia-300 transition-colors truncate">${preset.nombre_preset}</span>
                     </button>
                 `;
                 container.appendChild(div);
@@ -1893,6 +1931,9 @@
             const preset = window.currentMasterTablePresets.find(p => p.id === id);
             if (!preset || !window.v4GridApi) return;
             
+            // Set active
+            window.activeFmtPresetId = id;
+            
             // Clean slate first
             window.v4GridApi.setFilterModel(null);
             
@@ -1900,6 +1941,7 @@
                 window.v4GridApi.setFilterModel(preset.filter_state);
             }
             window.toggleFmtPresetsDropdown(); // Auto close
+            window.renderFmtPresetsDropdown(); // Update color
             
             // Re-render Lucide icons inside grid if needed
             setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 100);
@@ -1919,9 +1961,67 @@
                 return;
             }
 
+            let action = 'NEW';
+            let activePreset = null;
+            
+            if (window.activeFmtPresetId) {
+                activePreset = window.currentMasterTablePresets.find(p => p.id === window.activeFmtPresetId);
+                if (activePreset) {
+                    const result = await Swal.fire({
+                        title: 'Actualizar Preset',
+                        text: `Estás modificando el preset activo: "${activePreset.nombre_preset}". ¿Deseas sobreescribirlo o guardarlo como una nueva variante?`,
+                        icon: 'question',
+                        showCancelButton: true,
+                        showDenyButton: true,
+                        confirmButtonText: 'Sobrescribir',
+                        denyButtonText: 'Guardar como Nuevo',
+                        cancelButtonText: 'Cancelar',
+                        background: '#0f172a', color: '#fff',
+                        confirmButtonColor: '#059669',
+                        denyButtonColor: '#3b82f6',
+                        cancelButtonColor: '#334155'
+                    });
+                    
+                    if (result.isConfirmed) {
+                        action = 'OVERWRITE';
+                    } else if (result.isDenied) {
+                        action = 'NEW';
+                    } else {
+                        return; // Cancelled
+                    }
+                }
+            }
+
+            if (action === 'OVERWRITE' && activePreset) {
+                try {
+                    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                    const res = await fetch(`${backendUrl}/api/master-table/presets/${activePreset.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filter_state: filterModel })
+                    });
+                    if (!res.ok) throw new Error("Fallo al actualizar preset");
+                    await window.loadFmtPresets();
+                    
+                    Swal.fire({
+                        title: 'Actualizado',
+                        icon: 'success',
+                        toast: true, position: 'top-end',
+                        showConfirmButton: false, timer: 2000,
+                        background: '#0f172a', color: '#fff'
+                    });
+                } catch (e) {
+                    console.error("Error overwriting preset", e);
+                    Swal.fire({ title: 'Error', text: 'No se pudo actualizar el preset.', icon: 'error', background: '#0f172a', color: '#fff' });
+                }
+                return;
+            }
+
+            // ACTION: NEW
             const { value: presetName } = await Swal.fire({
-                title: 'Guardar Preset',
+                title: 'Guardar Nuevo Preset',
                 input: 'text',
+                inputValue: activePreset ? `${activePreset.nombre_preset} (Copia)` : '',
                 inputLabel: 'Nombre descriptivo del conjunto de filtros:',
                 inputPlaceholder: 'Ej: Almendras No Tostadas',
                 showCancelButton: true,
@@ -1945,6 +2045,12 @@
                         })
                     });
                     if (!res.ok) throw new Error("Fallo al guardar preset");
+                    
+                    const jsonRes = await res.json();
+                    if(jsonRes.success && jsonRes.data) {
+                        window.activeFmtPresetId = jsonRes.data.id;
+                    }
+                    
                     await window.loadFmtPresets(); // Refresh list
                     
                     Swal.fire({
@@ -1961,17 +2067,123 @@
             }
         };
 
-        window.deleteFmtPreset = async function(id) {
+        window.deleteFmtPreset = async function(id, name) {
+            const confirmed = await Swal.fire({
+                title: '¿Confirmar Borrado?',
+                text: `Se borrará el preset "${name}" permanentemente.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#334155',
+                confirmButtonText: 'Sí, borrar',
+                cancelButtonText: 'Cancelar',
+                background: '#0f172a', color: '#fff'
+            });
+
+            if (!confirmed.isConfirmed) return;
+
             try {
                 const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
                 const res = await fetch(`${backendUrl}/api/master-table/presets/${id}`, {
                     method: 'DELETE'
                 });
                 if (!res.ok) throw new Error("Fallo al eliminar preset");
+                if (window.activeFmtPresetId === id) window.activeFmtPresetId = null;
                 await window.loadFmtPresets();
+                if(window.renderFmtPresetsManager) window.renderFmtPresetsManager(); // Si el modal está abierto
+                
+                Swal.fire({ title: 'Eliminado', icon: 'success', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, background: '#0f172a', color: '#fff' });
             } catch(e) {
                 console.error("Error deleting preset", e);
             }
+        };
+
+        window.renameFmtPreset = async function(id, oldName) {
+            const { value: customName } = await Swal.fire({
+                title: 'Renombrar Preset',
+                input: 'text',
+                inputValue: oldName,
+                showCancelButton: true,
+                background: '#0f172a', color: '#fff',
+                confirmButtonColor: '#3b82f6',
+                cancelButtonColor: '#334155',
+                inputValidator: (value) => {
+                    if (!value) return '¡El nombre no puede estar vacío!';
+                }
+            });
+
+            if (customName && customName !== oldName) {
+                try {
+                    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                    const res = await fetch(`${backendUrl}/api/master-table/presets/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nombre_preset: customName })
+                    });
+                    if (!res.ok) throw new Error("Fallo al renombrar preset");
+                    await window.loadFmtPresets();
+                    if(window.renderFmtPresetsManager) window.renderFmtPresetsManager();
+                } catch(e) {
+                    console.error("Error renaming preset", e);
+                    Swal.fire({ title: 'Error', text: 'No se pudo renombrar el preset.', icon: 'error', background: '#0f172a', color: '#fff' });
+                }
+            }
+        };
+
+        window.openFmtPresetsManager = function() {
+            document.getElementById('fmtPresetsDropdown').classList.add('hidden');
+            const modal = document.getElementById('fmtPresetsManagerModal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                window.renderFmtPresetsManager();
+            }
+        };
+
+        window.closeFmtPresetsManager = function() {
+            const modal = document.getElementById('fmtPresetsManagerModal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        };
+
+        window.renderFmtPresetsManager = function() {
+            const container = document.getElementById('fmtPresetsManagerList');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            if (window.currentMasterTablePresets.length === 0) {
+                container.innerHTML = '<div class="p-8 text-center text-slate-500 font-mono text-xs">Sin registros de presets locales.</div>';
+                return;
+            }
+
+            window.currentMasterTablePresets.forEach(preset => {
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between p-3 bg-slate-900 border border-slate-700/50 rounded-xl hover:border-slate-600 transition-colors";
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-slate-800 rounded-lg text-fuchsia-400">
+                            <i data-lucide="filter" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-white">${preset.nombre_preset}</p>
+                            <p class="text-[10px] font-mono text-slate-500">ID: ${preset.id.split('-')[0]}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="window.applyFmtPreset('${preset.id}'); window.closeFmtPresetsManager();" class="p-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 rounded-lg transition-colors border border-emerald-500/30" title="Cargar Preset">
+                            <i data-lucide="play" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="window.renameFmtPreset('${preset.id}', '${preset.nombre_preset.replace(/'/g, "\\'")}')" class="p-2 bg-slate-800 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded-lg transition-colors" title="Renombrar">
+                            <i data-lucide="pencil" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="window.deleteFmtPreset('${preset.id}', '${preset.nombre_preset.replace(/'/g, "\\'")}')" class="p-2 bg-slate-800 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors" title="Eliminar">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            if (window.lucide) window.lucide.createIcons();
         };
 
         // Window Controls (Maximized/Windowed)
