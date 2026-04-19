@@ -1001,15 +1001,27 @@
                         </div>
                     </div>
                     
-                    <div class="flex items-center gap-3 pl-2">
-                        <label class="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Reasignar Semántica:</label>
-                        <select id="fmtBulkRubroSelect" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-4 py-2.5 outline-none focus:border-purple-500 shadow-inner w-56 appearance-none cursor-pointer">
+                    <!-- Target Context -->
+                    <div class="flex items-center gap-2 pl-2">
+                        <select id="fmtBulkTargetCol" onchange="window.onBulkTargetChange()" class="bg-slate-800 border fill-current border-slate-600 text-fuchsia-400 font-bold text-xs rounded-lg px-3 py-2.5 outline-none cursor-pointer hover:border-fuchsia-500 transition-colors uppercase tracking-widest" style="appearance: auto !important; -webkit-appearance: auto !important; -moz-appearance: auto !important;">
+                            <option value="rubro">🎯 Rubro</option>
+                            <option value="unidad">🎯 Unidad</option>
+                        </select>
+                        <div class="w-px h-6 bg-slate-700 mx-1"></div>
+                    </div>
+                    
+                    <!-- Values -->
+                    <div class="flex items-center gap-3">
+                        <select id="fmtBulkRubroSelect" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-4 py-2.5 outline-none focus:border-purple-500 shadow-inner w-56 cursor-pointer" style="appearance: auto !important; -webkit-appearance: auto !important; -moz-appearance: auto !important; display: block;">
                             <option value="">Cargando Rubros...</option>
+                        </select>
+                        <select id="fmtBulkUnidadSelect" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-4 py-2.5 outline-none focus:border-purple-500 shadow-inner w-56 cursor-pointer" style="appearance: auto !important; -webkit-appearance: auto !important; -moz-appearance: auto !important; display: none;">
+                            <option value="">Cargando Unidades...</option>
                         </select>
                     </div>
                     
                     <div class="pl-2">
-                        <button onclick="window.executeBulkRubroUpdate()" class="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors shadow-lg shadow-purple-900/40 flex items-center gap-2">
+                        <button onclick="window.executeDynamicBulkUpdate()" class="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-colors shadow-lg shadow-purple-900/40 flex items-center gap-2">
                             <i data-lucide="zap" class="w-4 h-4"></i> Aplicar
                         </button>
                     </div>
@@ -1599,6 +1611,7 @@
                     rowDragManaged: true,
                     animateRows: true,
                     rowSelection: 'multiple',
+                    headerCheckboxSelectionFilteredOnly: true,
                     suppressRowClickSelection: true,
                     isExternalFilterPresent: () => {
                         return true; // Obligamos siempre al filtrado para gestionar el aislamiento del ruido
@@ -2350,81 +2363,152 @@
             }
         };
 
-        window.executeBulkRubroUpdate = async function() {
+        
+        window.onBulkTargetChange = function() {
+            const target = document.getElementById('fmtBulkTargetCol').value;
+            if (target === 'unidad') {
+                document.getElementById('fmtBulkRubroSelect').style.display = 'none';
+                document.getElementById('fmtBulkUnidadSelect').style.display = 'block';
+                window.populateUnidadDropdown();
+            } else {
+                document.getElementById('fmtBulkRubroSelect').style.display = 'block';
+                document.getElementById('fmtBulkUnidadSelect').style.display = 'none';
+            }
+        };
+
+        window.populateUnidadDropdown = function() {
             if (!window.v4GridApi) return;
-            const selectedRows = window.v4GridApi.getSelectedRows();
-            const selectDiv = document.getElementById('fmtBulkRubroSelect');
-            const targetRubroId = selectDiv ? selectDiv.value : null;
-
-            if (selectedRows.length === 0) {
-                Swal.fire('Error', 'Debe seleccionar al menos un producto.', 'error');
-                return;
+            
+            const logFn = window.originalConsoleLog || console.log;
+            
+            const uniqueUnidades = new Set();
+            
+            // FILTRADO ANULADO: EXTRACCIÓN CRUDA Y GLOBAL DE TODOS LOS NODOS EN MEMORIA (Requerimiento Estricto QA)
+            const globalNodes = window.v4GridApi.getModel().getRootNode().allLeafChildren;
+            if (!globalNodes || globalNodes.length === 0) {
+                logFn("Auditoría de Inyección UI - El modelo de datos está completamente vacío.");
+            } else {
+                globalNodes.forEach(node => {
+                    if (node.data && node.data.datos_maestros) {
+                        let dm = node.data.datos_maestros;
+                        for (let key in dm) {
+                            if (String(key).toLowerCase() === 'unidad') {
+                                const rawVal = dm[key];
+                                if (rawVal !== null && rawVal !== undefined) {
+                                    const cleanVal = String(rawVal).trim();
+                                    if (cleanVal !== '' && cleanVal.toLowerCase() !== '[vacio]') {
+                                        uniqueUnidades.add(cleanVal);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
             }
-
-            if (!targetRubroId) {
-                Swal.fire('Atención', 'Seleccione el Rubro destino.', 'warning');
-                return;
+            
+            logFn("Cargando Módulo Unidades... Escaneo Crudo Terminado.");
+            logFn("Auditoría de Inyección UI - Unidades Únicas Extraídas del Pool Global (", globalNodes ? globalNodes.length : 0 , "nodos ):", uniqueUnidades.size);
+            
+            const select = document.getElementById('fmtBulkUnidadSelect');
+            if (select) {
+                select.innerHTML = '<option value="">-- Seleccionar Unidad --</option>';
+                select.innerHTML += '<option value="UNASSIGN" class="text-rose-400 font-bold bg-rose-950/20">🧹 VACIAR CELDA</option>';
+                
+                const sorted = Array.from(uniqueUnidades).sort();
+                sorted.forEach(u => {
+                    const opt = document.createElement('option');
+                    opt.value = u;
+                    opt.textContent = u;
+                    select.appendChild(opt);
+                });
             }
+        };
 
-            const itemIds = selectedRows.map(r => r._system_id);
-
-            const result = await Swal.fire({
-                title: '¿Confirmar Reasignación?',
-                html: `Vas a reasignar <b>${selectedRows.length}</b> productos al nuevo rubro.<br><br><span class="text-xs text-amber-500"><i data-lucide="shield-check" class="w-4 h-4 inline"></i> Esta acción fijará la selección manualmente y estará protegida de futuras ingestas automáticas del extractor.</span>`,
-                icon: 'warning',
-                background: '#0f172a',
-                color: '#f8fafc',
-                showCancelButton: true,
-                confirmButtonColor: '#9333ea',
-                cancelButtonColor: '#334155',
-                confirmButtonText: 'Sí, Ejecutar',
-                cancelButtonText: 'Cancelar',
-                customClass: { popup: 'border border-slate-700 shadow-2xl rounded-2xl' }
+        window.executeDynamicBulkUpdate = async function() {
+            if (!window.v4GridApi) return;
+            
+            // FILTRADO ESTRICTO EXIGIDO POR QA: SOLAMENTE NODOS VISIBLES TRAS FILTRO Y SELECCIONADOS
+            const displayedSelectedIds = [];
+            window.v4GridApi.forEachNodeAfterFilter(node => {
+                if (node.isSelected() && node.data && node.data._system_id) {
+                    displayedSelectedIds.push(node.data._system_id);
+                }
             });
 
-            if (result.isConfirmed) {
-                try {
-                    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-                    
-                    Swal.fire({
-                        title: 'Aplicando Cambios...',
-                        allowOutsideClick: false,
-                        background: '#0f172a',
-                        color: '#f8fafc',
-                        didOpen: () => Swal.showLoading()
-                    });
+            const logFn = window.originalConsoleLog || console.log;
+            logFn("ALERTA INTEGRIDAD: Cantidad de IDs a modificar enviadas al backend ->", displayedSelectedIds.length);
 
-                    const res = await fetch(`${backendUrl}/api/master-table/operativa/bulk-rubro`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ itemIds: itemIds, target_rubro_id: targetRubroId })
-                    });
-                    
-                    const json = await res.json();
-                    
-                    if (res.ok && json.success) {
-                        Swal.fire({
-                            title: '¡Sincronización Exitosa!',
-                            text: `${json.count} registros reasignados.`,
-                            icon: 'success',
-                            background: '#0f172a',
-                            color: '#f8fafc',
-                            timer: 2500,
-                            showConfirmButton: false
+            if (displayedSelectedIds.length === 0) {
+                Swal.fire('Error', 'Debe seleccionar al menos un registro visualmente activo.', 'error');
+                return;
+            }
+
+            const itemIds = displayedSelectedIds;
+            const targetCol = document.getElementById('fmtBulkTargetCol').value;
+            const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+
+            if (targetCol === 'rubro') {
+                const targetId = document.getElementById('fmtBulkRubroSelect').value;
+                if (!targetId) return Swal.fire('Atención', 'Seleccione el Rubro destino.', 'warning');
+                
+                const result = await Swal.fire({
+                    title: '¿Confirmar Reasignación de Rubro?',
+                    html: '<p>Vas a reasignar <b>' + itemIds.length + '</b> productos al nuevo rubro.</p>',
+                    icon: 'warning', background: '#0f172a', color: '#f8fafc',
+                    showCancelButton: true, confirmButtonText: 'Sí, Ejecutar', cancelButtonText: 'Cancelar'
+                });
+                
+                if (result.isConfirmed) {
+                    try {
+                        Swal.fire({ title: 'Aplicando...', allowOutsideClick: false, didOpen: () => Swal.showLoading(), background: '#0f172a' });
+                        const res = await fetch(backendUrl + '/api/master-table/operativa/bulk-rubro', {
+                            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ itemIds: itemIds, target_rubro_id: targetId })
                         });
-                        
-                        // Recargar tabla completa para aplicar candado UI
-                        if (window.openFinalMasterTable) {
-                            window.openFinalMasterTable();
-                        }
-                    } else {
-                        throw new Error(json.error || 'Error desconocido.');
-                    }
-                } catch (e) {
-                    Swal.fire('Error de Red', e.message, 'error');
+                        const json = await res.json();
+                        if (res.ok && json.success) {
+                            Swal.fire({ title: '¡Sincronización Exitosa!', text: json.count + ' registros reasignados.', icon: 'success', background: '#0f172a', color: '#f8fafc', timer: 2500, showConfirmButton: false });
+                            setTimeout(() => { window.location.reload(); }, 2000);
+                        } else throw new Error(json.error || 'Error');
+                    } catch (e) { Swal.fire('Error de Red', e.message, 'error'); }
+                }
+            } else if (targetCol === 'unidad') {
+                const targetValRaw = document.getElementById('fmtBulkUnidadSelect').value;
+                if (!targetValRaw) return Swal.fire('Atención', 'Seleccione la Unidad destino.', 'warning');
+                
+                const targetVal = targetValRaw === 'UNASSIGN' ? "" : targetValRaw;
+
+                const result = await Swal.fire({
+                    title: '¿Confirmar Reasignación de Unidad?',
+                    html: '<p>Vas a ajustar higiénicamente la Unidad de <b>' + itemIds.length + '</b> productos a: <strong class="text-fuchsia-400 px-2">' + (targetValRaw === 'UNASSIGN' ? 'VACÍO' : targetVal) + '</strong></p>',
+                    icon: 'warning', background: '#0f172a', color: '#f8fafc',
+                    showCancelButton: true, confirmButtonText: 'Sí, Ejecutar', cancelButtonText: 'Cancelar'
+                });
+                
+                if (result.isConfirmed) {
+                    try {
+                        Swal.fire({ title: 'Aplicando...', allowOutsideClick: false, didOpen: () => Swal.showLoading(), background: '#0f172a' });
+                        const res = await fetch(backendUrl + '/api/master-table/operativa/bulk-unidad', {
+                            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ itemIds: itemIds, target_unidad: targetVal })
+                        });
+                        const json = await res.json();
+                        if (res.ok && json.success) {
+                            Swal.fire({ title: '¡Unidad Aterrizada!', text: json.count + ' registros reasignados.', icon: 'success', background: '#0f172a', color: '#f8fafc', timer: 2500, showConfirmButton: false });
+                            setTimeout(() => { window.location.reload(); }, 2000);
+                        } else throw new Error(json.error || 'Error');
+                    } catch (e) { Swal.fire('Error de Red', e.message, 'error'); }
                 }
             }
         };
+        
+        // VIGIA EXIGIDO POR QA
+        setTimeout(() => {
+            const logFn = window.originalConsoleLog || console.log;
+            const targetColEl = document.getElementById("fmtBulkTargetCol");
+            if (logFn) logFn("Auditoría de Inyección UI - Opciones disponibles en TargetCol:", targetColEl ? targetColEl.options.length : 'ELEMENTO NO ENCONTRADO');
+        }, 1000);
+
         // EXTRACCIÓN OPERATIVA (FASE 5)
         // ==========================================
         window.executeExtraction = async function(forceOverwrite = false) {

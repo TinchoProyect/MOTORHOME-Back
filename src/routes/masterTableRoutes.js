@@ -45,5 +45,6 @@ router.post('/extract', masterTableController.extractToMasterTable);
 router.delete('/revert/:archivoId', masterTableController.revertExtraction);
 router.get('/operativa', masterTableController.getOperativaRecords);
 router.put('/operativa/bulk-rubro', masterTableController.bulkUpdateRubro);
+router.put('/operativa/bulk-unidad', masterTableController.bulkUpdateUnidad);
 
 module.exports = router;

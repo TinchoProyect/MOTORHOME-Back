@@ -645,6 +645,64 @@ module.exports = {
             return res.status(500).json({ success: false, error: e.message });
         }
     },
+    bulkUpdateUnidad: async (req, res) => {
+        try {
+            const { itemIds, target_unidad } = req.body;
+            
+            if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+                return res.status(400).json({ success: false, error: "IDs no proporcionados." });
+            }
+            if (target_unidad === undefined) {
+                return res.status(400).json({ success: false, error: "Unidad no proporcionada." });
+            }
+
+            const supabase = require('../config/supabaseClient');
+            
+            // Traer todos los registros para inyectar higiénicamente el JSONB
+            const { data, error } = await supabase
+                .from('tabla_maestra_operativa')
+                .select('*')
+                .in('id', itemIds);
+
+            if (error) throw error;
+            if (!data || data.length === 0) {
+                return res.json({ success: true, count: 0 });
+            }
+
+            const upserts = data.map(row => {
+                let dm = { ...row.datos_maestros };
+                let replaced = false;
+                
+                // Unidad puede estar como "unidad", "Unidad", "UNIDAD". Lo normalizamos a "Unidad".
+                for (let key in dm) {
+                    if (String(key).toLowerCase() === 'unidad') {
+                        dm[key] = target_unidad;
+                        replaced = true;
+                    }
+                }
+                if (!replaced) {
+                    dm['Unidad'] = target_unidad;
+                }
+
+                return {
+                    ...row,
+                    datos_maestros: dm
+                };
+            });
+
+            // Upsert block
+            const { error: upsertErr } = await supabase
+                .from('tabla_maestra_operativa')
+                .upsert(upserts);
+
+            if (upsertErr) throw upsertErr;
+
+            return res.json({ success: true, message: "Unidad reasignada exitosamente.", count: itemIds.length });
+        } catch(e) {
+            console.error("[MasterTableController] bulkUpdateUnidad error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
     revertExtraction: async (req, res) => {
         try {
             const { archivoId } = req.params;
