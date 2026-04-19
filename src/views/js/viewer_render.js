@@ -38,6 +38,10 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
             const { result, rejected: wasRejected } = window.viewerETL.transformCell(rawStringA, activePipeline, contextRow);
             if (wasRejected) rejected = true;
             resultDisplay = result;
+            if (result === "" && rawStringA !== "" && !window._vigiaTripleGate2) {
+                window._vigiaTripleGate2 = true;
+                console.warn(`VIGÍA CRÍTICO GATE 2: transformCell ANIQUILÓ la cadena "${rawStringA}". Retornó VACÍO. Regla Culpable:`, JSON.parse(JSON.stringify(activePipeline)));
+            }
         } else {
             resultDisplay = rawStringA;
         }
@@ -1478,7 +1482,18 @@ async function generatePreview(skipModal = false) {
             localVirtualCols.forEach(vCol => {
                 const vColId = vCol.id;
                 const localDictTermId = localColumnMap[vColId];
-                if (!localDictTermId || localDictTermId === 'Ignorar Columna') return;
+                
+                // [VIGÍA RENDER MAPEOS ACTIVOS] Inyectado para auditar la columna
+                if (String(localDictTermId).toLowerCase().includes('rubro')) {
+                    console.log(`[VIGÍA RENDER MAPEOS] Detectado intento de renderizar columna 'rubro'. (vColId: ${vColId})`);
+                }
+
+                if (!localDictTermId || localDictTermId === 'Ignorar Columna') {
+                    if (String(vColId).startsWith('col_ph_')) {
+                         console.warn(`[VIGÍA RENDER MAPEOS] Columna Fantasma ${vColId} ignorada (no tiene mapping asignado en localColumnMap)`);
+                    }
+                    return;
+                }
                 
                 let resolutiveTermId = localDictTermId;
                 if (localPipelines[vColId] && localPipelines[vColId].masterField && localPipelines[vColId].masterField.id) {
@@ -1529,6 +1544,17 @@ async function generatePreview(skipModal = false) {
                          transform: (val, rowContext) => {
                              if (!window.viewerETL) return val;
                              const res = window.viewerETL.transformCell(String(val||""), rulesStack, rowContext);
+                             
+                             if (!window._vigiaGridRender && resolutiveTermId.toLowerCase().includes("rubro")) {
+                                 window._vigiaGridRender = true;
+                                 console.warn("VIGÍA ESTADO FÍSICO (RUBRO)", {
+                                     uuid: resolveToMasterId(resolutiveTermId),
+                                     recibido: val,
+                                     rulesStackLength: rulesStack.length,
+                                     reglas: JSON.parse(JSON.stringify(rulesStack))
+                                 });
+                             }
+
                              // [BUG-FIX: Null/Empty Persistence] Si el pipeline se ejecutó (wasTransformed),
                              // respetamos el resultado aunque sea "". Solo hacemos fallback si no hubo pipeline.
                              if (res.wasTransformed) return res.display !== undefined ? res.display : res.result;
@@ -1596,6 +1622,15 @@ async function generatePreview(skipModal = false) {
                                     if (cA) {
                                         const res = evaluateComputedColumnMath(calcConfig, cA, cB, localPipelines, null, allOps, row);
                                         resultDisplay = res.resultDisplay;
+                                        if (resultDisplay === "" && calcConfig.macro === "CLONE_SEMANTIC" && !window._vigiaTripleGate3) {
+                                            window._vigiaTripleGate3 = true;
+                                            console.warn("VIGÍA CRÍTICO GATE 3: El Math resolvió VACÍO a pesar de tener cA.", { res, rawStringA: res.mathResult });
+                                        }
+                                    } else {
+                                        if (!window._vigiaTripleGate1 && calcConfig.macro === "CLONE_SEMANTIC") {
+                                            window._vigiaTripleGate1 = true;
+                                            console.warn("VIGÍA CRÍTICO GATE 1: cA es NULL. Operandos inyectados en la columna calculada están rotos.", JSON.stringify(calcConfig.operands), "Keys en rCtx:", Object.keys(rCtx));
+                                        }
                                     }
                                 }
                             } catch (e) {
@@ -1660,24 +1695,23 @@ async function generatePreview(skipModal = false) {
                 let isEmptyRow = true;
                 let hasCodeCol = false;
                 let codeValueStr = "";
+                const logGrid = window._vigiaETLLogged && window._vigiaETLLogged <= 20;
 
                 localConfig.forEach(cfg => {
                      let resVal = null;
                      if (cfg.isComputed) resVal = cfg.transform(null, row);
                      else resVal = cfg.transform(row[cfg.sourceIndex], row);
                      
-
-                     if (resVal !== undefined && resVal !== null && String(resVal).trim() !== "") {
-                         isEmptyRow = false;
-                     }
-                     row._unifiedOutput[cfg.termId] = resVal;
-                     
-                     // Detectar si la iteración corresponde a un campo "código" primario (Regla Innegociable de Integridad)
                      let semanticName = String(cfg.termId).toLowerCase().trim();
                      if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
                           const mMatch = window.masterDictionary.find(d => String(d.id) === String(cfg.termId) || String(d.nombre_campo).toLowerCase().trim() === semanticName);
                           if (mMatch) semanticName = String(mMatch.nombre_campo).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
                      }
+
+                     if (resVal !== undefined && resVal !== null && String(resVal).trim() !== "") {
+                         isEmptyRow = false;
+                     }
+                     row._unifiedOutput[cfg.termId] = resVal;
 
                      if (semanticName === 'codigo' || semanticName === 'art_codigo' || semanticName === 'ean' || semanticName === 'codigo de articulo') {
                           hasCodeCol = true;

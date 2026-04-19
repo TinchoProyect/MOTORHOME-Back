@@ -934,26 +934,19 @@ function renderPipeline() {
 async function renderCacheMissGatillo(container) {
     let libretaRuleIdx = -1;
     let libretaPrompt = "";
-    let libretaDict = null;
     
     currentDraftPipeline.forEach((r, idx) => {
          let isDictRule = false;
-         let dictObj = null;
-         if (r.tipo === 'ast_conditional' && r.logica && r.logica[0]) {
-             const cond = r.logica[0].condicion;
-             const act = r.logica[0].accion;
-             if (cond && cond.operador === 'IN_DICT_KEYS' && typeof cond.valor === 'object' && cond.valor !== null) {
-                 isDictRule = true;
-                 dictObj = cond.valor;
-             } else if (act && act.tipo_accion === 'DICTIONARY_REPLACE' && typeof act.valor === 'object' && act.valor !== null) {
-                 isDictRule = true;
-                 dictObj = act.valor;
+         if (r.tipo === 'ast_conditional' && r.logica) {
+             for (const b of r.logica) {
+                 if ((b.condicion && b.condicion.operador === 'IN_DICT_KEYS') || (b.accion && b.accion.tipo_accion === 'DICTIONARY_REPLACE')) {
+                     isDictRule = true; break;
+                 }
              }
          }
 
          if (isDictRule) {
              libretaRuleIdx = idx;
-             libretaDict = dictObj;
              if (r.nombre_regla && r.nombre_regla.includes(':')) {
                  let pStart = r.nombre_regla.indexOf(':') + 1;
                  libretaPrompt = r.nombre_regla.substring(pStart).trim();
@@ -988,7 +981,23 @@ async function renderCacheMissGatillo(container) {
         }
     }
 
+    let globalDict = new Set();
+    let globalDropped = new Set();
+    currentDraftPipeline.forEach(r => {
+        if (r.tipo === 'ast_conditional' && r.logica) {
+            r.logica.forEach(b => {
+                if (b.condicion && b.condicion.operador === 'IN_DICT_KEYS' && b.condicion.valor) {
+                    Object.keys(b.condicion.valor).forEach(k => globalDict.add(k.trim()));
+                }
+                if (b.condicion && b.condicion.operador === 'IN_LIST' && b.condicion.valor) {
+                    b.condicion.valor.forEach(k => globalDropped.add(k.trim()));
+                }
+            });
+        }
+    });
+
     let misses = [];
+    let totalAuditable = [];
     const rawRows = window.currentSheetData.slice(1);
     for(let row of rawRows) {
         if (codeDataIdx >= 0) {
@@ -998,35 +1007,30 @@ async function renderCacheMissGatillo(container) {
             if (window.viewerETL && window.viewerETL.transformCell && codePipeline.length > 0) {
                 const skuTr = window.viewerETL.transformCell(skuVal, codePipeline, row);
                 if (skuTr.rejected || !String(skuTr.display || skuTr.result || "").trim()) {
-                    continue; // The row is logically dead due to Master SKU filtering
+                    continue; // Logically dead due to Master SKU filtering
                 }
             }
         }
 
         let crudo = resolveRawValueForRow(row, physicalIdx);
         if (!crudo.trim()) continue;
+        const crudoClean = crudo.trim();
+        totalAuditable.push(crudoClean);
         
-        let outVal = crudo;
-        let rejected = false;
-        if (window.viewerETL && window.viewerETL.transformCell) {
-            const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
-            outVal = String(tr.display || tr.result || "");
-            rejected = tr.rejected;
+        if (globalDict.has(crudoClean) || globalDropped.has(crudoClean)) {
+            continue; // Mapped firmly
         }
         
-        let isUnmapped = libretaDict && libretaDict[crudo.trim()] === undefined;
-        let isExplicitlyCleared = libretaDict && libretaDict[crudo.trim()] === "";
-        
-        if (!isExplicitlyCleared && (rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo))) {
-            misses.push(crudo.trim());
-        }
+        misses.push(crudoClean);
     }
     
     let uniqueMisses = [...new Set(misses)].filter(x => x);
-    if (uniqueMisses.length > 0) {
+    let uniqueTotal = [...new Set(totalAuditable)].filter(x => x);
+    
+    if (uniqueMisses.length >= 0) {
         const btnHtml = `
-            <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.processCacheMiss('${encodeURIComponent(libretaPrompt).replace(/'/g, '%27')}', ${libretaRuleIdx})" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/50 rounded text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none">
-                <i data-lucide="rocket" class="w-3.5 h-3.5"></i> Procesar registros nuevos (${uniqueMisses.length})
+            <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.promptScopeModal('${encodeURIComponent(libretaPrompt).replace(/'/g, '%27')}', ${libretaRuleIdx}, ${uniqueMisses.length}, ${uniqueTotal.length})" class="px-3 py-1.5 ${uniqueMisses.length > 0 ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none cursor-pointer' : 'bg-slate-800/80 text-slate-500 border-slate-700/50 cursor-pointer hover:bg-slate-700 transition'} border rounded text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 shrink-0">
+                <i data-lucide="${uniqueMisses.length > 0 ? 'rocket' : 'check-circle'}" class="w-3.5 h-3.5"></i> Procesar Pendientes (${uniqueMisses.length})
             </button>
         `;
         container.insertAdjacentHTML('beforeend', btnHtml);
@@ -1034,21 +1038,68 @@ async function renderCacheMissGatillo(container) {
     }
 }
 
-export async function processCacheMiss(encodedPrompt, ruleIdx) {
+export function promptScopeModal(encodedPrompt, ruleIdx, missesCount, totalCount) {
+    if (!window.Swal) return;
+    
+    if (missesCount === 0 && totalCount === 0) {
+        Swal.fire("Vacío", "No hay registros detectables para evaluar.", "warning");
+        return;
+    }
+
+    Swal.fire({
+        title: '<span class="text-indigo-400 font-bold flex items-center gap-2"><i class="fas fa-microchip"></i> Alcance de Inferencia IA</span>',
+        html: `
+            <div class="text-left text-sm text-slate-300 mt-2 space-y-4 font-sans">
+                <p>El Motor IA ejecutará la directiva seleccionada. ¿Qué subconjunto de datos desea someter a inferencia analítica?</p>
+                <div class="p-3 bg-slate-900/50 border ${missesCount > 0 ? 'border-emerald-500/50 hover:bg-slate-800' : 'border-slate-700/50 opacity-50'} rounded cursor-pointer transition relative" id="swalBtnMisses" style="${missesCount === 0 ? 'pointer-events:none' : ''}">
+                    <div class="font-bold text-emerald-400">Sólo Registros Pendientes (${missesCount} ítems)</div>
+                    <div class="text-[10px] text-slate-400 mt-1 leading-relaxed">Evalúa únicamente los artículos nuevos o huérfanos que aún no poseen mapeo oficial. Recomendado para optimizar costos de IA y preservar progresos previos.</div>
+                </div>
+                <div class="p-3 bg-slate-900/50 border border-slate-700/50 rounded cursor-pointer hover:bg-rose-950/30 hover:border-rose-900/50 transition opacity-80" id="swalBtnTotal">
+                    <div class="font-bold text-rose-500">Sobrescribir Columna Completa (${totalCount} ítems)</div>
+                    <div class="text-[10px] text-slate-500 mt-1 leading-relaxed">Re-evalúa absolutamente todos los artículos de principio a fin, provocando la destrucción del progreso manual actual sobre la libreta. (Acción destructiva).</div>
+                </div>
+            </div>
+        `,
+        background: '#0f172a',
+        showConfirmButton: false,
+        showDenyButton: false,
+        showCancelButton: true,
+        cancelButtonText: 'Cancelar',
+        customClass: {
+            cancelButton: 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600 px-4 py-2 rounded text-xs font-bold'
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            processCacheMiss(encodedPrompt, ruleIdx, false);
+        } else if (result.isDenied) {
+            processCacheMiss(encodedPrompt, ruleIdx, true);
+        }
+    });
+
+    setTimeout(() => {
+        const popup = Swal.getPopup();
+        if(popup) {
+            const btnMiss = popup.querySelector('#swalBtnMisses');
+            const btnTotal = popup.querySelector('#swalBtnTotal');
+            if(btnMiss) btnMiss.onclick = () => Swal.clickConfirm();
+            if(btnTotal) btnTotal.onclick = () => Swal.clickDeny();
+        }
+    }, 50);
+}
+
+export async function processCacheMiss(encodedPrompt, ruleIdx, processAll = false) {
     if (!window.Swal) return;
     
     const originalPrompt = decodeURIComponent(encodedPrompt);
     const originalRule = currentDraftPipeline[ruleIdx];
     
     if (!originalRule || !originalRule.logica || (!originalRule.logica[0].condicion && !originalRule.logica[0].accion)) {
-        Swal.fire("Error", "La libreta madre está corrupta o no tiene diccionario interno.", "error"); return;
+        Swal.fire("Error", "La libreta madre está corrupta o no tiene lógica interna.", "error"); return;
     }
     
     let physicalIdx = activeContext.colIndex;
     if (physicalIdx === null || physicalIdx === undefined) return;
-    
-    let libretaDict = originalRule.logica && originalRule.logica[0] && originalRule.logica[0].condicion ? originalRule.logica[0].condicion.valor : null;
-    if (!libretaDict && originalRule.logica && originalRule.logica[0] && originalRule.logica[0].accion) libretaDict = originalRule.logica[0].accion.valor;
     
     let codeDataIdx = -1;
     let codePipeline = [];
@@ -1065,6 +1116,21 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
             }
         }
     }
+
+    let globalDict = new Set();
+    let globalDropped = new Set();
+    currentDraftPipeline.forEach(r => {
+        if (r.tipo === 'ast_conditional' && r.logica) {
+            r.logica.forEach(b => {
+                if (b.condicion && b.condicion.operador === 'IN_DICT_KEYS' && b.condicion.valor) {
+                    Object.keys(b.condicion.valor).forEach(k => globalDict.add(String(k).trim().toLowerCase()));
+                }
+                if (b.condicion && b.condicion.operador === 'IN_LIST' && b.condicion.valor) {
+                    b.condicion.valor.forEach(k => globalDropped.add(String(k).trim().toLowerCase()));
+                }
+            });
+        }
+    });
 
     let misses = [];
     const rawRows = window.currentSheetData.slice(1);
@@ -1083,19 +1149,20 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
 
         let crudo = resolveRawValueForRow(row, physicalIdx);
         if (!crudo.trim()) continue;
-        const tr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
-        let outVal = String(tr.display || tr.result || "");
-        let isUnmapped = libretaDict && libretaDict[crudo.trim()] === undefined;
-        let isExplicitlyCleared = libretaDict && libretaDict[crudo.trim()] === "";
+        const crudoClean = crudo.trim();
         
-        if (!isExplicitlyCleared && (tr.rejected || outVal.trim() === "" || (isUnmapped && outVal === crudo))) {
-            misses.push(crudo.trim());
+        if (!processAll) {
+            const crudoLower = crudoClean.toLowerCase();
+            if (globalDict.has(crudoLower) || globalDropped.has(crudoLower)) continue;
         }
+        
+        misses.push(crudoClean);
     }
+    
     let uniqueMisses = [...new Set(misses)].filter(x => x);
     
     if (uniqueMisses.length === 0) {
-        Swal.fire("Todo Ok", "No hay registros nuevos o residuales que procesar.", "success"); return;
+        Swal.fire("Todo Ok", "No hay registros que procesar.", "success"); return;
     }
     
     try {
@@ -1156,6 +1223,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx) {
                 clusterMap[rubro].push(rawKey);
                 if (arg) window.viewerAiUi.argumentationMap[rawKey] = arg;
             }
+            window.viewerAiUi._crystalizeMergeMode = !processAll; // [FIX 1 QA] Transferir la decisión de merge
             await window.viewerAiUi._displaySemanticAuditTray(clusterMap, originalPrompt, vCol);
             return;
         }
@@ -1604,6 +1672,24 @@ export function applyMapping() {
         window.viewerETL.commitColumnMapping(activeContext.colIndex, activeContext.masterField, currentDraftPipeline);
     }
 
+    // [HERD IMMUNITY QA] Propagación Transversal (Manual) hacia Base de Datos Maestra
+    if (activeContext.masterField && activeContext.masterField.id) {
+        const payloadDict = {
+            id: activeContext.masterField.id,
+            termino: activeContext.masterField.nombre_campo || activeContext.colName,
+            reglas_procesamiento: currentDraftPipeline,
+            currentProviderId: window.globalContext ? window.globalContext.providerId : null
+        };
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        fetch(`${backendUrl}/api/files/dictionary/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payloadDict)
+        }).then(r => r.json()).then(res => {
+            console.log("🌐 [HERD IMMUNITY] AST (Manual) perpetuado en Master Dictionary:", res);
+        }).catch(err => console.error("Error perpetuando AST global manualmente:", err));
+    }
+
     close();
 
     // [V9 FIX] Sincronizar Caché Maestro Local ANTES de disparar guardados al backend o simulaciones
@@ -2041,6 +2127,7 @@ window.viewerRuleWorkshop = {
     clearPipeline,
     auditResidues,
     processCacheMiss,
+    promptScopeModal,
     unlinkCurrentCol
 };
 

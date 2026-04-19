@@ -32,17 +32,30 @@ class ViewerEtlAstParser {
         if (!astObj || !Array.isArray(astObj.logica)) return { result: val, handled: false };
         let strVal = String(val);
 
+        const logVigia = typeof window !== 'undefined' && window._vigiaETLLogged && window._vigiaETLLogged <= 20;
+
         for (const branch of astObj.logica) {
             if (!branch.condicion || !branch.accion) continue;
 
             const isMatch = this._evaluateCondition(strVal, branch.condicion);
             
+            if (logVigia) {
+                console.log(`[VIGÍA AST] 🔎 Evaluando Condición ${branch.condicion.operador} contra "${strVal}". Match?:`, isMatch);
+            }
+
             if (isMatch) {
                 // Return immediate applying this action
-                return this._applyAction(strVal, branch.accion);
+                const actRes = this._applyAction(strVal, branch.accion, branch.condicion);
+                if (logVigia) {
+                    console.log(`[VIGÍA AST] 🚀 Aplicando Acción ${branch.accion.tipo_accion} -> Result:`, actRes);
+                }
+                return actRes;
             }
         }
         
+        if (logVigia) {
+            console.log(`[VIGÍA AST] ⚠️ Ninguna rama logica hizo Match. Devolviendo string original.`);
+        }
         return { result: strVal, handled: false };
     }
 
@@ -75,7 +88,8 @@ class ViewerEtlAstParser {
                 
             case "IN_DICT_KEYS":
                 if (cond.valor && typeof cond.valor === 'object') {
-                    return cond.valor[val.trim()] !== undefined;
+                    const localKeyLower = String(val).trim().toLowerCase();
+                    return Object.keys(cond.valor).some(k => String(k).trim().toLowerCase() === localKeyLower);
                 }
                 return false;
                 
@@ -90,7 +104,7 @@ class ViewerEtlAstParser {
         }
     }
 
-    _applyAction(val, action) {
+    _applyAction(val, action, condicion = null) {
         if (!action || !action.tipo_accion) return { result: val, handled: true, rejected: false };
         
         switch (action.tipo_accion) {
@@ -122,13 +136,39 @@ class ViewerEtlAstParser {
                 const m = val.match(reExt);
                 return { result: m && m[0] ? m[0] : "", handled: true, rejected: !m };
                 
-            case "DICTIONARY_REPLACE":
-                if (!action.valor || typeof action.valor !== 'object') return { result: "", handled: true, rejected: false };
+            case "DICTIONARY_REPLACE": {
+                // [HERD IMMUNITY QA] Resiliencia contra purgas DOM. Si accion.valor no existe, usamos condicion.valor.
+                const dictObj = (action.valor && typeof action.valor === 'object') ? action.valor : (condicion && condicion.valor && typeof condicion.valor === 'object' ? condicion.valor : null);
+                if (!dictObj) return { result: "", handled: true, rejected: false };
+                
                 const keyToCheck = val.trim();
-                if (Object.prototype.hasOwnProperty.call(action.valor, keyToCheck)) {
-                    return { result: action.valor[keyToCheck], handled: true, rejected: false };
+                const keyLower = keyToCheck.toLowerCase();
+                const dictKeys = Object.keys(dictObj);
+                
+                let matchedVal = null;
+                for (let i = 0; i < dictKeys.length; i++) {
+                    if (String(dictKeys[i]).trim().toLowerCase() === keyLower) {
+                        matchedVal = dictObj[dictKeys[i]];
+                        break;
+                    }
                 }
-                return { result: "", handled: true, rejected: false }; // FIX: No leak definition
+                
+                const matched = (matchedVal !== null);
+                
+                const logVigInt = typeof window !== 'undefined' && window._vigiaETLLogged && window._vigiaETLLogged <= 20;
+                if (logVigInt) {
+                    console.log(`[VIGÍA AST INT] DICTIONARY_REPLACE key: "${keyToCheck}". En Diccionario?: ${matched}`);
+                    if (!matched) console.log(`[VIGÍA AST INT] Diccionario Real:`, dictObj);
+                }
+
+                if (matched) {
+                    return { result: matchedVal, handled: true, rejected: false };
+                }
+                
+                // [FIX ESTRUCTURAL] Si no hace match, DEBE retornar handled: false
+                // Para que evalúe la condición DEFAULT (que asigna "" = valor huérfano explícito)
+                return { result: val, handled: false, rejected: false };
+            }
                 
             case "LOWERCASE":
                 return { result: val.toLowerCase(), handled: true, rejected: false };

@@ -13,6 +13,20 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
 
     // [V5] Rich Object Support
     let cleanValue = null; // Stores pure mathematical float if evaluated
+    let wasTransformed = false;
+    
+    // [VIGIA DIAGNOSTICO - Limite 20 renders para no saturar]
+    const isVigiaTarget = typeof window !== 'undefined' && currentValue && currentValue !== "";
+    if (isVigiaTarget) {
+        window._vigiaETLLogged = (window._vigiaETLLogged || 0) + 1;
+    }
+    const logVigia = isVigiaTarget && window._vigiaETLLogged <= 20;
+
+    if (logVigia) {
+        console.log(`\n===========================================`);
+        console.log(`[VIGÍA ETL] 📥 transformCell INICIO | Entrada: "${currentValue}"`);
+        console.log(`[VIGÍA ETL] 📦 Pipeline Recibido:`, JSON.parse(JSON.stringify(pipeline)));
+    }
 
     // Iteramos el pipeline respetando ERICTAMENTE el orden definido por el usuario (UX).
     for (const rule of pipeline) {
@@ -24,7 +38,17 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
         if (rule.tipo === 'ast_conditional') {
             // Evaluador JSON AST (Zero RCE)
             const astData = rule.ast || rule; 
+            
+            if (logVigia) {
+                console.log(`[VIGÍA ETL] ⚙️ Ejecutando AST Conditional. astData:`, JSON.parse(JSON.stringify(astData)));
+            }
+
             const execution = astParser.executeAST(currentValue, astData);
+            
+            if (logVigia) {
+                console.log(`[VIGÍA ETL] 🏁 Resultado AST:`, execution);
+            }
+
             if (execution.handled) {
                 currentValue = execution.result;
                 if (execution.rejected) isRejected = true;
@@ -570,7 +594,7 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
     // se ejecutó activamente sobre el valor crudo, aunque el resultado sea "".
     // Cuando este flag es `true`, el string vacío es un valor de destino LEGÍTIMO
     // y el merger NO DEBE hacer fallback al valor original.
-    const wasTransformed = pipeline && pipeline.length > 0 && !isRejected;
+    wasTransformed = pipeline && pipeline.length > 0 && !isRejected;
 
     return {
         result: currentValue,        // [Legacy compatibility] Target string representation

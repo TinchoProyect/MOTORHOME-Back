@@ -380,16 +380,51 @@ class ViewerAiUi {
                      }
                  }
             }
-            console.log(`[Chofer IA - Guardián] masterKeyDataIdx=${masterKeyDataIdx}, masterField=${masterFieldObj?.nombre_campo || 'N/A'}, tipo_dato=${masterFieldObj?.tipo_dato || 'N/A'}`);
+            
+            let codigoColId = null;
+            if (window.virtualColumns && window.draftPipelines) {
+                for (const vCol of window.virtualColumns) {
+                    const draft = window.draftPipelines[vCol.id];
+                    if (draft && draft.masterField) {
+                        const lowerName = String(draft.masterField.nombre_campo || "").toLowerCase().trim();
+                        if (lowerName === 'código' || lowerName === 'codigo' || lowerName === 'sku') {
+                            codigoColId = vCol.id;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            const resolveRawLocal = (r, tId) => {
+                let physicalIdx = tId;
+                if (window.computedColumns) {
+                    const comp = window.computedColumns.find(c => c.id === tId);
+                    if (comp && comp.operands && comp.operands.length > 0) return resolveRawLocal(r, comp.operands[0]); 
+                }
+                if (typeof physicalIdx === 'string' && window.virtualColumns) {
+                    const vCol = window.virtualColumns.find(c => String(c.id) === String(physicalIdx));
+                    if (vCol && vCol.dataIdx !== undefined) physicalIdx = vCol.dataIdx;
+                }
+                if (typeof physicalIdx === 'string' && physicalIdx.startsWith('col_')) physicalIdx = parseInt(physicalIdx.replace('col_', ''), 10);
+                if (typeof physicalIdx !== 'number' || isNaN(physicalIdx) || physicalIdx < 0) return "";
+                return String(r[physicalIdx] || "");
+            };
 
             const total = rawRows.length;
             const uniqueSet = new Set();
+            this._rawTotalUniqueItems = new Set(); // Guardián de métricas totales pre-Delta
             const chunkSize = 5000;
             let i = 0;
 
             const processChunk = () => {
                 const end = Math.min(i + chunkSize, total);
                 for (; i < end; i++) {
+                    // [Filtro Estricto de Huérfanos] - Si no tiene Código válido, ignorarlo.
+                    if (codigoColId !== null) {
+                        let skuVal = String(resolveRawLocal(rawRows[i], codigoColId)).trim();
+                        if (!skuVal || !/[a-zA-Z0-9]/.test(skuVal)) continue;
+                    }
+
                     if (masterKeyDataIdx !== null) {
                         let mVal = String(rawRows[i][masterKeyDataIdx] || "").trim();
                         
@@ -398,7 +433,6 @@ class ViewerAiUi {
                              mVal = window.SchemaSanitizer.cast(mVal, masterFieldObj);
                         }
                         
-                        // Guardián Absolutista: Si el código está vacío, tiene espacios ocultos, o puros símbolos (ej. "-"), se aborta.
                         if (!mVal || !/[a-zA-Z0-9]/.test(mVal)) continue;
                     }
 
@@ -409,6 +443,7 @@ class ViewerAiUi {
                         val = String(rawRows[i][extractionDataIdx] || "").trim();
                     }
                     if (!val) continue;
+                    if (val.trim() && val.trim().length <= 150) this._rawTotalUniqueItems.add(val.trim());
                     
                     let effectiveVal = val;
                     if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
@@ -542,37 +577,12 @@ class ViewerAiUi {
             let bypassPipelineForAI = /CLONE_SEMANTIC/i.test(promptText) ? [] : state.pipeline;
             
             // Modal interceptor para Caza-Rubros
-            if ((this.selectedRoute === 'caza-rubros' || /caza-rubros/i.test(this.promptEl.value)) && window.Swal) {
-                // Suspender disablement un momento si eligen salir
-                const decision = await Swal.fire({
-                    title: 'Gestión de Extracción Semántica',
-                    html: '<p class="text-[13px] text-slate-300">Elija cómo desea que el Chofer procese los datos en esta ejecución.</p>',
-                    icon: 'question',
-                    background: '#0f172a',
-                    color: '#f8fafc',
-                    showDenyButton: true,
-                    showCancelButton: true,
-                    confirmButtonText: '<i data-lucide="filter" class="w-4 h-4"></i> Procesar solo Faltantes',
-                    denyButtonText: '<i data-lucide="refresh-cw" class="w-4 h-4"></i> Reprocesar Todo',
-                    cancelButtonText: 'Cancelar',
-                    confirmButtonColor: '#059669',
-                    denyButtonColor: '#be123c',
-                    customClass: { confirmButton: 'flex items-center gap-2', denyButton: 'flex items-center gap-2' },
-                    didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
-                });
-
-                if (decision.isDismissed && decision.dismiss !== Swal.DismissReason.timer) {
-                    this.btnEl.disabled = false;
-                    return;
-                }
-
-                if (decision.isConfirmed) {
-                    this._crystalizeMergeMode = true;
-                    bypassPipelineForAI = state.pipeline; // Aplicar Delta estricto
-                } else if (decision.isDenied) {
-                    this._crystalizeMergeMode = false;
-                    bypassPipelineForAI = []; // Bypass destructivo de todo el pipeline anterior
-                }
+            // [REQUERIMIENTO] Redundancia y Modal Interceptor (ELIMINADOS)
+            // La Consola Semántica ya no pregunta si "Reprocesar todo". Se fuerza 
+            // SIEMPRE la reactividad cruzando contra la Base de Datos (Delta Estricto).
+            if (this.selectedRoute === 'caza-rubros' || /caza-rubros/i.test(this.promptEl.value)) {
+                this._crystalizeMergeMode = true;
+                bypassPipelineForAI = state.pipeline; // Aplicar Delta estricto siempre (Solo Huérfanos)
             }
 
             // Loader visual re-ubicado DENTRO de la cadena de ejecución inquebrantable
@@ -1594,12 +1604,17 @@ class ViewerAiUi {
         let existingTray = document.getElementById('semanticAuditTray');
         if (existingTray) existingTray.remove();
 
+        const totalItems = Object.values(clusterMap).reduce((acc, curr) => acc + curr.length, 0);
+
         const trayHtml = `
         <div id="semanticAuditTray" class="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-xl flex flex-col p-6 shadow-[inset_0_0_100px_rgba(249,115,22,0.1)]">
             <div class="flex items-center justify-between border-b border-orange-500/30 pb-4 mb-4 shrink-0">
                 <div>
                     <h2 class="text-2xl font-black text-orange-400 flex items-center gap-2"><i data-lucide="scan-line" class="w-6 h-6"></i> Consola Semántica (Caza-Rubros)</h2>
-                    <p class="text-xs text-slate-400 mt-1 uppercase tracking-widest font-mono">Bandeja Jerárquica de Mapeo Determinista</p>
+                    <p class="text-[12px] text-slate-400 font-mono flex items-center gap-2 mt-1 px-1">
+                        <span class="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-300">Total Detectados: <strong class="text-orange-400" id="satTotalLbl">${this._rawTotalUniqueItems ? this._rawTotalUniqueItems.size : '...'}</strong></span>
+                        <span class="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-300">Pendientes (Auditoría): <strong class="text-orange-400" id="satPendingLbl">${totalItems}</strong></span>
+                    </p>
                 </div>
                 <div class="flex items-center gap-3">
                     <button id="satCancelBtn" class="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded font-bold transition">Cancelar</button>
@@ -1629,13 +1644,13 @@ class ViewerAiUi {
             <div class="flex-1 flex flex-col min-h-0 space-y-4">
                 <!-- PANEL: Pendientes -->
                 <div class="flex flex-col h-1/2 bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden shrink-0 shadow-lg" style="height: calc(50% - 0.5rem);">
-                    <div class="bg-indigo-950/50 p-2 text-[10px] uppercase tracking-widest font-black text-indigo-400 border-b border-indigo-500/20 shrink-0"><i data-lucide="list-tree" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Sugerencias del Chofer IA (Pendientes de Asignación)</div>
+                    <div class="bg-indigo-950/50 p-2 text-[10px] uppercase tracking-widest font-black text-indigo-400 border-b border-indigo-500/20 shrink-0 flex items-center justify-between"><span><i data-lucide="list-tree" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Sugerencias del Chofer IA (Pendientes de Asignación)</span> <span class="bg-indigo-500/30 text-indigo-200 px-1.5 rounded-sm" id="satSourceHeaderCount">-</span></div>
                     <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3" id="satSourceContainer"></div>
                 </div>
                 
                 <!-- PANEL: Confirmados -->
                 <div class="flex flex-col h-1/2 bg-slate-900 border border-orange-500/50 rounded-lg overflow-hidden shrink-0 shadow-[0_0_15px_rgba(249,115,22,0.1)] relative" style="height: calc(50% - 0.5rem);">
-                    <div class="bg-orange-950/50 p-2 text-[10px] uppercase tracking-widest font-black text-orange-400 border-b border-orange-500/20 shrink-0"><i data-lucide="inbox" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Bandeja Abierta (Confirmados listos para Cristalizar)</div>
+                    <div class="bg-orange-950/50 p-2 text-[10px] uppercase tracking-widest font-black text-orange-400 border-b border-orange-500/20 shrink-0 flex items-center justify-between"><span><i data-lucide="inbox" class="w-3 h-3 inline-block -mt-0.5 mr-1"></i> Bandeja Abierta (Confirmados listos para Cristalizar)</span> <span class="bg-orange-500/30 text-orange-200 px-1.5 rounded-sm" id="satConfirmedHeaderCount">-</span></div>
                     <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3 relative" id="satConfirmedContainer"></div>
                 </div>
             </div>
@@ -1678,6 +1693,20 @@ class ViewerAiUi {
              btn.disabled = true;
              if(window.lucide) window.lucide.createIcons({root: btn.parentElement});
              
+             // [REQ 1] Reactividad visual inmediata en contadores antes del recalculo pesado
+             const sH = document.getElementById('satSourceHeaderCount');
+             const cH = document.getElementById('satConfirmedHeaderCount');
+             if (sH) {
+                 const curS = parseInt(sH.innerText) || 0;
+                 sH.innerText = `${Math.max(0, curS - items.length)} Ítems`;
+                 sH.classList.add('bg-red-500/60', 'text-white', 'scale-110', 'transition-all', 'duration-300');
+             }
+             if (cH) {
+                 const curC = parseInt(cH.innerText) || 0;
+                 cH.innerText = `${curC + items.length} Ítems`;
+                 cH.classList.add('bg-emerald-500/60', 'text-white', 'scale-110', 'transition-all', 'duration-300');
+             }
+             
              // Evitar Freeze Thread en Arrays grandes
              setTimeout(() => {
                  if (!this.confirmedState[targetMaster]) {
@@ -1716,6 +1745,14 @@ class ViewerAiUi {
         document.getElementById('satDeleteBtn').onclick = () => {
              const items = getSelectedItems();
              if(items.length === 0) return;
+             
+             // [REQ 1] Reactividad visual
+             const sH = document.getElementById('satSourceHeaderCount');
+             if (sH) {
+                 const curS = parseInt(sH.innerText) || 0;
+                 sH.innerText = `${Math.max(0, curS - items.length)} Ítems`;
+                 sH.classList.add('bg-rose-500/60', 'text-white', 'scale-110', 'transition-all', 'duration-300');
+             }
              
              items.forEach(it => {
                  this.discardedItems.add(it.val);
@@ -1774,7 +1811,7 @@ class ViewerAiUi {
                            if (r.logica && Array.isArray(r.logica)) {
                                r.logica.forEach(b => {
                                    if (b.condicion && b.condicion.operador === 'IN_DICT_KEYS' && b.accion && b.accion.tipo_accion === 'DICTIONARY_REPLACE') {
-                                       mergedMap = { ...b.accion.valor, ...mergedMap };
+                                       mergedMap = { ...b.condicion.valor, ...mergedMap };
                                    }
                                    if (b.condicion && b.condicion.operador === 'IN_LIST' && b.accion && b.accion.tipo_accion === 'DROP') {
                                        mergedDiscarded = [...new Set([...(b.condicion.valor || []), ...mergedDiscarded])];
@@ -1800,7 +1837,7 @@ class ViewerAiUi {
              
              logica.push({
                   condicion: { operador: "DEFAULT" },
-                  accion: this.incrementalMode ? { tipo_accion: "PASS" } : { tipo_accion: "SET_VALUE", valor: "" }
+                  accion: { tipo_accion: "SET_VALUE", valor: "" }
              });
 
              const aiRuleObj = {
@@ -1824,6 +1861,35 @@ class ViewerAiUi {
                      // Invocamos la API nativa con el flag clearFirst = true
                      // Esto elimina la basura local y ancla visualmente la regla al UI.
                      window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj, true);
+                     
+                     // [FIX AMNESIA] Forzar Sincronización Memoria Local a Global antes del Fetch al Backend
+                     const destStateForce = window.viewerRuleWorkshop.getActiveState();
+                     if (destStateForce && destStateForce.colIndex && destStateForce.pipeline) {
+                         if (!window.draftPipelines) window.draftPipelines = {};
+                         window.draftPipelines[destStateForce.colIndex] = {
+                             masterField: destStateForce.masterField,
+                             colName: destStateForce.colName,
+                             rules: [...destStateForce.pipeline]
+                         };
+
+                         // [HERD IMMUNITY QA] Inyección Transversal hacia Base de Datos Maestra
+                         if (destStateForce.masterField && destStateForce.masterField.id) {
+                             const payloadDict = {
+                                 id: destStateForce.masterField.id,
+                                 termino: destStateForce.masterField.nombre_campo || destStateForce.colName,
+                                 reglas_procesamiento: destStateForce.pipeline,
+                                 currentProviderId: window.globalContext ? window.globalContext.providerId : null
+                             };
+                             const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                             fetch(`${backendUrl}/api/files/dictionary/update`, {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify(payloadDict)
+                             }).then(r => r.json()).then(res => {
+                                 console.log("🌐 [HERD IMMUNITY] AST perpetuado en Master Dictionary:", res);
+                             }).catch(err => console.error("Error perpetuando AST global:", err));
+                         }
+                     }
 
                      console.log(`🤖 [CHOFER] Regla Caza-Rubro Inyectada estructuralmente en la UI Activa (${destState.colIndex}).`);
                      this._setStatus('Persistencia Sincronizada', 'success');
@@ -1861,10 +1927,12 @@ class ViewerAiUi {
         // --- 1. RENDER SOURCE PANEL ---
         let sourceHtml = '';
         let sourceGroupIdx = 0;
+        let sourceCount = 0;
         
         for (const masterVal in this.sourceAuditState) {
              const group = this.sourceAuditState[masterVal];
              if (group.deleted || group.items.length === 0) continue;
+             sourceCount += group.items.length;
              
              let childrenHtml = group.items.map((val, idx) => {
                  const b64Val = encodeURIComponent(val);
@@ -1956,6 +2024,17 @@ class ViewerAiUi {
         }
         confirmedContainer.innerHTML = confirmedHtml;
         
+        const hs = document.getElementById('satSourceHeaderCount');
+        if (hs) {
+            hs.innerText = `${sourceCount} Ítems`;
+            setTimeout(() => hs.classList.remove('bg-red-500/60', 'bg-emerald-500/60', 'bg-rose-500/60', 'text-white', 'scale-110'), 350);
+        }
+        const hc = document.getElementById('satConfirmedHeaderCount');
+        if (hc) {
+            hc.innerText = `${confirmedCount} Ítems`;
+            setTimeout(() => hc.classList.remove('bg-red-500/60', 'bg-emerald-500/60', 'bg-rose-500/60', 'text-white', 'scale-110'), 350);
+        }
+        
         if(window.lucide) {
             window.lucide.createIcons({root: sourceContainer});
             window.lucide.createIcons({root: confirmedContainer});
@@ -2005,6 +2084,12 @@ class ViewerAiUi {
 
         // Restore Items Logic (UX Flexible)
         const restoreItem = (master, val) => {
+            // [REQ 1] Reactividad visual inversa
+            const sH = document.getElementById('satSourceHeaderCount');
+            const cH = document.getElementById('satConfirmedHeaderCount');
+            if (sH) sH.classList.add('bg-emerald-500/60', 'text-white', 'scale-110', 'transition-all', 'duration-300');
+            if (cH) cH.classList.add('bg-red-500/60', 'text-white', 'scale-110', 'transition-all', 'duration-300');
+
             // Remueve de confirmed
             this.confirmedState[master].items = this.confirmedState[master].items.filter(x => x !== val);
             

@@ -1574,8 +1574,64 @@
                     defaultColDef: {
                         flex: 1,
                         minWidth: 30, // Absolute freedom requested
-                        filter: true,
+                        filter: 'agTextColumnFilter',
                         floatingFilter: true,
+                        filterParams: {
+                            textFormatter: (r) => {
+                                if (r == null) return null;
+                                return String(r).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                            },
+                            textMatcher: (params) => {
+                                const filterOption = params.filterOption || params.type;
+                                const cellValue = params.value;
+                                const filterText = params.filterText;
+                                
+                                if (!filterText) return true;
+                                if (cellValue == null) return false;
+                                
+                                if (filterOption === 'contains') {
+                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
+                                    return tokens.every(token => cellValue.includes(token));
+                                }
+                                
+                                if (filterOption === 'notContains') {
+                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
+                                    return !tokens.every(token => cellValue.includes(token));
+                                }
+                                
+                                if (filterOption === 'equals') return cellValue === filterText;
+                                if (filterOption === 'notEqual') return cellValue !== filterText;
+                                if (filterOption === 'startsWith') return cellValue.startsWith(filterText);
+                                if (filterOption === 'endsWith') return cellValue.endsWith(filterText);
+                                
+                                return false;
+                            },
+                            textCustomComparator: (filter, value, filterText) => {
+                                // V2 Compatibilidad Inversa para agGrid
+                                const filterOption = filter;
+                                const cellValue = value;
+                                
+                                if (!filterText) return true;
+                                if (cellValue == null) return false;
+                                
+                                if (filterOption === 'contains') {
+                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
+                                    return tokens.every(token => cellValue.includes(token));
+                                }
+                                
+                                if (filterOption === 'notContains') {
+                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
+                                    return !tokens.every(token => cellValue.includes(token));
+                                }
+                                
+                                if (filterOption === 'equals') return cellValue === filterText;
+                                if (filterOption === 'notEqual') return cellValue !== filterText;
+                                if (filterOption === 'startsWith') return cellValue.startsWith(filterText);
+                                if (filterOption === 'endsWith') return cellValue.endsWith(filterText);
+                                
+                                return false;
+                            }
+                        }
                     },
                     onColumnResized: saveGridState,
                     onColumnMoved: saveGridState,

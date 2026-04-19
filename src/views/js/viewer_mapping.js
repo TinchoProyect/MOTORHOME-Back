@@ -304,17 +304,26 @@ async function openColumnMenu_v2(vColId, buttonElement) {
             window.columnMapping[vColId] = term.termino;
             console.log(`🔗 [MAPPING CAPA 1] Mapeo Primario asignado a '${vColId}' (${term.termino}). Esperando vinculación a Capa 2.`);
 
-            // [QA BUGFIX CRÍTICO V9]: Si es una columna fantasma, debemos inyectarla forzosamente en draftPipelines.
-            // Si no lo hacemos, el renderVirtualTable la destruirá por considerarla "Huerfana" al haber consumido
-            // el flag _isNewTemp, provocando desincronización DOM (el encabezado vuelve vacío) y error "Mapeo Duplicado".
+            // [QA BUGFIX CRÍTICO V9]: Forzamos inyección en draftPipelines.
+            // Si es columna fantasma previene desincronización DOM.
+            // [HERD IMMUNITY QA] Inyecta las reglas históricas del Master Dictionary (AST Perpetual).
+            if (!window.draftPipelines) window.draftPipelines = {};
+            
+            let targetRules = [];
+            if (window.draftPipelines[vColId] && window.draftPipelines[vColId].rules && window.draftPipelines[vColId].rules.length > 0) {
+                targetRules = window.draftPipelines[vColId].rules;
+            } else if (term.reglas_procesamiento) {
+                targetRules = Array.isArray(term.reglas_procesamiento) ? term.reglas_procesamiento : [term.reglas_procesamiento];
+                console.log(`[HERD IMMUNITY] Auto-inyectando ${targetRules.length} reglas históricas AST para ${term.termino}`);
+            }
+
+            window.draftPipelines[vColId] = {
+                colName: term.termino,
+                masterField: { id: term.id, nombre_campo: term.termino },
+                rules: targetRules
+            };
+            
             if (vColId.startsWith('col_ph_')) {
-                if (!window.draftPipelines) window.draftPipelines = {};
-                // Forzar persistencia del máster field para evitar el 'Acceso Bloqueado' al intentar abrir el Taller.
-                window.draftPipelines[vColId] = {
-                    colName: term.termino,
-                    masterField: { id: term.id, nombre_campo: term.termino },
-                    rules: (window.draftPipelines[vColId] && window.draftPipelines[vColId].rules) ? window.draftPipelines[vColId].rules : []
-                };
                 console.log(`🛠️ [UX FIX] Ghost Column '${vColId}' anclado nativamente a draftPipelines para evitar purga del DOM y habilitar Taller.`);
             }
 
