@@ -1642,7 +1642,7 @@
                                 const filterText = cleanStr(params.filterText);
                                 
                                 if (!filterText) return true;
-                                if (!cellValue) return false;
+                                if (!cellValue && !filterText.includes('[vacio]')) return false;
                                 
                                 if (filterOption === 'contains') {
                                     const processedFText = filterText.replace(/#/g, ' #');
@@ -1656,10 +1656,19 @@
                                         effectiveToken = effectiveToken.replace(/#/g, '');
                                         if (effectiveToken.length === 0) continue;
                                         
-                                        if (isNeg) {
-                                            if (cellValue.includes(effectiveToken)) return false;
+                                        if (effectiveToken === '[vacio]') {
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
+                                            if (isNeg) {
+                                                if (cellValue === "") return false;
+                                            } else {
+                                                if (cellValue !== "") return false;
+                                            }
                                         } else {
-                                            if (!cellValue.includes(effectiveToken)) return false;
+                                            if (isNeg) {
+                                                if (cellValue.includes(effectiveToken)) return false;
+                                            } else {
+                                                if (!cellValue.includes(effectiveToken)) return false;
+                                            }
                                         }
                                     }
                                     return true;
@@ -1678,10 +1687,19 @@
                                         effectiveToken = effectiveToken.replace(/#/g, '');
                                         if (effectiveToken.length === 0) continue;
                                         
-                                        if (isNeg) {
-                                            if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                        if (effectiveToken === '[vacio]') {
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
+                                            if (isNeg) {
+                                                if (cellValue === "") { match = false; break; }
+                                            } else {
+                                                if (cellValue !== "") { match = false; break; }
+                                            }
                                         } else {
-                                            if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                            if (isNeg) {
+                                                if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                            } else {
+                                                if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                            }
                                         }
                                     }
                                     return !match;
@@ -1707,7 +1725,7 @@
                                 const fText = cleanStr(filterText);
                                 
                                 if (!fText) return true;
-                                if (!cellValue) return false;
+                                if (!cellValue && !fText.includes('[vacio]')) return false;
                                 
                                 if (filterOption === 'contains') {
                                     const processedFText = fText.replace(/#/g, ' #');
@@ -1721,10 +1739,19 @@
                                         effectiveToken = effectiveToken.replace(/#/g, '');
                                         if (effectiveToken.length === 0) continue;
                                         
-                                        if (isNeg) {
-                                            if (cellValue.includes(effectiveToken)) return false;
+                                        if (effectiveToken === '[vacio]') {
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
+                                            if (isNeg) {
+                                                if (cellValue === "") return false;
+                                            } else {
+                                                if (cellValue !== "") return false;
+                                            }
                                         } else {
-                                            if (!cellValue.includes(effectiveToken)) return false;
+                                            if (isNeg) {
+                                                if (cellValue.includes(effectiveToken)) return false;
+                                            } else {
+                                                if (!cellValue.includes(effectiveToken)) return false;
+                                            }
                                         }
                                     }
                                     return true;
@@ -1743,10 +1770,19 @@
                                         effectiveToken = effectiveToken.replace(/#/g, '');
                                         if (effectiveToken.length === 0) continue;
                                         
-                                        if (isNeg) {
-                                            if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                        if (effectiveToken === '[vacio]') {
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
+                                            if (isNeg) {
+                                                if (cellValue === "") { match = false; break; }
+                                            } else {
+                                                if (cellValue !== "") { match = false; break; }
+                                            }
                                         } else {
-                                            if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                            if (isNeg) {
+                                                if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                            } else {
+                                                if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                            }
                                         }
                                     }
                                     return !match;
@@ -1759,7 +1795,7 @@
                                 
                                 return false;
                             }
-                        }
+                        },
                     },
                     onColumnResized: saveGridState,
                     onColumnMoved: saveGridState,
