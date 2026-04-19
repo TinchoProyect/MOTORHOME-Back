@@ -1583,20 +1583,59 @@
                             },
                             textMatcher: (params) => {
                                 const filterOption = params.filterOption || params.type;
-                                const cellValue = params.value;
-                                const filterText = params.filterText;
+                                
+                                const cleanStr = (s) => {
+                                    if (s == null) return "";
+                                    return String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                                };
+                                
+                                const cellValue = cleanStr(params.value);
+                                const filterText = cleanStr(params.filterText);
                                 
                                 if (!filterText) return true;
-                                if (cellValue == null) return false;
+                                if (!cellValue) return false;
                                 
                                 if (filterOption === 'contains') {
-                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
-                                    return tokens.every(token => cellValue.includes(token));
+                                    const processedFText = filterText.replace(/#/g, ' #');
+                                    const rawTokens = processedFText.split(/\s+/).filter(t => t.length > 0);
+                                    for (const rawToken of rawTokens) {
+                                        if (rawToken === '#') continue;
+                                        
+                                        const isNeg = rawToken.startsWith('#');
+                                        let effectiveToken = rawToken;
+                                        if (isNeg) effectiveToken = effectiveToken.substring(1);
+                                        effectiveToken = effectiveToken.replace(/#/g, '');
+                                        if (effectiveToken.length === 0) continue;
+                                        
+                                        if (isNeg) {
+                                            if (cellValue.includes(effectiveToken)) return false;
+                                        } else {
+                                            if (!cellValue.includes(effectiveToken)) return false;
+                                        }
+                                    }
+                                    return true;
                                 }
                                 
                                 if (filterOption === 'notContains') {
-                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
-                                    return !tokens.every(token => cellValue.includes(token));
+                                    const processedFText = filterText.replace(/#/g, ' #');
+                                    const rawTokens = processedFText.split(/\s+/).filter(t => t.length > 0);
+                                    let match = true;
+                                    for (const rawToken of rawTokens) {
+                                        if (rawToken === '#') continue;
+                                        
+                                        const isNeg = rawToken.startsWith('#');
+                                        let effectiveToken = rawToken;
+                                        if (isNeg) effectiveToken = effectiveToken.substring(1);
+                                        effectiveToken = effectiveToken.replace(/#/g, '');
+                                        if (effectiveToken.length === 0) continue;
+                                        
+                                        if (isNeg) {
+                                            if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                        } else {
+                                            if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                        }
+                                    }
+                                    return !match;
                                 }
                                 
                                 if (filterOption === 'equals') return cellValue === filterText;
@@ -1609,25 +1648,65 @@
                             textCustomComparator: (filter, value, filterText) => {
                                 // V2 Compatibilidad Inversa para agGrid
                                 const filterOption = filter;
-                                const cellValue = value;
                                 
-                                if (!filterText) return true;
-                                if (cellValue == null) return false;
+                                const cleanStr = (s) => {
+                                    if (s == null) return "";
+                                    return String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                                };
+                                
+                                const cellValue = cleanStr(value);
+                                const fText = cleanStr(filterText);
+                                
+                                if (!fText) return true;
+                                if (!cellValue) return false;
                                 
                                 if (filterOption === 'contains') {
-                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
-                                    return tokens.every(token => cellValue.includes(token));
+                                    const processedFText = fText.replace(/#/g, ' #');
+                                    const rawTokens = processedFText.split(/\s+/).filter(t => t.length > 0);
+                                    for (const rawToken of rawTokens) {
+                                        if (rawToken === '#') continue;
+                                        
+                                        const isNeg = rawToken.startsWith('#');
+                                        let effectiveToken = rawToken;
+                                        if (isNeg) effectiveToken = effectiveToken.substring(1);
+                                        effectiveToken = effectiveToken.replace(/#/g, '');
+                                        if (effectiveToken.length === 0) continue;
+                                        
+                                        if (isNeg) {
+                                            if (cellValue.includes(effectiveToken)) return false;
+                                        } else {
+                                            if (!cellValue.includes(effectiveToken)) return false;
+                                        }
+                                    }
+                                    return true;
                                 }
                                 
                                 if (filterOption === 'notContains') {
-                                    const tokens = filterText.split(/\s+/).filter(t => t.length > 0);
-                                    return !tokens.every(token => cellValue.includes(token));
+                                    const processedFText = fText.replace(/#/g, ' #');
+                                    const rawTokens = processedFText.split(/\s+/).filter(t => t.length > 0);
+                                    let match = true;
+                                    for (const rawToken of rawTokens) {
+                                        if (rawToken === '#') continue;
+                                        
+                                        const isNeg = rawToken.startsWith('#');
+                                        let effectiveToken = rawToken;
+                                        if (isNeg) effectiveToken = effectiveToken.substring(1);
+                                        effectiveToken = effectiveToken.replace(/#/g, '');
+                                        if (effectiveToken.length === 0) continue;
+                                        
+                                        if (isNeg) {
+                                            if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                        } else {
+                                            if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                        }
+                                    }
+                                    return !match;
                                 }
                                 
-                                if (filterOption === 'equals') return cellValue === filterText;
-                                if (filterOption === 'notEqual') return cellValue !== filterText;
-                                if (filterOption === 'startsWith') return cellValue.startsWith(filterText);
-                                if (filterOption === 'endsWith') return cellValue.endsWith(filterText);
+                                if (filterOption === 'equals') return cellValue === fText;
+                                if (filterOption === 'notEqual') return cellValue !== fText;
+                                if (filterOption === 'startsWith') return cellValue.startsWith(fText);
+                                if (filterOption === 'endsWith') return cellValue.endsWith(fText);
                                 
                                 return false;
                             }
@@ -1654,13 +1733,15 @@
                 
                 // Restoring State & Filters
                 const savedState = localStorage.getItem('lamda_v4_grid_state');
-                const savedFilters = localStorage.getItem('lamda_v4_filter_state');
                 
-                if (savedState) {
-                    window.v4GridApi.applyColumnState({ state: JSON.parse(savedState), applyOrder: true });
+                // [Incidencia 1] El sistema debe inicializar con una pizarra limpia (Filtros vacíos por defecto)
+                localStorage.removeItem('lamda_v4_filter_state');
+                if (window.v4GridApi && typeof window.v4GridApi.setFilterModel === 'function') {
+                    window.v4GridApi.setFilterModel(null);
                 }
-                if (savedFilters) {
-                    window.v4GridApi.setFilterModel(JSON.parse(savedFilters));
+                
+                if (savedState && window.v4GridApi) {
+                    window.v4GridApi.applyColumnState({ state: JSON.parse(savedState), applyOrder: true });
                 }
                 
                 // Clear Bulk Panel State if it was open
