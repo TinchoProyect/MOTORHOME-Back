@@ -2002,6 +2002,7 @@
                     });
                     if (!res.ok) throw new Error("Fallo al actualizar preset");
                     await window.loadFmtPresets();
+                    document.getElementById('fmtPresetsDropdown').classList.add('hidden');
                     
                     Swal.fire({
                         title: 'Actualizado',
@@ -2052,6 +2053,7 @@
                     }
                     
                     await window.loadFmtPresets(); // Refresh list
+                    document.getElementById('fmtPresetsDropdown').classList.add('hidden');
                     
                     Swal.fire({
                         title: 'Guardado',
