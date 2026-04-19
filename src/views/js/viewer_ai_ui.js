@@ -1671,32 +1671,45 @@ class ViewerAiUi {
              }
              if (items.length === 0) return;
 
-             // Modificamos estado Destino (Confirmed)
-             if (!this.confirmedState[targetMaster]) {
-                 this.confirmedState[targetMaster] = { items: [] };
-             }
+             // Feedback Visual Inmediato (Previene fallo silencioso por lag)
+             const btn = document.getElementById('satTransferBtn');
+             const originalText = btn.innerHTML;
+             btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin inline-block mr-1"></i> Transfiriendo...`;
+             btn.disabled = true;
+             if(window.lucide) window.lucide.createIcons({root: btn.parentElement});
              
-             items.forEach(it => {
-                 // Remueve de Source iterando todas las llaves posibles
+             // Evitar Freeze Thread en Arrays grandes
+             setTimeout(() => {
+                 if (!this.confirmedState[targetMaster]) {
+                     this.confirmedState[targetMaster] = { items: [] };
+                 }
+                 
+                 const itemsToMove = new Set(items.map(it => it.val));
+                 
                  for (const m in this.sourceAuditState) {
-                     this.sourceAuditState[m].items = this.sourceAuditState[m].items.filter(x => x !== it.val);
+                     this.sourceAuditState[m].items = this.sourceAuditState[m].items.filter(x => !itemsToMove.has(x));
                  }
-                 // Agrega a destino
-                 if (!this.confirmedState[targetMaster].items.includes(it.val)) {
-                     this.confirmedState[targetMaster].items.push(it.val);
+                 
+                 itemsToMove.forEach(val => {
+                     if (!this.confirmedState[targetMaster].items.includes(val)) {
+                         this.confirmedState[targetMaster].items.push(val);
+                     }
+                     this.satCheckedItems.delete(encodeURIComponent(val));
+                 });
+
+                 for(let m in this.sourceAuditState) {
+                     if (this.sourceAuditState[m].items.length === 0) delete this.sourceAuditState[m];
                  }
-                 // Borra de estados seleccionados
-                 this.satCheckedItems.delete(encodeURIComponent(it.val));
-             });
 
-             // Limpiar grupos vacíos
-             for(let m in this.sourceAuditState) {
-                 if (this.sourceAuditState[m].items.length === 0) delete this.sourceAuditState[m];
-             }
-
-             document.getElementById('satTransferSelect').value = "";
-             this.satGlobalChecked.clear();
-             this._renderSemanticAuditTray();
+                 document.getElementById('satTransferSelect').value = "";
+                 this.satGlobalChecked.clear();
+                 this._renderSemanticAuditTray();
+                 
+                 // Finish loading
+                 btn.innerHTML = originalText;
+                 btn.disabled = false;
+                 if (window.Swal) Swal.fire({toast: true, position: 'top-end', icon: 'success', title: `${items.length} SKUs Transferidos`, timer: 1500, showConfirmButton: false});
+             }, 10);
         };
 
         // Evento Desechar (Basura a RAM)
@@ -1910,7 +1923,10 @@ class ViewerAiUi {
                      : '';
                  return `
                  <div class="flex items-center justify-between mb-1 pl-3 p-1 border-l-2 border-orange-700/50 hover:bg-slate-800 transition group">
-                     <span class="text-xs text-orange-100 font-mono tracking-tight truncate flex-1 block overflow-hidden text-ellipsis whitespace-nowrap min-w-0" title="${val.replace(/"/g, '&quot;')}">${val}</span>
+                     <div class="flex items-center gap-2 truncate flex-1">
+                         <input type="checkbox" id="sat_conf_chk_${confGroupIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${b64Val}" class="sat-conf-chk form-checkbox h-3.5 w-3.5 text-orange-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer mt-0.5" checked>
+                         <label for="sat_conf_chk_${confGroupIdx}_${idx}" class="text-xs text-orange-100 cursor-pointer select-none font-mono tracking-tight truncate block overflow-hidden text-ellipsis whitespace-nowrap min-w-0" title="${val.replace(/"/g, '&quot;')}">${val}</label>
+                     </div>
                      <div class="flex items-center gap-2 shrink-0 ml-2">
                          ${argInfo}
                          <button class="sat-item-restore opacity-0 group-hover:opacity-100 bg-rose-900/30 hover:bg-rose-600 text-rose-500 hover:text-white p-0.5 rounded transition" title="Quitar de la bandeja y devolver a Pendientes" data-master="${masterVal.replace(/"/g, '&quot;')}" data-val="${b64Val}">
@@ -1987,24 +2003,38 @@ class ViewerAiUi {
             };
         });
 
-        // Restore Items Logic (From Confirmed back to Source)
+        // Restore Items Logic (UX Flexible)
+        const restoreItem = (master, val) => {
+            // Remueve de confirmed
+            this.confirmedState[master].items = this.confirmedState[master].items.filter(x => x !== val);
+            
+            // Agrega a source ("Restituidos" si no recordamos rubro orginal)
+            if (!this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"]) {
+                this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"] = { deleted: false, items: [] };
+            }
+            if (!this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"].items.includes(val)) {
+                this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"].items.push(val);
+            }
+            
+            this._renderSemanticAuditTray();
+        };
+
         confirmedContainer.querySelectorAll('.sat-item-restore').forEach(btn => {
             btn.onclick = (e) => {
                 const master = e.currentTarget.getAttribute('data-master');
                 const val = decodeURIComponent(e.currentTarget.getAttribute('data-val'));
-                
-                // Remueve de confirmed
-                this.confirmedState[master].items = this.confirmedState[master].items.filter(x => x !== val);
-                
-                // Agrega a source ("Restituidos" si no recordamos rubro orginal)
-                if (!this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"]) {
-                    this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"] = { deleted: false, items: [] };
+                restoreItem(master, val);
+            };
+        });
+
+        // Alternativa UX: Deseleccionar checkbox de confirmados restaura el item a pendientes
+        confirmedContainer.querySelectorAll('.sat-conf-chk').forEach(chk => {
+            chk.onchange = (e) => {
+                if (!e.target.checked) {
+                    const master = e.target.getAttribute('data-master');
+                    const val = decodeURIComponent(e.target.value);
+                    restoreItem(master, val);
                 }
-                if (!this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"].items.includes(val)) {
-                    this.sourceAuditState["[ARTÍCULOS AISLADOS (Restituidos)]"].items.push(val);
-                }
-                
-                this._renderSemanticAuditTray();
             };
         });
     }
