@@ -2469,7 +2469,8 @@
                         const json = await res.json();
                         if (res.ok && json.success) {
                             Swal.fire({ title: '¡Sincronización Exitosa!', text: json.count + ' registros reasignados.', icon: 'success', background: '#0f172a', color: '#f8fafc', timer: 2500, showConfirmButton: false });
-                            setTimeout(() => { window.location.reload(); }, 2000);
+                            window.v4GridApi.deselectAll();
+                            if (window.openFinalMasterTable) window.openFinalMasterTable();
                         } else throw new Error(json.error || 'Error');
                     } catch (e) { Swal.fire('Error de Red', e.message, 'error'); }
                 }
@@ -2496,7 +2497,8 @@
                         const json = await res.json();
                         if (res.ok && json.success) {
                             Swal.fire({ title: '¡Unidad Aterrizada!', text: json.count + ' registros reasignados.', icon: 'success', background: '#0f172a', color: '#f8fafc', timer: 2500, showConfirmButton: false });
-                            setTimeout(() => { window.location.reload(); }, 2000);
+                            window.v4GridApi.deselectAll();
+                            if (window.openFinalMasterTable) window.openFinalMasterTable();
                         } else throw new Error(json.error || 'Error');
                     } catch (e) { Swal.fire('Error de Red', e.message, 'error'); }
                 }
