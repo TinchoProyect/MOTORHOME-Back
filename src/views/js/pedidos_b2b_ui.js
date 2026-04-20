@@ -81,6 +81,8 @@ window.renderB2BProviders = function() {
         if(emptyState) emptyState.classList.remove('hidden');
         if(tbody) tbody.innerHTML = '';
         if(headerOpts) headerOpts.style.display = 'none';
+        const catalogBtn = document.getElementById('b2bOpenCatalogBtn');
+        if(catalogBtn) catalogBtn.style.display = 'none';
         const docName = document.getElementById('b2bActiveProviderName');
         if(docName) docName.innerText = "Seleccione un Proveedor";
         const docCount = document.getElementById('b2bActiveItemCount');
@@ -108,6 +110,12 @@ window.renderB2BProviders = function() {
         btn.onclick = () => {
             window.activeB2BProvider = pid;
             window.renderB2BProviders();
+            
+            // Fix: Sincronización reactiva de Scope B2B
+            const overlay = document.getElementById('b2bCatalogOverlay');
+            if (overlay && !overlay.classList.contains('hidden')) {
+                window.openB2BCatalog();
+            }
         };
         
         btn.innerHTML = `<div class="flex flex-col"><span class="text-xs font-bold ${isActive ? 'text-emerald-400' : 'text-slate-300'}">${p.name}</span><span class="text-[10px] text-slate-500">${p.count} ítems</span></div> ${isActive ? '<i data-lucide="chevron-right" class="w-4 h-4 text-emerald-500"></i>' : ''}`;
@@ -129,12 +137,14 @@ window.renderB2BActiveItems = function() {
     
     if(!pid) return;
     
-    const activeItems = cart.filter(x => x.proveedor_id === pid);
+    const activeItems = cart.filter(x => String(x.proveedor_id) === String(pid));
     
     if(activeItems.length > 0) {
         document.getElementById('b2bActiveProviderName').innerText = activeItems[0].proveedor_nombre;
         document.getElementById('b2bActiveItemCount').innerText = activeItems.length + " ítems listos para emisión";
         if (headerOpts) headerOpts.style.display = 'flex';
+        const catalogBtn = document.getElementById('b2bOpenCatalogBtn');
+        if (catalogBtn) catalogBtn.style.display = 'flex';
         if (emptyState) emptyState.classList.add('hidden');
         if (footer) footer.classList.remove('hidden');
         
@@ -189,6 +199,8 @@ window.renderB2BActiveItems = function() {
         if (tbody) tbody.innerHTML = '';
         if (footer) footer.classList.add('hidden');
         if (headerOpts) headerOpts.style.display = 'none';
+        const catalogBtn = document.getElementById('b2bOpenCatalogBtn');
+        if (catalogBtn) catalogBtn.style.display = 'none';
         document.getElementById('b2bActiveProviderName').innerText = "Proveedor Vacío";
         document.getElementById('b2bActiveItemCount').innerText = "0 ítems";
     }
@@ -380,17 +392,233 @@ window.generateB2BPdf = async function() {
             });
         } catch(e) {}
         
-        pdfMake.createPdf(docDefinition).download(docType.replace(/\\s+/g, '_') + '_' + provName.replace(/\\s+/g, '_') + '_' + dateStr.replace(/\\//g, '') + '.pdf');
+        const safeDocType = docType ? docType.replace(/\s+/g, '_') : 'Doc';
+        const safeProvName = provName ? provName.replace(/\s+/g, '_') : 'Prov';
+        const safeDateStr = dateStr ? dateStr.replace(/\//g, '') : 'Fecha';
         
-        if (window.Swal) window.Swal.fire({ icon: 'success', title: 'PDF Generado', text: 'El documento se ha descargado y el pedido ha sido procesado.', background: '#0f172a', color: '#10b981'});
-        
+        try {
+            pdfMake.createPdf(docDefinition).download(safeDocType + '_' + safeProvName + '_' + safeDateStr + '.pdf');
+            if (window.Swal) window.Swal.fire({ icon: 'success', title: 'PDF Generado', text: 'El documento se ha descargado y el pedido ha sido procesado.', background: '#0f172a', color: '#10b981'});
+        } catch(pdfErr) {
+            console.error("PDF Generate Error", pdfErr);
+            if (window.Swal) window.Swal.fire({ icon: 'info', title: '[En Desarrollo / Error PDF]', text: 'El PDF encontró una falla, pero el click fue detectado. Check consola.', background: '#0f172a', color: '#3b82f6'});
+        }
+
         // Purge completed order from cart
-        let newCart = cart.filter(x => x.proveedor_id !== pid);
+        let newCart = cart.filter(x => String(x.proveedor_id) !== String(pid));
         saveB2BCart(newCart);
         window.activeB2BProvider = null;
         window.renderB2BProviders();
         if (window.updateB2BItemIndicator) window.updateB2BItemIndicator();
     } else {
-        alert("Librería de PDF no cargada.");
+        if (window.Swal) window.Swal.fire({ icon: 'info', title: '[En Desarrollo]', text: 'Simulación de Envío OK. La librería de PDF no está cargada en el DOM actual.', background: '#0f172a', color: '#3b82f6'});
     }
 };
+
+// ==========================================
+// MÓDULO: CATÁLOGO EMPOTRADO SCÓPICO
+// ==========================================
+window.openB2BCatalog = async function() {
+    const overlay = document.getElementById('b2bCatalogOverlay');
+    if (!overlay) return;
+    
+    overlay.classList.remove('hidden');
+    
+    // Lazy Fetch si la memoria operativa no está levantada en la ventana (ej. tras F5)
+    if (!window._rawLamdaData) {
+        document.getElementById('b2bCatalogSearch').value = '';
+        const tbody = document.getElementById('b2bCatalogBody');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-blue-500 font-bold animate-pulse text-xs"><i data-lucide="loader-2" class="w-5 h-5 mx-auto mb-2 animate-spin"></i> Inicializando caché maestro...</td></tr>`;
+        if (window.lucide) window.lucide.createIcons();
+        
+        try {
+            const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+            const opRes = await fetch(`${backendUrl}/api/master-table/operativa`);
+            if (opRes.ok) {
+                const opJson = await opRes.json();
+                window._rawLamdaData = opJson.data;
+            }
+        } catch(e) {
+            console.error("VIGÍA - Fallo Lazy Fetch B2B:", e);
+        }
+    }
+    
+    // Obtener info del proveedor activo desde el carrito actual
+    const cart = getB2BCart();
+    const pid = window.activeB2BProvider;
+    const activeItems = cart.filter(x => String(x.proveedor_id) === String(pid));
+    if(activeItems.length > 0) {
+        document.getElementById('b2bCatalogProviderName').innerText = "PROVEEDOR: " + activeItems[0].proveedor_nombre;
+    }
+    
+    document.getElementById('b2bCatalogSearch').value = '';
+    window.renderB2BCatalog();
+};
+
+window.closeB2BCatalog = function() {
+    const overlay = document.getElementById('b2bCatalogOverlay');
+    if(overlay) overlay.classList.add('hidden');
+};
+
+window.renderB2BCatalog = function(searchTerm = '') {
+    const pid = window.activeB2BProvider;
+    
+    // === VIGÍA DEPURADOR EXIGIDO (STRIKE 3) ===
+    console.group("🛡️ [VIGÍA DEPURADOR B2B / RENDERING CATÁLOGO]");
+    console.log("-> PID Activo (Scope):", pid);
+    console.log("-> _rawLamdaData en Memoria:", window._rawLamdaData ? `Array ok: ${window._rawLamdaData.length} items` : 'UNDEFINED o Vacío');
+    
+    if(!pid || !window._rawLamdaData) {
+        console.warn("-> ABORTO: Falta PID O la memoria global no se pudo inicializar.");
+        console.groupEnd();
+        return;
+    }
+    
+    // Identificar qué ítems ya están en el carrito B2B
+    const cart = getB2BCart();
+    const cartSet = new Set(cart.filter(x => String(x.proveedor_id) === String(pid)).map(x => x._system_id));
+    
+    // Filtrar base maestra (scope aislación por PID)
+    let scopedData = window._rawLamdaData.filter(r => {
+        const rowPid = r._proveedor_id || r.proveedor_id;
+        return String(rowPid) === String(pid) && !r._is_empty_skeleton;
+    });
+    
+    console.log(`-> Data filtrada por Proveedor [${pid}]:`, scopedData.length, "items");
+    
+    if (searchTerm) {
+        const processedFText = searchTerm.replace(/#/g, ' #');
+        const tokens = processedFText.split(/\s+/).filter(t => t.length > 0 && t !== '#');
+        
+        scopedData = scopedData.filter(r => {
+            const p = r.datos_maestros || {};
+            const cod = String(p.codigo || p['código'] || p.sku || r.codigo || r['código'] || r.sku || r.id || r._system_id).toLowerCase();
+            const desc = String(p.descripcion || p['descripción'] || r.descripcion || r['descripción'] || '').toLowerCase();
+            const rub = String(p.rubro || r.rubro || '').toLowerCase();
+            
+            const fullText = `${cod} ${desc} ${rub}`;
+            
+            for (const token of tokens) {
+                const isNeg = token.startsWith('#');
+                const effectiveToken = token.replace(/#/g, '').toLowerCase();
+                if (effectiveToken.length === 0) continue;
+                
+                const hasMatch = fullText.includes(effectiveToken);
+                if (isNeg) {
+                    if (hasMatch) return false;
+                } else {
+                    if (!hasMatch) return false;
+                }
+            }
+            return true;
+        });
+        console.log(`-> Data pre-render (Tras Buscador '${searchTerm}'):`, scopedData.length, "items");
+    }
+
+    if (scopedData.length > 0) {
+        console.log("-> Muestra (Top 3) empujada al TBody DOM:");
+        console.table(scopedData.slice(0, 3));
+    }
+    console.groupEnd();
+    
+    const tbody = document.getElementById('b2bCatalogBody');
+    const empty = document.getElementById('b2bCatalogEmpty');
+    tbody.innerHTML = '';
+    
+    if (scopedData.length === 0) {
+        empty.classList.remove('hidden');
+        empty.classList.add('flex');
+    } else {
+        empty.classList.add('hidden');
+        empty.classList.remove('flex');
+        
+        scopedData.forEach(item => {
+            const sysId = item.id || item._system_id || null;
+            const isAdded = sysId && cartSet.has(sysId);
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-800/30 transition-colors";
+            
+            const p = item.datos_maestros || {};
+            const cod = p.codigo || p['código'] || p.sku || item.codigo || item['código'] || item.sku || (sysId ? sysId.split('-')[0] : 'N/A');
+            const desc = p.descripcion || p['descripción'] || item.descripcion || item['descripción'] || 'Sin descripción';
+            const uni = p.unidad || p.unidad_medida || item.unidad || item.unidad_medida || 'Unidad';
+            const prc = sanitizeLatAmPrice(p.precio || item.precio) || 0;
+            
+            let actionHtml = '';
+            if (isAdded) {
+                actionHtml = `<button disabled class="px-2 py-1 bg-slate-800 text-slate-500 rounded text-[9px] font-bold uppercase tracking-widest cursor-not-allowed border border-slate-700/50 w-full"><i data-lucide="check" class="w-3 h-3 inline pb-0.5"></i> En Carrito</button>`;
+            } else {
+                actionHtml = `<button onclick="window.addB2BCatalogItem('${sysId}')" class="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/50 text-emerald-400 rounded text-[9px] font-bold uppercase tracking-widest transition-colors border border-emerald-500/30 w-full"><i data-lucide="plus" class="w-3 h-3 inline pb-0.5"></i> Añadir</button>`;
+            }
+            
+            tr.innerHTML = `
+                <td class="p-3 border-b border-slate-800/50 w-24">
+                    ${actionHtml}
+                </td>
+                <td class="p-3 text-[11px] font-mono text-slate-400 border-b border-slate-800/50">
+                    ${cod}
+                </td>
+                <td class="p-3 text-[11px] font-bold text-slate-200 whitespace-normal min-w-[200px] border-b border-slate-800/50">
+                    ${desc}
+                </td>
+                <td class="p-3 text-[11px] font-bold text-slate-400 text-center border-b border-slate-800/50">
+                    ${uni}
+                </td>
+                <td class="p-3 text-[11px] font-bold text-blue-400 text-center border-b border-slate-800/50 bg-blue-900/10">
+                    ${item.datos_maestros?.cant_bult || item.cant_bult || 1}
+                </td>
+                <td class="p-3 text-[11px] font-bold text-purple-400 text-center border-b border-slate-800/50 bg-purple-900/10">
+                    ${item.datos_maestros?.cant_valor || item.cant_valor || 1}
+                </td>
+                <td class="p-3 text-[11px] font-bold text-emerald-400 text-right border-b border-slate-800/50 bg-emerald-900/10">
+                    $${prc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+    if(window.lucide) window.lucide.createIcons();
+};
+
+window.filterB2BCatalog = function() {
+    const val = document.getElementById('b2bCatalogSearch').value;
+    window.renderB2BCatalog(val);
+};
+
+window.addB2BCatalogItem = function(sysId) {
+    if(!window._rawLamdaData) return;
+    const row = window._rawLamdaData.find(r => r.id === sysId || r._system_id === sysId);
+    if(!row) return;
+    
+    let cart = getB2BCart();
+    // Prevenir duplicados inyectados dos veces rápido
+    if(cart.find(x => x._system_id === sysId)) return;
+    
+    const p = row.datos_maestros || {};
+    
+    cart.push({
+        _system_id: row.id || row._system_id,
+        proveedor_id: row.proveedor_id || row._proveedor_id || 'PROV-UNKNOWN',
+        proveedor_nombre: row.nombre_proveedor || row._proveedor || row.proveedor || 'Sin Proveedor',
+        codigo_producto: p.codigo || p['código'] || p.sku || row.codigo || row['código'] || row.sku || row.id || row._system_id,
+        producto_descripcion: p.descripcion || p['descripción'] || row.descripcion || row['descripción'] || 'Sin descripción',
+        precio_unitario: sanitizeLatAmPrice(p.precio || row.precio) || 0,
+        cantidad: 1,
+        unidad_medida: p.unidad || p.unidad_medida || row.unidad || 'Unidad',
+        cant_bult: p.cant_bult || row.cant_bult || 1,
+        cant_valor: p.cant_valor || row.cant_valor || 1
+    });
+    
+    saveB2BCart(cart);
+    window.renderB2BActiveItems(); // Refresh fondo de carrito
+    
+    // Refresh grilla de catálogo
+    const val = document.getElementById('b2bCatalogSearch').value;
+    window.renderB2BCatalog(val);
+    
+    // Notificación minimalista in-dom (UX requirement)
+    setTimeout(() => {
+        if(window.updateB2BItemIndicator) window.updateB2BItemIndicator();
+    }, 100);
+};
+
