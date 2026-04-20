@@ -2629,7 +2629,9 @@
                             producto_descripcion: row.descripcion || row['descripción'] || 'Sin descripción',
                             precio_unitario: row.precio ? parseFloat(String(row.precio).replace(/\./g, '').replace(/,/g, '.')) : 0,
                             cantidad: 1,
-                            unidad_medida: row.unidad || 'Unidad'
+                            unidad_medida: row.unidad || 'Unidad',
+                            cant_bult: row.cant_bult || 1,
+                            cant_valor: row.cant_valor || 1
                         });
                         added++;
                     }

@@ -149,12 +149,14 @@ window.renderB2BActiveItems = function() {
             const priceRef = sanitizeLatAmPrice(item.precio_unitario) || 0;
             const qty = parseInt(item.cantidad) || 1;
             
-                        let unitLabel = item.unidad_medida || '';
-            let kgMult = parseUnitScale(unitLabel);
+            const bult = sanitizeLatAmPrice(item.cant_bult) || 1;
+            const val = sanitizeLatAmPrice(item.cant_valor) || 1;
+            const kgMult = bult * val;
             
+            let unitLabel = item.unidad_medida || '';
             let isKgOrLts = unitLabel.toLowerCase().includes('kg') || unitLabel.toLowerCase().includes('lt') || unitLabel.toLowerCase().includes('kilo');
             const totalItemKg = qty * kgMult;
-            const totalItemPrice = qty * priceRef;
+            const totalItemPrice = totalItemKg * priceRef;
             
             if(isKgOrLts) sumKg += totalItemKg;
             sumPrice += totalItemPrice;
@@ -253,7 +255,10 @@ window.generateB2BPdf = async function() {
 
     activeItems.forEach(i => {
         const unitLabel = i.unidad_medida || '';
-        let kgMult = parseUnitScale(unitLabel);
+        
+        const bult = sanitizeLatAmPrice(i.cant_bult) || 1;
+        const val = sanitizeLatAmPrice(i.cant_valor) || 1;
+        const kgMult = bult * val;
         
         let isKg = unitLabel.toLowerCase().includes('kg') || unitLabel.toLowerCase().includes('lt') || unitLabel.toLowerCase().includes('kilo');
         
@@ -261,7 +266,7 @@ window.generateB2BPdf = async function() {
         const qty = parseInt(i.cantidad) || 1;
         
         const totalKg = qty * kgMult;
-        const totalPrc = qty * price;
+        const totalPrc = totalKg * price;
         
         if (isKg) sumKg += totalKg;
         sumPrice += totalPrc;
