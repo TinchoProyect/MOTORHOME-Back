@@ -1246,7 +1246,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx, processAll = fals
 
         // Delegar a la UI Original de Consenso si existe, garantizando continuidad de funcionalidad
         if (isCluster && window.viewerAiUi && typeof window.viewerAiUi._displayConsensusModal === 'function') {
-             await window.viewerAiUi._displayConsensusModal(mapToInject, originalPrompt, vCol, ruleIdx);
+             await window.viewerAiUi._displayConsensusModal(newDict, originalPrompt, vCol, ruleIdx);
              return;
         }
 
