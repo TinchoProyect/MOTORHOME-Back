@@ -417,6 +417,18 @@ window.generateB2BPdf = async function() {
         ]);
     }
 
+    // Metadata Ingestion
+    const userEmailEl = document.getElementById('userEmail');
+    const rawUserEmail = userEmailEl ? userEmailEl.innerText : '';
+    const operatorName = (rawUserEmail.includes('mserrano') || rawUserEmail.includes('martin')) ? 'Martín Ignacio Serrano' : (rawUserEmail || 'Operador LAMDA');
+    const lamdaPhone = (typeof CONFIG !== 'undefined' && CONFIG.LAMDA_PHONE) ? CONFIG.LAMDA_PHONE : '221 661 5746';
+    
+    let contactName = 'Área de Ventas';
+    if (window.currentSuppliers) {
+        const supObj = window.currentSuppliers.find(x => String(x.id) === String(pid));
+        if (supObj && supObj.contacto_nombre) contactName = supObj.contacto_nombre;
+    }
+
     const docDefinition = {
         pageOrientation: 'landscape',
         content: [
@@ -429,8 +441,8 @@ window.generateB2BPdf = async function() {
                         text: [
                             { text: 'Emisor:\n', style: 'boldText' },
                             'LAMDA\n',
-                            'Teléfono: 221 661 5746\n',
-                            'Departamentos de Compras'
+                            `Teléfono: ${lamdaPhone}\n`,
+                            'Departamento de Compras'
                         ]
                     },
                     {
@@ -438,6 +450,7 @@ window.generateB2BPdf = async function() {
                         text: [
                             { text: 'Proveedor Receptor:\n', style: 'boldText' },
                             provName + '\n',
+                            'Contacto: ' + contactName + '\n',
                             'Fecha: ' + dateStr
                         ],
                         alignment: 'right'
@@ -462,7 +475,7 @@ window.generateB2BPdf = async function() {
                 }
             },
             {
-                text: 'Notas Adicionales:\nEl total estimado de Kilogramos/Litros brutos de este documento asciende a: ' + sumKg.toFixed(2) + ' Kg/Lt',
+                text: `Pedido confeccionado por: ${operatorName}`,
                 style: 'footerNotes',
                 margin: [0, 10, 0, 0]
             },
@@ -546,7 +559,7 @@ window.generateB2BPdf = async function() {
     }
 };
 
-window.sendB2BWhatsApp = function() {
+window.sendB2BWhatsApp = async function() {
     const cart = getB2BCart();
     const pid = window.activeB2BProvider;
     if(!cart || !pid) return;
@@ -554,15 +567,37 @@ window.sendB2BWhatsApp = function() {
     const activeItems = cart.filter(x => String(x.proveedor_id) === String(pid));
     if(activeItems.length === 0) return;
     
-    const docType = document.getElementById('b2bDocType').value;
-    const isPresupuesto = docType === 'Solicitud de Presupuesto';
-    const provName = activeItems[0].proveedor_nombre;
-    const dateStr = new Date().toLocaleDateString();
+    // Metadata Ingestion
+    const userEmailEl = document.getElementById('userEmail');
+    const rawUserEmail = userEmailEl ? userEmailEl.innerText : '';
+    const operatorName = (rawUserEmail.includes('mserrano') || rawUserEmail.includes('martin')) ? 'Martín Ignacio Serrano' : (rawUserEmail || 'Operador LAMDA');
+    const lamdaPhone = (typeof CONFIG !== 'undefined' && CONFIG.LAMDA_PHONE) ? CONFIG.LAMDA_PHONE : '221 661 5746';
     
-    let msg = `*LAMDA - DEPARTAMENTO DE COMPRAS*\n📄 _${docType.toUpperCase()}_\n📅 Fecha: ${dateStr}\n🏢 Proveedor: ${provName}\n\n`;
+    let contactName = 'Área de Ventas';
+    // 1. Fast Cache Resolve
+    if (window.currentSuppliers) {
+        const supObj = window.currentSuppliers.find(x => String(x.id) === String(pid));
+        if (supObj && supObj.contacto_nombre) contactName = supObj.contacto_nombre;
+    }
+    
+    // 2. Deterministic DB Resolve (Lazy Fetching Assurance)
+    if (contactName === 'Área de Ventas' && window.supabaseClient) {
+        try {
+            const { data: dbSup } = await window.supabaseClient.from('proveedores').select('contacto_nombre').eq('id', pid).single();
+            if (dbSup && dbSup.contacto_nombre) contactName = dbSup.contacto_nombre;
+        } catch(e) {
+            console.warn('[B2B] Fallo de fallback DB en contacto:', e);
+        }
+    }
+    
+    const docType = document.getElementById('b2bDocType').value;
+    const provName = activeItems[0].proveedor_nombre;
+    const dateStr = new Date().toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit', year: 'numeric'});
+    
+    // Header Unificado Single-Line (QA Protocol)
+    let msg = `LAMDA - Dpto. de Compras - ${docType} - ${dateStr} - Proveedor: ${provName} - Contacto: ${contactName}\n\n`;
     
     let sumKg = 0;
-    let sumPrice = 0;
     
     activeItems.forEach(i => {
         let rawUnit = (i.unidad_medida || '').toUpperCase();
@@ -578,35 +613,24 @@ window.sendB2BWhatsApp = function() {
         
         let isKg = unitLabel === 'K' || unitLabel === 'L' || unitLabel === 'G' || rawUnit.includes('KG');
         
-        const price = sanitizeLatAmPrice(i.precio_unitario) || 0;
         const qty = parseInt(i.cantidad) || 1;
-        
         const totalKg = qty * kgMult;
-        const totalPrc = totalKg * price;
         
         if (isKg) sumKg += totalKg;
-        sumPrice += totalPrc;
         
-        let linePrc = '';
-        if (!isPresupuesto) {
-            linePrc = ` | $${price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})} -> *$${totalPrc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}*`;
-        }
+        let kgData = isKg ? ` - ${totalKg.toFixed(2)} Kg` : '';
         
-        let kgData = isKg ? ` | ${totalKg.toFixed(2)} Kg` : '';
-        
-        msg += `🔸 *${i.codigo_producto}* - ${i.producto_descripcion}\n`;
-        msg += `📦 B:${bult} V:${val} ${unitLabel}${kgData}\n`;
-        msg += `👉 *CANT. PEDIDA: ${qty}*${linePrc}\n\n`;
+        // Bloque Items Comprimido (QA Protocol) sin precios ni emojis exóticos
+        msg += `*${i.codigo_producto}* - ${i.producto_descripcion} ${val} x ${bult}${kgData}\n`;
+        msg += `*Cant. ${qty}*\n\n`;
     });
     
-    msg += `📊 *TOTAL KILOS: ${sumKg.toFixed(2)} K*\n`;
+    msg += `*TOTAL KILOS: ${sumKg.toFixed(2)} K*\n`;
     
-    if (!isPresupuesto) {
-        msg += `💰 *TOTAL GENERAL NETO: $${sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}*\n`;
-    }
-    
+    // Pie Intacto
+    msg += `\nPedido confeccionado por: ${operatorName}`;
+    msg += `\nTeléfono Operativo LAMDA: ${lamdaPhone}`;
     msg += `\n_Mensaje generado de manera automática y electrónica por LAMDA Sistemas._`;
-    msg += `\nTeléfono Operativo: 221 661 5746`;
     
     const uri = `https://wa.me/?text=` + encodeURIComponent(msg);
     window.open(uri, '_blank');
