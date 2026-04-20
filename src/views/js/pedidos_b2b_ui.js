@@ -420,9 +420,16 @@ window.generateB2BPdf = async function() {
 // ==========================================
 window.openB2BCatalog = async function() {
     const overlay = document.getElementById('b2bCatalogOverlay');
+    const orderGrid = document.getElementById('b2bOrderCartContainer');
     if (!overlay) return;
     
+    // Configurar layout Split-View (Top: 40vh, Bottom: flex-1)
     overlay.classList.remove('hidden');
+    overlay.classList.add('flex');
+    if (orderGrid) {
+        orderGrid.classList.remove('flex-1');
+        orderGrid.classList.add('h-[40vh]', 'shrink-0');
+    }
     
     // Lazy Fetch si la memoria operativa no está levantada en la ventana (ej. tras F5)
     if (!window._rawLamdaData) {
@@ -457,7 +464,15 @@ window.openB2BCatalog = async function() {
 
 window.closeB2BCatalog = function() {
     const overlay = document.getElementById('b2bCatalogOverlay');
-    if(overlay) overlay.classList.add('hidden');
+    const orderGrid = document.getElementById('b2bOrderCartContainer');
+    if (overlay) {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+    }
+    if (orderGrid) {
+        orderGrid.classList.remove('h-[40vh]', 'shrink-0');
+        orderGrid.classList.add('flex-1');
+    }
 };
 
 window.renderB2BCatalog = function(searchTerm = '') {
