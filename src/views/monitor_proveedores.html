@@ -1345,15 +1345,18 @@
                 </div>
             </div>
 
-            <!-- Content Area: Split View -->
-            <div class="flex-1 flex overflow-hidden">
-                <!-- Left Panel: Providers List -->
-                <div class="w-48 shrink-0 border-r border-slate-800 bg-slate-900/50 p-4 flex flex-col gap-2 overflow-y-auto custom-scrollbar" id="b2bProviderTabs">
-                    <!-- Injected via JS -->
-                </div>
+            <!-- Content Area: Split View (Fila 1 + Fila 2) -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                
+                <!-- TOP PANEL: FILA 1 (Sidebar + Órdenes) -->
+                <div id="b2bTopPanel" class="flex flex-1 overflow-hidden transition-all duration-300">
+                    <!-- Izquierda: Sidebar de Proveedores -->
+                    <div class="w-48 shrink-0 border-r border-slate-800 bg-slate-900/50 p-4 flex flex-col gap-2 overflow-y-auto custom-scrollbar" id="b2bProviderTabs">
+                        <!-- Injected via JS -->
+                    </div>
 
-                <!-- Right Panel: Items & Checkout -->
-                <div class="flex-1 flex flex-col bg-slate-900 relative">
+                    <!-- Derecha: Matriz de Órdenes -->
+                    <div class="flex-1 flex flex-col bg-slate-900 relative h-full">
                     <!-- Header Actions -->
                     <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/30 shrink-0">
                         <div class="flex items-center gap-4">
@@ -1404,15 +1407,15 @@
                             <i data-lucide="shopping-cart" class="w-12 h-12 mb-4 opacity-20"></i>
                             <p class="text-sm font-bold text-slate-300">Carrito B2B Vacío</p>
                             <p class="text-xs text-slate-500 mt-2 max-w-sm">Use la Tabla Maestra para seleccionar ítems y enviarlos aquí mediante la opción "Añadir al Pedido", o explore el catálogo interno del proveedor.</p>
-                        </div>
-                    </div>
+                        </div> <!-- Cierre Empty State -->
+                    </div> <!-- Cierre b2bOrderCartContainer -->
+                </div> <!-- Cierre Matriz de Órdenes (Columna Derecha) -->
+            </div> <!-- Cierre TOP PANEL -->
 
-                    </div>
-
-                    <!-- Embedded Catalog Soft-Layer (PANEL INFERIOR SPLIT-VIEW HORIZONTAL) -->
-                    <div id="b2bCatalogOverlay" class="hidden flex-1 border-t border-slate-700 bg-slate-950 flex-col flex-shrink-0 animate-in slide-in-from-bottom duration-300">
-                        <!-- Catalog Header -->
-                        <div class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0">
+                <!-- BOTTOM PANEL: FILA 2 (Catálogo Full Width 100%) -->
+                <div id="b2bCatalogOverlay" class="hidden flex-1 border-t border-slate-700 bg-slate-950 flex-col flex-shrink-0 animate-in slide-in-from-bottom duration-300 w-full overflow-hidden">
+                    <!-- Catalog Header -->
+                    <div class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0 w-full">
                             <div class="flex flex-col">
                                 <h3 class="text-blue-400 font-bold text-xs flex items-center gap-2"><i data-lucide="package-search" class="w-3.5 h-3.5"></i> Catálogo de Proveedor</h3>
                                 <p class="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5" id="b2bCatalogProviderName">Exploración Scoped y Búsqueda Rápida</p>

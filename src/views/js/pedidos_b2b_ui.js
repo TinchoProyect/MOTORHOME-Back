@@ -420,16 +420,38 @@ window.generateB2BPdf = async function() {
 // ==========================================
 window.openB2BCatalog = async function() {
     const overlay = document.getElementById('b2bCatalogOverlay');
-    const orderGrid = document.getElementById('b2bOrderCartContainer');
+    const topPanel = document.getElementById('b2bTopPanel');
     if (!overlay) return;
     
-    // Configurar layout Split-View (Top: 40vh, Bottom: flex-1)
+    // Configurar layout Split-View (Top Panel: 40vh, Bottom: flex-1)
     overlay.classList.remove('hidden');
     overlay.classList.add('flex');
-    if (orderGrid) {
-        orderGrid.classList.remove('flex-1');
-        orderGrid.classList.add('h-[40vh]', 'shrink-0');
+    if (topPanel) {
+        topPanel.classList.remove('flex-1');
+        topPanel.classList.add('h-[40vh]', 'shrink-0');
     }
+    
+    // 🛡️ VIGÍA ESTRUCTURAL DE DOM (REQUERIMIENTO QA)
+    setTimeout(() => {
+        const parent = topPanel.parentElement;
+        console.group("🛡️ [VIGÍA DE DOM] Auditoría de Layout (Split-View)");
+        console.log("Contenedor Padre Clases:", parent.className);
+        console.table({
+            "Fila 1 (Top Panel)": {
+                Ancho: topPanel.offsetWidth + "px",
+                Alto: topPanel.offsetHeight + "px",
+                Clases: topPanel.className,
+                IsRow: topPanel.className.includes("flex-col") ? "No" : "Sí (Left/Right)"
+            },
+            "Fila 2 (Catálogo)": {
+                Ancho: overlay.offsetWidth + "px",
+                Alto: overlay.offsetHeight + "px",
+                Clases: overlay.className,
+                IsCol: overlay.className.includes("flex-col") ? "Sí" : "No"
+            }
+        });
+        console.groupEnd();
+    }, 100);
     
     // Lazy Fetch si la memoria operativa no está levantada en la ventana (ej. tras F5)
     if (!window._rawLamdaData) {
@@ -464,14 +486,14 @@ window.openB2BCatalog = async function() {
 
 window.closeB2BCatalog = function() {
     const overlay = document.getElementById('b2bCatalogOverlay');
-    const orderGrid = document.getElementById('b2bOrderCartContainer');
+    const topPanel = document.getElementById('b2bTopPanel');
     if (overlay) {
         overlay.classList.add('hidden');
         overlay.classList.remove('flex');
     }
-    if (orderGrid) {
-        orderGrid.classList.remove('h-[40vh]', 'shrink-0');
-        orderGrid.classList.add('flex-1');
+    if (topPanel) {
+        topPanel.classList.remove('h-[40vh]', 'shrink-0');
+        topPanel.classList.add('flex-1');
     }
 };
 
