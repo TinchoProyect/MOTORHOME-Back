@@ -937,10 +937,14 @@ async function renderCacheMissGatillo(container) {
     
     currentDraftPipeline.forEach((r, idx) => {
          let isDictRule = false;
-         if (r.tipo === 'ast_conditional' && r.logica) {
-             for (const b of r.logica) {
-                 if ((b.condicion && b.condicion.operador === 'IN_DICT_KEYS') || (b.accion && b.accion.tipo_accion === 'DICTIONARY_REPLACE')) {
-                     isDictRule = true; break;
+         if (r.tipo === 'ast_conditional') {
+             if (r.nombre_regla && (r.nombre_regla.includes('[IA]') || r.nombre_regla.includes('HITL') || r.nombre_regla.includes('IA:'))) {
+                 isDictRule = true;
+             } else if (r.logica) {
+                 for (const b of r.logica) {
+                     if ((b.condicion && b.condicion.operador === 'IN_DICT_KEYS') || (b.accion && b.accion.tipo_accion === 'DICTIONARY_REPLACE')) {
+                         isDictRule = true; break;
+                     }
                  }
              }
          }
@@ -981,16 +985,31 @@ async function renderCacheMissGatillo(container) {
         }
     }
 
+    // [FIX CAPA 3 - SIMULADOR SYNC] Validar si la Capa 3 (Maestra) posee reglas depositadas nativamente 
+    // y fusionarlas temporalmente para que la pre-evaluación del Contador (Taller) no sea ciega.
+    const masterId = window.draftPipelines && window.draftPipelines[targetColId] && window.draftPipelines[targetColId].masterField ? window.draftPipelines[targetColId].masterField.id : null;
+    if (masterId && typeof nomenclatureCache !== 'undefined') {
+        const masterTerm = nomenclatureCache.find(t => String(t.id) === String(masterId));
+        if (masterTerm && masterTerm.reglas_procesamiento) {
+            const cap3Rules = Array.isArray(masterTerm.reglas_procesamiento) ? masterTerm.reglas_procesamiento : [masterTerm.reglas_procesamiento];
+            cap3Rules.forEach(rule => {
+                if (!currentDraftPipeline.some(cp => JSON.stringify(cp) === JSON.stringify(rule))) {
+                    currentDraftPipeline.push(rule);
+                }
+            });
+        }
+    }
+
     let globalDict = new Set();
     let globalDropped = new Set();
     currentDraftPipeline.forEach(r => {
         if (r.tipo === 'ast_conditional' && r.logica) {
             r.logica.forEach(b => {
                 if (b.condicion && b.condicion.operador === 'IN_DICT_KEYS' && b.condicion.valor) {
-                    Object.keys(b.condicion.valor).forEach(k => globalDict.add(k.trim()));
+                    Object.keys(b.condicion.valor).forEach(k => globalDict.add(k.trim().toLowerCase()));
                 }
                 if (b.condicion && b.condicion.operador === 'IN_LIST' && b.condicion.valor) {
-                    b.condicion.valor.forEach(k => globalDropped.add(k.trim()));
+                    b.condicion.valor.forEach(k => globalDropped.add(k.trim().toLowerCase()));
                 }
             });
         }
@@ -1123,6 +1142,20 @@ export async function processCacheMiss(encodedPrompt, ruleIdx, processAll = fals
                     break;
                 }
             }
+        }
+    }
+
+    // [FIX CAPA 3 - SIMULADOR SYNC] Extracción determinista de Capa 3 durante Cache Miss click target
+    const masterId = window.draftPipelines && window.draftPipelines[activeContext.colIndex] && window.draftPipelines[activeContext.colIndex].masterField ? window.draftPipelines[activeContext.colIndex].masterField.id : null;
+    if (masterId && typeof nomenclatureCache !== 'undefined') {
+        const masterTerm = nomenclatureCache.find(t => String(t.id) === String(masterId));
+        if (masterTerm && masterTerm.reglas_procesamiento) {
+            const cap3Rules = Array.isArray(masterTerm.reglas_procesamiento) ? masterTerm.reglas_procesamiento : [masterTerm.reglas_procesamiento];
+            cap3Rules.forEach(rule => {
+                if (!currentDraftPipeline.some(cp => JSON.stringify(cp) === JSON.stringify(rule))) {
+                    currentDraftPipeline.push(rule);
+                }
+            });
         }
     }
 
@@ -1581,8 +1614,15 @@ export async function auditResidues() {
                // (wasTransformed=true, resultado="") NO es un residuo. Es una transformación exitosa.
                // Solo clasificamos como residuo si: fue rechazada, O si el valor no cambió en absoluto.
                mutateResult = tr.wasTransformed ? (tr.display !== undefined ? tr.display : tr.result) : String(tr.display || tr.result || "");
-               const isIntentionalEmpty = tr.wasTransformed && mutateResult === "";
-               if (!isIntentionalEmpty && (tr.rejected || mutateResult === crudo)) {
+               // [UX/QA FIX] Para protocolos IA (Ej: HITL o Caza Rubro), el DEFAULT vacío representa 
+               // un fallo de inferencia, no un borrado intencional.
+               let isIntentionalEmpty = false;
+               if (tr.wasTransformed && mutateResult === "") {
+                   const isAi = lastRule && lastRule.tipo === 'ast_conditional' && (lastRule.nombre_regla.includes('IA]') || lastRule.nombre_regla.includes('IA'));
+                   if (!isAi) isIntentionalEmpty = true;
+               }
+               
+               if (!isIntentionalEmpty && (tr.rejected || mutateResult === crudo || mutateResult === "")) {
                    residualSamples.push(crudo);
                }
             } else {
