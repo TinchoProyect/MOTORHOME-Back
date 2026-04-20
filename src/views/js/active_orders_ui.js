@@ -67,6 +67,39 @@ function initActiveOrdersGrid() {
                 }
             },
             {
+                field: 'estado_pedido',
+                headerName: 'Estado',
+                width: 140,
+                editable: true,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: {
+                    values: ['BORRADOR', 'ENVIADO', 'RECIBIDO', 'CANCELADO']
+                },
+                cellRenderer: params => {
+                    let c = 'bg-slate-800 text-slate-400';
+                    const val = params.value || 'ENVIADO'; // Default fallback old rows
+                    if (val === 'ENVIADO') c = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
+                    if (val === 'RECIBIDO') c = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
+                    if (val === 'CANCELADO') c = 'bg-red-900/30 text-red-400 border-red-500/50';
+                    return `<span class="px-2 py-0.5 rounded border text-[10px] uppercase font-bold tracking-widest ${c}">${val}</span>`;
+                }
+            },
+            {
+                field: 'fecha_recepcion_estimada',
+                headerName: 'Llegada Estimada',
+                width: 160,
+                editable: true,
+                cellEditor: 'agDateCellEditor',
+                valueFormatter: params => {
+                    if(!params.value) return 'Sin asignar';
+                    // Parse "YYYY-MM-DD"
+                    const d = new Date(params.value);
+                    d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
+                    return d.toLocaleDateString('es-AR');
+                },
+                cellStyle: { backgroundColor: 'rgba(59, 130, 246, 0.05)', border: '1px dashed rgba(59, 130, 246, 0.3)' }
+            },
+            {
                 headerName: 'Acciones',
                 width: 150,
                 pinned: 'right',
@@ -95,6 +128,27 @@ function initActiveOrdersGrid() {
             window.activeOrdersGridApi = params.api;
             if (window.lucide) window.lucide.createIcons();
             params.api.sizeColumnsToFit();
+        },
+        onCellValueChanged: async (params) => {
+            if (params.colDef.field === 'estado_pedido' || params.colDef.field === 'fecha_recepcion_estimada') {
+                const id = params.data.id;
+                const field = params.colDef.field;
+                const newVal = params.newValue;
+                
+                try {
+                    const obj = {};
+                    obj[field] = newVal;
+                    const { error } = await window.supabaseClient.from('pedidos_b2b').update(obj).eq('id', id);
+                    if (error) {
+                        console.error("Error updating B2B Order field", error);
+                        // Revert manually if needed, for now just log
+                    } else {
+                        console.log(`B2B Tracking updated: ${field} = ${newVal}`);
+                    }
+                } catch(e) {
+                    console.error(e);
+                }
+            }
         }
     };
 

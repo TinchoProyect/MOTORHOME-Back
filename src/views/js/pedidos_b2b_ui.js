@@ -553,27 +553,6 @@ window.generateB2BPdf = async function() {
     };
 
     if(window.pdfMake) {
-        // Enviar silenciosamente la persistencia a BD (Endpoint no bloqueante)
-        const dbPayload = {
-            proveedor_id: pid,
-            tipo_documento: docType,
-            items: activeItems.map(i => ({ 
-                producto_codigo: i.codigo_producto, 
-                producto_descripcion: i.producto_descripcion,
-                cantidad: i.cantidad,
-                valor_unitario_ref: i.precio_unitario,
-                unidad_ref: i.unidad_medida
-            }))
-        };
-        
-        try {
-            fetch('http://localhost:5655/api/b2b/generar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(dbPayload)
-            });
-        } catch(e) {}
-        
         const safeDocType = docType ? docType.replace(/\s+/g, '_') : 'Doc';
         const safeProvName = provName ? provName.replace(/\s+/g, '_') : 'Prov';
         const safeDateStr = dateStr ? dateStr.replace(/\//g, '') : 'Fecha';
@@ -1067,3 +1046,82 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
+window.commitB2BOrder = async function() {
+    const cart = getB2BCart();
+    const pid = window.activeB2BProvider;
+    if(!cart || !pid) return;
+    
+    const activeItems = cart.filter(x => String(x.proveedor_id) === String(pid));
+    if(activeItems.length === 0) return;
+    
+    const docType = document.getElementById('b2bDocType').value;
+    
+    // Preparar carga para guardar orden y avanzar estado de máquina
+    const dbPayload = {
+        proveedor_id: pid,
+        tipo_documento: docType,
+        items: activeItems.map(i => ({ 
+            producto_codigo: i.codigo_producto, 
+            producto_descripcion: i.producto_descripcion,
+            cantidad: i.cantidad,
+            valor_unitario_ref: i.precio_unitario,
+            unidad_ref: i.unidad_medida
+        }))
+    };
+    
+    try {
+        if (window.Swal) Swal.fire({
+            title: 'Consolidando Documento...',
+            text: 'Despachando pedido B2B y limpiando escritorio...',
+            icon: 'info',
+            background: '#0f172a',
+            color: '#cbd5e1',
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            didOpen: () => { window.Swal.showLoading() }
+        });
+        
+        const res = await fetch('http://localhost:5655/api/b2b/generar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dbPayload)
+        });
+        
+        if (res.ok) {
+            // MÁQUINA DE ESTADOS: LIMPIAR HISTORIA B2B DEL PROVEEDOR
+            let fullCart = getB2BCart();
+            fullCart = fullCart.filter(x => String(x.proveedor_id) !== String(pid));
+            saveB2BCart(fullCart);
+            
+            // Cerrar escritorio de Operaciones B2B
+            window.closeB2BCheckout();
+            
+            if (window.Swal) window.Swal.fire({
+                icon: 'success',
+                title: 'Transacción Ejecutada',
+                text: 'El pedido ha sido cerrado y marcado en Estado: ENVIADO.',
+                background: '#0f172a',
+                color: '#10b981',
+                confirmButtonColor: '#0f766e',
+                timer: 2000
+            });
+            
+            // Abrir automáticamente el panel de control logístico
+            setTimeout(() => {
+                if (window.openActiveOrders) window.openActiveOrders();
+            }, 500);
+            
+        } else {
+            throw new Error("HTTP Status Fallido");
+        }
+    } catch(e) {
+        console.error("Fallo cerrando pedido B2B", e);
+        if (window.Swal) Swal.fire({
+            icon: 'error',
+            title: 'Fallo Crítico de Red',
+            text: 'No se logró conectar a Supabase v4: La máquina de estados no avanzó.',
+            background: '#0f172a',
+            color: '#ef4444'
+        });
+    }
+};
