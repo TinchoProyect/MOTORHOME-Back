@@ -1224,11 +1224,11 @@ export async function processCacheMiss(encodedPrompt, ruleIdx, processAll = fals
                 if (arg) window.viewerAiUi.argumentationMap[rawKey] = arg;
             }
             window.viewerAiUi._crystalizeMergeMode = !processAll; // [FIX 1 QA] Transferir la decisión de merge
-            await window.viewerAiUi._displaySemanticAuditTray(clusterMap, originalPrompt, vCol);
+            await window.viewerAiUi._displaySemanticAuditTray(clusterMap, originalPrompt, vCol, ruleIdx);
             return;
         }
         if (isLiteral && window.viewerAiUi && typeof window.viewerAiUi._displayLiteralModal === 'function') {
-            await window.viewerAiUi._displayLiteralModal(newDict, originalPrompt, vCol);
+            await window.viewerAiUi._displayLiteralModal(newDict, originalPrompt, vCol, ruleIdx);
             return;
         }
 
@@ -1246,7 +1246,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx, processAll = fals
 
         // Delegar a la UI Original de Consenso si existe, garantizando continuidad de funcionalidad
         if (isCluster && window.viewerAiUi && typeof window.viewerAiUi._displayConsensusModal === 'function') {
-             await window.viewerAiUi._displayConsensusModal(mapToInject, originalPrompt, vCol);
+             await window.viewerAiUi._displayConsensusModal(mapToInject, originalPrompt, vCol, ruleIdx);
              return;
         }
 
@@ -2041,6 +2041,68 @@ export async function createLocalRuleDirect(ruleObj, clearFirst = false) {
     return true;
 }
 
+export async function updateLocalRuleDictionary(ruleIdx, newDictionary, logicaAppend = null) {
+    if (ruleIdx < 0 || ruleIdx >= currentDraftPipeline.length) {
+        console.error("🤖 [WORKSHOP] Índice de regla inválido para updateLocalRuleDictionary.");
+        return false;
+    }
+    
+    let targetRule = currentDraftPipeline[ruleIdx];
+    if (!targetRule || !targetRule.logica || targetRule.logica.length === 0) {
+        console.error("🤖 [WORKSHOP] La regla objetivo no posee bloque de lógica válido.");
+        return false;
+    }
+
+    console.log(`🤖 [WORKSHOP] Chofer IA actualizando regla existente [Idx: ${ruleIdx}]:`, targetRule.nombre_regla);
+
+    // Merge in-place dictionary (condicion.valor AND accion.valor for dictionaries)
+    for (let i = 0; i < targetRule.logica.length; i++) {
+        let b = targetRule.logica[i];
+        if (b.condicion && b.condicion.operador === 'IN_DICT_KEYS' && typeof b.condicion.valor === 'object') {
+            Object.assign(b.condicion.valor, newDictionary);
+        }
+        if (b.accion && b.accion.tipo_accion === 'DICTIONARY_REPLACE' && typeof b.accion.valor === 'object') {
+            Object.assign(b.accion.valor, newDictionary);
+        }
+        
+        // If there's append logic (e.g., dropped list items), we handle it
+        if (logicaAppend && logicaAppend.dropped && b.condicion && b.condicion.operador === 'IN_LIST' && b.accion && b.accion.tipo_accion === 'DROP') {
+             b.condicion.valor = [...new Set([...(b.condicion.valor || []), ...logicaAppend.dropped])];
+        }
+    }
+    
+    // Si logicaAppend.dropped existe pero no había un bloque IN_LIST previo, hay que agregarlo
+    if (logicaAppend && logicaAppend.dropped && logicaAppend.dropped.length > 0) {
+         let hasDropBlock = targetRule.logica.some(b => b.condicion && b.condicion.operador === 'IN_LIST' && b.accion && b.accion.tipo_accion === 'DROP');
+         if (!hasDropBlock) {
+             let dropBlock = {
+                 condicion: { operador: "IN_LIST", valor: logicaAppend.dropped },
+                 accion: { tipo_accion: "DROP", valor: null }
+             };
+             let defaultIdx = targetRule.logica.findIndex(b => b.condicion && b.condicion.operador === "DEFAULT");
+             if (defaultIdx === -1) {
+                 targetRule.logica.push(dropBlock);
+             } else {
+                 targetRule.logica.splice(defaultIdx, 0, dropBlock);
+             }
+         }
+    }
+
+    renderPipeline();
+    triggerPreview();
+    
+    if (!isPanelOpen && activeContext && activeContext.colIndex) {
+        if (!window.draftPipelines) window.draftPipelines = {};
+        window.draftPipelines[activeContext.colIndex] = {
+            masterField: activeContext.masterField,
+            colName: activeContext.colName,
+            rules: [...currentDraftPipeline]
+        };
+        if (typeof window.triggerSafeRender === 'function') window.triggerSafeRender();
+    }
+    return true;
+}
+
 export function getActiveState() {
     return {
         isOpen: isPanelOpen,
@@ -2124,6 +2186,7 @@ window.viewerRuleWorkshop = {
     switchToComputedMode,
     switchToStandardMode,
     createLocalRuleDirect,
+    updateLocalRuleDictionary,
     clearPipeline,
     auditResidues,
     processCacheMiss,

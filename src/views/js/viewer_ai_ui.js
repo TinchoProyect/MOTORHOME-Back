@@ -777,7 +777,7 @@ class ViewerAiUi {
         }
     }
     
-    async _displayConsensusModal(clusterMap, promptText, vCol) {
+    async _displayConsensusModal(clusterMap, promptText, vCol, targetRuleIdx = null) {
         if (!window.Swal) return;
         
         let accordionHtml = Object.keys(clusterMap).map((masterVal, gIdx) => {
@@ -886,7 +886,12 @@ class ViewerAiUi {
             };
             
             if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
-                await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                if (targetRuleIdx !== null && targetRuleIdx !== undefined && typeof window.viewerRuleWorkshop.updateLocalRuleDictionary === 'function') {
+                    window.viewerRuleWorkshop.updateLocalRuleDictionary(targetRuleIdx, finalMap);
+                    console.log(`🤖 [CHOFER] Regla Consensus MERGEADA estructuralmente en la UI Activa [Idx: ${targetRuleIdx}].`);
+                } else {
+                    await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                }
                 
                 // Guardar en el Historial Backend
                 if (this.activeMasterFieldId) {
@@ -917,7 +922,7 @@ class ViewerAiUi {
         }
     }
 
-    async _displayLiteralModal(translationMap, promptText, vCol) {
+    async _displayLiteralModal(translationMap, promptText, vCol, targetRuleIdx = null) {
         if (!window.Swal) return;
         
         let tableRowsHtml = Object.entries(translationMap).map(([rawVal, cleanVal], idx) => {
@@ -1015,7 +1020,12 @@ class ViewerAiUi {
             };
             
             if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
-                await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                if (targetRuleIdx !== null && targetRuleIdx !== undefined && typeof window.viewerRuleWorkshop.updateLocalRuleDictionary === 'function') {
+                    window.viewerRuleWorkshop.updateLocalRuleDictionary(targetRuleIdx, finalMap);
+                    console.log(`🤖 [CHOFER] Regla Literal MERGEADA estructuralmente en la UI Activa [Idx: ${targetRuleIdx}].`);
+                } else {
+                    await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+                }
                 this.promptEl.value = "";
                 this.promptEl.placeholder = "Ej: Condiciona la extracción aislando los prefijos...";
                 if (this.selectedIntent) {
@@ -1567,7 +1577,7 @@ class ViewerAiUi {
          return { ...base, ...newObj };
     }
 
-    async _displaySemanticAuditTray(clusterMap, promptText, vCol) {
+    async _displaySemanticAuditTray(clusterMap, promptText, vCol, targetRuleIdx = null) {
         if (window.Swal && Swal.isVisible()) Swal.close();
         this._setStatus('Construyendo Bandeja...', 'working');
 
@@ -1855,15 +1865,50 @@ class ViewerAiUi {
              // Para que no se pise la memoria al presionar "Guardar" en el Taller y para resolver 
              // el "Type Casting" a 0,00 que sufría la persistencia por falta de regla activa.
              if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
-                 const destState = window.viewerRuleWorkshop.getActiveState();
-                 if (destState && destState.colIndex) {
+                 if (targetRuleIdx !== null && targetRuleIdx !== undefined && typeof window.viewerRuleWorkshop.updateLocalRuleDictionary === 'function') {
+                     // NUEVA RUTA: Parche en estado, manteniendo idempotencia y otras reglas colindantes
+                     let logicaAppend = mergedDiscarded.length > 0 ? { dropped: mergedDiscarded } : null;
+                     window.viewerRuleWorkshop.updateLocalRuleDictionary(targetRuleIdx, mergedMap, logicaAppend);
                      
-                     // Invocamos la API nativa con el flag clearFirst = true
-                     // Esto elimina la basura local y ancla visualmente la regla al UI.
-                     window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj, true);
-                     
-                     // [FIX AMNESIA] Forzar Sincronización Memoria Local a Global antes del Fetch al Backend
+                     // [HERD IMMUNITY QA] Inyección Transversal hacia Base de Datos Maestra
                      const destStateForce = window.viewerRuleWorkshop.getActiveState();
+                     if (destStateForce && destStateForce.colIndex && destStateForce.pipeline) {
+                         if (destStateForce.masterField && destStateForce.masterField.id) {
+                             const payloadDict = {
+                                 id: destStateForce.masterField.id,
+                                 termino: destStateForce.masterField.nombre_campo || destStateForce.colName,
+                                 reglas_procesamiento: destStateForce.pipeline,
+                                 currentProviderId: window.globalContext ? window.globalContext.providerId : null
+                             };
+                             const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                             fetch(`${backendUrl}/api/files/dictionary/update`, {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify(payloadDict)
+                             }).then(r => r.json()).then(res => {
+                                 console.log("🌐 [HERD IMMUNITY] Actualización de AST perpetuada en Master Dictionary:", res);
+                             }).catch(err => console.error("Error perpetuando AST global:", err));
+                         }
+                     }
+                     console.log(`🤖 [CHOFER] Regla Caza-Rubro MERGEADA estructuralmente en la UI Activa [Idx: ${targetRuleIdx}].`);
+                     this._setStatus('Persistencia Sincronizada', 'success');
+
+                     // Trigger safe flush of Universal Views if headless
+                     const destState = window.viewerRuleWorkshop.getActiveState();
+                     if (destState && !destState.isOpen && typeof window.triggerSafeRender === 'function') {
+                          window.triggerSafeRender();
+                     }
+
+                 } else {
+                     const destState = window.viewerRuleWorkshop.getActiveState();
+                     if (destState && destState.colIndex) {
+                         
+                         // Invocamos la API nativa con el flag clearFirst = true
+                         // Esto elimina la basura local y ancla visualmente la regla al UI.
+                         window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj, true);
+                         
+                         // [FIX AMNESIA] Forzar Sincronización Memoria Local a Global antes del Fetch al Backend
+                         const destStateForce = window.viewerRuleWorkshop.getActiveState();
                      if (destStateForce && destStateForce.colIndex && destStateForce.pipeline) {
                          if (!window.draftPipelines) window.draftPipelines = {};
                          window.draftPipelines[destStateForce.colIndex] = {
@@ -1899,10 +1944,11 @@ class ViewerAiUi {
                           window.triggerSafeRender();
                      }
 
-                 } else {
-                     console.warn("🤖 [CHOFER] No hay contexto activo para inyectar Rubro.");
-                     if (window.Swal) Swal.fire('Contexto Perdido', 'Abra el Taller en la columna deseada antes de cristalizar.', 'error');
-                     this._setStatus('Error de Bind', 'error');
+                     } else {
+                         console.warn("🤖 [CHOFER] No hay contexto activo para inyectar Rubro.");
+                         if (window.Swal) Swal.fire('Contexto Perdido', 'Abra el Taller en la columna deseada antes de cristalizar.', 'error');
+                         this._setStatus('Error de Bind', 'error');
+                     }
                  }
              } else {
                  console.error("API Error - Workshop Desconectado");
