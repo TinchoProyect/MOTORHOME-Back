@@ -379,7 +379,7 @@ window.generateB2BPdf = async function() {
             { text: String(bult), style: 'tableRow', alignment: 'center' },
             { text: String(val), style: 'tableRow', alignment: 'center' },
             { text: unitLabel, style: 'tableRow', alignment: 'center' },
-            { text: isKg ? totalKg.toFixed(2) : '--', style: 'tableRowHighlightCenter', alignment: 'center' }
+            { text: isKg ? totalKg.toFixed(2) : '--', style: 'tableRow', alignment: 'center' }
         ];
         
         rowElements.push({ text: String(qty), style: 'tableRowHighlightCenter', alignment: 'center' });
@@ -394,9 +394,9 @@ window.generateB2BPdf = async function() {
     
     // Fila 1: Total Kilos (Alineado bajo la columna KG Totales = índice 5)
     let kilosRow = [
-        { text: 'TOTAL KILOS', style: 'tableFooterMsg', colSpan: 5, alignment: 'right' },
+        { text: 'TOTAL KILOS', style: 'tableRow', colSpan: 5, alignment: 'right' },
         {}, {}, {}, {},
-        { text: sumKg.toFixed(2), style: 'tableFooterSum', alignment: 'center' }
+        { text: sumKg.toFixed(2), style: 'tableRow', alignment: 'center' }
     ];
     // Rellenamos el padding final
     if (isPresupuesto) {
@@ -477,9 +477,9 @@ window.generateB2BPdf = async function() {
             mainTitle: { fontSize: 16, bold: true, margin: [0, 5, 0, 10], color: '#0f172a' },
             boldText: { bold: true, fontSize: 11, color: '#334155' },
             tableHeader: { bold: true, fontSize: 8, color: '#ffffff', fillColor: '#334155', margin: [0, 2, 0, 2] },
-            tableHeaderBold: { bold: true, fontSize: 9, color: '#10b981', fillColor: '#1e293b', margin: [0, 2, 0, 2] },
+            tableHeaderBold: { bold: true, fontSize: 10, color: '#10b981', fillColor: '#1e293b', margin: [0, 2, 0, 2] },
             tableRow: { fontSize: 8, color: '#475569'},
-            tableRowHighlight: { fontSize: 11, bold: true, color: '#0f172a' },
+            tableRowHighlight: { fontSize: 12, bold: true, color: '#0f172a' },
             tableRowHighlightCenter: { fontSize: 12, bold: true, color: '#0f172a', alignment: 'center' },
             tableRowDesc: { fontSize: 8, color: '#0f172a', bold: true },
             tableRowBoxed: { fontSize: 9, color: '#0f172a', bold: true },
