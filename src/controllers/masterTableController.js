@@ -619,89 +619,76 @@ module.exports = {
     bulkUpdateRubro: async (req, res) => {
         try {
             const { itemIds, target_rubro_id } = req.body;
-            
-            if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
-                return res.status(400).json({ success: false, error: "IDs no proporcionados." });
-            }
+            if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) return res.status(400).json({ success: false, error: "IDs no proporcionados." });
 
             const supabase = require('../config/supabaseClient');
-            
             const real_rubro_id = target_rubro_id === 'UNASSIGN' ? null : target_rubro_id;
 
-            // Actualizamos en base de datos. Usando IN para el array de IDs
-            const { data, error } = await supabase
-                .from('tabla_maestra_operativa')
-                .update({ 
-                    rubro_id: real_rubro_id,
-                    bloqueo_edicion_manual: true // Active integrity lock
-                })
-                .in('id', itemIds);
-
-            if (error) throw error;
-
-            return res.json({ success: true, message: "Reasignación Semántica Aplicada Exitosamente.", count: itemIds.length });
-        } catch(e) {
-            console.error("[MasterTableController] bulkUpdateRubro error:", e);
-            return res.status(500).json({ success: false, error: e.message });
+            
+    const getFuzzyCode = (obj) => {
+        if (!obj) return null;
+        if (obj.codigo) return obj.codigo;
+        if (obj['código']) return obj['código'];
+        for (let key in obj) {
+            const kText = String(key).toLowerCase();
+            if (kText === 'sku' || kText.includes('codigo') || kText.includes('código')) {
+                return obj[key];
+            }
         }
+        return null;
+    };
+            
+            const { data: rows } = await supabase.from('tabla_maestra_operativa').select('id, proveedor_id, datos_maestros').in('id', itemIds);
+            if (rows && rows.length > 0) {
+                 const uMap = new Map();
+                 rows.forEach(r => {
+                      const code = getFuzzyCode(r.datos_maestros);
+                      if (code) uMap.set(r.proveedor_id + '_' + String(code).trim().toLowerCase(), { proveedor_id: r.proveedor_id, producto_codigo: String(code).trim().toLowerCase(), rubro_fijado: real_rubro_id });
+                 });
+                 
+                 const { data: ext } = await supabase.from('curaduria_excepciones').select('*');
+                 if (ext) { ext.forEach(e => { const k = e.proveedor_id + '_' + String(e.producto_codigo).trim().toLowerCase(); if (uMap.has(k)) { uMap.get(k).unidad_fijada = e.unidad_fijada; } }); }
+                 
+                 if (uMap.size > 0) await supabase.from('curaduria_excepciones').upsert(Array.from(uMap.values()), { onConflict: 'proveedor_id,producto_codigo' });
+            }
+            return res.json({ success: true, message: "Reasignación Semántica.", count: itemIds.length });
+        } catch(e) { console.error(e); return res.status(500).json({ success: false, error: e.message }); }
     },
     bulkUpdateUnidad: async (req, res) => {
         try {
             const { itemIds, target_unidad } = req.body;
-            
-            if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
-                return res.status(400).json({ success: false, error: "IDs no proporcionados." });
-            }
-            if (target_unidad === undefined) {
-                return res.status(400).json({ success: false, error: "Unidad no proporcionada." });
-            }
+            if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) return res.status(400).json({ success: false, error: "IDs vacíos." });
 
             const supabase = require('../config/supabaseClient');
             
-            // Traer todos los registros para inyectar higiénicamente el JSONB
-            const { data, error } = await supabase
-                .from('tabla_maestra_operativa')
-                .select('*')
-                .in('id', itemIds);
-
-            if (error) throw error;
-            if (!data || data.length === 0) {
-                return res.json({ success: true, count: 0 });
+    const getFuzzyCode = (obj) => {
+        if (!obj) return null;
+        if (obj.codigo) return obj.codigo;
+        if (obj['código']) return obj['código'];
+        for (let key in obj) {
+            const kText = String(key).toLowerCase();
+            if (kText === 'sku' || kText.includes('codigo') || kText.includes('código')) {
+                return obj[key];
             }
-
-            const upserts = data.map(row => {
-                let dm = { ...row.datos_maestros };
-                let replaced = false;
-                
-                // Unidad puede estar como "unidad", "Unidad", "UNIDAD". Lo normalizamos a "Unidad".
-                for (let key in dm) {
-                    if (String(key).toLowerCase() === 'unidad') {
-                        dm[key] = target_unidad;
-                        replaced = true;
-                    }
-                }
-                if (!replaced) {
-                    dm['Unidad'] = target_unidad;
-                }
-
-                return {
-                    ...row,
-                    datos_maestros: dm
-                };
-            });
-
-            // Upsert block
-            const { error: upsertErr } = await supabase
-                .from('tabla_maestra_operativa')
-                .upsert(upserts);
-
-            if (upsertErr) throw upsertErr;
-
-            return res.json({ success: true, message: "Unidad reasignada exitosamente.", count: itemIds.length });
-        } catch(e) {
-            console.error("[MasterTableController] bulkUpdateUnidad error:", e);
-            return res.status(500).json({ success: false, error: e.message });
         }
+        return null;
+    };
+
+            const { data: rows } = await supabase.from('tabla_maestra_operativa').select('id, proveedor_id, datos_maestros').in('id', itemIds);
+            if (rows && rows.length > 0) {
+                 const uMap = new Map();
+                 rows.forEach(r => {
+                      const code = getFuzzyCode(r.datos_maestros);
+                      if (code) uMap.set(r.proveedor_id + '_' + String(code).trim().toLowerCase(), { proveedor_id: r.proveedor_id, producto_codigo: String(code).trim().toLowerCase(), unidad_fijada: target_unidad });
+                 });
+                 
+                 const { data: ext } = await supabase.from('curaduria_excepciones').select('*');
+                 if (ext) { ext.forEach(e => { const k = e.proveedor_id + '_' + String(e.producto_codigo).trim().toLowerCase(); if (uMap.has(k)) { uMap.get(k).rubro_fijado = e.rubro_fijado; } }); }
+                 
+                 if (uMap.size > 0) await supabase.from('curaduria_excepciones').upsert(Array.from(uMap.values()), { onConflict: 'proveedor_id,producto_codigo' });
+            }
+            return res.json({ success: true, message: "Unidad reasignada.", count: itemIds.length });
+        } catch(e) { console.error(e); return res.status(500).json({ success: false, error: e.message }); }
     },
     revertExtraction: async (req, res) => {
         try {
