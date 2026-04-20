@@ -205,6 +205,11 @@ window.renderB2BActiveItems = function() {
         if (catalogBtn) catalogBtn.style.display = 'none';
         document.getElementById('b2bActiveProviderName').innerText = "Proveedor Vacío";
         document.getElementById('b2bActiveItemCount').innerText = "0 ítems";
+        
+        const b2bTotalKg = document.getElementById('b2bTotalKg');
+        if (b2bTotalKg) b2bTotalKg.innerText = '--';
+        const b2bTotalPrice = document.getElementById('b2bTotalPrice');
+        if (b2bTotalPrice) b2bTotalPrice.innerText = '$0.00';
     }
 };
 
@@ -329,13 +334,14 @@ window.generateB2BPdf = async function() {
     const tableHeader = [
         { text: 'CÓDIGO (SKU)', style: 'tableHeaderBold' },
         { text: 'Descripción', style: 'tableHeader' },
-        { text: 'Unidad Ref.', style: 'tableHeader', alignment: 'center' }
+        { text: 'C. Bult.', style: 'tableHeader', alignment: 'center' },
+        { text: 'C. Val.', style: 'tableHeader', alignment: 'center' },
+        { text: 'Unidad', style: 'tableHeader', alignment: 'center' },
+        { text: 'Kg Totales', style: 'tableHeader', alignment: 'center' }
     ];
-    if (!isPresupuesto) {
-        tableHeader.push({ text: 'Precio U.', style: 'tableHeader', alignment: 'right' });
-    }
     tableHeader.push({ text: 'CANT. PEDIDA', style: 'tableHeaderBold', alignment: 'center' });
     if (!isPresupuesto) {
+        tableHeader.push({ text: 'Precio U.', style: 'tableHeader', alignment: 'right' });
         tableHeader.push({ text: 'Subtotal', style: 'tableHeader', alignment: 'right' });
     }
     
@@ -345,13 +351,18 @@ window.generateB2BPdf = async function() {
     let sumPrice = 0;
 
     activeItems.forEach(i => {
-        const unitLabel = i.unidad_medida || '';
+        let rawUnit = (i.unidad_medida || '').toUpperCase();
+        let unitLabel = rawUnit;
+        if (rawUnit.includes('KILO') || rawUnit.includes('KG')) unitLabel = 'K';
+        else if (rawUnit.includes('GRAMO') || rawUnit.includes('GR')) unitLabel = 'G';
+        else if (rawUnit.includes('LITRO') || rawUnit.includes('LT')) unitLabel = 'L';
+        else if (rawUnit.includes('UNID')) unitLabel = 'U';
         
         const bult = sanitizeLatAmPrice(i.cant_bult) || 1;
         const val = sanitizeLatAmPrice(i.cant_valor) || 1;
         const kgMult = bult * val;
         
-        let isKg = unitLabel.toLowerCase().includes('kg') || unitLabel.toLowerCase().includes('lt') || unitLabel.toLowerCase().includes('kilo');
+        let isKg = unitLabel === 'K' || unitLabel === 'L' || unitLabel === 'G' || rawUnit.includes('KG');
         
         const price = sanitizeLatAmPrice(i.precio_unitario) || 0;
         const qty = parseInt(i.cantidad) || 1;
@@ -365,31 +376,49 @@ window.generateB2BPdf = async function() {
         const rowElements = [
             { text: i.codigo_producto, style: 'tableRowHighlight' },
             { text: i.producto_descripcion, style: 'tableRowDesc' },
-            { text: unitLabel, style: 'tableRow', alignment: 'center' }
+            { text: String(bult), style: 'tableRow', alignment: 'center' },
+            { text: String(val), style: 'tableRow', alignment: 'center' },
+            { text: unitLabel, style: 'tableRow', alignment: 'center' },
+            { text: isKg ? totalKg.toFixed(2) : '--', style: 'tableRowHighlightCenter', alignment: 'center' }
         ];
-        
-        if (!isPresupuesto) {
-            rowElements.push({ text: '$' + price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRow', alignment: 'right' });
-        }
         
         rowElements.push({ text: String(qty), style: 'tableRowHighlightCenter', alignment: 'center' });
         
         if (!isPresupuesto) {
+            rowElements.push({ text: '$' + price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRow', alignment: 'right' });
             rowElements.push({ text: '$' + totalPrc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRowBoxed', alignment: 'right' });
         }
         
         tableBody.push(rowElements);
     });
     
+    // Fila 1: Total Kilos (Alineado bajo la columna KG Totales = índice 5)
+    let kilosRow = [
+        { text: 'TOTAL KILOS', style: 'tableFooterMsg', colSpan: 5, alignment: 'right' },
+        {}, {}, {}, {},
+        { text: sumKg.toFixed(2), style: 'tableFooterSum', alignment: 'center' }
+    ];
+    // Rellenamos el padding final
+    if (isPresupuesto) {
+        kilosRow.push({}); // Columna 6 (CANT. PEDIDA)
+    } else {
+        kilosRow.push({}); // Columna 6
+        kilosRow.push({}); // Columna 7
+        kilosRow.push({}); // Columna 8
+    }
+    tableBody.push(kilosRow);
+    
     if (!isPresupuesto) {
+        // Fila 2: Total General Neto
         tableBody.push([
-            { text: 'TOTAL GENERAL', style: 'tableFooterMsg', colSpan: 5, alignment: 'right' },
-            {}, {}, {}, {},
+            { text: 'TOTAL GENERAL NETO', style: 'tableFooterMsg', colSpan: 8, alignment: 'right' },
+            {}, {}, {}, {}, {}, {}, {},
             { text: '$' + sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableFooterSum', alignment: 'right' }
         ]);
     }
 
     const docDefinition = {
+        pageOrientation: 'landscape',
         content: [
             { text: 'Sistema de Aprovisionamiento LAMDA', style: 'topHeader', alignment: 'right' },
             { text: docType.toUpperCase(), style: 'mainTitle' },
@@ -400,6 +429,7 @@ window.generateB2BPdf = async function() {
                         text: [
                             { text: 'Emisor:\n', style: 'boldText' },
                             'LAMDA\n',
+                            'Teléfono: 221 661 5746\n',
                             'Departamentos de Compras'
                         ]
                     },
@@ -418,7 +448,7 @@ window.generateB2BPdf = async function() {
             {
                 table: {
                     headerRows: 1,
-                    widths: isPresupuesto ? ['25%', '45%', '15%', '15%'] : ['15%', '35%', '15%', '10%', '12%', '13%'],
+                    widths: isPresupuesto ? ['auto', '40%', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '40%', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                     body: tableBody
                 },
                 layout: {
