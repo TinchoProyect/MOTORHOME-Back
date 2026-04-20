@@ -19,8 +19,14 @@ window.closeB2BCheckout = function() {
 function getB2BCart() {
     try {
         const c = localStorage.getItem('lamda_b2b_cart');
-        return c ? JSON.parse(c) : [];
+        if (!c) return [];
+        let parsed = JSON.parse(c);
+        if (!Array.isArray(parsed)) return [];
+        // Robust filtering against nulls
+        parsed = parsed.filter(i => i && typeof i === 'object' && i._system_id && i.proveedor_id);
+        return parsed;
     } catch(e) {
+        console.error("Cart parse error:", e);
         return [];
     }
 }
@@ -30,7 +36,12 @@ function saveB2BCart(cart) {
 }
 
 window.renderB2BProviders = function() {
-    const cart = getB2BCart();
+    let cart = [];
+    try {
+       cart = getB2BCart();
+    } catch(e) {
+       console.error("Error retrieving B2B Cart at render:", e);
+    }
     const tabsContainer = document.getElementById('b2bProviderTabs');
     const emptyState = document.getElementById('b2bEmptyState');
     const tbody = document.getElementById('b2bItemsBody');
@@ -40,19 +51,22 @@ window.renderB2BProviders = function() {
     
     tabsContainer.innerHTML = '';
     
-    if(cart.length === 0) {
-        emptyState.classList.remove('hidden');
-        tbody.innerHTML = '';
-        headerOpts.style.display = 'none';
-        document.getElementById('b2bActiveProviderName').innerText = "Seleccione un Proveedor";
-        document.getElementById('b2bActiveItemCount').innerText = "0 ítems en el carrito";
+    if(!cart || !Array.isArray(cart) || cart.length === 0) {
+        if(emptyState) emptyState.classList.remove('hidden');
+        if(tbody) tbody.innerHTML = '';
+        if(headerOpts) headerOpts.style.display = 'none';
+        const docName = document.getElementById('b2bActiveProviderName');
+        if(docName) docName.innerText = "Seleccione un Proveedor";
+        const docCount = document.getElementById('b2bActiveItemCount');
+        if(docCount) docCount.innerText = "0 ítems en el carrito";
         return;
     }
     
     const provs = {};
     cart.forEach(item => {
+        if(!item || !item.proveedor_id) return;
         if(!provs[item.proveedor_id]) {
-            provs[item.proveedor_id] = { id: item.proveedor_id, name: item.proveedor_nombre, count: 0 };
+            provs[item.proveedor_id] = { id: item.proveedor_id, name: item.proveedor_nombre || 'Desconocido', count: 0 };
         }
         provs[item.proveedor_id].count++;
     });
@@ -64,13 +78,13 @@ window.renderB2BProviders = function() {
         const isActive = window.activeB2BProvider === pid || (isFirst && !window.activeB2BProvider);
         if(isActive) window.activeB2BProvider = pid;
         
-        btn.className = \`w-full text-left p-3 rounded-lg border \${isActive ? 'bg-emerald-900/30 border-emerald-500/50' : 'bg-slate-950 border-slate-800 hover:border-slate-700'} flex items-center justify-between transition-colors mb-2\`;
+        btn.className = `w-full text-left p-3 rounded-lg border ${isActive ? 'bg-emerald-900/30 border-emerald-500/50' : 'bg-slate-950 border-slate-800 hover:border-slate-700'} flex items-center justify-between transition-colors mb-2`;
         btn.onclick = () => {
             window.activeB2BProvider = pid;
             window.renderB2BProviders();
         };
         
-        btn.innerHTML = \`<div class="flex flex-col"><span class="text-xs font-bold \${isActive ? 'text-emerald-400' : 'text-slate-300'}">\${p.name}</span><span class="text-[10px] text-slate-500">\${p.count} ítems</span></div> \${isActive ? '<i data-lucide="chevron-right" class="w-4 h-4 text-emerald-500"></i>' : ''}\`;
+        btn.innerHTML = `<div class="flex flex-col"><span class="text-xs font-bold ${isActive ? 'text-emerald-400' : 'text-slate-300'}">${p.name}</span><span class="text-[10px] text-slate-500">${p.count} ítems</span></div> ${isActive ? '<i data-lucide="chevron-right" class="w-4 h-4 text-emerald-500"></i>' : ''}`;
         tabsContainer.appendChild(btn);
         isFirst = false;
     }
@@ -101,19 +115,19 @@ window.renderB2BActiveItems = function() {
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-800/30 border-b border-slate-800/50";
             
-            tr.innerHTML = \`
-                <td class="p-4 text-xs font-mono text-slate-400">\${item.codigo_producto}</td>
-                <td class="p-4 text-xs font-bold text-slate-200">\${item.producto_descripcion}</td>
-                <td class="p-4 text-xs text-slate-400 text-right">\$\${Number(item.precio_unitario).toFixed(2)} <span class="text-[9px] uppercase tracking-widest block opacity-50">\${item.unidad_medida}</span></td>
+            tr.innerHTML = `
+                <td class="p-4 text-xs font-mono text-slate-400">${item.codigo_producto}</td>
+                <td class="p-4 text-xs font-bold text-slate-200">${item.producto_descripcion}</td>
+                <td class="p-4 text-xs text-slate-400 text-right">$${Number(item.precio_unitario).toFixed(2)} <span class="text-[9px] uppercase tracking-widest block opacity-50">${item.unidad_medida}</span></td>
                 <td class="p-4 bg-emerald-900/10 border-l border-emerald-900/30 p-2">
                     <div class="flex items-center justify-center gap-2">
-                        <button onclick="window.updateB2BQty('\${item._system_id}', -1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">-</button>
-                        <input type="number" onchange="window.setB2BQty('\${item._system_id}', this.value)" value="\${item.cantidad}" class="w-16 bg-slate-950 border border-slate-700 text-center text-emerald-400 font-bold px-2 py-1 outline-none min-h-[30px] rounded focus:border-emerald-500 hide-arrows" />
-                        <button onclick="window.updateB2BQty('\${item._system_id}', 1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">+</button>
+                        <button onclick="window.updateB2BQty('${item._system_id}', -1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">-</button>
+                        <input type="number" onchange="window.setB2BQty('${item._system_id}', this.value)" value="${item.cantidad}" class="w-16 bg-slate-950 border border-slate-700 text-center text-emerald-400 font-bold px-2 py-1 outline-none min-h-[30px] rounded focus:border-emerald-500 hide-arrows" />
+                        <button onclick="window.updateB2BQty('${item._system_id}', 1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">+</button>
                     </div>
-                    <div class="text-center mt-1"><button onclick="window.removeB2BItem('\${item._system_id}')" class="text-[9px] text-rose-500 hover:text-rose-400 uppercase tracking-widest">Eliminar</button></div>
+                    <div class="text-center mt-1"><button onclick="window.removeB2BItem('${item._system_id}')" class="text-[9px] text-rose-500 hover:text-rose-400 uppercase tracking-widest">Eliminar</button></div>
                 </td>
-            \`;
+            `;
             tbody.appendChild(tr);
         });
     } else {

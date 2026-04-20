@@ -2490,13 +2490,40 @@
         
         window.onBulkTargetChange = function() {
             const target = document.getElementById('fmtBulkTargetCol').value;
-            if (target === 'unidad') {
-                document.getElementById('fmtBulkRubroSelect').style.display = 'none';
-                document.getElementById('fmtBulkUnidadSelect').style.display = 'block';
-                window.populateUnidadDropdown();
+            const groupSelect = document.getElementById('fmtBulkValuesGroup');
+            const promptCart = document.getElementById('fmtOrderTextPrompt');
+            const btnApply = document.getElementById('fmtBulkApplyBtn');
+            const btnIcon = document.getElementById('fmtBulkApplyIcon');
+            const btnText = document.getElementById('fmtBulkApplyText');
+
+            if (target === 'pedido') {
+                if (groupSelect) groupSelect.style.display = 'none';
+                if (promptCart) promptCart.style.display = 'flex';
+                if (btnApply) {
+                    btnApply.classList.remove('bg-purple-600', 'hover:bg-purple-500', 'shadow-purple-900/40');
+                    btnApply.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'shadow-emerald-900/40');
+                }
+                if (btnIcon && window.lucide) {
+                    btnIcon.setAttribute('data-lucide', 'shopping-cart');
+                    window.lucide.createIcons();
+                }
+                if (btnText) btnText.textContent = 'Añadir al Pedido';
             } else {
-                document.getElementById('fmtBulkRubroSelect').style.display = 'block';
-                document.getElementById('fmtBulkUnidadSelect').style.display = 'none';
+                if (groupSelect) groupSelect.style.display = 'flex';
+                if (promptCart) promptCart.style.display = 'none';
+                if (btnApply) {
+                    btnApply.classList.add('bg-purple-600', 'hover:bg-purple-500', 'shadow-purple-900/40');
+                    btnApply.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'shadow-emerald-900/40');
+                }
+                if (btnIcon && window.lucide) {
+                    btnIcon.setAttribute('data-lucide', 'zap');
+                    window.lucide.createIcons();
+                }
+                if (btnText) btnText.textContent = 'Aplicar';
+
+                document.getElementById('fmtBulkRubroSelect').style.display = target === 'unidad' ? 'none' : 'block';
+                document.getElementById('fmtBulkUnidadSelect').style.display = target === 'unidad' ? 'block' : 'none';
+                if (target === 'unidad') window.populateUnidadDropdown();
             }
         };
 
@@ -2553,9 +2580,11 @@
             
             // FILTRADO ESTRICTO EXIGIDO POR QA: SOLAMENTE NODOS VISIBLES TRAS FILTRO Y SELECCIONADOS
             const displayedSelectedIds = [];
+            const selectedNodesData = [];
             window.v4GridApi.forEachNodeAfterFilter(node => {
-                if (node.isSelected() && node.data && node.data._system_id) {
+                if (node.isSelected() && node.data && node.data._system_id && !node.data._is_empty_skeleton) {
                     displayedSelectedIds.push(node.data._system_id);
+                    selectedNodesData.push(node.data);
                 }
             });
 
@@ -2563,13 +2592,74 @@
             logFn("ALERTA INTEGRIDAD: Cantidad de IDs a modificar enviadas al backend ->", displayedSelectedIds.length);
 
             if (displayedSelectedIds.length === 0) {
-                Swal.fire('Error', 'Debe seleccionar al menos un registro visualmente activo.', 'error');
+                if (window.Swal) window.Swal.fire('Error', 'Debe seleccionar al menos un registro visualmente activo.', 'error');
                 return;
             }
 
             const itemIds = displayedSelectedIds;
-            const targetCol = document.getElementById('fmtBulkTargetCol').value;
+            const targetColEl = document.getElementById('fmtBulkTargetCol');
+            const targetCol = targetColEl ? targetColEl.value : '';
             const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+
+            if (targetCol === 'pedido') {
+                let cart = [];
+                try {
+                    const c = localStorage.getItem('lamda_b2b_cart');
+                    if (c) cart = JSON.parse(c);
+                } catch(e) {}
+                
+                let added = 0;
+                selectedNodesData.forEach(row => {
+                    const exists = cart.find(x => x._system_id === row._system_id);
+                    if (!exists) {
+                        cart.push({
+                            _system_id: row._system_id,
+                            proveedor_id: row._proveedor_id || row.proveedor_id || 'PROV-UNKNOWN',
+                            proveedor_nombre: row._proveedor || row.proveedor || 'Sin Proveedor',
+                            codigo_producto: row.codigo || row['código'] || row.sku || row._system_id,
+                            producto_descripcion: row.descripcion || row['descripción'] || 'Sin descripción',
+                            precio_unitario: row.precio ? parseFloat(String(row.precio).replace(/[^0-9.,-]/g, '').replace(/,/g, '.')) : 0,
+                            cantidad: 1,
+                            unidad_medida: row.unidad || 'Unidad'
+                        });
+                        added++;
+                    }
+                });
+                
+                localStorage.setItem('lamda_b2b_cart', JSON.stringify(cart));
+                
+                // NOTIFICACIÓN OBLIGATORIA (Feedback Loop QA)
+                const btnApply = document.getElementById('fmtBulkApplyBtn');
+                const btnText = document.getElementById('fmtBulkApplyText');
+                if (btnApply && btnText) {
+                    const originalText = btnText.textContent;
+                    btnText.textContent = '¡' + added + ' Agregados!';
+                    btnApply.classList.add('animate-pulse', 'ring-4', 'ring-emerald-500/50');
+                    setTimeout(() => {
+                        if (document.getElementById('fmtBulkTargetCol') && document.getElementById('fmtBulkTargetCol').value === 'pedido') {
+                            btnText.textContent = 'Añadir al Pedido';
+                        } else {
+                            btnText.textContent = 'Aplicar';
+                        }
+                        btnApply.classList.remove('animate-pulse', 'ring-4', 'ring-emerald-500/50');
+                    }, 2000);
+                }
+                
+                if (window.Swal) {
+                    window.Swal.fire({
+                        icon: 'success',
+                        title: 'Carrito Actualizado',
+                        text: added + ' registros fueron trasladados a Generar Pedidos.',
+                        toast: true, position: 'bottom-end', showConfirmButton: false, timer: 3500, background: '#0f172a', color: '#10b981'
+                    });
+                }
+                
+                // Actualizar indicador de items
+                if (window.updateB2BItemIndicator) window.updateB2BItemIndicator();
+
+                window.v4GridApi.deselectAll();
+                return;
+            }
 
             if (targetCol === 'rubro') {
                 const targetId = document.getElementById('fmtBulkRubroSelect').value;
