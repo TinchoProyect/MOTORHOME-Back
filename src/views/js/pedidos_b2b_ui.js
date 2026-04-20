@@ -172,19 +172,19 @@ window.renderB2BActiveItems = function() {
             sumPrice += totalItemPrice;
             
             tr.innerHTML = `
-                <td class="p-4 text-xs font-mono text-slate-400">${item.codigo_producto}</td>
-                <td class="p-4 text-xs font-bold text-slate-200 whitespace-normal min-w-[200px]">${item.producto_descripcion}</td>
-                <td class="p-4 text-xs text-slate-400 text-right">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})} <span class="text-[9px] uppercase tracking-widest block opacity-50">${unitLabel}</span></td>
-                <td class="p-4 bg-emerald-900/10 border-l border-emerald-900/30 p-2">
-                    <div class="flex items-center justify-center gap-2">
-                        <button onclick="window.updateB2BQty('${item._system_id}', -1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">-</button>
-                        <input type="number" onchange="window.setB2BQty('${item._system_id}', this.value)" value="${qty}" class="w-16 bg-slate-950 border border-slate-700 text-center text-emerald-400 font-bold px-2 py-1 outline-none min-h-[30px] rounded focus:border-emerald-500 hide-arrows" />
-                        <button onclick="window.updateB2BQty('${item._system_id}', 1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">+</button>
+                <td class="p-1 px-2 text-[10px] font-mono text-slate-400 border-r border-slate-800/30">${item.codigo_producto}</td>
+                <td class="p-1 px-2 text-[10px] font-bold text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title="${item.producto_descripcion}">${item.producto_descripcion}</td>
+                <td class="p-1 px-2 text-[10px] text-slate-400 text-right whitespace-nowrap">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})} <span class="uppercase opacity-50 ml-1 whitespace-nowrap">${unitLabel}</span></td>
+                <td class="p-1 bg-emerald-900/10 border-l border-r border-emerald-900/30">
+                    <div class="flex items-center justify-center gap-1">
+                        <button onclick="window.updateB2BQty('${item._system_id}', -1)" class="w-5 h-5 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">-</button>
+                        <input type="number" onchange="window.setB2BQty('${item._system_id}', this.value)" value="${qty}" class="w-12 bg-slate-950 border border-slate-700 text-center text-emerald-400 font-bold px-1 py-0.5 outline-none text-[10px] rounded focus:border-emerald-500 hide-arrows" />
+                        <button onclick="window.updateB2BQty('${item._system_id}', 1)" class="w-5 h-5 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">+</button>
+                        <button onclick="window.removeB2BItem('${item._system_id}')" class="w-5 h-5 ml-2 text-rose-500 hover:text-rose-400 bg-rose-900/20 hover:bg-rose-900/40 rounded flex items-center justify-center" title="Eliminar"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </div>
-                    <div class="text-center mt-1"><button onclick="window.removeB2BItem('${item._system_id}')" class="text-[9px] text-rose-500 hover:text-rose-400 uppercase tracking-widest">Eliminar</button></div>
                 </td>
-                <td class="p-4 text-xs font-bold text-blue-400 text-center bg-blue-900/10">${isKgOrLts ? totalItemKg.toFixed(2) + ' Kg/Lt' : '--'}</td>
-                <td class="p-4 text-sm font-bold text-purple-400 text-right bg-purple-900/10">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                <td class="p-1 px-2 text-[10px] font-bold text-blue-400 text-center bg-blue-900/10 border-r border-slate-800/30">${isKgOrLts ? totalItemKg.toFixed(2) + ' Kg/Lt' : '--'}</td>
+                <td class="p-1 px-2 text-[11px] font-bold text-purple-400 text-right bg-purple-900/10">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -546,31 +546,36 @@ window.renderB2BCatalog = function(searchTerm = '') {
             
             let actionHtml = '';
             if (isAdded) {
-                actionHtml = `<button disabled class="px-2 py-1 bg-slate-800 text-slate-500 rounded text-[9px] font-bold uppercase tracking-widest cursor-not-allowed border border-slate-700/50 w-full"><i data-lucide="check" class="w-3 h-3 inline pb-0.5"></i> En Carrito</button>`;
+                actionHtml = `<div class="flex items-center justify-center bg-slate-800/80 border border-slate-700/50 rounded px-1.5 py-1 gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500/50 animate-pulse"></span> <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate">En Pedido</span></div>`;
             } else {
-                actionHtml = `<button onclick="window.addB2BCatalogItem('${sysId}')" class="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/50 text-emerald-400 rounded text-[9px] font-bold uppercase tracking-widest transition-colors border border-emerald-500/30 w-full"><i data-lucide="plus" class="w-3 h-3 inline pb-0.5"></i> Añadir</button>`;
+                actionHtml = `
+                <div class="flex items-center gap-1 justify-between w-full">
+                    <input type="number" id="b2bCatQty_${sysId}" value="1" min="1" class="w-8 bg-slate-950 border border-slate-700 text-center text-emerald-400 font-bold px-0.5 py-0.5 shadow-inner outline-none text-[9px] rounded focus:border-emerald-500 hide-arrows" />
+                    <button onclick="window.addB2BCatalogItemRow('${sysId}')" class="flex-1 py-1 bg-emerald-600/20 hover:bg-emerald-600/50 text-emerald-400 shadow shadow-emerald-900/20 rounded text-[9px] font-bold uppercase tracking-widest transition-colors border border-emerald-500/30 flex items-center justify-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i> Add</button>
+                </div>
+                `;
             }
             
             tr.innerHTML = `
-                <td class="p-3 border-b border-slate-800/50 w-24">
+                <td class="p-1.5 border-b border-slate-800/50 w-28">
                     ${actionHtml}
                 </td>
-                <td class="p-3 text-[11px] font-mono text-slate-400 border-b border-slate-800/50">
+                <td class="p-1.5 text-[10px] font-mono text-slate-400 border-b border-slate-800/50">
                     ${cod}
                 </td>
-                <td class="p-3 text-[11px] font-bold text-slate-200 whitespace-normal min-w-[200px] border-b border-slate-800/50">
+                <td class="p-1.5 text-[10px] font-bold text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px] border-b border-slate-800/50" title="${desc}">
                     ${desc}
                 </td>
-                <td class="p-3 text-[11px] font-bold text-slate-400 text-center border-b border-slate-800/50">
+                <td class="p-1.5 text-[10px] font-bold text-slate-400 text-center border-b border-slate-800/50">
                     ${uni}
                 </td>
-                <td class="p-3 text-[11px] font-bold text-blue-400 text-center border-b border-slate-800/50 bg-blue-900/10">
+                <td class="p-1.5 text-[10px] font-bold text-blue-400 text-center border-b border-slate-800/50 bg-blue-900/5">
                     ${item.datos_maestros?.cant_bult || item.cant_bult || 1}
                 </td>
-                <td class="p-3 text-[11px] font-bold text-purple-400 text-center border-b border-slate-800/50 bg-purple-900/10">
+                <td class="p-1.5 text-[10px] font-bold text-purple-400 text-center border-b border-slate-800/50 bg-purple-900/5">
                     ${item.datos_maestros?.cant_valor || item.cant_valor || 1}
                 </td>
-                <td class="p-3 text-[11px] font-bold text-emerald-400 text-right border-b border-slate-800/50 bg-emerald-900/10">
+                <td class="p-1.5 text-[10px] font-bold text-emerald-400 text-right border-b border-slate-800/50 bg-emerald-900/5">
                     $${prc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}
                 </td>
             `;
@@ -585,7 +590,14 @@ window.filterB2BCatalog = function() {
     window.renderB2BCatalog(val);
 };
 
-window.addB2BCatalogItem = function(sysId) {
+window.addB2BCatalogItemRow = function(sysId) {
+    const qtyInput = document.getElementById(`b2bCatQty_${sysId}`);
+    let qty = qtyInput ? parseInt(qtyInput.value) : 1;
+    if (isNaN(qty) || qty < 1) qty = 1;
+    window.addB2BCatalogItem(sysId, qty);
+};
+
+window.addB2BCatalogItem = function(sysId, initQty = 1) {
     if(!window._rawLamdaData) return;
     const row = window._rawLamdaData.find(r => r.id === sysId || r._system_id === sysId);
     if(!row) return;
@@ -603,7 +615,7 @@ window.addB2BCatalogItem = function(sysId) {
         codigo_producto: p.codigo || p['código'] || p.sku || row.codigo || row['código'] || row.sku || row.id || row._system_id,
         producto_descripcion: p.descripcion || p['descripción'] || row.descripcion || row['descripción'] || 'Sin descripción',
         precio_unitario: sanitizeLatAmPrice(p.precio || row.precio) || 0,
-        cantidad: 1,
+        cantidad: initQty,
         unidad_medida: p.unidad || p.unidad_medida || row.unidad || 'Unidad',
         cant_bult: p.cant_bult || row.cant_bult || 1,
         cant_valor: p.cant_valor || row.cant_valor || 1
