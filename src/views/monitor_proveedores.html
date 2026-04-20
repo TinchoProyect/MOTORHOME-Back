@@ -927,6 +927,10 @@
                         <button onclick="if(window.setDeltaFilter) window.setDeltaFilter('MODIFICADOS')" id="pill-filter-MODIFICADOS" class="pill-filter px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all text-slate-400 hover:text-slate-300 hover:bg-slate-800">Deltas / Modificados</button>
                     </div>
 
+                    <button onclick="window.clearAllFmtFilters()" class="px-3 py-1.5 bg-red-900/30 border border-red-500/20 text-red-300 rounded-lg text-xs font-bold hover:bg-red-900/50 flex items-center gap-2 transition-colors mr-1 shrink-0" title="Limpiar todos los filtros">
+                         <i data-lucide="filter-x" class="w-4 h-4"></i> Limpiar Filtros
+                    </button>
+
                     <div class="relative">
                         <button onclick="window.toggleFmtPresetsDropdown && window.toggleFmtPresetsDropdown()" class="px-3 py-1.5 bg-fuchsia-900/30 border border-fuchsia-500/20 text-fuchsia-300 rounded-lg text-xs font-bold hover:bg-fuchsia-900/50 flex items-center gap-2 transition-colors">
                              <i data-lucide="bookmark" class="w-4 h-4"></i> Presets
@@ -1926,6 +1930,24 @@
             // INCIDENCIA 1: Limpiar cache de filtros para no arrastrarlos en sesiones nuevas
             localStorage.removeItem('lamda_v4_filter_state');
         }
+
+        window.clearAllFmtFilters = function() {
+            if (window.v4GridApi) {
+                window.v4GridApi.setFilterModel(null);
+                if (typeof window.v4GridApi.setQuickFilter === 'function') {
+                    window.v4GridApi.setQuickFilter("");
+                }
+                window.v4GridApi.onFilterChanged();
+                
+                const searchInput = document.getElementById('fmtQuickFilter');
+                if (searchInput) searchInput.value = '';
+                
+                if (window.Swal) {
+                    const toast = window.Swal.mixin({ toast: true, position: 'bottom-end', showConfirmButton: false, timer: 1500, background: '#0f172a', color: '#a855f7' });
+                    toast.fire({ icon: 'success', title: 'Filtros globales purgados' });
+                }
+            }
+        };
         
         window.renderFmtColumnsDropdown = function(fields) {
             const dropdown = document.getElementById('fmtColumnsDropdown');
