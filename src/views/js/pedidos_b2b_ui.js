@@ -546,6 +546,72 @@ window.generateB2BPdf = async function() {
     }
 };
 
+window.sendB2BWhatsApp = function() {
+    const cart = getB2BCart();
+    const pid = window.activeB2BProvider;
+    if(!cart || !pid) return;
+    
+    const activeItems = cart.filter(x => String(x.proveedor_id) === String(pid));
+    if(activeItems.length === 0) return;
+    
+    const docType = document.getElementById('b2bDocType').value;
+    const isPresupuesto = docType === 'Solicitud de Presupuesto';
+    const provName = activeItems[0].proveedor_nombre;
+    const dateStr = new Date().toLocaleDateString();
+    
+    let msg = `*LAMDA - DEPARTAMENTO DE COMPRAS*\n📄 _${docType.toUpperCase()}_\n📅 Fecha: ${dateStr}\n🏢 Proveedor: ${provName}\n\n`;
+    
+    let sumKg = 0;
+    let sumPrice = 0;
+    
+    activeItems.forEach(i => {
+        let rawUnit = (i.unidad_medida || '').toUpperCase();
+        let unitLabel = rawUnit;
+        if (rawUnit.includes('KILO') || rawUnit.includes('KG')) unitLabel = 'K';
+        else if (rawUnit.includes('GRAMO') || rawUnit.includes('GR')) unitLabel = 'G';
+        else if (rawUnit.includes('LITRO') || rawUnit.includes('LT')) unitLabel = 'L';
+        else if (rawUnit.includes('UNID')) unitLabel = 'U';
+        
+        const bult = sanitizeLatAmPrice(i.cant_bult) || 1;
+        const val = sanitizeLatAmPrice(i.cant_valor) || 1;
+        const kgMult = bult * val;
+        
+        let isKg = unitLabel === 'K' || unitLabel === 'L' || unitLabel === 'G' || rawUnit.includes('KG');
+        
+        const price = sanitizeLatAmPrice(i.precio_unitario) || 0;
+        const qty = parseInt(i.cantidad) || 1;
+        
+        const totalKg = qty * kgMult;
+        const totalPrc = totalKg * price;
+        
+        if (isKg) sumKg += totalKg;
+        sumPrice += totalPrc;
+        
+        let linePrc = '';
+        if (!isPresupuesto) {
+            linePrc = ` | $${price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})} -> *$${totalPrc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}*`;
+        }
+        
+        let kgData = isKg ? ` | ${totalKg.toFixed(2)} Kg` : '';
+        
+        msg += `🔸 *${i.codigo_producto}* - ${i.producto_descripcion}\n`;
+        msg += `📦 B:${bult} V:${val} ${unitLabel}${kgData}\n`;
+        msg += `👉 *CANT. PEDIDA: ${qty}*${linePrc}\n\n`;
+    });
+    
+    msg += `📊 *TOTAL KILOS: ${sumKg.toFixed(2)} K*\n`;
+    
+    if (!isPresupuesto) {
+        msg += `💰 *TOTAL GENERAL NETO: $${sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}*\n`;
+    }
+    
+    msg += `\n_Mensaje generado de manera automática y electrónica por LAMDA Sistemas._`;
+    msg += `\nTeléfono Operativo: 221 661 5746`;
+    
+    const uri = `https://wa.me/?text=` + encodeURIComponent(msg);
+    window.open(uri, '_blank');
+};
+
 // ==========================================
 // MÓDULO: CATÁLOGO EMPOTRADO SCÓPICO
 // ==========================================
