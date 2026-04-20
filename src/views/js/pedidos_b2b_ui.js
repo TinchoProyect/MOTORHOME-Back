@@ -594,10 +594,11 @@ window.sendB2BWhatsApp = async function() {
     const provName = activeItems[0].proveedor_nombre;
     const dateStr = new Date().toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit', year: 'numeric'});
     
-    // Header Unificado Single-Line (QA Protocol)
-    let msg = `LAMDA - Dpto. de Compras - ${docType} - ${dateStr} - Proveedor: ${provName} - Contacto: ${contactName}\n\n`;
+    let msg = `LAMDA - Dpto. de Compras - ${dateStr} - ${provName} - ${contactName}\n\nPedido:\n\n`;
     
     let sumKg = 0;
+    let sumPrice = 0;
+    const isPresupuesto = docType === 'Solicitud de Presupuesto';
     
     activeItems.forEach(i => {
         let rawUnit = (i.unidad_medida || '').toUpperCase();
@@ -618,19 +619,27 @@ window.sendB2BWhatsApp = async function() {
         
         if (isKg) sumKg += totalKg;
         
-        let kgData = isKg ? ` - ${totalKg.toFixed(2)} Kg` : '';
+        const price = sanitizeLatAmPrice(i.precio_unitario) || 0;
+        sumPrice += (totalKg * price);
+        
+        let kgData = isKg ? ` - (${totalKg.toFixed(2)} Kg)` : '';
         
         // Bloque Items Comprimido (QA Protocol) sin precios ni emojis exóticos
-        msg += `*${i.codigo_producto}* - ${i.producto_descripcion} ${val} x ${bult}${kgData}\n`;
+        msg += `*${i.codigo_producto}* - ${i.producto_descripcion} ${bult} x ${val}${kgData}\n`;
         msg += `*Cant. ${qty}*\n\n`;
     });
     
-    msg += `*TOTAL KILOS: ${sumKg.toFixed(2)} K*\n`;
+    msg += `-----------------------------------\n`;
+    msg += `Total Kilos: ${sumKg.toFixed(2)} Kg\n`;
+    if (!isPresupuesto) {
+        msg += `Total Neto: $${sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}\n`;
+    }
+    msg += `-----------------------------------\n\n`;
     
-    // Pie Intacto
-    msg += `\nPedido confeccionado por: ${operatorName}`;
-    msg += `\nTeléfono Operativo LAMDA: ${lamdaPhone}`;
-    msg += `\n_Mensaje generado de manera automática y electrónica por LAMDA Sistemas._`;
+    msg += `Pedido confirmado por: lamdaproveedorservicios@gmail.com`;
+    msg += `\nCel. LAMDA: ${lamdaPhone}`;
+    msg += `\nLAMDA Sistemas`;
+    msg += `\nGracias por trabajar junto a LAMDA.`;
     
     const uri = `https://wa.me/?text=` + encodeURIComponent(msg);
     window.open(uri, '_blank');
