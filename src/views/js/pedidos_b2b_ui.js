@@ -180,7 +180,9 @@ window.renderB2BActiveItems = function() {
                         <button onclick="window.updateB2BQty('${item._system_id}', -1)" class="w-5 h-5 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">-</button>
                         <input type="number" onchange="window.setB2BQty('${item._system_id}', this.value)" value="${qty}" class="w-12 bg-slate-950 border border-slate-700 text-center text-emerald-400 font-bold px-1 py-0.5 outline-none text-[10px] rounded focus:border-emerald-500 hide-arrows" />
                         <button onclick="window.updateB2BQty('${item._system_id}', 1)" class="w-5 h-5 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">+</button>
-                        <button onclick="window.removeB2BItem('${item._system_id}')" class="w-5 h-5 ml-2 text-rose-500 hover:text-rose-400 bg-rose-900/20 hover:bg-rose-900/40 rounded flex items-center justify-center" title="Eliminar"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="window.removeB2BItem('${item._system_id}')" class="w-6 h-6 ml-3 text-red-400 hover:text-white bg-red-900/30 hover:bg-red-600 rounded shadow border border-red-500/20 flex items-center justify-center cursor-pointer transition-all" title="Eliminar Ítem">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
                     </div>
                 </td>
                 <td class="p-1 px-2 text-[10px] font-bold text-blue-400 text-center bg-blue-900/10 border-r border-slate-800/30">${isKgOrLts ? totalItemKg.toFixed(2) + ' Kg/Lt' : '--'}</td>
@@ -234,7 +236,75 @@ window.removeB2BItem = function(id) {
     let cart = getB2BCart();
     cart = cart.filter(x => x._system_id !== id);
     saveB2BCart(cart);
+    
+    // Reactividad en Panel Superior (Recalcular y Re-renderizar Fila/Contadores)
     window.renderB2BProviders();
+    
+    // Reactividad Inversa Hacia Panel Inferior (Catálogo B2B)
+    const overlay = document.getElementById('b2bCatalogOverlay');
+    if (overlay && !overlay.classList.contains('hidden')) {
+        const searchInput = document.getElementById('b2bCatalogSearch');
+        const val = searchInput ? searchInput.value : '';
+        if (window.renderB2BCatalog) window.renderB2BCatalog(val);
+    }
+};
+
+window.emptyB2BOrder = function() {
+    const pid = window.activeB2BProvider;
+    if(!pid) return;
+
+    if (window.Swal) {
+        Swal.fire({
+            title: '¿Vaciar Orden Activa?',
+            text: "Se eliminarán masivamente todos los ítems y cálculos de este proveedor.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#334155',
+            confirmButtonText: 'Sí, Purge Masivo',
+            cancelButtonText: 'Cancelar',
+            background: '#0f172a',
+            color: '#f8fafc'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                executeEnginePurge(pid);
+            }
+        });
+    } else {
+        if(confirm("Desea vaciar todos los registros del pedido actual?")) {
+            executeEnginePurge(pid);
+        }
+    }
+    
+    function executeEnginePurge(providerId) {
+        let cart = getB2BCart();
+        cart = cart.filter(x => String(x.proveedor_id) !== String(providerId));
+        saveB2BCart(cart);
+        
+        // Update Panel Superior
+        window.renderB2BProviders();
+        
+        // Sincronización Inversa Reactiva con Catálogo (Restauración Masiva de SKUs)
+        const overlay = document.getElementById('b2bCatalogOverlay');
+        if (overlay && !overlay.classList.contains('hidden')) {
+            const searchInput = document.getElementById('b2bCatalogSearch');
+            const val = searchInput ? searchInput.value : '';
+            if (window.renderB2BCatalog) window.renderB2BCatalog(val);
+        }
+        
+        if (window.Swal) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Bandeja Purgada',
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 2500,
+                background: '#0f172a',
+                color: '#10b981'
+            });
+        }
+    }
 };
 
 window.generateB2BPdf = async function() {
