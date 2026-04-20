@@ -43,4 +43,37 @@ router.post('/generar', async (req, res) => {
     }
 });
 
+// GET /api/b2b/pedidos
+router.get('/pedidos', async (req, res) => {
+    try {
+        // Obtenemos cabecera + items anidados + nombre del proveedor
+        const { data, error } = await supabase
+            .from('pedidos_b2b_cabecera')
+            .select(`
+                id,
+                created_at,
+                proveedor_id,
+                tipo_documento,
+                estado,
+                proveedores:proveedor_id ( nombre ),
+                pedidos_b2b_items (
+                    id,
+                    producto_codigo,
+                    producto_descripcion,
+                    cantidad,
+                    valor_unitario_ref,
+                    unidad_ref
+                )
+            `)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        
+        return res.json({ success: true, pedidos: data || [] });
+    } catch(e) {
+        console.error("Error al obtener pedidos activos B2B:", e);
+        return res.status(500).json({ error: e.message });
+    }
+});
+
 module.exports = router;

@@ -250,17 +250,26 @@ window.generateB2BPdf = async function() {
     const now = new Date();
     const dateStr = now.toLocaleDateString();
     
+    const isPresupuesto = docType === 'Solicitud de Presupuesto';
+    
     // Preparar Array de Tabla PDF
     const tableBody = [];
+    
     // Cabecera Tabla
-    tableBody.push([
-        { text: 'Código', style: 'tableHeader' },
+    const tableHeader = [
+        { text: 'CÓDIGO (SKU)', style: 'tableHeaderBold' },
         { text: 'Descripción', style: 'tableHeader' },
-        { text: 'Unidad Ref.', style: 'tableHeader', alignment: 'center' },
-        { text: 'Precio U.', style: 'tableHeader', alignment: 'right' },
-        { text: 'Cant. Pedida', style: 'tableHeader', alignment: 'center' },
-        { text: 'Subtotal', style: 'tableHeader', alignment: 'right' }
-    ]);
+        { text: 'Unidad Ref.', style: 'tableHeader', alignment: 'center' }
+    ];
+    if (!isPresupuesto) {
+        tableHeader.push({ text: 'Precio U.', style: 'tableHeader', alignment: 'right' });
+    }
+    tableHeader.push({ text: 'CANT. PEDIDA', style: 'tableHeaderBold', alignment: 'center' });
+    if (!isPresupuesto) {
+        tableHeader.push({ text: 'Subtotal', style: 'tableHeader', alignment: 'right' });
+    }
+    
+    tableBody.push(tableHeader);
     
     let sumKg = 0;
     let sumPrice = 0;
@@ -283,21 +292,32 @@ window.generateB2BPdf = async function() {
         if (isKg) sumKg += totalKg;
         sumPrice += totalPrc;
 
-        tableBody.push([
-            { text: i.codigo_producto, style: 'tableRow' },
+        const rowElements = [
+            { text: i.codigo_producto, style: 'tableRowHighlight' },
             { text: i.producto_descripcion, style: 'tableRowDesc' },
-            { text: unitLabel, style: 'tableRow', alignment: 'center' },
-            { text: '$' + price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRow', alignment: 'right' },
-            { text: String(qty), style: 'tableRowQty', alignment: 'center' },
-            { text: '$' + totalPrc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRowBoxed', alignment: 'right' }
-        ]);
+            { text: unitLabel, style: 'tableRow', alignment: 'center' }
+        ];
+        
+        if (!isPresupuesto) {
+            rowElements.push({ text: '$' + price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRow', alignment: 'right' });
+        }
+        
+        rowElements.push({ text: String(qty), style: 'tableRowHighlightCenter', alignment: 'center' });
+        
+        if (!isPresupuesto) {
+            rowElements.push({ text: '$' + totalPrc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRowBoxed', alignment: 'right' });
+        }
+        
+        tableBody.push(rowElements);
     });
     
-    tableBody.push([
-        { text: 'TOTAL GENERAL', style: 'tableFooterMsg', colSpan: 5, alignment: 'right' },
-        {}, {}, {}, {},
-        { text: '$' + sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableFooterSum', alignment: 'right' }
-    ]);
+    if (!isPresupuesto) {
+        tableBody.push([
+            { text: 'TOTAL GENERAL', style: 'tableFooterMsg', colSpan: 5, alignment: 'right' },
+            {}, {}, {}, {},
+            { text: '$' + sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableFooterSum', alignment: 'right' }
+        ]);
+    }
 
     const docDefinition = {
         content: [
@@ -309,7 +329,7 @@ window.generateB2BPdf = async function() {
                         width: '50%',
                         text: [
                             { text: 'Emisor:\n', style: 'boldText' },
-                            'LAMDA Motorhome\n',
+                            'LAMDA\n',
                             'Departamentos de Compras'
                         ]
                     },
@@ -323,12 +343,12 @@ window.generateB2BPdf = async function() {
                         alignment: 'right'
                     }
                 ],
-                margin: [0, 0, 0, 30]
+                margin: [0, 0, 0, 10]
             },
             {
                 table: {
                     headerRows: 1,
-                    widths: ['15%', '40%', '15%', '10%', '8%', '12%'],
+                    widths: isPresupuesto ? ['25%', '45%', '15%', '15%'] : ['15%', '35%', '15%', '10%', '12%', '13%'],
                     body: tableBody
                 },
                 layout: {
@@ -337,29 +357,31 @@ window.generateB2BPdf = async function() {
                     hLineColor: function (i, node) { return (i === 0 || i === node.table.body.length || i === 1 || i === node.table.body.length - 1) ? 'black' : '#e2e8f0'; },
                     paddingLeft: function(i, node) { return 4; },
                     paddingRight: function(i, node) { return 4; },
-                    paddingTop: function(i, node) { return 6; },
-                    paddingBottom: function(i, node) { return 6; }
+                    paddingTop: function(i, node) { return 4; },
+                    paddingBottom: function(i, node) { return 4; }
                 }
             },
             {
-                text: 'Notas Adicionales:\nEl total estimado de Kilogramos/Litros brutos de esta orden asciende a: ' + sumKg.toFixed(2) + ' Kg/Lt',
+                text: 'Notas Adicionales:\nEl total estimado de Kilogramos/Litros brutos de este documento asciende a: ' + sumKg.toFixed(2) + ' Kg/Lt',
                 style: 'footerNotes',
-                margin: [0, 20, 0, 0]
+                margin: [0, 10, 0, 0]
             },
             {
                 text: 'Este documento ha sido generado de manera automática y electrónica por LAMDA Sistemas.',
                 style: 'footerNotes',
-                margin: [0, 10, 0, 0]
+                margin: [0, 5, 0, 0]
             }
         ],
         styles: {
             topHeader: { fontSize: 8, color: '#666666' },
-            mainTitle: { fontSize: 22, bold: true, margin: [0, 20, 0, 20], color: '#0f172a' },
+            mainTitle: { fontSize: 16, bold: true, margin: [0, 5, 0, 10], color: '#0f172a' },
             boldText: { bold: true, fontSize: 11, color: '#334155' },
-            tableHeader: { bold: true, fontSize: 8, color: '#ffffff', fillColor: '#334155', margin: [0, 4, 0, 4] },
+            tableHeader: { bold: true, fontSize: 8, color: '#ffffff', fillColor: '#334155', margin: [0, 2, 0, 2] },
+            tableHeaderBold: { bold: true, fontSize: 9, color: '#10b981', fillColor: '#1e293b', margin: [0, 2, 0, 2] },
             tableRow: { fontSize: 8, color: '#475569'},
+            tableRowHighlight: { fontSize: 11, bold: true, color: '#0f172a' },
+            tableRowHighlightCenter: { fontSize: 12, bold: true, color: '#0f172a', alignment: 'center' },
             tableRowDesc: { fontSize: 8, color: '#0f172a', bold: true },
-            tableRowQty: { fontSize: 10, color: '#0f172a', bold: true },
             tableRowBoxed: { fontSize: 9, color: '#0f172a', bold: true },
             tableFooterMsg: { fontSize: 10, bold: true, color: '#0f172a', margin: [0, 6, 0, 6] },
             tableFooterSum: { fontSize: 11, bold: true, color: '#0f172a', margin: [0, 6, 0, 6] },
@@ -404,12 +426,21 @@ window.generateB2BPdf = async function() {
             if (window.Swal) window.Swal.fire({ icon: 'info', title: '[En Desarrollo / Error PDF]', text: 'El PDF encontró una falla, pero el click fue detectado. Check consola.', background: '#0f172a', color: '#3b82f6'});
         }
 
-        // Purge completed order from cart
-        let newCart = cart.filter(x => String(x.proveedor_id) !== String(pid));
-        saveB2BCart(newCart);
-        window.activeB2BProvider = null;
-        window.renderB2BProviders();
-        if (window.updateB2BItemIndicator) window.updateB2BItemIndicator();
+        // ACCIÓN PROFILÁCTICA REMOVIDA: 
+        // No se elimina el carrito localStorage automáticamente. QA exige re-verificación visual o un botón explícito de limpieza para no castigar al usuario.
+        if (window.Swal) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Transmisión Completada',
+                text: 'El documento PDF fue ensamblado. La orden sigue activa en sistema.',
+                background: '#0f172a',
+                color: '#10b981',
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 4000
+            });
+        }
     } else {
         if (window.Swal) window.Swal.fire({ icon: 'info', title: '[En Desarrollo]', text: 'Simulación de Envío OK. La librería de PDF no está cargada en el DOM actual.', background: '#0f172a', color: '#3b82f6'});
     }

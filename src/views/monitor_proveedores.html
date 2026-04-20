@@ -155,7 +155,7 @@
                         <button onclick="taskAction('Mercadería en tránsito')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Mercadería
                             en tránsito</button>
-                        <button onclick="taskAction('Pedidos activos')"
+                        <button onclick="window.openActiveOrders()"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Pedidos
                             activos</button>
                     </div>
@@ -1473,7 +1473,49 @@
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+    
+    <!-- MÓDULO: PEDIDOS ACTIVOS (HISTÓRICO) -->
+    <div id="activeOrdersModal" class="hidden fixed inset-0 z-[400] flex flex-col bg-slate-950 overflow-hidden animate-in fade-in duration-200">
+        <!-- Contenedor Principal (100% Pantalla) -->
+        <div class="flex-1 w-full h-full flex flex-col">
+            <!-- Modal Header -->
+            <div class="p-6 border-b border-slate-800 bg-slate-900 shadow-xl flex justify-between items-center shrink-0">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 bg-emerald-600/20 rounded-xl border border-emerald-500/30">
+                        <i data-lucide="archive" class="w-6 h-6 text-emerald-400"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-black text-white tracking-tight flex items-center gap-2">Histórico de Pedidos Emitidos (Capa 3)</h2>
+                        <p class="text-[10px] uppercase tracking-widest text-emerald-500 font-bold mt-1">SISTEMA REPOSITORIO DOCUMENTAL</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="window.loadActiveOrders()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Actualizar
+                    </button>
+                    <button onclick="window.closeActiveOrders()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Area: AG-Grid Viewer -->
+            <div class="flex-1 flex flex-col overflow-hidden bg-slate-900 border-t border-slate-800/50 p-6">
+                <!-- Data Grid Wrapper -->
+                <div class="flex-1 w-full h-full glass-panel border border-slate-800/50 rounded-xl overflow-hidden relative shadow-2xl">
+                    <div id="activeOrdersGrid" class="ag-theme-alpine-dark w-full h-full"></div>
+                </div>
+            </div>
+            
+            <!-- Bottom StatusBar -->
+            <div class="p-2 bg-slate-950 border-t border-slate-800/50 flex justify-between items-center px-6">
+                <span class="text-[10px] text-slate-500 font-mono" id="aoCountStatus">0 Registros Listados</span>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="js/pedidos_b2b_ui.js"></script>
+    <script type="module" src="js/active_orders_ui.js"></script>
     <script type="module" src="js/app_core.js"></script>
     <script src="js/viewer_debug.js"></script> <!-- 🕵️‍♂️ DEBUG WATCHDOG -->
     <script>
