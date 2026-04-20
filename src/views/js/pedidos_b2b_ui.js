@@ -421,13 +421,18 @@ window.generateB2BPdf = async function() {
 window.openB2BCatalog = async function() {
     const overlay = document.getElementById('b2bCatalogOverlay');
     const topPanel = document.getElementById('b2bTopPanel');
+    const rowSplitter = document.getElementById('b2bRowSplitter');
     if (!overlay) return;
     
     // Configurar layout Split-View (Top Panel: 40vh, Bottom: flex-1)
     overlay.classList.remove('hidden');
     overlay.classList.add('flex');
+    if (rowSplitter) rowSplitter.classList.remove('hidden');
+    
     if (topPanel) {
         topPanel.classList.remove('flex-1');
+        // Limpiamos estilos inline previos si se cerró y abrió de nuevo
+        topPanel.style.height = ''; 
         topPanel.classList.add('h-[40vh]', 'shrink-0');
     }
     
@@ -487,11 +492,16 @@ window.openB2BCatalog = async function() {
 window.closeB2BCatalog = function() {
     const overlay = document.getElementById('b2bCatalogOverlay');
     const topPanel = document.getElementById('b2bTopPanel');
+    const rowSplitter = document.getElementById('b2bRowSplitter');
+    
     if (overlay) {
         overlay.classList.add('hidden');
         overlay.classList.remove('flex');
     }
+    if (rowSplitter) rowSplitter.classList.add('hidden');
+    
     if (topPanel) {
+        topPanel.style.height = '';
         topPanel.classList.remove('h-[40vh]', 'shrink-0');
         topPanel.classList.add('flex-1');
     }
@@ -670,4 +680,86 @@ window.addB2BCatalogItem = function(sysId, initQty = 1) {
         if(window.updateB2BItemIndicator) window.updateB2BItemIndicator();
     }, 100);
 };
+
+// ==========================================
+// MÓDULO: EXPANSIÓN Y REDIMENSIÓN DRAGGABLE (SPLITTERS)
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+    // 1. Regulador Vertical (Eje X)
+    const colSplitter = document.getElementById('b2bColSplitter');
+    const providerTabs = document.getElementById('b2bProviderTabs');
+    
+    if (colSplitter && providerTabs) {
+        let isResizingCol = false;
+        colSplitter.addEventListener('pointerdown', (e) => {
+            isResizingCol = true;
+            document.body.style.cursor = 'col-resize';
+            // Evitar selección accidental de texto mientras se arrastra
+            document.body.style.userSelect = 'none';
+            colSplitter.setPointerCapture(e.pointerId);
+        });
+
+        colSplitter.addEventListener('pointermove', (e) => {
+            if (!isResizingCol) return;
+            // El contenedor general se asume referenciado desde la izquierda.
+            // getBoundingClientRect().left nos da el origen X del modal / parent container
+            const containerLeft = colSplitter.parentElement.getBoundingClientRect().left;
+            let newWidth = e.clientX - containerLeft;
+            // Límites duros ergonómicos: min 150px, max 600px
+            if (newWidth < 120) newWidth = 120;
+            if (newWidth > 600) newWidth = 600;
+            
+            providerTabs.style.width = newWidth + 'px';
+            // Remover la clase w-48 estática inicial de tailwind para que no colisione
+            providerTabs.classList.remove('w-48');
+        });
+
+        colSplitter.addEventListener('pointerup', (e) => {
+            isResizingCol = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            colSplitter.releasePointerCapture(e.pointerId);
+        });
+    }
+
+    // 2. Regulador Horizontal (Eje Y)
+    const rowSplitter = document.getElementById('b2bRowSplitter');
+    const topPanel = document.getElementById('b2bTopPanel');
+    
+    if (rowSplitter && topPanel) {
+        let isResizingRow = false;
+        rowSplitter.addEventListener('pointerdown', (e) => {
+            isResizingRow = true;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            rowSplitter.setPointerCapture(e.pointerId);
+        });
+
+        rowSplitter.addEventListener('pointermove', (e) => {
+            if (!isResizingRow) return;
+            
+            // Para el Y, calculamos relativo al contenedor principal del modal (que arranca debajo del header B2B)
+            // parentElement es el `<div class="flex-1 flex flex-col overflow-hidden">` (Split View content area)
+            const containerTop = rowSplitter.parentElement.getBoundingClientRect().top;
+            const containerHeight = rowSplitter.parentElement.getBoundingClientRect().height;
+            
+            let newHeight = e.clientY - containerTop;
+            
+            // Límites duros: min 100px para el Top Panel, y min 100px para el Catálogo (Bottom)
+            if (newHeight < 100) newHeight = 100;
+            if (newHeight > containerHeight - 100) newHeight = containerHeight - 100;
+            
+            topPanel.style.height = newHeight + 'px';
+            // Removemos class base tailwind para no colisionar el inline style
+            topPanel.classList.remove('h-[40vh]');
+        });
+
+        rowSplitter.addEventListener('pointerup', (e) => {
+            isResizingRow = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            rowSplitter.releasePointerCapture(e.pointerId);
+        });
+    }
+});
 
