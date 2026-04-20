@@ -286,6 +286,9 @@ window.emptyB2BOrder = function() {
         cart = cart.filter(x => String(x.proveedor_id) !== String(providerId));
         saveB2BCart(cart);
         
+        // Destruimos la sesión del Order ID atada a este proveedor
+        localStorage.removeItem(`lamda_b2b_order_id_${providerId}`);
+        
         // Update Panel Superior
         window.renderB2BProviders();
         
@@ -327,22 +330,52 @@ window.generateB2BPdf = async function() {
     
     const isPresupuesto = docType === 'Solicitud de Presupuesto';
     
+    // Inyección de Trazabilidad Comercial (Order ID Hash)
+    const orderSessionKey = `lamda_b2b_order_id_${pid}`;
+    let shortOrderId = localStorage.getItem(orderSessionKey);
+    if (!shortOrderId) {
+        shortOrderId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        localStorage.setItem(orderSessionKey, shortOrderId);
+    }
+    const safeOrderId = `#ORD-${shortOrderId}`;
+    
+    let exportFormat = 'ESTANDAR';
+    if (window.currentSuppliers) {
+        const supObj = window.currentSuppliers.find(x => String(x.id) === String(pid));
+        if (supObj && supObj.formato_exportacion) exportFormat = supObj.formato_exportacion;
+    }
+    
+    // Fallback DB Reactivo para exportFormat (Remediación Amnesia Caching)
+    if (window.supabaseClient) {
+        try {
+            const { data: dbSup } = await window.supabaseClient.from('proveedores').select('formato_exportacion').eq('id', pid).single();
+            if (dbSup && dbSup.formato_exportacion) exportFormat = dbSup.formato_exportacion;
+        } catch(e) {}
+    }
+
     // Preparar Array de Tabla PDF
     const tableBody = [];
     
-    // Cabecera Tabla
-    const tableHeader = [
-        { text: 'CÓDIGO (SKU)', style: 'tableHeaderBold' },
-        { text: 'Descripción', style: 'tableHeader' },
-        { text: 'C. Bult.', style: 'tableHeader', alignment: 'center' },
-        { text: 'C. Val.', style: 'tableHeader', alignment: 'center' },
-        { text: 'Unidad', style: 'tableHeader', alignment: 'center' },
-        { text: 'Kg Totales', style: 'tableHeader', alignment: 'center' }
-    ];
-    tableHeader.push({ text: 'CANT. PEDIDA', style: 'tableHeaderBold', alignment: 'center' });
-    if (!isPresupuesto) {
-        tableHeader.push({ text: 'Precio U.', style: 'tableHeader', alignment: 'right' });
-        tableHeader.push({ text: 'Subtotal', style: 'tableHeader', alignment: 'right' });
+    let tableHeader = [];
+    if (exportFormat === 'MINIMALISTA') {
+        tableHeader = [
+            { text: 'CÓDIGO (SKU)', style: 'tableHeaderBold' },
+            { text: 'CANT. PEDIDA', style: 'tableHeaderBold', alignment: 'center' }
+        ];
+    } else {
+        tableHeader = [
+            { text: 'CÓDIGO (SKU)', style: 'tableHeaderBold' },
+            { text: 'Descripción', style: 'tableHeader' },
+            { text: 'C. Bult.', style: 'tableHeader', alignment: 'center' },
+            { text: 'C. Val.', style: 'tableHeader', alignment: 'center' },
+            { text: 'Unidad', style: 'tableHeader', alignment: 'center' },
+            { text: 'Kg Totales', style: 'tableHeader', alignment: 'center' }
+        ];
+        tableHeader.push({ text: 'CANT. PEDIDA', style: 'tableHeaderBold', alignment: 'center' });
+        if (!isPresupuesto) {
+            tableHeader.push({ text: 'Precio U.', style: 'tableHeader', alignment: 'right' });
+            tableHeader.push({ text: 'Subtotal', style: 'tableHeader', alignment: 'right' });
+        }
     }
     
     tableBody.push(tableHeader);
@@ -373,48 +406,59 @@ window.generateB2BPdf = async function() {
         if (isKg) sumKg += totalKg;
         sumPrice += totalPrc;
 
-        const rowElements = [
-            { text: i.codigo_producto, style: 'tableRowHighlight' },
-            { text: i.producto_descripcion, style: 'tableRowDesc' },
-            { text: String(bult), style: 'tableRow', alignment: 'center' },
-            { text: String(val), style: 'tableRow', alignment: 'center' },
-            { text: unitLabel, style: 'tableRow', alignment: 'center' },
-            { text: isKg ? totalKg.toFixed(2) : '--', style: 'tableRow', alignment: 'center' }
-        ];
+        let rowElements = [];
         
-        rowElements.push({ text: String(qty), style: 'tableRowHighlightCenter', alignment: 'center' });
-        
-        if (!isPresupuesto) {
-            rowElements.push({ text: '$' + price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRow', alignment: 'right' });
-            rowElements.push({ text: '$' + totalPrc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRowBoxed', alignment: 'right' });
+        if (exportFormat === 'MINIMALISTA') {
+            rowElements = [
+                { text: i.codigo_producto, style: 'tableRowHighlight' },
+                { text: String(qty), style: 'tableRowHighlightCenter', alignment: 'center' }
+            ];
+        } else {
+            rowElements = [
+                { text: i.codigo_producto, style: 'tableRowHighlight' },
+                { text: i.producto_descripcion, style: 'tableRowDesc' },
+                { text: String(bult), style: 'tableRow', alignment: 'center' },
+                { text: String(val), style: 'tableRow', alignment: 'center' },
+                { text: unitLabel, style: 'tableRow', alignment: 'center' },
+                { text: isKg ? totalKg.toFixed(2) : '--', style: 'tableRow', alignment: 'center' }
+            ];
+            
+            rowElements.push({ text: String(qty), style: 'tableRowHighlightCenter', alignment: 'center' });
+            
+            if (!isPresupuesto) {
+                rowElements.push({ text: '$' + price.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRow', alignment: 'right' });
+                rowElements.push({ text: '$' + totalPrc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableRowBoxed', alignment: 'right' });
+            }
         }
         
         tableBody.push(rowElements);
     });
     
-    // Fila 1: Total Kilos (Alineado bajo la columna KG Totales = índice 5)
-    let kilosRow = [
-        { text: 'TOTAL KILOS', style: 'tableRow', colSpan: 5, alignment: 'right' },
-        {}, {}, {}, {},
-        { text: sumKg.toFixed(2), style: 'tableRow', alignment: 'center' }
-    ];
-    // Rellenamos el padding final
-    if (isPresupuesto) {
-        kilosRow.push({}); // Columna 6 (CANT. PEDIDA)
-    } else {
-        kilosRow.push({}); // Columna 6
-        kilosRow.push({}); // Columna 7
-        kilosRow.push({}); // Columna 8
-    }
-    tableBody.push(kilosRow);
-    
-    if (!isPresupuesto) {
-        // Fila 2: Total General Neto
-        tableBody.push([
-            { text: 'TOTAL GENERAL NETO', style: 'tableFooterMsg', colSpan: 8, alignment: 'right' },
-            {}, {}, {}, {}, {}, {}, {},
-            { text: '$' + sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableFooterSum', alignment: 'right' }
-        ]);
+    if (exportFormat !== 'MINIMALISTA') {
+        // Fila 1: Total Kilos (Alineado bajo la columna KG Totales = índice 5)
+        let kilosRow = [
+            { text: 'TOTAL KILOS', style: 'tableRow', colSpan: 5, alignment: 'right' },
+            {}, {}, {}, {},
+            { text: sumKg.toFixed(2), style: 'tableRow', alignment: 'center' }
+        ];
+        // Rellenamos el padding final
+        if (isPresupuesto) {
+            kilosRow.push({}); // Columna 6 (CANT. PEDIDA)
+        } else {
+            kilosRow.push({}); // Columna 6
+            kilosRow.push({}); // Columna 7
+            kilosRow.push({}); // Columna 8
+        }
+        tableBody.push(kilosRow);
+        
+        if (!isPresupuesto) {
+            // Fila 2: Total General Neto
+            tableBody.push([
+                { text: 'TOTAL GENERAL NETO', style: 'tableFooterMsg', colSpan: 8, alignment: 'right' },
+                {}, {}, {}, {}, {}, {}, {},
+                { text: '$' + sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}), style: 'tableFooterSum', alignment: 'right' }
+            ]);
+        }
     }
 
     // Metadata Ingestion
@@ -451,7 +495,8 @@ window.generateB2BPdf = async function() {
                             { text: 'Proveedor Receptor:\n', style: 'boldText' },
                             provName + '\n',
                             'Contacto: ' + contactName + '\n',
-                            'Fecha: ' + dateStr
+                            'Fecha: ' + dateStr + '\n',
+                            { text: `Comprobante N°: ${safeOrderId}`, style: 'boldText', margin: [0, 4, 0, 0] }
                         ],
                         alignment: 'right'
                     }
@@ -461,7 +506,9 @@ window.generateB2BPdf = async function() {
             {
                 table: {
                     headerRows: 1,
-                    widths: isPresupuesto ? ['auto', '40%', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '40%', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                    widths: exportFormat === 'MINIMALISTA' 
+                        ? ['50%', '50%'] 
+                        : (isPresupuesto ? ['auto', '40%', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '40%', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto']),
                     body: tableBody
                 },
                 layout: {
@@ -574,17 +621,22 @@ window.sendB2BWhatsApp = async function() {
     const lamdaPhone = (typeof CONFIG !== 'undefined' && CONFIG.LAMDA_PHONE) ? CONFIG.LAMDA_PHONE : '221 661 5746';
     
     let contactName = 'Área de Ventas';
+    let exportFormat = 'ESTANDAR';
     // 1. Fast Cache Resolve
     if (window.currentSuppliers) {
         const supObj = window.currentSuppliers.find(x => String(x.id) === String(pid));
         if (supObj && supObj.contacto_nombre) contactName = supObj.contacto_nombre;
+        if (supObj && supObj.formato_exportacion) exportFormat = supObj.formato_exportacion;
     }
     
     // 2. Deterministic DB Resolve (Lazy Fetching Assurance)
-    if (contactName === 'Área de Ventas' && window.supabaseClient) {
+    if (window.supabaseClient) {
         try {
-            const { data: dbSup } = await window.supabaseClient.from('proveedores').select('contacto_nombre').eq('id', pid).single();
-            if (dbSup && dbSup.contacto_nombre) contactName = dbSup.contacto_nombre;
+            const { data: dbSup } = await window.supabaseClient.from('proveedores').select('contacto_nombre, formato_exportacion').eq('id', pid).single();
+            if (dbSup) {
+                if (dbSup.contacto_nombre && contactName === 'Área de Ventas') contactName = dbSup.contacto_nombre;
+                if (dbSup.formato_exportacion) exportFormat = dbSup.formato_exportacion;
+            }
         } catch(e) {
             console.warn('[B2B] Fallo de fallback DB en contacto:', e);
         }
@@ -594,7 +646,21 @@ window.sendB2BWhatsApp = async function() {
     const provName = activeItems[0].proveedor_nombre;
     const dateStr = new Date().toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit', year: 'numeric'});
     
-    let msg = `LAMDA - Dpto. de Compras - ${dateStr} - ${provName} - ${contactName}\n\nPedido:\n\n`;
+    // Inyección de Trazabilidad Comercial (Order ID Hash)
+    const orderSessionKey = `lamda_b2b_order_id_${pid}`;
+    let shortOrderId = localStorage.getItem(orderSessionKey);
+    if (!shortOrderId) {
+        shortOrderId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        localStorage.setItem(orderSessionKey, shortOrderId);
+    }
+    const safeOrderId = `#ORD-${shortOrderId}`;
+    
+    let msg = '';
+    if (exportFormat !== 'MINIMALISTA') {
+        msg = `LAMDA - Dpto. de Compras - ${docType} ${safeOrderId} - ${dateStr} - Proveedor: ${provName} - Contacto: ${contactName}\n\nPedido:\n\n`;
+    } else {
+        msg = `Pedido:\n\n`;
+    }
     
     let sumKg = 0;
     let sumPrice = 0;
@@ -624,22 +690,30 @@ window.sendB2BWhatsApp = async function() {
         
         let kgData = isKg ? ` - (${totalKg.toFixed(2)} Kg)` : '';
         
-        // Bloque Items Comprimido (QA Protocol) sin precios ni emojis exóticos
-        msg += `*${i.codigo_producto}* - ${i.producto_descripcion} ${bult} x ${val}${kgData}\n`;
-        msg += `*Cant. ${qty}*\n\n`;
+        // Bloque de Ítems condicional al Formato de Exportación
+        if (exportFormat === 'MINIMALISTA') {
+            const paddedQty = String(qty).padStart(2, '0');
+            msg += `${paddedQty} - ${i.codigo_producto}\n`;
+        } else {
+            msg += `\u2705 *Cod. ${i.codigo_producto}   Cant. ${qty}*\n`;
+            msg += `${i.producto_descripcion} ${bult} x ${val}${kgData}\n\n`;
+        }
     });
     
-    msg += `-----------------------------------\n`;
-    msg += `Total Kilos: ${sumKg.toFixed(2)} Kg\n`;
-    if (!isPresupuesto) {
-        msg += `Total Neto: $${sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}\n`;
+    if (exportFormat !== 'MINIMALISTA') {
+        msg += `-----------------------------------\n`;
+        msg += `Total Ítems: ${activeItems.length}\n`;
+        msg += `Total Kilos: ${sumKg.toFixed(2)} Kg\n`;
+        if (!isPresupuesto) {
+            msg += `Total Neto: $${sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}\n`;
+        }
+        msg += `-----------------------------------\n\n`;
+        
+        msg += `Pedido confirmado por: lamdaproveedorservicios@gmail.com`;
+        msg += `\nCel. LAMDA: ${lamdaPhone}`;
+        msg += `\nLAMDA Sistemas`;
+        msg += `\nGracias por trabajar junto a LAMDA.`;
     }
-    msg += `-----------------------------------\n\n`;
-    
-    msg += `Pedido confirmado por: lamdaproveedorservicios@gmail.com`;
-    msg += `\nCel. LAMDA: ${lamdaPhone}`;
-    msg += `\nLAMDA Sistemas`;
-    msg += `\nGracias por trabajar junto a LAMDA.`;
     
     const uri = `https://wa.me/?text=` + encodeURIComponent(msg);
     window.open(uri, '_blank');

@@ -493,6 +493,18 @@
                     </div>
                 </div>
 
+                <div class="space-y-1 mt-4 p-4 border border-blue-900/30 bg-blue-900/10 rounded-xl">
+                    <label class="text-[10px] font-bold text-blue-400 uppercase ml-1 flex items-center gap-2">
+                        <i data-lucide="file-output" class="w-3 h-3"></i>
+                        Formato de Exportación B2B
+                    </label>
+                    <select id="provFormatoExp" name="formato_exportacion"
+                        class="w-full mt-2 form-input bg-slate-900/60 rounded-xl px-4 py-3 text-sm text-slate-300 font-medium appearance-none cursor-pointer border border-slate-700/50">
+                        <option value="ESTANDAR" class="bg-slate-900">ESTÁNDAR (Con Matriz de Bultos y Kilos)</option>
+                        <option value="MINIMALISTA" class="bg-slate-900 text-blue-400">MINIMALISTA (Sólo Picking / Asfixia de Totales)</option>
+                    </select>
+                </div>
+
                 <div class="pt-6 flex items-center justify-end gap-4">
                     <button type="button" onclick="closeSupplierModal()"
                         class="px-6 py-3 text-xs font-bold text-slate-500 hover:text-slate-300 transition-all uppercase tracking-widest">
