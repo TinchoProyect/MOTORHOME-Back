@@ -1017,7 +1017,16 @@ async function renderCacheMissGatillo(container) {
         const crudoClean = crudo.trim();
         totalAuditable.push(crudoClean);
         
-        if (globalDict.has(crudoClean) || globalDropped.has(crudoClean)) {
+        let isAlreadyMapped = false;
+        if (window.viewerETL && window.viewerETL.transformCell && currentDraftPipeline.length > 0) {
+            const cellTr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
+            if (cellTr && cellTr.result !== undefined && cellTr.result !== null && String(cellTr.result).trim() !== '') {
+                 isAlreadyMapped = true;
+            }
+        }
+        
+        const crudoLower = crudoClean.toLowerCase();
+        if (isAlreadyMapped || globalDict.has(crudoLower) || globalDropped.has(crudoLower)) {
             continue; // Mapped firmly
         }
         
@@ -1152,8 +1161,16 @@ export async function processCacheMiss(encodedPrompt, ruleIdx, processAll = fals
         const crudoClean = crudo.trim();
         
         if (!processAll) {
+            let isAlreadyMapped = false;
+            if (window.viewerETL && window.viewerETL.transformCell && currentDraftPipeline.length > 0) {
+                const cellTr = window.viewerETL.transformCell(crudo, currentDraftPipeline, row);
+                if (cellTr && cellTr.result !== undefined && cellTr.result !== null && String(cellTr.result).trim() !== '') {
+                     isAlreadyMapped = true;
+                }
+            }
+            
             const crudoLower = crudoClean.toLowerCase();
-            if (globalDict.has(crudoLower) || globalDropped.has(crudoLower)) continue;
+            if (isAlreadyMapped || globalDict.has(crudoLower) || globalDropped.has(crudoLower)) continue;
         }
         
         misses.push(crudoClean);
