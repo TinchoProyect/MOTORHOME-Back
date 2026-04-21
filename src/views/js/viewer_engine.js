@@ -244,9 +244,50 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
                 }
             };
         } else if (isPdf) {
-            pdfContainer.src = downloadUrl;
-            pdfContainer.classList.remove('hidden');
-            loader.classList.add('hidden');
+            loader.classList.remove('hidden');
+            excelContainer.innerHTML = '<div class="flex flex-col items-center justify-center h-64 text-fuchsia-400"><div class="w-8 h-8 border-4 border-fuchsia-500 border-t-transparent rounded-full animate-spin mb-2"></div><span class="text-xs font-mono animate-pulse">PARSEANDO PDF (IA)...</span></div>';
+            excelContainer.classList.remove('hidden');
+            pdfContainer.classList.add('hidden');
+
+            const response = await fetch(downloadUrl);
+            if (!response.ok) throw new Error("Error descargando archivo PDF.");
+            const arrayBuffer = await response.arrayBuffer();
+            
+            window.PDFExtractor.extractToTabla(arrayBuffer).then(matrix => {
+                window.virtualWorkbookCache = window.virtualWorkbookCache || {};
+                window.virtualWorkbookCache["PDF_Tabulado"] = matrix;
+                
+                const sheetNames = ["PDF_Tabulado"];
+                window.currentSheetList = sheetNames;
+                renderSheetTabs(sheetNames);
+                if (sheetNames.length > 1) sheetTabs.classList.remove('hidden');
+                
+                currentSheetName = sheetNames[0];
+                currentSheetData = matrix;
+                if (currentSheetData && currentSheetData.length > 0) {
+                    currentSheetData.forEach((row, idx) => {
+                        if (row && typeof row === 'object') row._rowUid = idx;
+                    });
+                }
+                
+                window.virtualColumns = [];
+                window.computedColumns = [];
+                window.draftPipelines = {};
+                window.columnMapping = {};
+
+                renderVirtualTable(matrix);
+                loader.classList.add('hidden');
+
+                if (window.ViewerUI && window.ViewerUI.toggleTools) {
+                    window.ViewerUI.toggleTools(false);
+                }
+            }).catch(e => {
+                console.error("PDF Extractor Error:", e);
+                errContainer.textContent = "Error al estructurar PDF: " + e.message;
+                errContainer.classList.remove('hidden');
+                loader.classList.add('hidden');
+                excelContainer.classList.add('hidden');
+            });
         } else if (isImg) {
             imgEl.src = downloadUrl;
             imgContainer.classList.remove('hidden');
