@@ -216,8 +216,8 @@ window.reprintB2B = function(pedido_id) {
             precio_unitario: i.valor_unitario_ref,
             cantidad: i.cantidad,
             unidad_medida: i.unidad_ref,
-            cant_bult: 1, // Fallback visual
-            cant_valor: 1 // Fallback visual
+            cant_bult: i.cant_bult,
+            cant_valor: i.cant_valor
         });
     });
     

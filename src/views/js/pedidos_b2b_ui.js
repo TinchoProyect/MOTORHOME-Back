@@ -402,8 +402,22 @@ window.generateB2BPdf = async function(forensicPid = null, forensicPName = null,
         else if (rawUnit.includes('LITRO') || rawUnit.includes('LT')) unitLabel = 'L';
         else if (rawUnit.includes('UNID')) unitLabel = 'U';
         
-        const bult = sanitizeLatAmPrice(i.cant_bult) || 1;
-        const val = sanitizeLatAmPrice(i.cant_valor) || 1;
+        const parseVol = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
+        let rawBult = 1; let rawVal = 1;
+        if (window._rawLamdaData) {
+            const masterItem = window._rawLamdaData.find(r => {
+                const p = r.datos_maestros || {};
+                return (p.codigo === i.codigo_producto || p.sku === i.codigo_producto || r.codigo === i.codigo_producto || r.sku === i.codigo_producto);
+            });
+            if (masterItem) {
+                const mp = masterItem.datos_maestros || {};
+                rawBult = parseVol(mp.cant_bult) || parseVol(masterItem.cant_bult) || 1;
+                rawVal = parseVol(mp.cant_valor) || parseVol(masterItem.cant_valor) || 1;
+            }
+        }
+        
+        const bult = parseVol(i.cant_bult) || rawBult;
+        const val = parseVol(i.cant_valor) || rawVal;
         const kgMult = bult * val;
         
         let isKg = unitLabel === 'K' || unitLabel === 'L' || unitLabel === 'G' || rawUnit.includes('KG');
@@ -664,8 +678,22 @@ window.sendB2BWhatsApp = async function() {
         else if (rawUnit.includes('LITRO') || rawUnit.includes('LT')) unitLabel = 'L';
         else if (rawUnit.includes('UNID')) unitLabel = 'U';
         
-        const bult = sanitizeLatAmPrice(i.cant_bult) || 1;
-        const val = sanitizeLatAmPrice(i.cant_valor) || 1;
+        const parseVol = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
+        let rawBult = 1; let rawVal = 1;
+        if (window._rawLamdaData) {
+            const masterItem = window._rawLamdaData.find(r => {
+                const p = r.datos_maestros || {};
+                return (p.codigo === i.codigo_producto || p.sku === i.codigo_producto || r.codigo === i.codigo_producto || r.sku === i.codigo_producto);
+            });
+            if (masterItem) {
+                const mp = masterItem.datos_maestros || {};
+                rawBult = parseVol(mp.cant_bult) || parseVol(masterItem.cant_bult) || 1;
+                rawVal = parseVol(mp.cant_valor) || parseVol(masterItem.cant_valor) || 1;
+            }
+        }
+        
+        const bult = parseVol(i.cant_bult) || rawBult;
+        const val = parseVol(i.cant_valor) || rawVal;
         const kgMult = bult * val;
         
         let isKg = unitLabel === 'K' || unitLabel === 'L' || unitLabel === 'G' || rawUnit.includes('KG');
