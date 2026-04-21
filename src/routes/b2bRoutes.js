@@ -51,15 +51,22 @@ router.post('/generar', async (req, res) => {
 // GET /api/b2b/pedidos/count
 router.get('/pedidos/count', async (req, res) => {
     try {
-        const { count, error } = await supabase
+        const { data, error } = await supabase
             .from('pedidos_b2b_cabecera')
-            .select('*', { count: 'exact', head: true });
+            .select('proveedor_id, fecha_recepcion_estimada');
 
         if (error) throw error;
         
-        return res.json({ success: true, count: count || 0 });
+        let uniqueGroups = new Set();
+        if (data) {
+            data.forEach(x => {
+                uniqueGroups.add(`${x.proveedor_id}_${x.fecha_recepcion_estimada}`);
+            });
+        }
+        
+        return res.json({ success: true, count: uniqueGroups.size });
     } catch(e) {
-        console.error("Error al obtener conteo de pedidos B2B:", e);
+        console.error("Error al obtener conteo de entregas B2B:", e);
         return res.status(500).json({ error: e.message });
     }
 });

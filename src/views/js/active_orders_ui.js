@@ -67,47 +67,39 @@ window.renderActiveOrdersCards = function(data) {
         return;
     }
 
+    let groups = {};
+    data.forEach(order => {
+        let fetchStr = order.fecha_recepcion_estimada || 'SinFecha';
+        let provId = order.proveedor_id || 'SinProv';
+        let gKey = `${provId}_${fetchStr}`;
+        if (!groups[gKey]) groups[gKey] = [];
+        groups[gKey].push(order);
+    });
+
     let cardsHtml = '';
     
-    data.forEach(order => {
-        // Date Formatter
+    Object.values(groups).forEach(groupArr => {
+        let primaryOrder = groupArr[0];
         let fechaLlegadaHuman = 'Sin asignar';
-        if (order.fecha_recepcion_estimada) {
-            const d = new Date(order.fecha_recepcion_estimada);
+        if (primaryOrder.fecha_recepcion_estimada) {
+            const d = new Date(primaryOrder.fecha_recepcion_estimada);
             d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
             const formatter = new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
             let fStr = formatter.format(d);
             fechaLlegadaHuman = fStr.charAt(0).toUpperCase() + fStr.slice(1);
         }
-
-        let fechaEmision = '--';
-        if (order.created_at) {
-            const d = new Date(order.created_at);
-            fechaEmision = d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
-        }
-
-        const skuCount = order.pedidos_b2b_items ? order.pedidos_b2b_items.length : 0;
-        const proveedorNombre = order.proveedores ? order.proveedores.nombre : 'Desconocido';
         
-        let colorEstado = 'bg-slate-800 text-slate-400 border-slate-700';
-        const st = order.estado || 'Emitido';
-        if (st === 'Emitido') colorEstado = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
-        if (st === 'RECIBIDO') colorEstado = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
-        if (st === 'CANCELADO') colorEstado = 'bg-red-900/30 text-red-400 border-red-500/50';
-
+        const proveedorNombre = primaryOrder.proveedores ? primaryOrder.proveedores.nombre : 'Desconocido';
+        const totalSKUs = groupArr.reduce((acc, current) => acc + (current.pedidos_b2b_items ? current.pedidos_b2b_items.length : 0), 0);
+        
         cardsHtml += `
-            <div class="relative w-full bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-lg hover:border-blue-500/30 transition-colors flex items-center justify-between group overflow-hidden">
-                <!-- Checkbox -->
-                <div class="absolute inset-y-0 left-0 w-12 flex items-center justify-center border-r border-slate-800/50 bg-slate-950/20">
-                    <input type="checkbox" value="${order.id}" class="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-600/50 bg-slate-800 b2b-order-checkbox cursor-pointer" onchange="window.updateB2BSelectionUI()">
-                </div>
-                
-                <!-- Main Body -->
-                <div class="pl-14 flex-1 flex flex-col justify-center">
-                    <div class="flex items-center gap-4 mb-2">
+            <div class="mb-5 bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-slate-700 transition-colors">
+                <!-- Group Header -->
+                <div class="bg-slate-950/40 p-4 border-b border-slate-800/80 flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <i data-lucide="truck" class="w-5 h-5 text-indigo-400"></i>
                         <span class="text-xl font-black text-white tracking-tight">${proveedorNombre}</span>
-                        <span class="px-2 py-0.5 rounded border text-[9px] uppercase font-bold tracking-widest ${colorEstado}">${st}</span>
-                        <span class="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800/50 text-slate-400 uppercase tracking-widest border border-slate-700/50">${order.tipo_documento || 'Orden'}</span>
+                        <span class="px-2 py-0.5 rounded border text-[9px] uppercase font-bold tracking-widest bg-indigo-900/30 text-indigo-400 border-indigo-500/50">Entrega Confirmada</span>
                     </div>
                     <div class="flex items-center gap-4 text-xs font-mono">
                         <div class="flex items-center gap-1.5 text-blue-400">
@@ -117,31 +109,65 @@ window.renderActiveOrdersCards = function(data) {
                         <div class="w-px h-3 bg-slate-700"></div>
                         <div class="flex items-center gap-1.5 text-slate-400">
                             <i data-lucide="package" class="w-4 h-4 opacity-70"></i>
-                            <span>${skuCount} SKUs</span>
+                            <span>${groupArr.length} Órdenes (${totalSKUs} SKUs)</span>
                         </div>
                     </div>
                 </div>
+                <!-- Sub-items -->
+                <div class="p-2 space-y-2">
+        `;
+        
+        groupArr.forEach(order => {
+            let fechaEmision = '--';
+            if (order.created_at) {
+                const d = new Date(order.created_at);
+                fechaEmision = d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+            }
+            const skuCount = order.pedidos_b2b_items ? order.pedidos_b2b_items.length : 0;
+            
+            let colorEstado = 'bg-slate-800 text-slate-400 border-slate-700';
+            const st = order.estado || 'Emitido';
+            if (st === 'Emitido') colorEstado = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
+            if (st === 'RECIBIDO') colorEstado = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
+            if (st === 'CANCELADO') colorEstado = 'bg-red-900/30 text-red-400 border-red-500/50';
 
-                <!-- Secondary Metadata (Minimized) -->
-                <div class="hidden lg:flex flex-col items-end pr-8 justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    <span class="text-[9px] text-slate-500 font-mono tracking-widest uppercase">ID: ${order.id.split('-')[0]}...</span>
-                    <span class="text-[9px] text-slate-500 font-mono">Emitido: ${fechaEmision}</span>
+            cardsHtml += `
+                <div class="relative w-full bg-slate-800/20 border border-slate-700/50 rounded-lg p-3 hover:bg-slate-800/40 transition-colors flex items-center justify-between group overflow-hidden pl-14 shadow-sm">
+                    <!-- Checkbox -->
+                    <div class="absolute inset-y-0 left-0 w-10 flex items-center justify-center border-r border-slate-700/50 bg-slate-900/20">
+                        <input type="checkbox" value="${order.id}" class="w-4 h-4 rounded border-slate-600 text-blue-600 focus:ring-blue-600/50 bg-slate-700 b2b-order-checkbox cursor-pointer" onchange="window.updateB2BSelectionUI()">
+                    </div>
+                    
+                    <div class="flex-1 flex flex-col justify-center">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-black text-slate-300 uppercase tracking-widest font-mono">ID: ${order.id.split('-')[0]}</span>
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border ${colorEstado}">${st}</span>
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800/50 text-slate-400 uppercase tracking-widest border border-slate-700/50">${order.tipo_documento || 'Orden'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="hidden lg:flex flex-col items-end pr-8 justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        <span class="text-[9px] text-slate-500 font-mono">Emitido: ${fechaEmision}</span>
+                        <span class="text-[9px] text-slate-500 uppercase font-mono tracking-widest">${skuCount} SKUs</span>
+                    </div>
+
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="window.viewB2BItems('${order.id}')" class="px-3 py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Ver Manifiesto">
+                            <i data-lucide="layout-list" class="w-4 h-4"></i> Detalles
+                        </button>
+                        <button onclick="window.reprintB2B('${order.id}')" class="px-3 py-2 bg-purple-600/10 text-purple-400 hover:bg-purple-600 hover:text-white border border-purple-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
+                            <i data-lucide="printer" class="w-4 h-4"></i> PDF
+                        </button>
+                        <button onclick="window.sendB2BWhatsAppActive('${order.id}')" class="px-3 py-2 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                            WA
+                        </button>
+                    </div>
                 </div>
-
-                <!-- Actions -->
-                <div class="flex items-center gap-2 shrink-0">
-                    <button onclick="window.viewB2BItems('${order.id}')" class="px-4 py-3 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex flex-col items-center gap-1" title="Visualizar Ítems Nativos">
-                        <i data-lucide="layout-list" class="w-4 h-4"></i>
-                        <span>Detalles</span>
-                    </button>
-                    <button onclick="window.reprintB2B('${order.id}')" class="px-4 py-3 bg-purple-600/10 text-purple-400 hover:bg-purple-600 hover:text-white border border-purple-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex flex-col items-center gap-1">
-                        <i data-lucide="printer" class="w-4 h-4"></i>
-                        <span>PDF</span>
-                    </button>
-                    <button onclick="window.sendB2BWhatsAppActive('${order.id}')" class="px-4 py-3 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex flex-col items-center gap-1">
-                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
-                        <span>WA</span>
-                    </button>
+            `;
+        });
+        
+        cardsHtml += `
                 </div>
             </div>
         `;
