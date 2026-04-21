@@ -374,8 +374,7 @@ window.viewB2BItems = function(pedido_id) {
                         <tr>
                             <th class="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Cód / SKU</th>
                             <th class="w-full p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Descripción de Mercadería</th>
-                            <th class="py-4 pr-6 pl-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-left w-12" title="Cantidad Bulto">C.B</th>
-                            <th class="py-4 pr-8 pl-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-left w-12" title="Cantidad Valor">C.V</th>
+                            <th class="py-4 pr-12 pl-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-left w-24 whitespace-nowrap" title="Presentación Física">Presentación</th>
                             <th class="p-4 text-[10px] font-bold text-blue-300 uppercase tracking-widest border-b border-blue-900/50 text-center bg-blue-900/10 border-l border-blue-900/30 shadow-inner">Cant. Pedida</th>
                             <th class="p-4 text-[10px] font-bold text-emerald-400 uppercase tracking-widest border-b border-emerald-900/50 text-right bg-emerald-900/20 border-l border-emerald-900/30 shadow-inner">T. Kilos</th>
                         </tr>
@@ -419,8 +418,7 @@ window.viewB2BItems = function(pedido_id) {
                 <tr class="hover:bg-slate-800/50 transition-colors">
                     <td class="p-4 text-xs font-mono text-slate-300">#${i.producto_codigo}</td>
                     <td class="p-4 text-xs font-bold text-slate-200 w-full truncate" title="${i.producto_descripcion}">${i.producto_descripcion}</td>
-                    <td class="py-4 pr-6 pl-2 text-xs font-mono text-slate-500 text-left opacity-80">${bulto.toLocaleString('es-AR')}</td>
-                    <td class="py-4 pr-8 pl-2 text-xs font-mono text-slate-500 text-left opacity-80">${valor.toLocaleString('es-AR')}</td>
+                    <td class="py-4 pr-12 pl-2 text-xs font-mono text-slate-500 text-left opacity-80 whitespace-nowrap">${bulto.toLocaleString('es-AR')} x ${valor.toLocaleString('es-AR')}</td>
                     <td class="p-4 text-sm font-black text-blue-300 text-center bg-blue-900/10 border-l border-blue-900/30 font-mono shadow-inner">${pedida.toLocaleString('es-AR')}</td>
                     <td class="p-4 text-right bg-emerald-900/20 border-l border-emerald-900/30 shadow-inner">
                         <span class="text-sm font-black text-emerald-400 font-mono tracking-tight">${totalVol.toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 2})}</span>
