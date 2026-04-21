@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
  * v2.7 (Bindings Fix + Dynamic UI Integration)
@@ -162,6 +162,7 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
             const response = await fetch(downloadUrl);
             if (!response.ok) throw new Error("Error descargando archivo.");
             const arrayBuffer = await response.arrayBuffer();
+            window.currentFileBuffer = arrayBuffer; // [Ticket #019] Exponer arrayBuffer para herramienta geométrica
             currentFileBuffer = arrayBuffer;
 
             // Worker Init
@@ -253,12 +254,13 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
             const response = await fetch(downloadUrl);
             if (!response.ok) throw new Error("Error descargando archivo PDF.");
             const arrayBuffer = await response.arrayBuffer();
+            window.currentFileBuffer = arrayBuffer; // [Ticket #019] Exponer arrayBuffer para herramienta geométrica
             
             // Cargar en memoria el PDF sin tabular aún
             window.PDFExtractor.loadPdfText(arrayBuffer).then(itemCount => {
                 loader.classList.add('hidden');
                 const panel = document.getElementById('pdfControlsPanel');
-                if(panel) panel.classList.remove('hidden');
+                if(panel && window.isViewerReadOnly) panel.classList.remove('hidden');
 
                 // Cargar plantillas del proveedor (Ticket #006)
                 const provId = window.globalContext?.providerId || window.currentActiveProviderId;
@@ -599,7 +601,7 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
     const sheetNames = Object.keys(workbookMap);
     window.currentSheetList = sheetNames;
     if (sheetNames.length === 0) {
-        alert("El archivo está vacío.");
+        console.warn("🚨 VIGÍA DE ALERTA AMARILLA - DATOS NULOS: El archivo virtual cargado está completamente vacío.");
         return;
     }
 
@@ -625,6 +627,10 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
     // 4. Force Hide Ingest Button (Es Procesados, no se ingesta)
     const btnConfirm = document.getElementById('btnConfirmIngest');
     if (btnConfirm) btnConfirm.classList.add('hidden');
+    
+    // [Ticket #013] Asegurar que el Panel de Muestreo PDF se oculte en Procesados
+    const pdfPanel = document.getElementById('pdfControlsPanel');
+    if (pdfPanel) pdfPanel.classList.add('hidden');
 
     // [QA-HOTFIX] Asegurar que botón de Auditoría ETL está visible en Procesados
     const btnGlobal = document.getElementById('btnGlobalPreview');
@@ -661,7 +667,7 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
 };
 
 // --- 5. CONTROLES PDF (Ticket #004) ---
-window.runPdfSampling = function() {
+window.runPdfSampling = function(preserveOmissions = false) {
     const config = {
         thresholdY: document.getElementById('pdfRangeY')?.value || 6,
         thresholdXMerge: document.getElementById('pdfRangeXMerge')?.value || 8,
@@ -692,7 +698,11 @@ window.runPdfSampling = function() {
         window.computedColumns = [];
         window.draftPipelines = {};
         window.columnMapping = {};
-        window.pdfOmittedColumns = []; // [Ticket #010] Limpiar exclusiones de PDF
+        
+        // [Ticket #010/#016] Limpiar exclusiones de PDF solo si no se pide preservarlas
+        if (!preserveOmissions) {
+            window.pdfOmittedColumns = [];
+        }
 
         const pdfCont = document.getElementById('pdfContainer');
         const excelCont = document.getElementById('excelContainer');
@@ -779,6 +789,11 @@ window.loadPdfTemplateData = function(templateId) {
         
         // [Ticket #010] Hidratar Columnas Omitidas
         window.pdfOmittedColumns = template.omitted_columns || [];
+        
+        // [Ticket #013/#017] Auto-ejecutar muestreo preservando exclusiones
+        if (window.runPdfSampling) {
+            window.runPdfSampling(true);
+        }
     }
 };
 
@@ -798,36 +813,114 @@ window.toggleColumnOmission = function(colIdx) {
     }
 };
 
-window.promptSavePdfTemplate = function() {
+window.promptSavePdfTemplate = async function() {
     const providerId = window.globalContext?.providerId || window.currentActiveProviderId;
-    if(!providerId) return alert("Error: No hay proveedor activo para asociar la plantilla.");
+    if(!providerId) { console.error("🚨 VIGÍA DE ALERTA ROJA - FALLO DE CONTEXTO: No hay proveedor activo (providerId) para asociar la plantilla PDF."); return; }
     
-    // [Ticket #007] Abrir Modal Estilizado en lugar de window.prompt
-    const modal = document.getElementById('pdfTemplateModal');
-    const input = document.getElementById('pdfTemplateNameInput');
-    if(modal && input) {
-        modal.classList.remove('hidden');
-        input.value = "Lista Estándar";
-        input.focus();
+    // [Ticket #015] Gestión Avanzada CRUD
+    const select = document.getElementById('pdfTemplateSelect');
+    const selectedTemplateId = select ? select.value : null;
+    let selectedTemplateName = "Lista Estándar";
+    if (selectedTemplateId && select.options[select.selectedIndex]) {
+        selectedTemplateName = select.options[select.selectedIndex].text.replace(' (Predeterminada)', '');
+    }
+
+    if (selectedTemplateId) {
+        const result = await Swal.fire({
+            title: 'Gestión de Plantilla',
+            text: `¿Desea actualizar la plantilla "${selectedTemplateName}" o crear una nueva?`,
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: 'Actualizar',
+            denyButtonText: 'Guardar como Nueva',
+            cancelButtonText: 'Cancelar',
+            background: '#0f172a', color: '#f8fafc',
+            confirmButtonColor: '#4f46e5', denyButtonColor: '#059669'
+        });
+
+        if (result.isConfirmed) {
+            window.executeSavePdfTemplate(selectedTemplateName); // Actualiza la existente por coincidencia de nombre
+        } else if (result.isDenied) {
+            askNewTemplateName("Nueva Plantilla");
+        }
+    } else {
+        askNewTemplateName("Lista Estándar");
     }
 };
 
-window.executeSavePdfTemplate = async function() {
+async function askNewTemplateName(defaultName) {
+    const { value: newName } = await Swal.fire({
+        title: 'Guardar Nueva Plantilla',
+        input: 'text',
+        inputValue: defaultName,
+        showCancelButton: true,
+        background: '#0f172a', color: '#f8fafc',
+        confirmButtonText: 'Guardar',
+        cancelButtonText: 'Cancelar'
+    });
+    if (newName) {
+        window.executeSavePdfTemplate(newName);
+    }
+}
+
+window.promptDeletePdfTemplate = async function() {
     const providerId = window.globalContext?.providerId || window.currentActiveProviderId;
     if(!providerId) return;
     
-    const input = document.getElementById('pdfTemplateNameInput');
-    const name = input ? input.value : "";
-    if(!name || name.trim() === "") return;
+    const select = document.getElementById('pdfTemplateSelect');
+    const selectedTemplateId = select ? select.value : null;
+    
+    if (!selectedTemplateId) {
+        Swal.fire({icon: 'warning', title: 'Sin selección', text: 'No hay ninguna plantilla seleccionada para eliminar.', background: '#0f172a', color: '#f8fafc'});
+        return;
+    }
+    
+    const { isConfirmed } = await Swal.fire({
+        title: '¿Eliminar Plantilla?',
+        text: 'Esta acción no se puede deshacer.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#334155',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        background: '#0f172a', color: '#f8fafc'
+    });
+    
+    if (isConfirmed) {
+        try {
+            const res = await fetch(`http://localhost:5655/api/pdf-templates/${selectedTemplateId}`, {
+                method: 'DELETE'
+            });
+            if(!res.ok) throw new Error("Fallo al eliminar en el servidor");
+            
+            Swal.fire({icon: 'success', title: 'Plantilla eliminada', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, background: '#0f172a', color: '#f8fafc'});
+            window.pdfOmittedColumns = [];
+            window.loadPdfTemplates(providerId);
+        } catch (e) {
+            Swal.fire({icon: 'error', title: 'Error', text: e.message, background: '#0f172a', color: '#f8fafc'});
+        }
+    }
+};
+
+window.executeSavePdfTemplate = async function(nameToSave) {
+    const providerId = window.globalContext?.providerId || window.currentActiveProviderId;
+    if(!providerId) return;
+    
+    const name = nameToSave && typeof nameToSave === 'string' ? nameToSave.trim() : "";
+    if(!name) return;
+    
+    // Backup state
+    const currentOmitted = window.pdfOmittedColumns ? [...window.pdfOmittedColumns] : [];
     
     const payload = {
         provider_id: providerId,
-        template_name: name.trim(),
+        template_name: name,
         threshold_y: document.getElementById('pdfRangeY')?.value || 6,
         threshold_x_merge: document.getElementById('pdfRangeXMerge')?.value || 8,
         col_tolerance: document.getElementById('pdfRangeCol')?.value || 15,
-        is_default: true, // Se marca como predeterminado por defecto al guardar
-        omitted_columns: window.pdfOmittedColumns || [] // [Ticket #010] Persistir exclusiones
+        is_default: true,
+        omitted_columns: currentOmitted
     };
     
     try {
@@ -842,12 +935,14 @@ window.executeSavePdfTemplate = async function() {
             throw new Error(errData.error || "Error al guardar en el servidor");
         }
         
-        const modal = document.getElementById('pdfTemplateModal');
-        if(modal) modal.classList.add('hidden');
+        // Cargar lista actualizada, esperar, y luego forzar el estado visual para evitar Reseteo
+        await window.loadPdfTemplates(providerId);
+        window.pdfOmittedColumns = currentOmitted;
+        if(window.runPdfSampling) window.runPdfSampling(true);
         
-        window.loadPdfTemplates(providerId);
+        Swal.fire({icon: 'success', title: 'Plantilla guardada', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, background: '#0f172a', color: '#f8fafc'});
     } catch(e) {
-        alert("Error al guardar la plantilla: " + e.message);
+        Swal.fire({icon: 'error', title: 'Error', text: e.message, background: '#0f172a', color: '#f8fafc'});
     }
 };
 
@@ -911,4 +1006,116 @@ window.initPdfPanelDrag = function(e) {
     document.addEventListener('mouseup', onMouseUp);
 };
 
-console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
+console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");// [Ticket #018] Editor de Geometr�a Manual en PDF
+window.openPdfAnchorModal = async function() {
+    if (!window.currentFileBuffer) {
+        console.error("🚨 VIGÍA DE ALERTA ROJA - FALLO DE SCOPE: No hay un PDF cargado en memoria (window.currentFileBuffer es nulo o indefinido).");
+        return;
+    }
+    const modal = document.getElementById('pdfAnchorModal');
+    modal.classList.remove('hidden');
+
+    const canvas = document.getElementById('pdfAnchorCanvas');
+    const wrapper = document.getElementById('pdfAnchorWrapper');
+    const ctx = canvas.getContext('2d');
+
+    // Clonar las anclas actuales para edici�n
+    window._draftAnchors = [...(window.currentVerticalAnchors || [])];
+
+    try {
+        const loadingTask = pdfjsLib.getDocument(new Uint8Array(window.currentFileBuffer));
+        const pdfDoc = await loadingTask.promise;
+        const page = await pdfDoc.getPage(1); // Renderizar solo p�gina 1 para definir anclas
+        const viewport = page.getViewport({ scale: 1.5 }); // Escala 1.5 para mejor visibilidad
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = viewport.width + 'px';
+        canvas.style.height = viewport.height + 'px';
+        
+        window._pdfAnchorViewport = viewport; // Guardar viewport para c�lculos inversos
+
+        const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport
+        };
+        await page.render(renderContext).promise;
+        
+        window._pdfAnchorBaseImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        window.redrawPdfAnchors();
+
+        // Listeners
+        canvas.onclick = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            // Coordenada visual en el canvas
+            const clickX = e.clientX - rect.left;
+            
+            // Transformar coordenada visual a coordenada l�gica del PDF (donde scale = 1.0)
+            const logicalX = Math.round(clickX / viewport.scale);
+            
+            let removed = false;
+            // Tolerancia de 8px l�gicos para remover un ancla existente
+            const tolerance = 8; 
+            
+            for (let i = 0; i < window._draftAnchors.length; i++) {
+                if (Math.abs(window._draftAnchors[i] - logicalX) <= tolerance) {
+                    window._draftAnchors.splice(i, 1);
+                    removed = true;
+                    break;
+                }
+            }
+            
+            if (!removed) {
+                window._draftAnchors.push(logicalX);
+                window._draftAnchors.sort((a,b) => a - b);
+            }
+            
+            window.redrawPdfAnchors();
+        };
+
+    } catch (e) {
+        console.error("Error renderizando Canvas PDF:", e);
+        console.error("🚨 VIGÍA DE ALERTA ROJA - ERROR DE RENDERIZADO: Fallo al intentar renderizar el documento PDF en el Canvas de anclas manuales.");
+    }
+};
+
+window.redrawPdfAnchors = function() {
+    const canvas = document.getElementById('pdfAnchorCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    // Restaurar base PDF
+    if (window._pdfAnchorBaseImage) {
+        ctx.putImageData(window._pdfAnchorBaseImage, 0, 0);
+    }
+
+    const scale = window._pdfAnchorViewport ? window._pdfAnchorViewport.scale : 1.5;
+
+    // Dibujar l�neas
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(220, 38, 38, 0.8)"; // Red
+    ctx.setLineDash([5, 3]);
+
+    (window._draftAnchors || []).forEach(logicalX => {
+        const visualX = logicalX * scale;
+        ctx.beginPath();
+        ctx.moveTo(visualX, 0);
+        ctx.lineTo(visualX, canvas.height);
+        ctx.stroke();
+    });
+    ctx.setLineDash([]);
+};
+
+window.closePdfAnchorModal = function() {
+    const modal = document.getElementById('pdfAnchorModal');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.savePdfAnchors = function() {
+    window.currentVerticalAnchors = [...window._draftAnchors];
+    console.log("Anclas Manuales Aplicadas:", window.currentVerticalAnchors);
+    window.closePdfAnchorModal();
+    if (window.runPdfSampling) {
+        window.runPdfSampling();
+    }
+};

@@ -772,7 +772,27 @@ function renderVirtualTable(originalData) {
                                     resultDisplay = "<span class='text-fuchsia-500/50 italic text-[10px]'>Sin Base A</span>";
                                     cellClass += ' text-center';
                                 } else {
-                                    const evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps, row);
+                                    let evalres = { resultDisplay: "", mathResult: 0, rejected: false };
+                                    
+                                    // [Ticket #018] QA Fix: Out-Of-Bounds Guard para Columnas Procesadas.
+                                    // Si la ingesta descartó la base A, el motor matemático ya no tiene datos para calcular.
+                                    if (opA && typeof opA === 'object' && ('raw' in opA || 'clean' in opA)) {
+                                        try {
+                                            evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps, row);
+                                        } catch(e) {
+                                            console.warn("Fallo evaluando Math (Out-of-Bounds guard intercept):", e);
+                                        }
+                                    } else if (!window.isRawViewerMode) {
+                                        // En modo Procesados, si no podemos calcular, intentamos recuperar el valor pre-calculado del dataset original si es posible
+                                        const fallbackCol = window.virtualColumns.find(v => v.id === calcConfig.id);
+                                        if (fallbackCol && fallbackCol.dataIdx !== undefined && fallbackCol.dataIdx !== null) {
+                                            evalres.resultDisplay = row[fallbackCol.dataIdx] || "";
+                                            evalres.mathResult = evalres.resultDisplay;
+                                        } else {
+                                            evalres.resultDisplay = "<span class='text-fuchsia-500/50 italic text-[10px]'>Sin Origen (ETL Omitido)</span>";
+                                        }
+                                    }
+
                                     resultDisplay = evalres.resultDisplay;
                                     mathResult = evalres.mathResult;
                                     

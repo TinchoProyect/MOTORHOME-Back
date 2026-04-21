@@ -155,7 +155,7 @@ window.PDFExtractor = (function() {
         let colAnchors = [];
         
         // [Ticket #009] Si hay Anclas Vectoriales (Líneas reales), usarlas como paredes absolutas
-        if (window.currentVerticalAnchors && window.currentVerticalAnchors.length > 1) {
+        if (window.currentVerticalAnchors && window.currentVerticalAnchors.length > 0) {
             colAnchors = [...window.currentVerticalAnchors];
             console.log("[PDF_EXTRACTOR] 🛡️ Ignorando Dispersión Heurística. Imponiendo Anclas Geométricas:", colAnchors);
         } else {

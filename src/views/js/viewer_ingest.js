@@ -25,12 +25,13 @@ window.confirmIngestion = async function () {
 
             if (itemCount === 0) throw new Error("No hay filas con datos en ninguna hoja.");
 
-            // [Ticket #010] Omitir Columnas Técnicas antes de empaquetar
+            // [Ticket #010/#013/#015] Omitir Columnas Técnicas antes de empaquetar con tipado estricto
             if (window.pdfOmittedColumns && window.pdfOmittedColumns.length > 0) {
+                const omittedInts = window.pdfOmittedColumns.map(x => parseInt(x, 10));
                 validSheets.forEach(sheet => {
-                    if (sheet.name === "Muestreo PDF") {
+                    if (sheet.name === "PDF_Tabulado") { // Corrección del Ticket #013
                         sheet.data = sheet.data.map(row => 
-                            row.filter((_, colIdx) => !window.pdfOmittedColumns.includes(colIdx))
+                            row.filter((_, colIdx) => !omittedInts.includes(parseInt(colIdx, 10)))
                         );
                     }
                 });
