@@ -259,6 +259,12 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
                 loader.classList.add('hidden');
                 const panel = document.getElementById('pdfControlsPanel');
                 if(panel) panel.classList.remove('hidden');
+
+                // Cargar plantillas del proveedor (Ticket #006)
+                const provId = window.globalContext?.providerId || window.currentActiveProviderId;
+                if(provId && window.loadPdfTemplates) {
+                    window.loadPdfTemplates(provId);
+                }
             }).catch(e => {
                 console.error("PDF Load Error:", e);
                 errContainer.textContent = "Error al leer PDF: " + e.message;
@@ -686,17 +692,32 @@ window.runPdfSampling = function() {
         window.computedColumns = [];
         window.draftPipelines = {};
         window.columnMapping = {};
+        window.pdfOmittedColumns = []; // [Ticket #010] Limpiar exclusiones de PDF
 
-        renderVirtualTable(matrix);
-        
         const pdfCont = document.getElementById('pdfContainer');
         const excelCont = document.getElementById('excelContainer');
+        
+        // [Ticket #008] Capturar estado de scroll actual (Fijado a excelContainer, no a agGrid)
+        const savedScrollY = excelCont ? excelCont.scrollTop : 0;
+
         if(pdfCont) pdfCont.classList.add('hidden');
         if(excelCont) excelCont.classList.remove('hidden');
         
-        if (window.ViewerUI && window.ViewerUI.toggleTools) {
-            window.ViewerUI.toggleTools(false);
-        }
+        // [Ticket #007] Delay render para permitir que el DOM aplique display: block
+        setTimeout(() => {
+            renderVirtualTable(matrix);
+            
+            // [Ticket #008] Restaurar estado de scroll nativo
+            setTimeout(() => {
+                if (excelCont) {
+                    excelCont.scrollTop = savedScrollY;
+                }
+            }, 50); // Leve delay para asegurar que el DOM Virtual se instanció
+
+            if (window.ViewerUI && window.ViewerUI.toggleTools) {
+                window.ViewerUI.toggleTools(false);
+            }
+        }, 10);
     } catch(e) {
         console.error("Error en Muestreo PDF:", e);
         const errContainer = document.getElementById('errorContainer');
@@ -712,6 +733,182 @@ window.restorePdfVisual = function() {
     const excelCont = document.getElementById('excelContainer');
     if(excelCont) excelCont.classList.add('hidden');
     if(pdfCont) pdfCont.classList.remove('hidden');
+};
+
+// --- GESTIÓN DE PLANTILLAS PDF (Ticket #006) ---
+window.cachedPdfTemplates = [];
+
+window.loadPdfTemplates = async function(providerId) {
+    try {
+        const response = await fetch(`http://localhost:5655/api/pdf-templates/${providerId}`);
+        if(!response.ok) throw new Error("Error obteniendo plantillas");
+        const templates = await response.json();
+        window.cachedPdfTemplates = templates || [];
+        
+        const select = document.getElementById('pdfTemplateSelect');
+        if(!select) return;
+        
+        select.innerHTML = '<option value="">-- Sin Plantilla --</option>';
+        window.cachedPdfTemplates.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            opt.textContent = t.template_name + (t.is_default ? ' (Predeterminada)' : '');
+            select.appendChild(opt);
+        });
+        
+        if(window.cachedPdfTemplates.length > 0) {
+            select.value = window.cachedPdfTemplates[0].id;
+            window.loadPdfTemplateData(select.value);
+        }
+    } catch(e) {
+        console.error("[PDF_TEMPLATES] GET Error:", e);
+    }
+};
+
+window.loadPdfTemplateData = function(templateId) {
+    if(!templateId) return;
+    const template = window.cachedPdfTemplates.find(t => t.id === templateId);
+    if(template) {
+        const ySlider = document.getElementById('pdfRangeY');
+        const xSlider = document.getElementById('pdfRangeXMerge');
+        const colSlider = document.getElementById('pdfRangeCol');
+        
+        if(ySlider) { ySlider.value = template.threshold_y; document.getElementById('pdfValY').textContent = template.threshold_y + 'px'; }
+        if(xSlider) { xSlider.value = template.threshold_x_merge; document.getElementById('pdfValXMerge').textContent = template.threshold_x_merge + 'px'; }
+        if(colSlider) { colSlider.value = template.col_tolerance; document.getElementById('pdfValCol').textContent = template.col_tolerance + 'px'; }
+        
+        // [Ticket #010] Hidratar Columnas Omitidas
+        window.pdfOmittedColumns = template.omitted_columns || [];
+    }
+};
+
+// [Ticket #010] Toggle Omission
+window.toggleColumnOmission = function(colIdx) {
+    if (!window.pdfOmittedColumns) window.pdfOmittedColumns = [];
+    const idxStr = parseInt(colIdx, 10);
+    const index = window.pdfOmittedColumns.indexOf(idxStr);
+    if (index > -1) {
+        window.pdfOmittedColumns.splice(index, 1);
+    } else {
+        window.pdfOmittedColumns.push(idxStr);
+    }
+    console.log("[PDF_EXTRACTOR] Columnas omitidas actuales:", window.pdfOmittedColumns);
+    if (window.currentSheetData && typeof window.renderVirtualTable === 'function') {
+        window.renderVirtualTable(window.currentSheetData);
+    }
+};
+
+window.promptSavePdfTemplate = function() {
+    const providerId = window.globalContext?.providerId || window.currentActiveProviderId;
+    if(!providerId) return alert("Error: No hay proveedor activo para asociar la plantilla.");
+    
+    // [Ticket #007] Abrir Modal Estilizado en lugar de window.prompt
+    const modal = document.getElementById('pdfTemplateModal');
+    const input = document.getElementById('pdfTemplateNameInput');
+    if(modal && input) {
+        modal.classList.remove('hidden');
+        input.value = "Lista Estándar";
+        input.focus();
+    }
+};
+
+window.executeSavePdfTemplate = async function() {
+    const providerId = window.globalContext?.providerId || window.currentActiveProviderId;
+    if(!providerId) return;
+    
+    const input = document.getElementById('pdfTemplateNameInput');
+    const name = input ? input.value : "";
+    if(!name || name.trim() === "") return;
+    
+    const payload = {
+        provider_id: providerId,
+        template_name: name.trim(),
+        threshold_y: document.getElementById('pdfRangeY')?.value || 6,
+        threshold_x_merge: document.getElementById('pdfRangeXMerge')?.value || 8,
+        col_tolerance: document.getElementById('pdfRangeCol')?.value || 15,
+        is_default: true, // Se marca como predeterminado por defecto al guardar
+        omitted_columns: window.pdfOmittedColumns || [] // [Ticket #010] Persistir exclusiones
+    };
+    
+    try {
+        const res = await fetch('http://localhost:5655/api/pdf-templates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        if(!res.ok) {
+            const errData = await res.json().catch(()=>({}));
+            throw new Error(errData.error || "Error al guardar en el servidor");
+        }
+        
+        const modal = document.getElementById('pdfTemplateModal');
+        if(modal) modal.classList.add('hidden');
+        
+        window.loadPdfTemplates(providerId);
+    } catch(e) {
+        alert("Error al guardar la plantilla: " + e.message);
+    }
+};
+
+// --- TICKET #011: LÓGICA DE PANEL DRAGGABLE Y COLAPSABLE ---
+window.togglePdfPanelCollapse = function(event) {
+    if(event) event.stopPropagation(); // Evitar desencadenar drag
+    const body = document.getElementById('pdfControlsBody');
+    const icon = document.getElementById('pdfPanelCollapseIcon');
+    if(!body || !icon) return;
+    
+    if(body.classList.contains('hidden')) {
+        body.classList.remove('hidden');
+        icon.setAttribute('data-lucide', 'minus');
+    } else {
+        body.classList.add('hidden');
+        icon.setAttribute('data-lucide', 'plus');
+    }
+    if(window.lucide) window.lucide.createIcons();
+};
+
+window.initPdfPanelDrag = function(e) {
+    if(e.target.tagName === 'BUTTON' || e.target.closest('button')) return; // No arrastrar si se hizo click en un botón
+    const panel = document.getElementById('pdfControlsPanel');
+    if(!panel) return;
+    
+    let startX = e.clientX;
+    let startY = e.clientY;
+    
+    // Obtener las coordenadas actuales (puede estar anclado a right/top inicialmente)
+    const rect = panel.getBoundingClientRect();
+    let currentLeft = rect.left;
+    let currentTop = rect.top;
+    
+    // Cambiar a absolute con left/top explícito para que el drag sea fluido y anular right/bottom
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    panel.style.left = currentLeft + 'px';
+    panel.style.top = currentTop + 'px';
+    panel.style.margin = '0'; // Prevenir que los márgenes jodan el cálculo
+    
+    const onMouseMove = function(moveEvent) {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        
+        currentLeft += dx;
+        currentTop += dy;
+        
+        panel.style.left = currentLeft + 'px';
+        panel.style.top = currentTop + 'px';
+        
+        startX = moveEvent.clientX;
+        startY = moveEvent.clientY;
+    };
+    
+    const onMouseUp = function() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    };
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
 };
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");

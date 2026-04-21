@@ -84,7 +84,8 @@ exports.saveMapping = async (req, res) => {
                 .insert({
                     proveedor_id: proveedor_id,
                     hoja_excel: hojaBusqueda,
-                    nombre_formato: `Formato Híbrido - ${hojaBusqueda}`
+                    nombre_formato: `Formato Híbrido - ${hojaBusqueda}`,
+                    reglas_mapeo: {} // [QA-HOTFIX] Prevenir error de not-null constraint
                 })
                 .select('id')
                 .single();
@@ -290,7 +291,8 @@ exports.createCustomRule = async (req, res) => {
                 .insert({
                     proveedor_id: proveedor_id,
                     hoja_excel: hojaBusqueda,
-                    nombre_formato: `Formato Híbrido - ${hojaBusqueda}`
+                    nombre_formato: `Formato Híbrido - ${hojaBusqueda}`,
+                    reglas_mapeo: {} // [QA-HOTFIX] Prevenir error de not-null constraint
                 })
                 .select('id')
                 .single();

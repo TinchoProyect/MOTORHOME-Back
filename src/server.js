@@ -23,6 +23,7 @@ app.use('/api/flujos', require('./routes/flujosRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/rubros', require('./routes/rubrosRoutes'));
 app.use('/api/b2b', require('./routes/b2bRoutes'));
+app.use('/api/pdf-templates', require('./routes/pdfTemplateRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {

@@ -25,6 +25,17 @@ window.confirmIngestion = async function () {
 
             if (itemCount === 0) throw new Error("No hay filas con datos en ninguna hoja.");
 
+            // [Ticket #010] Omitir Columnas Técnicas antes de empaquetar
+            if (window.pdfOmittedColumns && window.pdfOmittedColumns.length > 0) {
+                validSheets.forEach(sheet => {
+                    if (sheet.name === "Muestreo PDF") {
+                        sheet.data = sheet.data.map(row => 
+                            row.filter((_, colIdx) => !window.pdfOmittedColumns.includes(colIdx))
+                        );
+                    }
+                });
+            }
+
             finalPayload = {
                 mode: 'MULTI_SHEET_BLOB',
                 sheets: validSheets // [{ name: "Sheet1", data: [[...]] }]

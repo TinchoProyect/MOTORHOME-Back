@@ -689,12 +689,38 @@
                     </div>
 
                     <!-- PANEL DE CALIBRACIÓN PDF -->
-                    <div id="pdfControlsPanel" class="hidden absolute top-4 right-4 z-50 w-80 bg-slate-900/95 backdrop-blur-xl border border-fuchsia-500/30 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 animate-in slide-in-from-right-4 duration-300">
-                        <div class="flex items-center justify-between border-b border-slate-700 pb-2">
-                            <h3 class="text-xs font-bold text-fuchsia-400 uppercase tracking-widest flex items-center gap-2"><i data-lucide="sliders" class="w-4 h-4"></i> Muestreo PDF</h3>
-                            <button onclick="window.restorePdfVisual && window.restorePdfVisual()" title="Restaurar visual PDF y limpiar grilla" class="text-slate-400 hover:text-white p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition flex items-center gap-1"><i data-lucide="eye" class="w-3 h-3"></i> <span class="text-[9px] uppercase tracking-wide font-bold">Ver PDF</span></button>
+                    <div id="pdfControlsPanel" style="position: absolute; top: 1rem; right: 1rem;" class="hidden z-50 w-80 bg-slate-900/95 backdrop-blur-xl border border-fuchsia-500/30 rounded-2xl shadow-2xl flex flex-col gap-0 animate-in slide-in-from-right-4 duration-300 transition-all">
+                        
+                        <!-- CABECERA ARRASTRABLE -->
+                        <div id="pdfControlsHeader" onmousedown="window.initPdfPanelDrag(event)" class="flex items-center justify-between border-b border-slate-700/80 p-3 bg-slate-800/40 rounded-t-2xl cursor-move select-none" title="Arrastrar Panel">
+                            <h3 class="text-xs font-bold text-fuchsia-400 uppercase tracking-widest flex items-center gap-2">
+                                <i data-lucide="sliders" class="w-4 h-4"></i> Muestreo PDF
+                            </h3>
+                            <div class="flex items-center gap-1">
+                                <button onclick="window.togglePdfPanelCollapse(event)" title="Minimizar/Expandir Panel" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 transition flex items-center justify-center">
+                                    <i id="pdfPanelCollapseIcon" data-lucide="minus" class="w-3.5 h-3.5"></i>
+                                </button>
+                                <button onclick="window.restorePdfVisual && window.restorePdfVisual()" title="Restaurar visual PDF y limpiar grilla" class="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 transition flex items-center justify-center ml-1">
+                                    <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
                         </div>
                         
+                        <!-- CUERPO COLAPSABLE -->
+                        <div id="pdfControlsBody" class="p-4 flex flex-col gap-4">
+                        
+                        <!-- GESTIÓN DE PLANTILLAS -->
+                        <div class="space-y-2 bg-slate-800/50 p-2 rounded-lg border border-slate-700">
+                            <div class="flex items-center justify-between gap-2">
+                                <select id="pdfTemplateSelect" class="w-full bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded p-1 outline-none focus:border-fuchsia-500" onchange="window.loadPdfTemplateData && window.loadPdfTemplateData(this.value)">
+                                    <option value="">-- Sin Plantilla --</option>
+                                </select>
+                                <button onclick="window.promptSavePdfTemplate && window.promptSavePdfTemplate()" class="bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded p-1 flex-shrink-0" title="Guardar como Plantilla">
+                                    <i data-lucide="save" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="space-y-4">
                             <div class="space-y-1">
                                 <label class="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
@@ -724,13 +750,14 @@
                         <button onclick="window.runPdfSampling && window.runPdfSampling()" class="w-full bg-fuchsia-600/90 hover:bg-fuchsia-500 text-white font-bold text-[11px] uppercase tracking-widest py-2.5 rounded-xl border border-fuchsia-400/50 shadow-lg shadow-fuchsia-900/30 transition-all flex items-center justify-center gap-2 mt-1">
                             <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i> Ensamblar Grilla
                         </button>
-                    </div>
-                </div> <!-- FIN DE VIEWER CONTENT -->
+                    </div> <!-- FIN CUERPO COLAPSABLE -->
+                </div>
+            </div> <!-- FIN DE VIEWER CONTENT -->
 
-                <!-- PANEL LATERAL DERECHO (Taller de Reglas) - LADO A LADO -->
-                <aside id="viewerRightPanel"
-                    class="bg-slate-950 border-l border-slate-800 flex flex-col hidden shadow-xl transition-[width,transform,opacity] duration-300 ease-in-out w-[430px] flex-shrink-0 relative transform translate-x-full opacity-0">
-                    <div class="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col shrink-0">
+            <!-- PANEL LATERAL DERECHO (Taller de Reglas) - LADO A LADO -->
+            <aside id="viewerRightPanel"
+                class="bg-slate-950 border-l border-slate-800 flex flex-col hidden shadow-xl transition-[width,transform,opacity] duration-300 ease-in-out w-[430px] flex-shrink-0 relative transform translate-x-full opacity-0">
+                <div class="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col shrink-0">
                         <div class="flex items-center justify-between mb-3">
                             <h3 class="text-sm font-bold text-white flex items-center gap-2">
                                 <i data-lucide="wrench" class="w-4 h-4 text-emerald-400"></i> Taller de
@@ -3283,6 +3310,21 @@
             }
         });
     </script>
+
+    <!-- MODAL DE GUARDADO DE PLANTILLAS PDF (Ticket #007) -->
+    <div id="pdfTemplateModal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div class="bg-slate-900 border border-fuchsia-500/30 rounded-2xl shadow-2xl p-6 w-96 flex flex-col gap-4">
+            <h3 class="text-sm font-bold text-fuchsia-400 uppercase tracking-widest flex items-center gap-2">
+                <i data-lucide="save" class="w-5 h-5"></i> Guardar Plantilla PDF
+            </h3>
+            <p class="text-xs text-slate-400">Ingrese un nombre descriptivo para la configuración actual (Ej: "Lista Estándar 2026").</p>
+            <input type="text" id="pdfTemplateNameInput" placeholder="Nombre de la Plantilla..." class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg p-2.5 outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all">
+            <div class="flex justify-end gap-3 mt-2">
+                <button onclick="document.getElementById('pdfTemplateModal').classList.add('hidden')" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white uppercase tracking-wider transition-colors">Cancelar</button>
+                <button onclick="window.executeSavePdfTemplate()" class="bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold text-xs uppercase tracking-widest px-6 py-2 rounded-lg shadow-lg shadow-fuchsia-900/30 transition-all">Guardar</button>
+            </div>
+        </div>
+    </div>
 
 </body>
 

@@ -15,6 +15,7 @@ window.PDFExtractor = (function() {
         const pdfDoc = await loadingTask.promise;
         
         currentRawItems = [];
+        window.currentVerticalAnchors = []; // [Ticket #009] Limpiar anclas previas
         
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum);
@@ -35,11 +36,63 @@ window.PDFExtractor = (function() {
                     y: Math.round(y)
                 });
             });
+
+            // [Ticket #009] Extracción de Geometría (Líneas Verticales)
+            try {
+                const opList = await page.getOperatorList();
+                const OPS = pdfjsLib.OPS;
+                for (let i = 0; i < opList.fnArray.length; i++) {
+                    const fn = opList.fnArray[i];
+                    const args = opList.argsArray[i];
+                    
+                    if (fn === OPS.rectangle) {
+                        const x = args[0], w = args[2], h = args[3];
+                        if (w < 4 && h > 20) window.currentVerticalAnchors.push(Math.round(x));
+                    }
+                    if (fn === OPS.constructPath) {
+                        const opsArray = args[0];
+                        const coords = args[1];
+                        let cx = 0, cy = 0, coordIdx = 0;
+                        for (let j = 0; j < opsArray.length; j++) {
+                            const op = opsArray[j];
+                            if (op === OPS.moveTo) {
+                                cx = coords[coordIdx++];
+                                cy = coords[coordIdx++];
+                            } else if (op === OPS.lineTo) {
+                                const nx = coords[coordIdx++];
+                                const ny = coords[coordIdx++];
+                                if (Math.abs(cx - nx) < 2 && Math.abs(cy - ny) > 20) {
+                                    window.currentVerticalAnchors.push(Math.round(cx));
+                                }
+                                cx = nx; cy = ny;
+                            }
+                        }
+                    }
+                }
+            } catch(e) {
+                console.warn("Fallo leve ignorado al parsear OperatorList:", e);
+            }
         }
         
         if (currentRawItems.length === 0) {
             throw new Error("El PDF no contiene texto extraíble.");
         }
+        
+        // [Ticket #009] Filtrado de Anclas Únicas
+        if (window.currentVerticalAnchors && window.currentVerticalAnchors.length > 0) {
+            const uniqueAnchors = [];
+            window.currentVerticalAnchors.sort((a, b) => a - b);
+            let lastX = -999;
+            window.currentVerticalAnchors.forEach(x => {
+                if (Math.abs(x - lastX) > 5) { // 5px tolerancia geométrica
+                    uniqueAnchors.push(x);
+                    lastX = x;
+                }
+            });
+            window.currentVerticalAnchors = uniqueAnchors;
+            console.log(`[PDF_EXTRACTOR] Esqueleto Vectorial (Líneas) Detectado en:`, uniqueAnchors);
+        }
+
         console.log(`[PDF_EXTRACTOR] Texto binario cargado en memoria. Items totales: ${currentRawItems.length}`);
         return currentRawItems.length;
     }
@@ -99,18 +152,25 @@ window.PDFExtractor = (function() {
         });
         
         // 3. Extracción Discreta de Columnas
-        let allXs = [];
-        validRows.forEach(row => row.forEach(itm => allXs.push(itm.x)));
-        allXs.sort((a,b) => a - b);
+        let colAnchors = [];
         
-        const colAnchors = [];
-        if (allXs.length > 0) {
-            let cx = allXs[0];
-            colAnchors.push(cx);
-            for(let i=1; i<allXs.length; i++) {
-                if (Math.abs(allXs[i] - cx) > colTolerance) {
-                    cx = allXs[i];
-                    colAnchors.push(cx);
+        // [Ticket #009] Si hay Anclas Vectoriales (Líneas reales), usarlas como paredes absolutas
+        if (window.currentVerticalAnchors && window.currentVerticalAnchors.length > 1) {
+            colAnchors = [...window.currentVerticalAnchors];
+            console.log("[PDF_EXTRACTOR] 🛡️ Ignorando Dispersión Heurística. Imponiendo Anclas Geométricas:", colAnchors);
+        } else {
+            let allXs = [];
+            validRows.forEach(row => row.forEach(itm => allXs.push(itm.x)));
+            allXs.sort((a,b) => a - b);
+            
+            if (allXs.length > 0) {
+                let cx = allXs[0];
+                colAnchors.push(cx);
+                for(let i=1; i<allXs.length; i++) {
+                    if (Math.abs(allXs[i] - cx) > colTolerance) {
+                        cx = allXs[i];
+                        colAnchors.push(cx);
+                    }
                 }
             }
         }

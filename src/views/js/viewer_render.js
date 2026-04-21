@@ -386,8 +386,18 @@ function renderVirtualTable(originalData) {
             </div>`;
         } else if (window.isViewerReadOnly) {
             // [QA-4] MODO LECTURA ESTRICTA (Pendientes)
-            // Cero eventos, cero mappings visuales. Un simple span con el texto crudo.
-            thContent = `<span class="truncate" title="${originalVal}">${originalVal}</span>`;
+            // [Ticket #010] Inyectar selector de omisión para columnas basura (PDF/Excel crudo)
+            const isOmitted = window.pdfOmittedColumns && window.pdfOmittedColumns.includes(dataIdx);
+            const chkId = `chk_omit_${dataIdx}`;
+            
+            thContent = `
+                <div class="flex items-center justify-between w-full h-full group">
+                    <span class="truncate ${isOmitted ? 'opacity-30 grayscale decoration-line-through text-slate-500' : 'text-slate-300'}" title="${originalVal}">${originalVal}</span>
+                    <input type="checkbox" id="${chkId}" ${!isOmitted ? 'checked' : ''} onchange="window.toggleColumnOmission(${dataIdx})" class="w-3.5 h-3.5 cursor-pointer rounded bg-slate-800 border-slate-600 text-emerald-500" title="Desmarcar para omitir columna de la Ingesta">
+                </div>
+            `;
+            
+            if (isOmitted) thClass += " bg-slate-900/50 opacity-50";
         } else {
             if (window.draftPipelines && window.draftPipelines[j]) {
                 const pipe = window.draftPipelines[j];
@@ -571,6 +581,10 @@ function renderVirtualTable(originalData) {
 
                 const colWidth = window.currentColWidths && window.currentColWidths[j] ? window.currentColWidths[j] : 150;
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
+
+                // [Ticket #010] Ignorar visualmente si la columna está omitida en PDF
+                const isOmitted = window.isViewerReadOnly && window.pdfOmittedColumns && window.pdfOmittedColumns.includes(dataIdx);
+                if (isOmitted) cellClass += " opacity-30 grayscale bg-slate-900/50 decoration-line-through text-slate-600 pointer-events-none";
 
                 const minRow = window.currentOffset ? window.currentOffset.row : 0;
                 const minCol = window.currentOffset ? window.currentOffset.col : 0;
