@@ -7,21 +7,49 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.openActiveOrders = function() {
-    const modal = document.getElementById('activeOrdersModal');
-    if(modal) {
-        modal.classList.remove('hidden');
-        if(!window.activeOrdersGridApi) {
-            initActiveOrdersGrid();
-        }
-        window.loadActiveOrders();
-    }
-}
+    const reportDisplay = document.getElementById('reportDisplay');
+    if(!reportDisplay) return;
 
-window.closeActiveOrders = function() {
-    const modal = document.getElementById('activeOrdersModal');
-    if(modal) {
-        modal.classList.add('hidden');
+    if (window.activeOrdersGridApi && typeof window.activeOrdersGridApi.destroy === 'function') {
+        window.activeOrdersGridApi.destroy();
+        window.activeOrdersGridApi = null;
     }
+
+    reportDisplay.innerHTML = `
+        <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
+            <!-- Header section -->
+            <div class="flex justify-between items-start mb-4 border-b border-slate-800 pb-4">
+                <div>
+                    <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                        <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i> Histórico de Pedidos Emitidos
+                    </h3>
+                    <p class="text-[10px] uppercase tracking-widest text-emerald-500 font-bold mt-1">SISTEMA REPOSITORIO DOCUMENTAL (CAPA 3)</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="window.purgeTestOrdersB2B()" class="px-3 py-2 bg-red-900/30 hover:bg-red-600 border border-red-500/30 text-red-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-all" title="Purgar tests">
+                        <i data-lucide="flame" class="w-4 h-4"></i> Purgar Datos
+                    </button>
+                    <button onclick="window.loadActiveOrders()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Actualizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Area: AG-Grid Viewer -->
+            <div class="flex-1 w-full glass-panel border border-slate-800/50 rounded-xl overflow-hidden relative shadow-2xl bg-slate-900">
+                <div id="activeOrdersGrid" class="ag-theme-alpine-dark w-full h-full"></div>
+            </div>
+            
+            <!-- Bottom StatusBar -->
+            <div class="pt-2 flex justify-between items-center shrink-0">
+                <span class="text-[10px] text-slate-500 font-mono" id="aoCountStatus">0 Registros Listados</span>
+            </div>
+        </div>
+    `;
+
+    if (window.lucide) window.lucide.createIcons();
+    initActiveOrdersGrid();
+    window.loadActiveOrders();
 }
 
 function initActiveOrdersGrid() {
@@ -35,43 +63,21 @@ function initActiveOrdersGrid() {
                 pinned: 'left'
             },
             {
-                field: 'id', 
-                headerName: 'ID Transacción', 
-                width: 320,
-                cellRenderer: params => `<span class="font-mono text-[10px] text-slate-500">${params.value}</span>`
-            },
-            {
-                field: 'created_at',
-                headerName: 'Fecha Emisión',
-                width: 160,
+                field: 'fecha_recepcion_estimada',
+                headerName: 'Llegada Estimada',
+                width: 220,
+                editable: true,
+                cellEditor: 'agDateCellEditor',
                 valueFormatter: params => {
-                    if(!params.value) return '--';
+                    if(!params.value) return 'Sin asignar';
                     const d = new Date(params.value);
-                    return d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
-                }
-            },
-            {
-                field: 'tipo_documento',
-                headerName: 'Tipo',
-                width: 170,
-                cellRenderer: params => {
-                    const tipo = params.value === 'Orden de Pedido' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50' : 'bg-blue-900/30 text-blue-400 border-blue-500/50';
-                    return `<span class="px-2 py-0.5 rounded border text-[10px] uppercase font-bold tracking-widest ${tipo}">${params.value}</span>`;
-                }
-            },
-            {
-                field: 'proveedores.nombre',
-                headerName: 'Entidad Receptora',
-                flex: 1,
-                cellRenderer: params => `<span class="font-bold text-slate-300 text-xs">${params.value || 'Desconocido'}</span>`
-            },
-            {
-                headerName: 'Volumetría',
-                width: 130,
-                cellRenderer: params => {
-                    const items = params.data.pedidos_b2b_items || [];
-                    return `<span class="text-[11px] text-slate-400 font-mono">${items.length} SKUs</span>`;
-                }
+                    d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
+                    const formatter = new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
+                    const str = formatter.format(d);
+                    // Capitalize first letter
+                    return str.charAt(0).toUpperCase() + str.slice(1);
+                },
+                cellStyle: { backgroundColor: 'rgba(59, 130, 246, 0.05)', border: '1px dashed rgba(59, 130, 246, 0.3)' }
             },
             {
                 field: 'estado',
@@ -92,19 +98,43 @@ function initActiveOrdersGrid() {
                 }
             },
             {
-                field: 'fecha_recepcion_estimada',
-                headerName: 'Llegada Estimada',
+                field: 'tipo_documento',
+                headerName: 'Tipo',
+                width: 170,
+                cellRenderer: params => {
+                    const tipo = params.value === 'Orden de Pedido' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50' : 'bg-blue-900/30 text-blue-400 border-blue-500/50';
+                    return `<span class="px-2 py-0.5 rounded border text-[10px] uppercase font-bold tracking-widest ${tipo}">${params.value}</span>`;
+                }
+            },
+            {
+                field: 'proveedores.nombre',
+                headerName: 'Entidad Receptora',
+                flex: 1,
+                cellRenderer: params => `<span class="font-bold text-slate-300 text-xs">${params.value || 'Desconocido'}</span>`
+            },
+            {
+                field: 'id', 
+                headerName: 'ID Transacción', 
+                width: 320,
+                cellRenderer: params => `<span class="font-mono text-[10px] text-slate-500">${params.value}</span>`
+            },
+            {
+                field: 'created_at',
+                headerName: 'Fecha Emisión',
                 width: 160,
-                editable: true,
-                cellEditor: 'agDateCellEditor',
                 valueFormatter: params => {
-                    if(!params.value) return 'Sin asignar';
-                    // Parse "YYYY-MM-DD"
+                    if(!params.value) return '--';
                     const d = new Date(params.value);
-                    d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
-                    return d.toLocaleDateString('es-AR');
-                },
-                cellStyle: { backgroundColor: 'rgba(59, 130, 246, 0.05)', border: '1px dashed rgba(59, 130, 246, 0.3)' }
+                    return d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+                }
+            },
+            {
+                headerName: 'Volumetría',
+                width: 130,
+                cellRenderer: params => {
+                    const items = params.data.pedidos_b2b_items || [];
+                    return `<span class="text-[11px] text-slate-400 font-mono">${items.length} SKUs</span>`;
+                }
             },
             {
                 headerName: 'Acciones',
