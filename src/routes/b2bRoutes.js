@@ -4,7 +4,7 @@ const supabase = require('../config/supabaseClient');
 
 router.post('/generar', async (req, res) => {
     try {
-        const { proveedor_id, tipo_documento, items } = req.body;
+        const { proveedor_id, tipo_documento, items, fecha_recepcion_estimada } = req.body;
         if (!proveedor_id || !items || items.length === 0) {
             return res.status(400).json({ error: "Faltan datos requeridos." });
         }
@@ -12,7 +12,12 @@ router.post('/generar', async (req, res) => {
         // Insert Cabecera
         const { data: headerData, error: headerErr } = await supabase
             .from('pedidos_b2b_cabecera')
-            .insert([{ proveedor_id, tipo_documento, estado: 'Emitido' }])
+            .insert([{ 
+                proveedor_id, 
+                tipo_documento, 
+                estado: 'Emitido',
+                fecha_recepcion_estimada: fecha_recepcion_estimada || null 
+            }])
             .select()
             .single();
 
@@ -55,6 +60,7 @@ router.get('/pedidos', async (req, res) => {
                 proveedor_id,
                 tipo_documento,
                 estado,
+                fecha_recepcion_estimada,
                 proveedores:proveedor_id ( nombre ),
                 pedidos_b2b_items (
                     id,
@@ -72,6 +78,29 @@ router.get('/pedidos', async (req, res) => {
         return res.json({ success: true, pedidos: data || [] });
     } catch(e) {
         console.error("Error al obtener pedidos activos B2B:", e);
+        return res.status(500).json({ error: e.message });
+    }
+});
+
+// DELETE /api/b2b/pedidos/purga
+router.post('/pedidos/purga', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: "No se enviaron IDs válidos para purgar." });
+        }
+
+        // El borrado en cabecera purga los items en cascada (Foreign Key ON DELETE CASCADE configurada en la BD)
+        const { error } = await supabase
+            .from('pedidos_b2b_cabecera')
+            .delete()
+            .in('id', ids);
+
+        if (error) throw error;
+
+        return res.json({ success: true, message: `Se marginaron ${ids.length} registros exitosamente.` });
+    } catch(e) {
+        console.error("Error al purgar pedidos B2B:", e);
         return res.status(500).json({ error: e.message });
     }
 });

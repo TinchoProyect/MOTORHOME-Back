@@ -315,16 +315,27 @@ window.emptyB2BOrder = function() {
     }
 };
 
-window.generateB2BPdf = async function() {
-    const cart = getB2BCart();
-    const pid = window.activeB2BProvider;
-    if(!cart || !pid) return;
-    
-    const activeItems = cart.filter(x => x.proveedor_id === pid);
-    if(activeItems.length === 0) return;
-    
-    const docType = document.getElementById('b2bDocType').value; // 'Orden de Pedido' o 'Solicitud de Presupuesto'
-    const provName = activeItems[0].proveedor_nombre;
+window.generateB2BPdf = async function(forensicPid = null, forensicPName = null, forensicDocType = null, forensicItems = null) {
+    let activeItems = [];
+    let pid = forensicPid;
+    let docType = forensicDocType;
+    let provName = forensicPName;
+
+    if (forensicItems) {
+        // Ejecución en modo "Forense" (Tablero de Control llama a Reprint)
+        activeItems = forensicItems;
+    } else {
+        // Ejecución en modo "En Vivo" (Checkout Activo)
+        const cart = getB2BCart();
+        pid = window.activeB2BProvider;
+        if(!cart || !pid) return;
+        
+        activeItems = cart.filter(x => String(x.proveedor_id) === String(pid));
+        if(activeItems.length === 0) return;
+        
+        docType = document.getElementById('b2bDocType').value;
+        provName = activeItems[0].proveedor_nombre;
+    }
     const now = new Date();
     const dateStr = now.toLocaleDateString();
     
@@ -1055,11 +1066,14 @@ window.commitB2BOrder = async function() {
     if(activeItems.length === 0) return;
     
     const docType = document.getElementById('b2bDocType').value;
+    const estDateInput = document.getElementById('b2bArrivalDate');
+    const estDate = estDateInput && estDateInput.value ? estDateInput.value : null;
     
     // Preparar carga para guardar orden y avanzar estado de máquina
     const dbPayload = {
         proveedor_id: pid,
         tipo_documento: docType,
+        fecha_recepcion_estimada: estDate,
         items: activeItems.map(i => ({ 
             producto_codigo: i.codigo_producto, 
             producto_descripcion: i.producto_descripcion,
@@ -1088,6 +1102,8 @@ window.commitB2BOrder = async function() {
         });
         
         if (res.ok) {
+            // Failsafe Delegado: backend modificado soporta fecha_recepcion_estimada.
+            
             // MÁQUINA DE ESTADOS: LIMPIAR HISTORIA B2B DEL PROVEEDOR
             let fullCart = getB2BCart();
             fullCart = fullCart.filter(x => String(x.proveedor_id) !== String(pid));

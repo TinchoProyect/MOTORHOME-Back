@@ -1393,6 +1393,14 @@
                                 <option value="Orden de Pedido">Orden de Pedido</option>
                                 <option value="Solicitud de Presupuesto">Presupuesto</option>
                             </select>
+                            
+                            <!-- Input para Fecha Anticipada -->
+                            <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
+                                <div class="px-2 py-2 bg-slate-800 border-r border-slate-700 hidden sm:block">
+                                    <i data-lucide="calendar" class="w-4 h-4 text-slate-400"></i>
+                                </div>
+                                <input type="date" id="b2bArrivalDate" title="Fecha Estimada de Recepción" class="bg-transparent text-slate-300 text-xs px-2 py-2 outline-none focus:bg-slate-900 cursor-pointer w-32 appearance-none">
+                            </div>
                             <button onclick="window.generateB2BPdf()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/30">
                                 <i data-lucide="file-text" class="w-4 h-4"></i> Generar PDF
                             </button>
@@ -1514,6 +1522,9 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-3">
+                    <button onclick="window.purgeTestOrdersB2B()" class="px-3 py-2 bg-red-900/30 hover:bg-red-600 border border-red-500/30 text-red-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-all" title="Purgar tests">
+                        <i data-lucide="flame" class="w-4 h-4"></i> Purgar Datos
+                    </button>
                     <button onclick="window.loadActiveOrders()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i> Actualizar
                     </button>

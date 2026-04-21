@@ -28,6 +28,13 @@ function initActiveOrdersGrid() {
     const gridOptions = {
         columnDefs: [
             { 
+                headerCheckboxSelection: true,
+                checkboxSelection: true,
+                showDisabledCheckboxes: true,
+                width: 50,
+                pinned: 'left'
+            },
+            {
                 field: 'id', 
                 headerName: 'ID Transacción', 
                 width: 320,
@@ -67,18 +74,18 @@ function initActiveOrdersGrid() {
                 }
             },
             {
-                field: 'estado_pedido',
+                field: 'estado',
                 headerName: 'Estado',
                 width: 140,
                 editable: true,
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: {
-                    values: ['BORRADOR', 'ENVIADO', 'RECIBIDO', 'CANCELADO']
+                    values: ['Emitido', 'RECIBIDO', 'CANCELADO']
                 },
                 cellRenderer: params => {
                     let c = 'bg-slate-800 text-slate-400';
-                    const val = params.value || 'ENVIADO'; // Default fallback old rows
-                    if (val === 'ENVIADO') c = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
+                    const val = params.value || 'Emitido'; // Fallback
+                    if (val === 'Emitido') c = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
                     if (val === 'RECIBIDO') c = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
                     if (val === 'CANCELADO') c = 'bg-red-900/30 text-red-400 border-red-500/50';
                     return `<span class="px-2 py-0.5 rounded border text-[10px] uppercase font-bold tracking-widest ${c}">${val}</span>`;
@@ -107,6 +114,9 @@ function initActiveOrdersGrid() {
                     const id = params.data.id;
                     return `
                         <div class="flex items-center gap-2 justify-center h-full">
+                            <button onclick="window.viewB2BItems('${id}')" class="px-3 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 border border-blue-500/30 rounded text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Visualizar Ítems">
+                                <i data-lucide="binoculars" class="w-3.5 h-3.5"></i> Skus
+                            </button>
                             <button onclick="window.reprintB2B('${id}')" class="px-3 py-1 bg-purple-600/20 text-purple-400 hover:bg-purple-600/40 border border-purple-500/30 rounded text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
                                 <i data-lucide="printer" class="w-3.5 h-3.5"></i> PDF
                             </button>
@@ -124,13 +134,35 @@ function initActiveOrdersGrid() {
         rowHeight: 45,
         headerHeight: 40,
         animateRows: true,
+        rowSelection: 'multiple',
+        suppressRowClickSelection: true,
         onGridReady: params => {
             window.activeOrdersGridApi = params.api;
             if (window.lucide) window.lucide.createIcons();
             params.api.sizeColumnsToFit();
         },
+        onModelUpdated: params => {
+            const statusLabel = document.getElementById('b2bActiveOrdersStatus');
+            if (statusLabel) {
+                const total = params.api.getDisplayedRowCount();
+                const selected = params.api.getSelectedRows().length;
+                let txt = `Mostrando ${total} pedidos auditados`;
+                if (selected > 0) txt += ` (${selected} Seleccionados)`;
+                statusLabel.innerText = txt;
+            }
+        },
+        onSelectionChanged: params => {
+            const statusLabel = document.getElementById('b2bActiveOrdersStatus');
+            if (statusLabel) {
+                const total = params.api.getDisplayedRowCount();
+                const selected = params.api.getSelectedRows().length;
+                let txt = `Mostrando ${total} pedidos auditados`;
+                if (selected > 0) txt += ` (${selected} Seleccionados)`;
+                statusLabel.innerText = txt;
+            }
+        },
         onCellValueChanged: async (params) => {
-            if (params.colDef.field === 'estado_pedido' || params.colDef.field === 'fecha_recepcion_estimada') {
+            if (params.colDef.field === 'estado' || params.colDef.field === 'fecha_recepcion_estimada') {
                 const id = params.data.id;
                 const field = params.colDef.field;
                 const newVal = params.newValue;
@@ -138,7 +170,7 @@ function initActiveOrdersGrid() {
                 try {
                     const obj = {};
                     obj[field] = newVal;
-                    const { error } = await window.supabaseClient.from('pedidos_b2b').update(obj).eq('id', id);
+                    const { error } = await window.supabaseClient.from('pedidos_b2b_cabecera').update(obj).eq('id', id);
                     if (error) {
                         console.error("Error updating B2B Order field", error);
                         // Revert manually if needed, for now just log
@@ -167,14 +199,16 @@ window.loadActiveOrders = async function() {
         if (d.success) {
             window.activeOrdersCache = d.pedidos || [];
             if(window.activeOrdersGridApi) {
-                window.activeOrdersGridApi.setRowData(d.pedidos);
-                if (statusLabel) {
-                    statusLabel.innerText = `${d.pedidos.length} Registros Auditados (Capa 3)`;
+                if (typeof window.activeOrdersGridApi.setGridOption === 'function') {
+                    window.activeOrdersGridApi.setGridOption('rowData', d.pedidos);
+                } else if (typeof window.activeOrdersGridApi.setRowData === 'function') {
+                    window.activeOrdersGridApi.setRowData(d.pedidos);
                 }
                 setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 100);
             }
         } else {
             console.error("Error cargando pedidos:", d.error);
+            const statusLabel = document.getElementById('b2bActiveOrdersStatus');
             if (statusLabel) statusLabel.innerText = "Error de Conexión Capa 3.";
         }
     } catch(e) {
@@ -225,3 +259,127 @@ window.reprintB2B = function(pedido_id) {
         alert("El motor PDF no está online, asegure que pedidos_b2b_ui se cargue antes.");
     }
 }
+
+window.viewB2BItems = function(pedido_id) {
+    if(!window.activeOrdersCache) return;
+    const orderData = window.activeOrdersCache.find(x => x.id === pedido_id);
+    if(!orderData) return;
+    
+    const items = orderData.pedidos_b2b_items || [];
+    if(items.length === 0) {
+        Swal.fire({
+            icon: 'info', title: 'Sin Ítems', text: 'Esta transacción no tiene mercadería asociada.', background: '#0f172a', color: '#cbd5e1'
+        });
+        return;
+    }
+    
+    let tableHtml = `
+        <div class="overflow-x-auto w-full custom-scrollbar max-h-96">
+            <table class="w-full text-left border-collapse whitespace-nowrap">
+                <thead class="bg-slate-900 sticky top-0 z-10">
+                    <tr>
+                        <th class="p-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-700">Cód / SKU</th>
+                        <th class="p-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-700">Descripción</th>
+                        <th class="p-3 text-[10px] font-bold text-emerald-500 uppercase tracking-widest border-b border-slate-700 text-center bg-emerald-900/10">Catidad</th>
+                        <th class="p-3 text-[10px] font-bold text-blue-400 uppercase tracking-widest border-b border-slate-700 text-center">Unidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    items.forEach(i => {
+        tableHtml += `
+            <tr class="hover:bg-slate-800/50 transition-colors border-b border-slate-800/50">
+                <td class="p-3 text-xs font-mono text-slate-300">${i.producto_codigo}</td>
+                <td class="p-3 text-[11px] text-slate-400 max-w-[200px] truncate" title="${i.producto_descripcion}">${i.producto_descripcion}</td>
+                <td class="p-3 text-[11px] font-bold text-emerald-400 text-center bg-emerald-900/5">${parseFloat(i.cantidad).toLocaleString('es-AR')}</td>
+                <td class="p-3 text-[11px] text-blue-400 text-center uppercase tracking-wider">${i.unidad_ref}</td>
+            </tr>
+        `;
+    });
+    
+    tableHtml += `</tbody></table></div>`;
+    
+    Swal.fire({
+        title: 'Manifiesto de Remito',
+        html: tableHtml,
+        width: '800px',
+        background: '#0f172a',
+        color: '#f8fafc',
+        showConfirmButton: true,
+        confirmButtonColor: '#3b82f6',
+        confirmButtonText: 'Cerrar Visor'
+    });
+}
+
+window.purgeTestOrdersB2B = async function() {
+    if (!window.Swal || !window.activeOrdersGridApi) return;
+    
+    const selectedRows = window.activeOrdersGridApi.getSelectedRows();
+    if (selectedRows.length === 0) {
+        Swal.fire({
+            icon: 'info',
+            title: 'Sin Selección',
+            text: 'Debes tildar (checkbox) al menos una fila para ejecutar la purga.',
+            background: '#0f172a', color: '#cbd5e1'
+        });
+        return;
+    }
+
+    const idsToPurge = selectedRows.map(r => r.id);
+    
+    const result = await Swal.fire({
+        title: 'Purga Selectiva (Capa 3)',
+        text: `¿Confirmás la destrucción absoluta de ${selectedRows.length} pedido(s)? Sus ítems serán eliminados en cascada de la base maestra.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#334155',
+        confirmButtonText: 'Sí, Pulverizar Registros',
+        cancelButtonText: 'Cancelar',
+        background: '#0f172a',
+        color: '#f8fafc'
+    });
+    
+    if (result.isConfirmed) {
+        Swal.fire({
+            title: 'Aniquilando...',
+            background: '#0f172a',
+            color: '#f8fafc',
+            didOpen: () => Swal.showLoading()
+        });
+        
+        try {
+            // Delega la purga al Backend Node.js para atravesar las políticas RLS
+            const response = await fetch('http://localhost:5655/api/b2b/pedidos/purga', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: idsToPurge })
+            });
+            const data = await response.json();
+            
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Fallo desconocido en la API');
+            }
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Purga Ejecutada',
+                text: data.message || 'Registros erradicados exitosamente.',
+                background: '#0f172a',
+                color: '#10b981'
+            });
+            window.loadActiveOrders();
+            
+        } catch(e) {
+            console.error("Fallo purgando pruebas:", e);
+            Swal.fire({
+                icon: 'error',
+                title: 'Bloqueo Backend',
+                text: 'La API local rechazó el comando de purga. Asegúrese de que el servidor está corriendo.',
+                background: '#0f172a',
+                color: '#ef4444'
+            });
+        }
+    }
+};
