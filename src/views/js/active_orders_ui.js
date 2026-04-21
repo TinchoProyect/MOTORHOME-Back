@@ -1,7 +1,5 @@
 // active_orders_ui.js
 
-window.activeOrdersGridApi = null;
-
 document.addEventListener('DOMContentLoaded', () => {
     // Inicialización al cargar DOM si es necesario.
 });
@@ -10,24 +8,18 @@ window.openActiveOrders = function() {
     const reportDisplay = document.getElementById('reportDisplay');
     if(!reportDisplay) return;
 
-    if (window.activeOrdersGridApi && typeof window.activeOrdersGridApi.destroy === 'function') {
-        window.activeOrdersGridApi.destroy();
-        window.activeOrdersGridApi = null;
-    }
-
     reportDisplay.innerHTML = `
         <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
             <!-- Header section -->
-            <div class="flex justify-between items-start mb-4 border-b border-slate-800 pb-4">
+            <div class="flex justify-between items-start mb-6 border-b border-slate-800 pb-4 shrink-0">
                 <div>
                     <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                        <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i> Histórico de Pedidos Emitidos
+                        <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i> Pedidos Confirmados
                     </h3>
-                    <p class="text-[10px] uppercase tracking-widest text-emerald-500 font-bold mt-1">SISTEMA REPOSITORIO DOCUMENTAL (CAPA 3)</p>
                 </div>
                 <div class="flex items-center gap-3">
                     <button onclick="window.purgeTestOrdersB2B()" class="px-3 py-2 bg-red-900/30 hover:bg-red-600 border border-red-500/30 text-red-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-all" title="Purgar tests">
-                        <i data-lucide="flame" class="w-4 h-4"></i> Purgar Datos
+                        <i data-lucide="flame" class="w-4 h-4"></i> Purgar Seleccionados
                     </button>
                     <button onclick="window.loadActiveOrders()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i> Actualizar
@@ -35,192 +27,141 @@ window.openActiveOrders = function() {
                 </div>
             </div>
 
-            <!-- Content Area: AG-Grid Viewer -->
-            <div class="flex-1 w-full glass-panel border border-slate-800/50 rounded-xl overflow-hidden relative shadow-2xl bg-slate-900">
-                <div id="activeOrdersGrid" class="ag-theme-alpine-dark w-full h-full"></div>
+            <!-- Content Area: Cards Wrapper -->
+            <div id="activeOrdersCardsContainer" class="flex-1 w-full overflow-y-auto custom-scrollbar pr-2 space-y-4">
+                <div class="flex items-center justify-center h-full text-blue-400">
+                    <i data-lucide="loader-2" class="w-6 h-6 animate-spin mr-2"></i> Cargando pedidos...
+                </div>
             </div>
             
             <!-- Bottom StatusBar -->
-            <div class="pt-2 flex justify-between items-center shrink-0">
-                <span class="text-[10px] text-slate-500 font-mono" id="aoCountStatus">0 Registros Listados</span>
+            <div class="pt-4 flex justify-between items-center shrink-0 border-t border-slate-800 mt-2">
+                <span class="text-[10px] text-slate-500 font-mono" id="aoCountStatus">Inicializando...</span>
+                <span class="text-[10px] text-slate-600 font-mono" id="aoSelectedStatus">0 Seleccionados</span>
             </div>
         </div>
     `;
 
     if (window.lucide) window.lucide.createIcons();
-    initActiveOrdersGrid();
     window.loadActiveOrders();
 }
 
-function initActiveOrdersGrid() {
-    const gridOptions = {
-        columnDefs: [
-            { 
-                headerCheckboxSelection: true,
-                checkboxSelection: true,
-                showDisabledCheckboxes: true,
-                width: 50,
-                pinned: 'left'
-            },
-            {
-                field: 'fecha_recepcion_estimada',
-                headerName: 'Llegada Estimada',
-                width: 220,
-                editable: true,
-                cellEditor: 'agDateCellEditor',
-                valueFormatter: params => {
-                    if(!params.value) return 'Sin asignar';
-                    const d = new Date(params.value);
-                    d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
-                    const formatter = new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
-                    const str = formatter.format(d);
-                    // Capitalize first letter
-                    return str.charAt(0).toUpperCase() + str.slice(1);
-                },
-                cellStyle: { backgroundColor: 'rgba(59, 130, 246, 0.05)', border: '1px dashed rgba(59, 130, 246, 0.3)' }
-            },
-            {
-                field: 'estado',
-                headerName: 'Estado',
-                width: 140,
-                editable: true,
-                cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: ['Emitido', 'RECIBIDO', 'CANCELADO']
-                },
-                cellRenderer: params => {
-                    let c = 'bg-slate-800 text-slate-400';
-                    const val = params.value || 'Emitido'; // Fallback
-                    if (val === 'Emitido') c = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
-                    if (val === 'RECIBIDO') c = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
-                    if (val === 'CANCELADO') c = 'bg-red-900/30 text-red-400 border-red-500/50';
-                    return `<span class="px-2 py-0.5 rounded border text-[10px] uppercase font-bold tracking-widest ${c}">${val}</span>`;
-                }
-            },
-            {
-                field: 'tipo_documento',
-                headerName: 'Tipo',
-                width: 170,
-                cellRenderer: params => {
-                    const tipo = params.value === 'Orden de Pedido' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50' : 'bg-blue-900/30 text-blue-400 border-blue-500/50';
-                    return `<span class="px-2 py-0.5 rounded border text-[10px] uppercase font-bold tracking-widest ${tipo}">${params.value}</span>`;
-                }
-            },
-            {
-                field: 'proveedores.nombre',
-                headerName: 'Entidad Receptora',
-                flex: 1,
-                cellRenderer: params => `<span class="font-bold text-slate-300 text-xs">${params.value || 'Desconocido'}</span>`
-            },
-            {
-                field: 'id', 
-                headerName: 'ID Transacción', 
-                width: 320,
-                cellRenderer: params => `<span class="font-mono text-[10px] text-slate-500">${params.value}</span>`
-            },
-            {
-                field: 'created_at',
-                headerName: 'Fecha Emisión',
-                width: 160,
-                valueFormatter: params => {
-                    if(!params.value) return '--';
-                    const d = new Date(params.value);
-                    return d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
-                }
-            },
-            {
-                headerName: 'Volumetría',
-                width: 130,
-                cellRenderer: params => {
-                    const items = params.data.pedidos_b2b_items || [];
-                    return `<span class="text-[11px] text-slate-400 font-mono">${items.length} SKUs</span>`;
-                }
-            },
-            {
-                headerName: 'Acciones',
-                width: 150,
-                pinned: 'right',
-                cellRenderer: params => {
-                    const id = params.data.id;
-                    return `
-                        <div class="flex items-center gap-2 justify-center h-full">
-                            <button onclick="window.viewB2BItems('${id}')" class="px-3 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 border border-blue-500/30 rounded text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Visualizar Ítems">
-                                <i data-lucide="binoculars" class="w-3.5 h-3.5"></i> Skus
-                            </button>
-                            <button onclick="window.reprintB2B('${id}')" class="px-3 py-1 bg-purple-600/20 text-purple-400 hover:bg-purple-600/40 border border-purple-500/30 rounded text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
-                                <i data-lucide="printer" class="w-3.5 h-3.5"></i> PDF
-                            </button>
-                        </div>
-                    `;
-                }
-            }
-        ],
-        defaultColDef: {
-            sortable: true,
-            filter: true,
-            resizable: true
-        },
-        rowData: [],
-        rowHeight: 45,
-        headerHeight: 40,
-        animateRows: true,
-        rowSelection: 'multiple',
-        suppressRowClickSelection: true,
-        onGridReady: params => {
-            window.activeOrdersGridApi = params.api;
-            if (window.lucide) window.lucide.createIcons();
-            params.api.sizeColumnsToFit();
-        },
-        onModelUpdated: params => {
-            const statusLabel = document.getElementById('b2bActiveOrdersStatus');
-            if (statusLabel) {
-                const total = params.api.getDisplayedRowCount();
-                const selected = params.api.getSelectedRows().length;
-                let txt = `Mostrando ${total} pedidos auditados`;
-                if (selected > 0) txt += ` (${selected} Seleccionados)`;
-                statusLabel.innerText = txt;
-            }
-        },
-        onSelectionChanged: params => {
-            const statusLabel = document.getElementById('b2bActiveOrdersStatus');
-            if (statusLabel) {
-                const total = params.api.getDisplayedRowCount();
-                const selected = params.api.getSelectedRows().length;
-                let txt = `Mostrando ${total} pedidos auditados`;
-                if (selected > 0) txt += ` (${selected} Seleccionados)`;
-                statusLabel.innerText = txt;
-            }
-        },
-        onCellValueChanged: async (params) => {
-            if (params.colDef.field === 'estado' || params.colDef.field === 'fecha_recepcion_estimada') {
-                const id = params.data.id;
-                const field = params.colDef.field;
-                const newVal = params.newValue;
-                
-                try {
-                    const obj = {};
-                    obj[field] = newVal;
-                    const { error } = await window.supabaseClient.from('pedidos_b2b_cabecera').update(obj).eq('id', id);
-                    if (error) {
-                        console.error("Error updating B2B Order field", error);
-                        // Revert manually if needed, for now just log
-                    } else {
-                        console.log(`B2B Tracking updated: ${field} = ${newVal}`);
-                    }
-                } catch(e) {
-                    console.error(e);
-                }
-            }
-        }
-    };
+window.renderActiveOrdersCards = function(data) {
+    const container = document.getElementById('activeOrdersCardsContainer');
+    const statusLabel = document.getElementById('aoCountStatus');
+    const selectedStatus = document.getElementById('aoSelectedStatus');
+    
+    if(!container) return; // If user navigated away
 
-    const eGridDiv = document.querySelector('#activeOrdersGrid');
-    window.activeOrdersGridApi = agGrid.createGrid(eGridDiv, gridOptions);
-}
+    if (statusLabel) statusLabel.innerText = `Mostrando ${data.length} pedidos confirmados`;
+    if (selectedStatus) selectedStatus.innerText = `0 Seleccionados`;
+
+    if (data.length === 0) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-20 text-slate-500">
+                <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-50"></i>
+                <p class="text-sm font-bold tracking-widest uppercase">Sin pedidos activos</p>
+            </div>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+        return;
+    }
+
+    let cardsHtml = '';
+    
+    data.forEach(order => {
+        // Date Formatter
+        let fechaLlegadaHuman = 'Sin asignar';
+        if (order.fecha_recepcion_estimada) {
+            const d = new Date(order.fecha_recepcion_estimada);
+            d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
+            const formatter = new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
+            let fStr = formatter.format(d);
+            fechaLlegadaHuman = fStr.charAt(0).toUpperCase() + fStr.slice(1);
+        }
+
+        let fechaEmision = '--';
+        if (order.created_at) {
+            const d = new Date(order.created_at);
+            fechaEmision = d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+        }
+
+        const skuCount = order.pedidos_b2b_items ? order.pedidos_b2b_items.length : 0;
+        const proveedorNombre = order.proveedores ? order.proveedores.nombre : 'Desconocido';
+        
+        let colorEstado = 'bg-slate-800 text-slate-400 border-slate-700';
+        const st = order.estado || 'Emitido';
+        if (st === 'Emitido') colorEstado = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
+        if (st === 'RECIBIDO') colorEstado = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
+        if (st === 'CANCELADO') colorEstado = 'bg-red-900/30 text-red-400 border-red-500/50';
+
+        cardsHtml += `
+            <div class="relative w-full bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-lg hover:border-blue-500/30 transition-colors flex items-center justify-between group overflow-hidden">
+                <!-- Checkbox -->
+                <div class="absolute inset-y-0 left-0 w-12 flex items-center justify-center border-r border-slate-800/50 bg-slate-950/20">
+                    <input type="checkbox" value="${order.id}" class="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-600/50 bg-slate-800 b2b-order-checkbox cursor-pointer" onchange="window.updateB2BSelectionUI()">
+                </div>
+                
+                <!-- Main Body -->
+                <div class="pl-14 flex-1 flex flex-col justify-center">
+                    <div class="flex items-center gap-4 mb-2">
+                        <span class="text-xl font-black text-white tracking-tight">${proveedorNombre}</span>
+                        <span class="px-2 py-0.5 rounded border text-[9px] uppercase font-bold tracking-widest ${colorEstado}">${st}</span>
+                        <span class="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800/50 text-slate-400 uppercase tracking-widest border border-slate-700/50">${order.tipo_documento || 'Orden'}</span>
+                    </div>
+                    <div class="flex items-center gap-4 text-xs font-mono">
+                        <div class="flex items-center gap-1.5 text-blue-400">
+                            <i data-lucide="calendar-clock" class="w-4 h-4 opacity-80"></i>
+                            <span class="font-bold">${fechaLlegadaHuman}</span>
+                        </div>
+                        <div class="w-px h-3 bg-slate-700"></div>
+                        <div class="flex items-center gap-1.5 text-slate-400">
+                            <i data-lucide="package" class="w-4 h-4 opacity-70"></i>
+                            <span>${skuCount} SKUs</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Secondary Metadata (Minimized) -->
+                <div class="hidden lg:flex flex-col items-end pr-8 justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                    <span class="text-[9px] text-slate-500 font-mono tracking-widest uppercase">ID: ${order.id.split('-')[0]}...</span>
+                    <span class="text-[9px] text-slate-500 font-mono">Emitido: ${fechaEmision}</span>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="window.viewB2BItems('${order.id}')" class="px-4 py-3 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex flex-col items-center gap-1" title="Visualizar Ítems Nativos">
+                        <i data-lucide="layout-list" class="w-4 h-4"></i>
+                        <span>Detalles</span>
+                    </button>
+                    <button onclick="window.reprintB2B('${order.id}')" class="px-4 py-3 bg-purple-600/10 text-purple-400 hover:bg-purple-600 hover:text-white border border-purple-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex flex-col items-center gap-1">
+                        <i data-lucide="printer" class="w-4 h-4"></i>
+                        <span>PDF</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = cardsHtml;
+    if (window.lucide) window.lucide.createIcons();
+};
+
+window.updateB2BSelectionUI = function() {
+    const selected = document.querySelectorAll('.b2b-order-checkbox:checked').length;
+    const selectedStatus = document.getElementById('aoSelectedStatus');
+    if (selectedStatus) {
+        selectedStatus.innerText = `${selected} Seleccionados`;
+    }
+};
+
+window.returnToOrdersList = function() {
+    window.openActiveOrders();
+};
 
 window.loadActiveOrders = async function() {
     const statusLabel = document.getElementById('aoCountStatus');
-    if (statusLabel) statusLabel.innerText = "Cargando registros...";
+    if (statusLabel) statusLabel.innerText = "Cargando registros Capa 3...";
     
     try {
         const res = await fetch('http://localhost:5655/api/b2b/pedidos');
@@ -228,17 +169,9 @@ window.loadActiveOrders = async function() {
         
         if (d.success) {
             window.activeOrdersCache = d.pedidos || [];
-            if(window.activeOrdersGridApi) {
-                if (typeof window.activeOrdersGridApi.setGridOption === 'function') {
-                    window.activeOrdersGridApi.setGridOption('rowData', d.pedidos);
-                } else if (typeof window.activeOrdersGridApi.setRowData === 'function') {
-                    window.activeOrdersGridApi.setRowData(d.pedidos);
-                }
-                setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 100);
-            }
+            window.renderActiveOrdersCards(window.activeOrdersCache);
         } else {
             console.error("Error cargando pedidos:", d.error);
-            const statusLabel = document.getElementById('b2bActiveOrdersStatus');
             if (statusLabel) statusLabel.innerText = "Error de Conexión Capa 3.";
         }
     } catch(e) {
@@ -296,71 +229,107 @@ window.viewB2BItems = function(pedido_id) {
     if(!orderData) return;
     
     const items = orderData.pedidos_b2b_items || [];
-    if(items.length === 0) {
-        Swal.fire({
-            icon: 'info', title: 'Sin Ítems', text: 'Esta transacción no tiene mercadería asociada.', background: '#0f172a', color: '#cbd5e1'
-        });
-        return;
-    }
+    const proveedorNombre = orderData.proveedores ? orderData.proveedores.nombre : 'Desconocido';
     
-    let tableHtml = `
-        <div class="overflow-x-auto w-full custom-scrollbar max-h-96">
-            <table class="w-full text-left border-collapse whitespace-nowrap">
-                <thead class="bg-slate-900 sticky top-0 z-10">
-                    <tr>
-                        <th class="p-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-700">Cód / SKU</th>
-                        <th class="p-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-700">Descripción</th>
-                        <th class="p-3 text-[10px] font-bold text-emerald-500 uppercase tracking-widest border-b border-slate-700 text-center bg-emerald-900/10">Catidad</th>
-                        <th class="p-3 text-[10px] font-bold text-blue-400 uppercase tracking-widest border-b border-slate-700 text-center">Unidad</th>
-                    </tr>
-                </thead>
-                <tbody>
+    // Inject SPA inside reportDisplay
+    const reportDisplay = document.getElementById('reportDisplay');
+    if(!reportDisplay) return;
+
+    let html = `
+        <div class="h-full flex flex-col animate-in slide-in-from-right-4 duration-300 p-2">
+            <!-- Header SPA -->
+            <div class="flex justify-between items-start mb-6 border-b border-slate-800 pb-4 shrink-0">
+                <div class="flex items-center gap-4">
+                    <button onclick="window.returnToOrdersList()" class="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors group" title="Volver al Listado">
+                        <i data-lucide="arrow-left" class="w-5 h-5 group-hover:-translate-x-1 transition-transform"></i>
+                    </button>
+                    <div>
+                        <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                            Manifesto de Remito
+                        </h3>
+                        <p class="text-[10px] uppercase tracking-widest text-blue-400 font-bold mt-1">PROVEEDOR: ${proveedorNombre}</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 pt-2">
+                    <span class="text-xs font-mono text-slate-500">ID: ${orderData.id}</span>
+                </div>
+            </div>
+
+            <div class="flex-1 w-full bg-slate-900 border border-slate-800/50 rounded-xl overflow-hidden flex flex-col shadow-2xl relative">
+    `;
+
+    if (items.length === 0) {
+        html += `
+            <div class="flex flex-col items-center justify-center p-12 text-slate-500 h-full">
+                <i data-lucide="package-x" class="w-12 h-12 mb-4 opacity-50"></i>
+                <p class="text-xs font-bold uppercase tracking-widest text-slate-400">Esta transacción no tiene mercadería asociada</p>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="overflow-x-auto w-full custom-scrollbar flex-1 relative h-full">
+                <table class="w-full text-left border-collapse whitespace-nowrap">
+                    <thead class="bg-slate-950 sticky top-0 z-10">
+                        <tr>
+                            <th class="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Cód / SKU</th>
+                            <th class="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Descripción de Mercadería</th>
+                            <th class="p-4 text-[10px] font-bold text-emerald-500 uppercase tracking-widest border-b border-slate-800 text-right bg-emerald-900/10">Cantidad Física</th>
+                            <th class="p-4 text-[10px] font-bold text-blue-400 uppercase tracking-widest border-b border-slate-800 text-center">Unidad Operativa</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/50">
+        `;
+        
+        items.forEach(i => {
+            html += `
+                <tr class="hover:bg-slate-800/50 transition-colors">
+                    <td class="p-4 text-xs font-mono text-slate-300">#${i.producto_codigo}</td>
+                    <td class="p-4 text-xs font-bold text-slate-200 max-w-sm truncate" title="${i.producto_descripcion}">${i.producto_descripcion}</td>
+                    <td class="p-4 text-xs font-bold text-emerald-400 text-right bg-emerald-900/5 font-mono">${parseFloat(i.cantidad).toLocaleString('es-AR')}</td>
+                    <td class="p-4 text-center">
+                        <span class="text-[9px] text-blue-400 border border-blue-500/20 bg-blue-500/5 rounded px-2 py-1 uppercase tracking-widest font-bold">${i.unidad_ref}</span>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    html += `
+            </div>
+        </div>
     `;
     
-    items.forEach(i => {
-        tableHtml += `
-            <tr class="hover:bg-slate-800/50 transition-colors border-b border-slate-800/50">
-                <td class="p-3 text-xs font-mono text-slate-300">${i.producto_codigo}</td>
-                <td class="p-3 text-[11px] text-slate-400 max-w-[200px] truncate" title="${i.producto_descripcion}">${i.producto_descripcion}</td>
-                <td class="p-3 text-[11px] font-bold text-emerald-400 text-center bg-emerald-900/5">${parseFloat(i.cantidad).toLocaleString('es-AR')}</td>
-                <td class="p-3 text-[11px] text-blue-400 text-center uppercase tracking-wider">${i.unidad_ref}</td>
-            </tr>
-        `;
-    });
-    
-    tableHtml += `</tbody></table></div>`;
-    
-    Swal.fire({
-        title: 'Manifiesto de Remito',
-        html: tableHtml,
-        width: '800px',
-        background: '#0f172a',
-        color: '#f8fafc',
-        showConfirmButton: true,
-        confirmButtonColor: '#3b82f6',
-        confirmButtonText: 'Cerrar Visor'
-    });
-}
+    reportDisplay.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+};
 
 window.purgeTestOrdersB2B = async function() {
-    if (!window.Swal || !window.activeOrdersGridApi) return;
-    
-    const selectedRows = window.activeOrdersGridApi.getSelectedRows();
-    if (selectedRows.length === 0) {
-        Swal.fire({
-            icon: 'info',
-            title: 'Sin Selección',
-            text: 'Debes tildar (checkbox) al menos una fila para ejecutar la purga.',
-            background: '#0f172a', color: '#cbd5e1'
-        });
+    const checkboxes = document.querySelectorAll('.b2b-order-checkbox:checked');
+    if (checkboxes.length === 0) {
+        if(window.Swal) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Sin Selección',
+                text: 'Debes tildar (checkbox) al menos una tarjeta para ejecutar la purga.',
+                background: '#0f172a', color: '#cbd5e1'
+            });
+        } else {
+             alert('Debes tildar al menos una tarjeta.');
+        }
         return;
     }
 
-    const idsToPurge = selectedRows.map(r => r.id);
+    const idsToPurge = Array.from(checkboxes).map(cb => cb.value);
     
-    const result = await Swal.fire({
-        title: 'Purga Selectiva (Capa 3)',
-        text: `¿Confirmás la destrucción absoluta de ${selectedRows.length} pedido(s)? Sus ítems serán eliminados en cascada de la base maestra.`,
+    const result = window.Swal ? await Swal.fire({
+        title: 'Purga Selectiva',
+        text: `¿Confirmás la destrucción absoluta de ${idsToPurge.length} pedido(s)? Sus ítems serán eliminados en cascada de la base maestra.`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
@@ -369,18 +338,12 @@ window.purgeTestOrdersB2B = async function() {
         cancelButtonText: 'Cancelar',
         background: '#0f172a',
         color: '#f8fafc'
-    });
+    }) : { isConfirmed: confirm(`¿Purgar ${idsToPurge.length} elementos?`) };
     
     if (result.isConfirmed) {
-        Swal.fire({
-            title: 'Aniquilando...',
-            background: '#0f172a',
-            color: '#f8fafc',
-            didOpen: () => Swal.showLoading()
-        });
+        if(window.Swal) Swal.fire({ title: 'Aniquilando...', background: '#0f172a', color: '#f8fafc', didOpen: () => Swal.showLoading() });
         
         try {
-            // Delega la purga al Backend Node.js para atravesar las políticas RLS
             const response = await fetch('http://localhost:5655/api/b2b/pedidos/purga', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -392,24 +355,22 @@ window.purgeTestOrdersB2B = async function() {
                 throw new Error(data.error || 'Fallo desconocido en la API');
             }
             
-            Swal.fire({
-                icon: 'success',
-                title: 'Purga Ejecutada',
-                text: data.message || 'Registros erradicados exitosamente.',
-                background: '#0f172a',
-                color: '#10b981'
-            });
+            if(window.Swal) {
+                Swal.fire({
+                    icon: 'success', title: 'Purga Ejecutada', text: data.message || 'Registros erradicados exitosamente.',
+                    background: '#0f172a', color: '#10b981'
+                });
+            }
             window.loadActiveOrders();
             
         } catch(e) {
             console.error("Fallo purgando pruebas:", e);
-            Swal.fire({
-                icon: 'error',
-                title: 'Bloqueo Backend',
-                text: 'La API local rechazó el comando de purga. Asegúrese de que el servidor está corriendo.',
-                background: '#0f172a',
-                color: '#ef4444'
-            });
+            if(window.Swal) {
+                Swal.fire({
+                    icon: 'error', title: 'Bloqueo Backend', text: 'La API local rechazó el comando de purga. Asegúrese de que el servidor está corriendo.',
+                    background: '#0f172a', color: '#ef4444'
+                });
+            } else { alert("Fallo purga: " + e.message); }
         }
     }
 };
