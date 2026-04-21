@@ -679,6 +679,7 @@ window.runPdfSampling = function(preserveOmissions = false) {
         
         window.virtualWorkbookCache = window.virtualWorkbookCache || {};
         window.virtualWorkbookCache["PDF_Tabulado"] = matrix;
+        if (window.updatePdfUIState) window.updatePdfUIState();
         
         const sheetNames = ["PDF_Tabulado"];
         window.currentSheetList = sheetNames;
@@ -1044,33 +1045,81 @@ window.openPdfAnchorModal = async function() {
         window._pdfAnchorBaseImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
         window.redrawPdfAnchors();
 
-        // Listeners
-        canvas.onclick = (e) => {
+        // [Ticket #019] Drag and Drop Listeners
+        let isDragging = false;
+        let draggedAnchorIndex = -1;
+        let dragStartX = -1;
+        const tolerance = 8;
+
+        canvas.onmousemove = (e) => {
             const rect = canvas.getBoundingClientRect();
-            // Coordenada visual en el canvas
-            const clickX = e.clientX - rect.left;
-            
-            // Transformar coordenada visual a coordenada l�gica del PDF (donde scale = 1.0)
-            const logicalX = Math.round(clickX / viewport.scale);
-            
-            let removed = false;
-            // Tolerancia de 8px l�gicos para remover un ancla existente
-            const tolerance = 8; 
-            
+            const mouseX = e.clientX - rect.left;
+            const logicalX = Math.round(mouseX / viewport.scale);
+
+            if (isDragging && draggedAnchorIndex !== -1) {
+                window._draftAnchors[draggedAnchorIndex] = logicalX;
+                window.redrawPdfAnchors();
+                return;
+            }
+
+            // Hover effect
+            let hovering = false;
             for (let i = 0; i < window._draftAnchors.length; i++) {
                 if (Math.abs(window._draftAnchors[i] - logicalX) <= tolerance) {
-                    window._draftAnchors.splice(i, 1);
-                    removed = true;
+                    hovering = true;
                     break;
                 }
             }
-            
-            if (!removed) {
-                window._draftAnchors.push(logicalX);
-                window._draftAnchors.sort((a,b) => a - b);
+            canvas.style.cursor = hovering ? 'ew-resize' : 'crosshair';
+        };
+
+        canvas.onmousedown = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const logicalX = Math.round(mouseX / viewport.scale);
+
+            for (let i = 0; i < window._draftAnchors.length; i++) {
+                if (Math.abs(window._draftAnchors[i] - logicalX) <= tolerance) {
+                    isDragging = true;
+                    draggedAnchorIndex = i;
+                    dragStartX = logicalX;
+                    break;
+                }
             }
-            
+        };
+
+        canvas.onmouseup = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const logicalX = Math.round(mouseX / viewport.scale);
+
+            if (isDragging) {
+                // Si casi no se movió, lo interpretamos como un clic para eliminar
+                if (Math.abs(logicalX - dragStartX) < 2) {
+                    window._draftAnchors.splice(draggedAnchorIndex, 1);
+                } else {
+                    // Terminó de arrastrar
+                    window._draftAnchors.sort((a,b) => a - b);
+                }
+                isDragging = false;
+                draggedAnchorIndex = -1;
+                window.redrawPdfAnchors();
+                return;
+            }
+
+            // Si no estaba arrastrando, es un clic para crear nueva ancla
+            window._draftAnchors.push(logicalX);
+            window._draftAnchors.sort((a,b) => a - b);
             window.redrawPdfAnchors();
+        };
+
+        canvas.onmouseleave = () => {
+            if (isDragging) {
+                isDragging = false;
+                draggedAnchorIndex = -1;
+                window._draftAnchors.sort((a,b) => a - b);
+                window.redrawPdfAnchors();
+            }
         };
 
     } catch (e) {
