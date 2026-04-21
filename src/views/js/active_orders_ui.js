@@ -138,6 +138,10 @@ window.renderActiveOrdersCards = function(data) {
                         <i data-lucide="printer" class="w-4 h-4"></i>
                         <span>PDF</span>
                     </button>
+                    <button onclick="window.sendB2BWhatsAppActive('${order.id}')" class="px-4 py-3 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex flex-col items-center gap-1">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                        <span>WA</span>
+                    </button>
                 </div>
             </div>
         `;
@@ -163,6 +167,16 @@ window.loadActiveOrders = async function() {
     const statusLabel = document.getElementById('aoCountStatus');
     if (statusLabel) statusLabel.innerText = "Cargando registros Capa 3...";
     
+    // Auto-Cargar Catálogo Maestro si no está en la RAM para habilitar volumetrías (Resolución Heurística QA)
+    if (!window._rawLamdaData) {
+        try {
+            const urlOp = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL + '/api/master-table/operativa' : 'http://localhost:5655/api/master-table/operativa';
+            fetch(urlOp).then(r => r.json()).then(opJson => {
+                window._rawLamdaData = opJson.data;
+            }).catch(e => console.warn("Vigia: No se pudo inyectar el Master Catalog en background.", e));
+        } catch(e) {}
+    }
+
     try {
         const res = await fetch('http://localhost:5655/api/b2b/pedidos');
         const d = await res.json();
@@ -223,6 +237,93 @@ window.reprintB2B = function(pedido_id) {
     }
 }
 
+window.sendB2BWhatsAppActive = function(pedido_id) {
+    if(!window.activeOrdersCache) return;
+    const orderData = window.activeOrdersCache.find(x => x.id === pedido_id);
+    if(!orderData) {
+        alert("Registro no pre-cargado en memoria.");
+        return;
+    }
+
+    const items = orderData.pedidos_b2b_items || [];
+    if(items.length === 0) {
+        alert("Este pedido no contiene ítems para enviar.");
+        return;
+    }
+
+    // Identificar variables
+    const provName = orderData.proveedores ? orderData.proveedores.nombre : 'Desconocido';
+    const docType = orderData.tipo_documento || 'Orden de Pedido';
+    const shortOrderId = pedido_id.split('-')[0].toUpperCase();
+    const safeOrderId = `#ORD-${shortOrderId}`;
+    
+    let docDate = new Date();
+    if(orderData.created_at) {
+        const dStr = typeof orderData.created_at === 'string' ? orderData.created_at : orderData.created_at;
+        docDate = new Date(dStr);
+    }
+    const dateStr = docDate.toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit', year: 'numeric'});
+
+    const lamdaPhone = (typeof CONFIG !== 'undefined' && CONFIG.LAMDA_PHONE) ? CONFIG.LAMDA_PHONE : '221 661 5746';
+
+    let msg = `LAMDA - Dpto. de Compras - ${docType} ${safeOrderId} - ${dateStr} - Proveedor: ${provName}\n\nPedido:\n\n`;
+
+    let sumKg = 0;
+
+    items.forEach(i => {
+        let rawUnit = (i.unidad_ref || '').toUpperCase();
+        let unitLabel = rawUnit;
+        if (rawUnit.includes('KILO') || rawUnit.includes('KG')) unitLabel = 'K';
+        else if (rawUnit.includes('GRAMO') || rawUnit.includes('GR')) unitLabel = 'G';
+        else if (rawUnit.includes('LITRO') || rawUnit.includes('LT')) unitLabel = 'L';
+        else if (rawUnit.includes('UNID')) unitLabel = 'U';
+
+        // Búsqueda Dinámica al Maestro ya que no existe fallback en este Schema Activo
+        let rawBult = 1; let rawVal = 1;
+        if (window._rawLamdaData) {
+            const masterItem = window._rawLamdaData.find(r => {
+                const p = r.datos_maestros || {};
+                return (p.codigo === i.producto_codigo || p.sku === i.producto_codigo || r.codigo === i.producto_codigo || r.sku === i.producto_codigo);
+            });
+            if (masterItem) {
+                const mp = masterItem.datos_maestros || {};
+                if (mp.cant_bult && !isNaN(mp.cant_bult)) rawBult = parseFloat(mp.cant_bult);
+                else if (masterItem.cant_bult && !isNaN(masterItem.cant_bult)) rawBult = parseFloat(masterItem.cant_bult);
+                
+                if (mp.cant_valor && !isNaN(mp.cant_valor)) rawVal = parseFloat(mp.cant_valor);
+                else if (masterItem.cant_valor && !isNaN(masterItem.cant_valor)) rawVal = parseFloat(masterItem.cant_valor);
+            }
+        }
+        
+        const bult = (i.cant_bult && !isNaN(i.cant_bult)) ? parseFloat(i.cant_bult) : rawBult;
+        const val = (i.cant_valor && !isNaN(i.cant_valor)) ? parseFloat(i.cant_valor) : rawVal;
+        const kgMult = bult * val;
+        
+        let isKg = unitLabel === 'K' || unitLabel === 'L' || unitLabel === 'G' || rawUnit.includes('KG');
+        
+        const qty = parseInt(i.cantidad) || 1;
+        const totalKg = qty * kgMult;
+        
+        if (isKg) sumKg += totalKg;
+        
+        let kgData = isKg ? ` - (${totalKg.toFixed(2)} Kg)` : '';
+        
+        msg += `\u2705 *Cod. ${i.producto_codigo}   Cant. ${qty}*\n`;
+        msg += `${i.producto_descripcion} ${bult} x ${val}${kgData}\n\n`;
+    });
+
+    msg += `-----------------------------------\n`;
+    msg += `Total Ítems: ${items.length}\n`;
+    msg += `Total Kilos: ${sumKg.toFixed(2)} Kg\n`;
+    msg += `-----------------------------------\n\n`;
+    msg += `Pedido confirmado por: lamdaproveedorservicios@gmail.com`;
+    msg += `\nCel. LAMDA: ${lamdaPhone}`;
+    msg += `\nLAMDA Sistemas`;
+
+    const uri = `https://wa.me/?text=` + encodeURIComponent(msg);
+    window.open(uri, '_blank');
+};
+
 window.viewB2BItems = function(pedido_id) {
     if(!window.activeOrdersCache) return;
     const orderData = window.activeOrdersCache.find(x => x.id === pedido_id);
@@ -269,25 +370,61 @@ window.viewB2BItems = function(pedido_id) {
         html += `
             <div class="overflow-x-auto w-full custom-scrollbar flex-1 relative h-full">
                 <table class="w-full text-left border-collapse whitespace-nowrap">
-                    <thead class="bg-slate-950 sticky top-0 z-10">
+                    <thead class="bg-slate-950 sticky top-0 z-10 shadow-md">
                         <tr>
                             <th class="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Cód / SKU</th>
-                            <th class="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Descripción de Mercadería</th>
-                            <th class="p-4 text-[10px] font-bold text-emerald-500 uppercase tracking-widest border-b border-slate-800 text-right bg-emerald-900/10">Cantidad Física</th>
-                            <th class="p-4 text-[10px] font-bold text-blue-400 uppercase tracking-widest border-b border-slate-800 text-center">Unidad Operativa</th>
+                            <th class="w-full p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Descripción de Mercadería</th>
+                            <th class="py-4 pr-6 pl-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-left w-12" title="Cantidad Bulto">C.B</th>
+                            <th class="py-4 pr-8 pl-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-left w-12" title="Cantidad Valor">C.V</th>
+                            <th class="p-4 text-[10px] font-bold text-blue-300 uppercase tracking-widest border-b border-blue-900/50 text-center bg-blue-900/10 border-l border-blue-900/30 shadow-inner">Cant. Pedida</th>
+                            <th class="p-4 text-[10px] font-bold text-emerald-400 uppercase tracking-widest border-b border-emerald-900/50 text-right bg-emerald-900/20 border-l border-emerald-900/30 shadow-inner">T. Kilos</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-800/50">
         `;
         
         items.forEach(i => {
+            const pedida = parseFloat(i.cantidad) || 0;
+            
+            // Búsqueda Dinámica Catálogo (Fallback para Schema Restrictivo)
+            let rawBult = 1; let rawVal = 1;
+            if (window._rawLamdaData) {
+                const masterItem = window._rawLamdaData.find(r => {
+                    const p = r.datos_maestros || {};
+                    return (p.codigo === i.producto_codigo || p.sku === i.producto_codigo || r.codigo === i.producto_codigo || r.sku === i.producto_codigo);
+                });
+                if (masterItem) {
+                    const mp = masterItem.datos_maestros || {};
+                    if (mp.cant_bult && !isNaN(mp.cant_bult)) rawBult = parseFloat(mp.cant_bult);
+                    else if (masterItem.cant_bult && !isNaN(masterItem.cant_bult)) rawBult = parseFloat(masterItem.cant_bult);
+                    
+                    if (mp.cant_valor && !isNaN(mp.cant_valor)) rawVal = parseFloat(mp.cant_valor);
+                    else if (masterItem.cant_valor && !isNaN(masterItem.cant_valor)) rawVal = parseFloat(masterItem.cant_valor);
+                }
+            }
+
+            const bulto = parseFloat(i.cant_bult) || rawBult;
+            const valor = parseFloat(i.cant_valor) || rawVal;
+            const totalVol = pedida * bulto * valor;
+
+            // Formateador de Unidad (Evitar palabras completas)
+            let abrevUnit = (i.unidad_ref || 'U').trim();
+            const upperRef = abrevUnit.toUpperCase();
+            if (upperRef.includes('KILO') || upperRef === 'KILOGRAMO' || upperRef === 'K' || upperRef === 'KG') abrevUnit = 'Kg';
+            else if (upperRef.includes('GRAMO') || upperRef === 'GR' || upperRef === 'G') abrevUnit = 'g';
+            else if (upperRef.includes('LITRO') || upperRef === 'LT' || upperRef === 'L') abrevUnit = 'L';
+            else if (upperRef.includes('UNID')) abrevUnit = 'U';
+
             html += `
                 <tr class="hover:bg-slate-800/50 transition-colors">
                     <td class="p-4 text-xs font-mono text-slate-300">#${i.producto_codigo}</td>
-                    <td class="p-4 text-xs font-bold text-slate-200 max-w-sm truncate" title="${i.producto_descripcion}">${i.producto_descripcion}</td>
-                    <td class="p-4 text-xs font-bold text-emerald-400 text-right bg-emerald-900/5 font-mono">${parseFloat(i.cantidad).toLocaleString('es-AR')}</td>
-                    <td class="p-4 text-center">
-                        <span class="text-[9px] text-blue-400 border border-blue-500/20 bg-blue-500/5 rounded px-2 py-1 uppercase tracking-widest font-bold">${i.unidad_ref}</span>
+                    <td class="p-4 text-xs font-bold text-slate-200 w-full truncate" title="${i.producto_descripcion}">${i.producto_descripcion}</td>
+                    <td class="py-4 pr-6 pl-2 text-xs font-mono text-slate-500 text-left opacity-80">${bulto.toLocaleString('es-AR')}</td>
+                    <td class="py-4 pr-8 pl-2 text-xs font-mono text-slate-500 text-left opacity-80">${valor.toLocaleString('es-AR')}</td>
+                    <td class="p-4 text-sm font-black text-blue-300 text-center bg-blue-900/10 border-l border-blue-900/30 font-mono shadow-inner">${pedida.toLocaleString('es-AR')}</td>
+                    <td class="p-4 text-right bg-emerald-900/20 border-l border-emerald-900/30 shadow-inner">
+                        <span class="text-sm font-black text-emerald-400 font-mono tracking-tight">${totalVol.toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 2})}</span>
+                        <span class="text-[10px] font-bold text-emerald-500/80 ml-1 uppercase tracking-widest">${abrevUnit}</span>
                     </td>
                 </tr>
             `;
