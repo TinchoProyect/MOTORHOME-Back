@@ -48,6 +48,22 @@ router.post('/generar', async (req, res) => {
     }
 });
 
+// GET /api/b2b/pedidos/count
+router.get('/pedidos/count', async (req, res) => {
+    try {
+        const { count, error } = await supabase
+            .from('pedidos_b2b_cabecera')
+            .select('*', { count: 'exact', head: true });
+
+        if (error) throw error;
+        
+        return res.json({ success: true, count: count || 0 });
+    } catch(e) {
+        console.error("Error al obtener conteo de pedidos B2B:", e);
+        return res.status(500).json({ error: e.message });
+    }
+});
+
 // GET /api/b2b/pedidos
 router.get('/pedidos', async (req, res) => {
     try {

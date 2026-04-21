@@ -285,26 +285,25 @@
                     </div>
                 </div>
 
-                <!-- Card 2 -->
-                <div class="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/60 shadow-[0_8px_30px_rgb(0,0,0,0.4)] group hover:border-emerald-500/30 hover:shadow-[0_8px_30px_rgba(16,185,129,0.15)] transition-all duration-300">
-                    <div class="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                    <div class="absolute -right-6 -bottom-6 text-slate-800/30 group-hover:text-emerald-900/20 group-hover:scale-110 transition duration-500 pointer-events-none">
-                        <i data-lucide="trending-up" class="w-32 h-32"></i>
+                <!-- Card 2: Pedidos Activos (Refinamiento QA) -->
+                <div class="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/60 shadow-[0_8px_30px_rgb(0,0,0,0.4)] group hover:border-indigo-500/30 hover:shadow-[0_8px_30px_rgba(99,102,241,0.15)] transition-all duration-300">
+                    <div class="absolute inset-0 bg-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    <div class="absolute -right-6 -bottom-6 text-slate-800/30 group-hover:text-indigo-900/20 group-hover:scale-110 transition duration-500 pointer-events-none">
+                        <i data-lucide="truck" class="w-32 h-32"></i>
                     </div>
                     
                     <div class="relative z-10 flex flex-col h-full">
                         <div class="flex items-center gap-2 text-slate-500 mb-4">
-                            <div class="p-1.5 bg-emerald-500/10 rounded border border-emerald-500/20 text-emerald-400">
-                                <i data-lucide="trending-up" class="w-4 h-4"></i>
+                            <div class="p-1.5 bg-indigo-500/10 rounded border border-indigo-500/20 text-indigo-400">
+                                <i data-lucide="truck" class="w-4 h-4"></i>
                             </div>
-                            <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Inversión Mensual</span>
+                            <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Pedidos Confirmados</span>
                         </div>
                         <div class="mt-auto flex flex-col">
                             <div class="flex items-baseline gap-1">
-                                <span class="text-sm text-slate-500 font-mono font-bold">$</span>
-                                <span class="text-3xl font-black text-emerald-400 font-mono tracking-tighter drop-shadow-md">158.42M</span>
+                                <span id="widget-active-orders" class="text-4xl font-black text-indigo-400 font-mono tracking-tighter drop-shadow-md cursor-default">--</span>
                             </div>
-                            <span class="text-[9px] text-slate-500 uppercase tracking-widest mt-1">Total acumulado</span>
+                            <span class="text-[9px] text-slate-500 uppercase tracking-widest mt-1">Órdenes en Tránsito</span>
                         </div>
                     </div>
                 </div>
@@ -3226,6 +3225,22 @@
                     }
                 }
             }, true);
+        });
+    </script>
+
+    <!-- Script: Inicialización de Widgets Laterales (Pedidos Activos) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res = await fetch('http://localhost:5655/api/b2b/pedidos/count');
+                const data = await res.json();
+                if (data && data.success) {
+                    const countEl = document.getElementById('widget-active-orders');
+                    if (countEl) countEl.innerText = data.count || 0;
+                }
+            } catch (err) {
+                console.warn("LAMDA - Fallo en carga de métricas widget lateral:", err);
+            }
         });
     </script>
 
