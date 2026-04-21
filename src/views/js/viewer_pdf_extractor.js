@@ -5,45 +5,31 @@
 console.log("%c 📄 PDF EXTRACTOR: READY ", "background: #f43f5e; color: #fff; font-weight: bold; padding: 4px;");
 
 window.PDFExtractor = (function() {
-    
-    /**
-     * Extrae texto y coordenadas, y agrupa en filas y columnas.
-     */
-    async function extractToTabla(arrayBuffer) {
-        if (!window.pdfjsLib) {
-            throw new Error("Librería PDF.js no fue encontrada.");
-        }
+    let currentRawItems = [];
+
+    async function loadPdfText(arrayBuffer) {
+        if (!window.pdfjsLib) throw new Error("Librería PDF.js no fue encontrada.");
         
-        // Configuramos el worker si es necesario (generalmente lo resuelve automagicamente con CDN, 
-        // pero PDF.js suele quejarse si no está explicitado. Lo asume del mismo path)
         const pdfjsLib = window.pdfjsLib;
-        // pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-        
         const loadingTask = pdfjsLib.getDocument(new Uint8Array(arrayBuffer));
         const pdfDoc = await loadingTask.promise;
         
-        const allItems = [];
+        currentRawItems = [];
         
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum);
             const textContent = await page.getTextContent();
-            
-            // Cada item contiene 'str' y transform = [ escalaX, skewY, skewX, escalaY, x, y ]
-            // Como las páginas caen una debajo de otra, le restamos el offset de la página a la Y
-            // En PDF.js, Y=0 es la parte inferior.
             const viewport = page.getViewport({ scale: 1.0 });
             const pageHeight = viewport.height;
-            const pageOffset = (pageNum - 1) * 2000; // Un offset holgado para separar páginas
+            const pageOffset = (pageNum - 1) * 2000;
             
             textContent.items.forEach(item => {
                 if (!item.str || item.str.trim() === '') return;
-                
                 const x = item.transform[4];
                 const rawY = item.transform[5];
-                // Invertimos Y para que crezca de arriba hacia abajo (y sumamos la paginación)
                 const y = (pageHeight - rawY) + pageOffset;
                 
-                allItems.push({
+                currentRawItems.push({
                     text: item.str.trim(),
                     x: Math.round(x),
                     y: Math.round(y)
@@ -51,20 +37,31 @@ window.PDFExtractor = (function() {
             });
         }
         
-        if (allItems.length === 0) {
-            throw new Error("El PDF no contiene texto extraíble (posiblemente sea una imagen escaneada).");
+        if (currentRawItems.length === 0) {
+            throw new Error("El PDF no contiene texto extraíble.");
         }
-        
+        console.log(`[PDF_EXTRACTOR] Texto binario cargado en memoria. Items totales: ${currentRawItems.length}`);
+        return currentRawItems.length;
+    }
+
+    function applyClustering(config = {}) {
+        if (currentRawItems.length === 0) throw new Error("No hay un PDF cargado en memoria.");
+
+        const thresholdY = parseInt(config.thresholdY) || 6;
+        const thresholdXMerge = parseInt(config.thresholdXMerge) || 8;
+        const colTolerance = parseInt(config.colTolerance) || 15;
+
+        const items = JSON.parse(JSON.stringify(currentRawItems));
+
         // 1. Agrupación por Eje Y (Filas Teóricas)
-        allItems.sort((a, b) => a.y - b.y);
+        items.sort((a, b) => a.y - b.y);
         
         const rowsUnfiltered = [];
         let currentRow = [];
-        let currentY = allItems[0].y;
-        const THRESHOLD_Y = 6; // Tolerancia de 6 píxeles verticales
+        let currentY = items[0].y;
         
-        allItems.forEach(item => {
-            if (Math.abs(item.y - currentY) <= THRESHOLD_Y) {
+        items.forEach(item => {
+            if (Math.abs(item.y - currentY) <= thresholdY) {
                 currentRow.push(item);
             } else {
                 rowsUnfiltered.push(currentRow);
@@ -74,22 +71,17 @@ window.PDFExtractor = (function() {
         });
         if (currentRow.length > 0) rowsUnfiltered.push(currentRow);
         
-        // 2. Limpieza Temprana (Filtrado de Ruido / Títulos y Tótems Semánticos Aislados)
-        const isNumeric = (str) => {
-            // Regex permisiva para montos: 12.345,67 o $ 500
-            return /^[$\s]*[0-9.,]+[$\s]*$/.test(str);
-        };
-        
+        // 2. Limpieza Temprana
+        const isNumeric = (str) => /^[$\s]*[0-9.,]+[$\s]*$/.test(str);
         const validRows = [];
+        
         rowsUnfiltered.forEach(rowItems => {
-            // Unificamos fragmenos contiguos horizontalmente por si el PDF partió una palabra en pedacitos
             rowItems.sort((a,b) => a.x - b.x);
             let merged = [];
             let currentItem = rowItems[0];
-            const THRESHOLD_X_MERGE = 8;
             
             for(let i = 1; i < rowItems.length; i++) {
-                if (Math.abs(rowItems[i].x - (currentItem.x + currentItem.text.length * 5)) < THRESHOLD_X_MERGE) {
+                if (Math.abs(rowItems[i].x - (currentItem.x + currentItem.text.length * 5)) < thresholdXMerge) {
                     currentItem.text += " " + rowItems[i].text;
                 } else {
                     merged.push(currentItem);
@@ -98,18 +90,15 @@ window.PDFExtractor = (function() {
             }
             merged.push(currentItem);
             
-            // Evaluar Densidad: ¿Es una fila válida o es un Título de Rubro?
             let hasNumbers = merged.some(itm => isNumeric(itm.text));
             if (merged.length < 2 && !hasNumbers) {
-                // Fila ruidosa. Un texto aislado que ni siquiera es número. IGNORAR.
                 console.log("PDF_Limpieza: Descartando fila ruidosa:", merged.map(m=>m.text).join(" "));
             } else {
                 validRows.push(merged);
             }
         });
         
-        // 3. Extracción Discreta de Columnas (Eje X)
-        // Recolectamos todas las coordenadas X únicas y agrupamos cercanías
+        // 3. Extracción Discreta de Columnas
         let allXs = [];
         validRows.forEach(row => row.forEach(itm => allXs.push(itm.x)));
         allXs.sort((a,b) => a - b);
@@ -119,22 +108,18 @@ window.PDFExtractor = (function() {
             let cx = allXs[0];
             colAnchors.push(cx);
             for(let i=1; i<allXs.length; i++) {
-                if (Math.abs(allXs[i] - cx) > 15) { // Si hay más de 15px de diferencia, es una nueva columna
+                if (Math.abs(allXs[i] - cx) > colTolerance) {
                     cx = allXs[i];
                     colAnchors.push(cx);
                 }
             }
         }
         
-        // 4. Tabulación Visual y Alineamiento Matricial
+        // 4. Tabulación Visual
         const finalMatrix = [];
-        
-        // En base a colAnchors, cada fila tendrá exactamente colAnchors.length columnas
         validRows.forEach(rowItems => {
             let rowPaddded = new Array(colAnchors.length).fill("");
-            
             rowItems.forEach(itm => {
-                // Encontrar a qué "columna / anchor" pertenece midiendo distancia
                 let bestColIdx = 0;
                 let minDist = Infinity;
                 colAnchors.forEach((ax, idx) => {
@@ -145,28 +130,26 @@ window.PDFExtractor = (function() {
                     }
                 });
                 
-                // Anexar texto (por si caen dos textos en la misma columna por error de distancias)
                 if (rowPaddded[bestColIdx] !== "") {
                     rowPaddded[bestColIdx] += " " + itm.text;
                 } else {
                     rowPaddded[bestColIdx] = itm.text;
                 }
             });
-            
             finalMatrix.push(rowPaddded);
         });
         
-        // Generar Cabeceras Automáticas Dummy si es necesario para mantener integridad en UI
         if (finalMatrix.length > 0) {
             let headers = colAnchors.map((_, i) => "Columna " + (i + 1));
             finalMatrix.unshift(headers);
         }
         
-        console.log(`[PDF_EXTRACTOR] Extracción Completa. Filas Válidas obtenidas: ${finalMatrix.length}`);
+        console.log(`[PDF_EXTRACTOR] Muestreo Aplicado. Filas Válidas: ${finalMatrix.length}. Columnas detectadas: ${colAnchors.length}`);
         return finalMatrix;
     }
 
     return {
-        extractToTabla
+        loadPdfText,
+        applyClustering
     }
 })();

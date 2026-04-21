@@ -244,49 +244,27 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
                 }
             };
         } else if (isPdf) {
+            // [UX REQ] Mostrar siempre el PDF primero y desplegar modo de muestreo interactivo
+            pdfContainer.src = downloadUrl;
+            pdfContainer.classList.remove('hidden');
+            excelContainer.classList.add('hidden');
             loader.classList.remove('hidden');
-            excelContainer.innerHTML = '<div class="flex flex-col items-center justify-center h-64 text-fuchsia-400"><div class="w-8 h-8 border-4 border-fuchsia-500 border-t-transparent rounded-full animate-spin mb-2"></div><span class="text-xs font-mono animate-pulse">PARSEANDO PDF (IA)...</span></div>';
-            excelContainer.classList.remove('hidden');
-            pdfContainer.classList.add('hidden');
 
             const response = await fetch(downloadUrl);
             if (!response.ok) throw new Error("Error descargando archivo PDF.");
             const arrayBuffer = await response.arrayBuffer();
             
-            window.PDFExtractor.extractToTabla(arrayBuffer).then(matrix => {
-                window.virtualWorkbookCache = window.virtualWorkbookCache || {};
-                window.virtualWorkbookCache["PDF_Tabulado"] = matrix;
-                
-                const sheetNames = ["PDF_Tabulado"];
-                window.currentSheetList = sheetNames;
-                renderSheetTabs(sheetNames);
-                if (sheetNames.length > 1) sheetTabs.classList.remove('hidden');
-                
-                currentSheetName = sheetNames[0];
-                currentSheetData = matrix;
-                if (currentSheetData && currentSheetData.length > 0) {
-                    currentSheetData.forEach((row, idx) => {
-                        if (row && typeof row === 'object') row._rowUid = idx;
-                    });
-                }
-                
-                window.virtualColumns = [];
-                window.computedColumns = [];
-                window.draftPipelines = {};
-                window.columnMapping = {};
-
-                renderVirtualTable(matrix);
+            // Cargar en memoria el PDF sin tabular aún
+            window.PDFExtractor.loadPdfText(arrayBuffer).then(itemCount => {
                 loader.classList.add('hidden');
-
-                if (window.ViewerUI && window.ViewerUI.toggleTools) {
-                    window.ViewerUI.toggleTools(false);
-                }
+                const panel = document.getElementById('pdfControlsPanel');
+                if(panel) panel.classList.remove('hidden');
             }).catch(e => {
-                console.error("PDF Extractor Error:", e);
-                errContainer.textContent = "Error al estructurar PDF: " + e.message;
+                console.error("PDF Load Error:", e);
+                errContainer.textContent = "Error al leer PDF: " + e.message;
                 errContainer.classList.remove('hidden');
                 loader.classList.add('hidden');
-                excelContainer.classList.add('hidden');
+                pdfContainer.classList.add('hidden');
             });
         } else if (isImg) {
             imgEl.src = downloadUrl;
@@ -674,6 +652,66 @@ window.loadVirtualWorkbook = function (workbookMap, fileName, providerName = "DA
 
     // 7. Load First Sheet
     loadSheet(sheetNames[0]);
+};
+
+// --- 5. CONTROLES PDF (Ticket #004) ---
+window.runPdfSampling = function() {
+    const config = {
+        thresholdY: document.getElementById('pdfRangeY')?.value || 6,
+        thresholdXMerge: document.getElementById('pdfRangeXMerge')?.value || 8,
+        colTolerance: document.getElementById('pdfRangeCol')?.value || 15
+    };
+
+    try {
+        const matrix = window.PDFExtractor.applyClustering(config);
+        
+        window.virtualWorkbookCache = window.virtualWorkbookCache || {};
+        window.virtualWorkbookCache["PDF_Tabulado"] = matrix;
+        
+        const sheetNames = ["PDF_Tabulado"];
+        window.currentSheetList = sheetNames;
+        renderSheetTabs(sheetNames);
+        const tabsEl = document.getElementById('sheetTabs');
+        if (sheetNames.length > 1 && tabsEl) tabsEl.classList.remove('hidden');
+        
+        currentSheetName = sheetNames[0];
+        currentSheetData = matrix;
+        if (currentSheetData && currentSheetData.length > 0) {
+            currentSheetData.forEach((row, idx) => {
+                if (row && typeof row === 'object') row._rowUid = idx;
+            });
+        }
+        
+        window.virtualColumns = [];
+        window.computedColumns = [];
+        window.draftPipelines = {};
+        window.columnMapping = {};
+
+        renderVirtualTable(matrix);
+        
+        const pdfCont = document.getElementById('pdfContainer');
+        const excelCont = document.getElementById('excelContainer');
+        if(pdfCont) pdfCont.classList.add('hidden');
+        if(excelCont) excelCont.classList.remove('hidden');
+        
+        if (window.ViewerUI && window.ViewerUI.toggleTools) {
+            window.ViewerUI.toggleTools(false);
+        }
+    } catch(e) {
+        console.error("Error en Muestreo PDF:", e);
+        const errContainer = document.getElementById('errorContainer');
+        if(errContainer) {
+            errContainer.textContent = "Error en muestreo: " + e.message;
+            errContainer.classList.remove('hidden');
+        }
+    }
+};
+
+window.restorePdfVisual = function() {
+    const pdfCont = document.getElementById('pdfContainer');
+    const excelCont = document.getElementById('excelContainer');
+    if(excelCont) excelCont.classList.add('hidden');
+    if(pdfCont) pdfCont.classList.remove('hidden');
 };
 
 console.log("✅ VIEWER ENGINE INITIALIZED & EXPOSED");
