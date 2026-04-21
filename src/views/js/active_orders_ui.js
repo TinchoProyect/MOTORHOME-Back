@@ -280,6 +280,7 @@ window.sendB2BWhatsAppActive = function(pedido_id) {
 
         // Búsqueda Dinámica al Maestro ya que no existe fallback en este Schema Activo
         let rawBult = 1; let rawVal = 1;
+        const parseVol = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
         if (window._rawLamdaData) {
             const masterItem = window._rawLamdaData.find(r => {
                 const p = r.datos_maestros || {};
@@ -287,11 +288,8 @@ window.sendB2BWhatsAppActive = function(pedido_id) {
             });
             if (masterItem) {
                 const mp = masterItem.datos_maestros || {};
-                if (mp.cant_bult && !isNaN(mp.cant_bult)) rawBult = parseFloat(mp.cant_bult);
-                else if (masterItem.cant_bult && !isNaN(masterItem.cant_bult)) rawBult = parseFloat(masterItem.cant_bult);
-                
-                if (mp.cant_valor && !isNaN(mp.cant_valor)) rawVal = parseFloat(mp.cant_valor);
-                else if (masterItem.cant_valor && !isNaN(masterItem.cant_valor)) rawVal = parseFloat(masterItem.cant_valor);
+                rawBult = parseVol(mp.cant_bult) || parseVol(masterItem.cant_bult) || 1;
+                rawVal = parseVol(mp.cant_valor) || parseVol(masterItem.cant_valor) || 1;
             }
         }
         
@@ -336,6 +334,28 @@ window.viewB2BItems = function(pedido_id) {
     const reportDisplay = document.getElementById('reportDisplay');
     if(!reportDisplay) return;
 
+    let sumTotalVol = 0;
+    const parseVolForSum = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
+    
+    items.forEach(i => {
+        let rawBult = 1; let rawVal = 1;
+        if (window._rawLamdaData) {
+            const masterItem = window._rawLamdaData.find(r => {
+                const p = r.datos_maestros || {};
+                return (p.codigo === i.producto_codigo || p.sku === i.producto_codigo || r.codigo === i.producto_codigo || r.sku === i.producto_codigo);
+            });
+            if (masterItem) {
+                const mp = masterItem.datos_maestros || {};
+                rawBult = parseVolForSum(mp.cant_bult) || parseVolForSum(masterItem.cant_bult) || 1;
+                rawVal = parseVolForSum(mp.cant_valor) || parseVolForSum(masterItem.cant_valor) || 1;
+            }
+        }
+        const bulto = parseFloat(i.cant_bult) || rawBult;
+        const valor = parseFloat(i.cant_valor) || rawVal;
+        const pedida = parseFloat(i.cantidad) || 0;
+        sumTotalVol += (pedida * bulto * valor);
+    });
+
     let html = `
         <div class="h-full flex flex-col animate-in slide-in-from-right-4 duration-300 p-2">
             <!-- Header SPA -->
@@ -346,9 +366,14 @@ window.viewB2BItems = function(pedido_id) {
                     </button>
                     <div>
                         <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                            Manifesto de Remito
+                            Detalle del Pedido
                         </h3>
-                        <p class="text-[10px] uppercase tracking-widest text-blue-400 font-bold mt-1">PROVEEDOR: ${proveedorNombre}</p>
+                        <div class="flex items-center gap-3 mt-1">
+                            <p class="text-[10px] uppercase tracking-widest text-blue-400 font-bold">PROVEEDOR: ${proveedorNombre}</p>
+                            <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/30 text-[10px] font-black text-emerald-400 font-mono tracking-widest flex items-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                                <i data-lucide="scale" class="w-3 h-3"></i> T. VOLUMETRÍA: ${sumTotalVol.toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 2})}
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 pt-2">
@@ -387,6 +412,7 @@ window.viewB2BItems = function(pedido_id) {
             
             // Búsqueda Dinámica Catálogo (Fallback para Schema Restrictivo)
             let rawBult = 1; let rawVal = 1;
+            const parseVol = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
             if (window._rawLamdaData) {
                 const masterItem = window._rawLamdaData.find(r => {
                     const p = r.datos_maestros || {};
@@ -394,11 +420,8 @@ window.viewB2BItems = function(pedido_id) {
                 });
                 if (masterItem) {
                     const mp = masterItem.datos_maestros || {};
-                    if (mp.cant_bult && !isNaN(mp.cant_bult)) rawBult = parseFloat(mp.cant_bult);
-                    else if (masterItem.cant_bult && !isNaN(masterItem.cant_bult)) rawBult = parseFloat(masterItem.cant_bult);
-                    
-                    if (mp.cant_valor && !isNaN(mp.cant_valor)) rawVal = parseFloat(mp.cant_valor);
-                    else if (masterItem.cant_valor && !isNaN(masterItem.cant_valor)) rawVal = parseFloat(masterItem.cant_valor);
+                    rawBult = parseVol(mp.cant_bult) || parseVol(masterItem.cant_bult) || 1;
+                    rawVal = parseVol(mp.cant_valor) || parseVol(masterItem.cant_valor) || 1;
                 }
             }
 
