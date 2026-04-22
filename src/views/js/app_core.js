@@ -85,6 +85,9 @@ async function initSystem() {
             userAvatarCtx.classList.remove('animate-pulse'); // Stop loading animation
         }
 
+        // [TICKET #038] Cargar categorías dinámicas antes del resto de dependencias UI
+        await loadCategorias();
+
         // Cargar Sidebar de Proveedores (Lazy Load inicial)
         loadSuppliersSidebar();
     }
@@ -143,6 +146,16 @@ function setupUIListeners() {
                 }
                 this.value = val;
                 validateFormState();
+            });
+        }
+
+        const catSelect = document.getElementById('supplierCategoriaSelect');
+        if (catSelect) {
+            catSelect.addEventListener('change', function(e) {
+                if (this.value === 'GESTIONAR_RUBROS') {
+                    openCategoriasModal();
+                    this.value = ''; // Temporariamente reset
+                }
             });
         }
 
@@ -627,7 +640,7 @@ async function showSingleSupplier(id) {
                         <div class="w-3 h-3 rounded-full ${supplier.activo ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'}"></div>
                         
                         <h2 class="text-3xl font-bold text-white tracking-tight">${supplier.nombre}</h2>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-widest">${supplier.categoria || 'GENERAL'}</span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-widest">${supplier.categoria_display || 'GENERAL'}</span>
                     </div>
                     <div class="flex items-center gap-4 text-slate-500 text-xs font-mono pl-6">
                         <span>CUIT: <span class="text-slate-400">${supplier.cuit || 'N/A'}</span></span>
@@ -729,13 +742,20 @@ async function loadProveedores() {
 
     const { data, error } = await supabaseClient
         .from('proveedores')
-        .select('*')
+        .select('*, categorias_proveedores(nombre)')
         .order('nombre', { ascending: true }); // Orden alfabético
 
     if (error) {
         console.error("Error al cargar proveedores:", error);
         reportDisplay.innerHTML = `<div class="text-red-500">Error al cargar proveedores: ${error.message}</div>`;
         return;
+    }
+
+    // [TICKET #038] Mapeo resolutivo de FK
+    if (data) {
+        data.forEach(s => {
+            s.categoria_display = (s.categorias_proveedores && s.categorias_proveedores.nombre) ? s.categorias_proveedores.nombre : 'GENERAL';
+        });
     }
 
     // 🔥 CAMBIO CRÍTICO AQUÍ: Usamos window.currentSuppliers
@@ -784,7 +804,7 @@ async function loadProveedores() {
                     <td class="px-4 py-3 whitespace-nowrap text-xs text-slate-400 font-mono hidden md:table-cell">${supplier.cuit || '-'}</td>
                     <td class="px-4 py-3 whitespace-nowrap">
                         <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-800 text-slate-300 border border-slate-700 uppercase">
-                            ${supplier.categoria || 'General'}
+                            ${supplier.categoria_display || 'GENERAL'}
                         </span>
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap hidden md:table-cell">
@@ -1425,3 +1445,139 @@ function validateFormState() {
 
     submitBtn.disabled = !(nameValid && cuitValid);
 }
+
+// =============================================================================
+// [TICKET #038] GESTIÓN DINÁMICA DE CATEGORÍAS (CRUD)
+// =============================================================================
+window.categoriasMaestras = [];
+
+async function loadCategorias() {
+    const select = document.getElementById('supplierCategoriaSelect');
+    if (!select) return;
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('categorias_proveedores')
+            .select('*')
+            .order('nombre', { ascending: true });
+
+        if (error) throw error;
+
+        window.categoriasMaestras = data || [];
+        renderSelectCategorias(select);
+        renderListaCategoriasModal();
+
+    } catch (error) {
+        console.error("Error cargando categorías:", error);
+        select.innerHTML = '<option value="">Error al cargar rubros</option>';
+    }
+}
+
+function renderSelectCategorias(selectElement) {
+    // Preservar la selección actual si existe
+    const currentValue = selectElement.value;
+    
+    let html = '<option value="" class="bg-slate-900">Seleccionar rubro...</option>';
+    window.categoriasMaestras.forEach(cat => {
+        html += `<option value="${cat.id}" class="bg-slate-900">${cat.nombre}</option>`;
+    });
+    html += '<option value="GESTIONAR_RUBROS" class="bg-slate-800 text-emerald-400 font-bold">[ + ] Gestionar Rubros</option>';
+    
+    selectElement.innerHTML = html;
+    
+    // Restaurar si el id todavía existe
+    if (currentValue && window.categoriasMaestras.find(c => c.id === currentValue)) {
+        selectElement.value = currentValue;
+    } else {
+        selectElement.value = "";
+    }
+}
+
+function openCategoriasModal() {
+    const modal = document.getElementById('categoriasModal');
+    if (modal) modal.classList.remove('hidden');
+    renderListaCategoriasModal();
+}
+
+function closeCategoriasModal() {
+    const modal = document.getElementById('categoriasModal');
+    if (modal) modal.classList.add('hidden');
+    // Resetear select si se quedó en "GESTIONAR_RUBROS"
+    const select = document.getElementById('supplierCategoriaSelect');
+    if (select && select.value === 'GESTIONAR_RUBROS') {
+        select.value = '';
+    }
+}
+
+function renderListaCategoriasModal() {
+    const container = document.getElementById('listaCategoriasContainer');
+    if (!container) return;
+
+    if (window.categoriasMaestras.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-500 italic py-2">No hay rubros registrados.</p>';
+        return;
+    }
+
+    let html = '';
+    window.categoriasMaestras.forEach(cat => {
+        html += `
+            <div class="flex items-center justify-between p-2 bg-slate-900/50 border border-slate-800 rounded-lg group">
+                <span class="text-xs font-bold text-slate-300">${cat.nombre}</span>
+                <button type="button" onclick="deleteCategoria('${cat.id}')" class="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors" title="Eliminar">
+                    <i data-lucide="trash-2" class="w-3 h-3"></i>
+                </button>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+}
+
+async function addCategoria() {
+    const input = document.getElementById('nuevaCategoriaInput');
+    const nombre = input.value.trim();
+    if (!nombre) return;
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('categorias_proveedores')
+            .insert([{ nombre }])
+            .select();
+
+        if (error) {
+            if (error.code === '23505') throw new Error("El rubro ya existe.");
+            throw error;
+        }
+
+        input.value = ''; // Limpiar
+        await loadCategorias(); // Recargar globalmente
+    } catch (error) {
+        alert("Error al crear categoría: " + error.message);
+    }
+}
+
+async function deleteCategoria(id) {
+    try {
+        const { error } = await supabaseClient
+            .from('categorias_proveedores')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            // Verificar constraint FK (error code 23503 usualmente en postgres)
+            if (error.code === '23503') {
+                throw new Error("No se puede eliminar la categoría porque hay proveedores asignados a ella.");
+            }
+            throw error;
+        }
+
+        await loadCategorias();
+    } catch (error) {
+        alert("Error al eliminar: " + error.message);
+    }
+}
+
+window.openCategoriasModal = openCategoriasModal;
+window.closeCategoriasModal = closeCategoriasModal;
+window.addCategoria = addCategoria;
+window.deleteCategoria = deleteCategoria;

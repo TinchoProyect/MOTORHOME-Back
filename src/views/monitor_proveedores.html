@@ -435,13 +435,9 @@
 
                 <div class="space-y-1">
                     <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Categoría Operativa</label>
-                    <select name="categoria"
-                        class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm appearance-none cursor-pointer">
-                        <option value="" class="bg-slate-900">Seleccionar rubro...</option>
-                        <option value="Frutos Secos" class="bg-slate-900">Frutos Secos</option>
-                        <option value="Enlatados" class="bg-slate-900">Enlatados</option>
-                        <option value="Bebidas" class="bg-slate-900">Bebidas</option>
-                        <option value="Logística" class="bg-slate-900">Logística / Transporte</option>
+                    <select id="supplierCategoriaSelect" name="categoria_id"
+                        class="w-full form-input bg-slate-900/40 rounded-xl px-4 py-3 text-sm appearance-none cursor-pointer focus:border-blue-500/50 transition-colors">
+                        <option value="" class="bg-slate-900">Cargando rubros...</option>
                     </select>
                 </div>
 
@@ -3359,6 +3355,38 @@
         <div id="pdfAnchorCanvasContainer" class="flex-grow w-full overflow-auto relative flex justify-center bg-slate-800/50 p-4">
             <div id="pdfAnchorWrapper" class="relative shadow-2xl border border-slate-700 bg-white" style="cursor: crosshair;">
                 <canvas id="pdfAnchorCanvas" class="block"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE GESTIÓN DE RUBROS (Ticket #038) -->
+    <div id="categoriasModal" class="hidden fixed inset-0 z-[6000] bg-slate-950/80 backdrop-blur-sm flex py-20 px-4 justify-center overflow-y-auto animate-in fade-in duration-200">
+        <div class="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-emerald-900/20 w-full max-w-md h-fit overflow-hidden animate-in zoom-in-95 duration-300">
+            <div class="p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+                <div class="flex items-center gap-2 text-white">
+                    <i data-lucide="tags" class="w-4 h-4 text-emerald-400"></i>
+                    <h3 class="font-bold text-sm tracking-wide">Gestión de Rubros</h3>
+                </div>
+                <button type="button" onclick="closeCategoriasModal()" class="text-slate-500 hover:text-red-400 p-1">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-6">
+                <!-- Crear nueva categoría -->
+                <div class="flex gap-2">
+                    <input type="text" id="nuevaCategoriaInput" placeholder="Nombre del nuevo rubro..." class="flex-grow form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-sm placeholder:text-slate-600 focus:border-emerald-500/50 text-white">
+                    <button type="button" onclick="addCategoria()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase transition-colors shrink-0 flex items-center gap-1">
+                        <i data-lucide="plus" class="w-3 h-3"></i> Crear
+                    </button>
+                </div>
+                
+                <!-- Lista de categorías -->
+                <div>
+                    <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Rubros Existentes</h4>
+                    <div id="listaCategoriasContainer" class="max-h-[30vh] overflow-y-auto custom-scrollbar pr-2 space-y-2">
+                        <!-- Generado por JS -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>
