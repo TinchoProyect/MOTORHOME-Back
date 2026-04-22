@@ -937,6 +937,15 @@ function editSupplier(id) {
         }
     });
 
+    const afipContainer = document.getElementById('afipDataContainer');
+    if (afipContainer) {
+        if (supplier['afip_razon_social'] || supplier['afip_domicilio'] || supplier['afip_estado']) {
+            afipContainer.classList.remove('hidden');
+        } else {
+            afipContainer.classList.add('hidden');
+        }
+    }
+
     openSupplierModal(true);
     
     // [TICKET #037] Forzar validación tras cargar datos
@@ -1581,3 +1590,80 @@ window.openCategoriasModal = openCategoriasModal;
 window.closeCategoriasModal = closeCategoriasModal;
 window.addCategoria = addCategoria;
 window.deleteCategoria = deleteCategoria;
+
+// =============================================================================
+// [TICKET #039] INTEGRACIÓN PADRÓN ARCA (ALCANCE 13)
+// =============================================================================
+
+async function consultarPadronARCA() {
+    const cuitInput = document.getElementById('supplierCuitInput');
+    const nameInput = document.getElementById('supplierNameInput');
+    const btn = document.getElementById('btnBuscarARCA');
+    const statusMsg = document.getElementById('arcaStatusMsg');
+    const errorMsg = document.getElementById('cuitErrorMsg');
+
+    if (!cuitInput) return;
+    
+    const cuit = cuitInput.value.replace(/[^0-9]/g, '');
+
+    if (cuit.length !== 11 || !validarCuit(cuitInput.value)) {
+        if (errorMsg) {
+            errorMsg.innerText = 'Ingrese un CUIT válido (Módulo 11) antes de buscar.';
+            errorMsg.classList.remove('hidden');
+        }
+        return;
+    }
+
+    // UI Estado de Carga
+    const originalBtnHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> ARCA`;
+    if (window.lucide) window.lucide.createIcons();
+    
+    if (statusMsg) statusMsg.classList.add('hidden');
+    if (errorMsg) errorMsg.classList.add('hidden');
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${backendUrl}/api/arca/padron/${cuit}`);
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Error en respuesta de ARCA');
+        }
+
+        // Autocompletar campos AFIP
+        const afipContainer = document.getElementById('afipDataContainer');
+        const afipRS = document.getElementById('afipRazonSocialInput');
+        const afipDom = document.getElementById('afipDomicilioInput');
+        const afipEstado = document.getElementById('afipEstadoInput');
+
+        if (afipContainer) afipContainer.classList.remove('hidden');
+        if (afipRS) afipRS.value = data.razonSocial;
+        if (afipDom) afipDom.value = data.domicilio;
+        if (afipEstado) afipEstado.value = data.estado;
+
+        // Mostrar Éxito
+        if (statusMsg) {
+            statusMsg.innerHTML = `<i data-lucide="check-circle-2" class="w-3 h-3"></i> Validado en ARCA (${data.estado || 'OK'})`;
+            statusMsg.classList.remove('hidden');
+        }
+
+        if (window.lucide) window.lucide.createIcons();
+
+    } catch (error) {
+        console.error('[ARCA] Error Frontend:', error);
+        if (errorMsg) {
+            errorMsg.innerText = error.message;
+            errorMsg.classList.remove('hidden');
+        }
+    } finally {
+        // Restaurar UI
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHtml;
+        if (window.lucide) window.lucide.createIcons();
+        if (typeof validateFormState === 'function') validateFormState();
+    }
+}
+
+window.consultarPadronARCA = consultarPadronARCA;
