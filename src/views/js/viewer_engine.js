@@ -1156,11 +1156,29 @@ window.openPdfAnchorModal = async function() {
                 window.redrawPdfAnchors();
                 return;
             }
+        };
 
-            // Si no estaba arrastrando, es un clic para crear nueva ancla
-            window._draftAnchors.push(logicalX);
-            window._draftAnchors.sort((a,b) => a - b);
-            window.redrawPdfAnchors();
+        // [TICKET #034] Opción B: Doble Clic para crear una nueva ancla
+        canvas.ondblclick = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const logicalX = Math.round(mouseX / viewport.scale);
+
+            // Evitar crear un ancla nueva si hacemos doble clic justo encima de una existente
+            let isOverlapping = false;
+            for (let i = 0; i < window._draftAnchors.length; i++) {
+                if (Math.abs(window._draftAnchors[i] - logicalX) <= tolerance) {
+                    isOverlapping = true;
+                    break;
+                }
+            }
+
+            if (!isOverlapping) {
+                window._draftAnchors.push(logicalX);
+                window._draftAnchors.sort((a,b) => a - b);
+                window.redrawPdfAnchors();
+                console.log(`[UX FIX] Nueva ancla vertical inyectada en posición X: ${logicalX}`);
+            }
         };
         canvas.onmouseleave = () => {
             if (isDragging) {

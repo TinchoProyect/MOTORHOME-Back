@@ -497,8 +497,12 @@ class ViewerAiUi {
                         // En Agregar HITL (Extracción) necesitamos ver el string crudo independientemente de si el pipeline
                         // actual no lo vació, para permitir que el IA reciba la celda y proponga un mejor AST.
                         if (this.selectedRoute === 'caza-rubros') {
+                            const hasAST = pipeline.some(r => r.tipo === 'ast_conditional');
                             const outVal = String(mutateRs.display || mutateRs.result || "").trim();
-                            if (!mutateRs.rejected && outVal !== "") {
+                            
+                            // Si existe un AST, significa que hay reglas de categorización. 
+                            // Si el valor resultante no está vacío, significa que el AST lo categorizó con éxito.
+                            if (hasAST && !mutateRs.rejected && outVal !== "") {
                                 stats.skippedByRegex++;
                                 continue; // ¡Cruce de PK superado! Delta bypassing
                             }

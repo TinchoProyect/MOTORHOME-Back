@@ -436,7 +436,15 @@ Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcia
                     retries++;
                     console.warn(`[AI Service] ADVERTENCIA: Falló parseo o Rate Limit en chunk literal ${index + 1}. Intento: ${retries}/${maxRetries}. Razón:`, e.message);
                     if (retries > maxRetries) {
-                        throw new Error(`Fallo Crítico al intentar limpiar el Chunk ${index + 1}. La generación fue abortada para prevenir un diccionario truncado.`);
+                        console.error(`[AI Service] ERROR CRÍTICO: Fallo permanente en el Chunk ${index + 1}. Se saltará para no abortar el lote masivo.`);
+                        // Fallback de contingencia: si el chunk falla, devolver el string crudo intacto
+                        for (let k in chunkDict) {
+                            const numK = parseInt(k);
+                            if (!isNaN(numK) && dictionarySamples[numK] !== undefined) {
+                                finalMap[dictionarySamples[numK]] = String(dictionarySamples[numK]);
+                            }
+                        }
+                        break; // Salir del while y continuar con el siguiente chunk
                     }
                     await new Promise(resolve => setTimeout(resolve, 3000 * retries));
                 }
