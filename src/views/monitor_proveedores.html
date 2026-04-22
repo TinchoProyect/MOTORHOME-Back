@@ -447,22 +447,27 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase ml-1">Infraestructura Drive</label>
-                        <div class="relative group">
-                            <i data-lucide="hard-drive"
-                                class="absolute left-4 top-3.5 w-4 h-4 text-slate-600 group-focus-within:text-blue-500 transition-colors"></i>
-                            <input type="text" id="driveFolderDisplay" readonly placeholder="Esperando nombre..."
-                                class="w-full form-input bg-slate-900/40 rounded-xl pl-11 pr-12 py-3 text-sm text-slate-400 border border-slate-800 focus:border-blue-500/50 cursor-not-allowed transition-all font-mono">
+                        <div class="flex items-center gap-2">
+                            <div class="relative group flex-1">
+                                <i data-lucide="hard-drive"
+                                    class="absolute left-4 top-3.5 w-4 h-4 text-slate-600 group-focus-within:text-blue-500 transition-colors"></i>
+                                <input type="text" id="driveFolderDisplay" readonly placeholder="Sin infraestructura (Opcional)"
+                                    class="w-full form-input bg-slate-900/40 rounded-xl pl-11 pr-12 py-3 text-sm text-slate-400 border border-slate-800 focus:border-blue-500/50 cursor-not-allowed transition-all font-mono">
 
-                            <div id="driveStatusContainer" class="absolute right-4 top-3.5 flex items-center gap-2">
-                                <i data-lucide="circle-dashed" class="w-4 h-4 text-slate-700"></i>
+                                <div id="driveStatusContainer" class="absolute right-4 top-3.5 flex items-center gap-2">
+                                    <i data-lucide="circle-dashed" class="w-4 h-4 text-slate-700"></i>
+                                </div>
+
+                                <input type="hidden" name="drive_folder_id" id="h_rootId">
+                                <input type="hidden" name="drive_folder_prices_id" id="h_pricesId">
+                                <input type="hidden" name="drive_folder_extracted_id" id="h_extractedId">
                             </div>
-
-                            <input type="hidden" name="drive_folder_id" id="h_rootId">
-                            <input type="hidden" name="drive_folder_prices_id" id="h_pricesId">
-                            <input type="hidden" name="drive_folder_extracted_id" id="h_extractedId">
+                            <button type="button" id="btnProvisionDrive" onclick="triggerProvisioning()"
+                                class="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl px-4 py-3 text-xs font-bold uppercase transition-colors flex items-center gap-2 h-[46px]" title="Crear carpetas en Drive">
+                                <i data-lucide="cloud-lightning" class="w-4 h-4 text-amber-400"></i> Crear
+                            </button>
                         </div>
-                        <p id="driveHelpText" class="text-[9px] text-slate-600 ml-1 mt-1">Validación automática al
-                            ingresar nombre.</p>
+                        <p id="driveHelpText" class="text-[9px] text-slate-600 ml-1 mt-1">Creación opcional. Requiere ingresar el Nombre primero.</p>
                     </div>
                     <div class="space-y-1 flex items-center h-full pt-6">
                         <label

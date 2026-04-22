@@ -127,7 +127,8 @@ function setupUIListeners() {
     if (form) {
         const nameInput = form.querySelector('input[name="nombre"]');
         if (nameInput) {
-            nameInput.addEventListener('blur', triggerProvisioning);
+            // El trigger automático de Drive ha sido desacoplado (Ticket #036)
+            // nameInput.addEventListener('blur', triggerProvisioning);
         }
 
         form.addEventListener('submit', handleSupplierSubmit);
@@ -906,7 +907,7 @@ function resetProvisioningUI() {
     driveDisplay.classList.remove('text-green-400', 'font-bold', 'text-red-400');
     driveDisplay.classList.add('text-slate-400');
     statusContainer.innerHTML = '<i data-lucide="circle-dashed" class="w-4 h-4 text-slate-700"></i>';
-    helpText.innerText = "Validación automática al ingresar nombre.";
+    helpText.innerText = "Creación opcional. Requiere ingresar el Nombre primero.";
     helpText.className = "text-[9px] text-slate-600 ml-1 mt-1";
 
     document.getElementById('h_rootId').value = "";
@@ -927,7 +928,10 @@ async function triggerProvisioning() {
     // Si estamos editando y ya tiene ID, no re-provisionamos salvo que se pida (Futuro)
     // Si es Alta nueva:
     if (!editingSupplierId) {
-        if (name.length < 3) return;
+        if (name.length < 3) {
+            alert("Por favor, ingrese un Nombre / Empresa válido (mínimo 3 caracteres) antes de crear la infraestructura.");
+            return;
+        }
         if (document.getElementById('h_rootId').value) return; // Ya aprovisionado
 
         // UI Loading
@@ -1018,6 +1022,11 @@ async function handleSupplierSubmit(e) {
 
     // Fix Checkbox
     supplierData.activo = !!formData.get('activo');
+
+    // [TICKET #036] Tolerancia a Nulos en Infraestructura Drive
+    if (!supplierData.drive_folder_id) supplierData.drive_folder_id = null;
+    if (!supplierData.drive_folder_prices_id) supplierData.drive_folder_prices_id = null;
+    if (!supplierData.drive_folder_extracted_id) supplierData.drive_folder_extracted_id = null;
 
     try {
         let error = null;
