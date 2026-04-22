@@ -5,6 +5,7 @@
  */
 
 console.log("%c 🔌 VIEWER ADAPTER: READY ", "background: #f59e0b; color: #000; font-weight: bold; padding: 4px;");
+console.log("🛡️ [VIGÍA DE VERSIÓN] LAMDA Adapter V: Index Shift Fix Activo");
 
 window.adaptJsonToMatrix = function (jsonData) {
     if (!jsonData || !Array.isArray(jsonData) || jsonData.length === 0) {
@@ -55,6 +56,21 @@ window.adaptJsonToWorkbook = function (items) {
 
         // Check for Blob (Matrix)
         if (Array.isArray(item.data) && item.data.length > 0 && Array.isArray(item.data[0])) {
+            
+            // [TICKET #027] RE-INDEXACIÓN DE COLUMNAS (INDEX SHIFT FIX)
+            // Si el origen es un PDF, la matriz pudo haber perdido columnas centrales en la fase de Pendientes.
+            // Esto causa que las cabeceras conserven nombres desfasados (ej: "Columna 1", "Columna 3").
+            // Recalculamos matemáticamente los nombres de las cabeceras para que coincidan 
+            // con su nueva longitud real (dataIdx: 0, 1, 2, 3), garantizando integridad para el Chofer IA.
+            if (sheetName === "PDF_Tabulado" || (item.data[0].length > 0 && typeof item.data[0][0] === 'string' && item.data[0][0].startsWith("Columna "))) {
+                console.error(`🚨 [VIGÍA - INDEX SHIFT] Iniciando recálculo en Matriz PDF de ${item.data[0].length} columnas.`);
+                console.error("🚨 [VIGÍA - ANTES] Cabeceras detectadas:", JSON.stringify(item.data[0]));
+                for (let j = 0; j < item.data[0].length; j++) {
+                    item.data[0][j] = "Columna " + (j + 1);
+                }
+                console.error("🚨 [VIGÍA - DESPUÉS] Cabeceras re-indexadas matemáticamente:", JSON.stringify(item.data[0]));
+            }
+
             // [CASO A] Blob / Matriz -> Convertir a SheetJS Worksheet (recupera !ref)
             sheets[sheetName] = XLSX.utils.aoa_to_sheet(item.data);
         } else {

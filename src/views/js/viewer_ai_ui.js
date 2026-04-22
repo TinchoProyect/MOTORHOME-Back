@@ -337,6 +337,11 @@ class ViewerAiUi {
             }
         }
 
+        // [TICKET #028] VIGÍA EXTREMO PARA DIAGNOSTICAR TAMAÑO DE LA MATRIZ
+        console.error("🚨 [VIGÍA EXTREMO] _buildUniqueSet invocado.");
+        console.error(`🚨 [VIGÍA EXTREMO] window.currentSheetData length: ${window.currentSheetData ? window.currentSheetData.length : 'undefined'}`);
+        console.error(`🚨 [VIGÍA EXTREMO] window.currentSimData length: ${window.currentSimData ? window.currentSimData.length : 'undefined'}`);
+        
         return new Promise((resolve) => {
             let rawRows = [];
             
@@ -395,6 +400,20 @@ class ViewerAiUi {
                 }
             }
 
+            // [TICKET #032] Fallback: Si no hay llave semántica definida, usar el Código/SKU nativo si fue detectado
+            if (masterKeyDataIdx === null && codigoColId !== null && window.virtualColumns) {
+                if (typeof codigoColId === 'string' && codigoColId.startsWith('col_')) {
+                    const fallbackVCol = window.virtualColumns.find(c => c.id === codigoColId);
+                    if (fallbackVCol && fallbackVCol.dataIdx !== undefined) {
+                        masterKeyDataIdx = fallbackVCol.dataIdx;
+                    } else {
+                        masterKeyDataIdx = parseInt(codigoColId.replace('col_', ''), 10);
+                    }
+                } else if (typeof codigoColId === 'number') {
+                    masterKeyDataIdx = codigoColId;
+                }
+            }
+
             const resolveRawLocal = (r, tId) => {
                 let physicalIdx = tId;
                 if (window.computedColumns) {
@@ -415,6 +434,14 @@ class ViewerAiUi {
             this._rawTotalUniqueItems = new Set(); // Guardián de métricas totales pre-Delta
             const chunkSize = 5000;
             let i = 0;
+            
+            // [VIGÍA DE ESTADÍSTICAS TICKET #021]
+            let stats = { totalRows: total, skippedBySku: 0, skippedByMaster: 0, skippedByEmpty: 0, skippedByRegex: 0, added: 0 };
+            
+            console.error("🚨 [VIGÍA EXTREMO] extractionDataIdx:", extractionDataIdx);
+            console.error("🚨 [VIGÍA EXTREMO] codigoColId:", codigoColId);
+            console.error("🚨 [VIGÍA EXTREMO] masterKeyDataIdx:", masterKeyDataIdx);
+            console.error("🚨 [VIGÍA EXTREMO] rawRows[0] (Tipo y Valor):", typeof rawRows[0], rawRows.length > 0 ? JSON.stringify(rawRows[0]) : 'vacío');
 
             const processChunk = () => {
                 const end = Math.min(i + chunkSize, total);
@@ -422,7 +449,10 @@ class ViewerAiUi {
                     // [Filtro Estricto de Huérfanos] - Si no tiene Código válido, ignorarlo.
                     if (codigoColId !== null) {
                         let skuVal = String(resolveRawLocal(rawRows[i], codigoColId)).trim();
-                        if (!skuVal || !/[a-zA-Z0-9]/.test(skuVal)) continue;
+                        if (!skuVal || !/[a-zA-Z0-9]/.test(skuVal)) {
+                            stats.skippedBySku++;
+                            continue;
+                        }
                     }
 
                     if (masterKeyDataIdx !== null) {
@@ -433,35 +463,61 @@ class ViewerAiUi {
                              mVal = window.SchemaSanitizer.cast(mVal, masterFieldObj);
                         }
                         
-                        if (!mVal || !/[a-zA-Z0-9]/.test(mVal)) continue;
+                        if (!mVal || !/[a-zA-Z0-9]/.test(mVal)) {
+                            stats.skippedByMaster++;
+                            continue;
+                        }
                     }
+
+                    // [Ticket #020] Sanitización Estricta para AI Copilot
+                    const sanitizeForAI = (rawVal) => {
+                        let text = String(rawVal || "");
+                        text = text.replace(/\r\n|\n|\r/g, " "); // Saltos de línea a espacios
+                        text = text.replace(/[\x00-\x1F\x7F-\x9F]/g, ""); // Purga de control (nulos, etc)
+                        return text.trim().replace(/\s+/g, " "); // Colapsar espacios
+                    };
 
                     let val = "";
                     if (Array.isArray(extractionDataIdx)) {
-                        val = extractionDataIdx.map(idx => String(rawRows[i][idx] || "").trim()).filter(v => v).join(" ");
+                        val = extractionDataIdx.map(idx => sanitizeForAI(rawRows[i][idx])).filter(v => v).join(" ");
                     } else {
-                        val = String(rawRows[i][extractionDataIdx] || "").trim();
+                        val = sanitizeForAI(rawRows[i][extractionDataIdx]);
                     }
-                    if (!val) continue;
+                    if (!val) {
+                        stats.skippedByEmpty++;
+                        continue;
+                    }
                     if (val.trim() && val.trim().length <= 150) this._rawTotalUniqueItems.add(val.trim());
                     
                     let effectiveVal = val;
                     if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
                         const mutateRs = window.viewerETL.transformCell(val, pipeline);
-                        // [FIX DELTA QA] Siempre usar modo incremental estricto (Delta vacío) para Caza-rubros
-                        if (this.incrementalMode || this.selectedRoute === 'caza-rubros') {
+                        // [FIX TICKET #032] Aislamiento del Asesino Silencioso:
+                        // Solo saltar registros resueltos si estamos estrictamente en Caza-rubros.
+                        // En Agregar HITL (Extracción) necesitamos ver el string crudo independientemente de si el pipeline
+                        // actual no lo vació, para permitir que el IA reciba la celda y proponga un mejor AST.
+                        if (this.selectedRoute === 'caza-rubros') {
                             const outVal = String(mutateRs.display || mutateRs.result || "").trim();
-                            // El motor ETL (tras remediación previa) tira "" a lo no procesado.
-                            // Si outVal tiene texto (ej: "Conservas"), YA ESTÁ MAPTEADO y sale del Delta.
                             if (!mutateRs.rejected && outVal !== "") {
+                                stats.skippedByRegex++;
                                 continue; // ¡Cruce de PK superado! Delta bypassing
                             }
                         } else {
-                            if (mutateRs.rejected) continue;
-                            effectiveVal = mutateRs.display || mutateRs.result || "";
+                            // En modo extracción (HITL), si una regla rechaza la celda explícitamente, la saltamos.
+                            // Pero NUNCA saltamos solo por no estar vacía. El string crudo debe fluir hacia el IA.
+                            if (mutateRs.rejected) {
+                                stats.skippedByRegex++;
+                                continue;
+                            }
+                            // Usar el valor crudo inicial (val) o el transformado parcial (effectiveVal)
+                            // Para IA, queremos nutrirlo del valor original para que el AST opere sobre la base cruda
+                            effectiveVal = val; 
                         }
                     }
-                    if (effectiveVal.trim()) uniqueSet.add(effectiveVal.trim());
+                    if (effectiveVal.trim()) {
+                        uniqueSet.add(effectiveVal.trim());
+                        stats.added++;
+                    }
                 }
                 
                 // Excluir Strings gigantes (Data profiling no sirve en párrafos)
@@ -471,6 +527,8 @@ class ViewerAiUi {
                     this._setStatus(`Escaneando: ${Math.floor((i/total)*100)}%`, 'working');
                     setTimeout(processChunk, 0); // Lote asíncrono preventivo
                 } else {
+                    console.error(`🚨 VIGÍA DE ALERTA ROJA - TICKET #021: Resultados del Escaneo de Matriz IA:`, JSON.stringify(stats));
+                    console.error(`🚨 VIGÍA DE ALERTA ROJA - TICKET #021: Únicos obtenidos antes de truncar:`, Array.from(uniqueSet));
                     resolve(Array.from(uniqueSet));
                 }
             };
@@ -599,6 +657,9 @@ class ViewerAiUi {
 
             const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, bypassPipelineForAI);
             
+            // [TICKET #028] VIGÍA DEPURADOR DEL CHOFER IA (COMO ERROR PARA BYPASSEAR FILTROS)
+            console.error("🚨 [VIGÍA - CHOFER IA] Array extraído (uniqueDictionary):", uniqueDictionary);
+            
             if (uniqueDictionary.length === 0) {
                  if (window.Swal) Swal.close();
                  throw new Error("La columna carece de datos parseables bajo este contexto.");
@@ -659,6 +720,8 @@ class ViewerAiUi {
                 literal_mode: forceLiteralMode
             };
 
+            console.warn(`🚨 VIGÍA DE ALERTA ROJA - TICKET #021: Payload exacto inyectado a la IA:`, payload);
+            
             this._setStatus('IA Analizando...', 'working');
             
             if (forceLiteralMode) {

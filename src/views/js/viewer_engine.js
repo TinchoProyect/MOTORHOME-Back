@@ -1,4 +1,4 @@
-﻿/**
+/**
  * VIEWER ENGINE - Sistema de Gestión de Proveedores
  * Módulo de Visualización, Worker Excel y Herramientas de Mapeo
  * v2.7 (Bindings Fix + Dynamic UI Integration)
@@ -739,6 +739,56 @@ window.runPdfSampling = function(preserveOmissions = false) {
     }
 };
 
+window.purifyPdfMatrix = function() {
+    if (!window.currentSheetData || window.currentSheetData.length === 0) {
+        Swal.fire({icon: 'warning', title: 'Sin datos', text: 'No hay ninguna matriz cargada para purificar.', background: '#0f172a', color: '#f8fafc'});
+        return;
+    }
+
+    try {
+        let totalCellsCleaned = 0;
+        const matrix = window.currentSheetData;
+        
+        for (let r = 0; r < matrix.length; r++) {
+            if (!Array.isArray(matrix[r])) continue;
+            for (let c = 0; c < matrix[r].length; c++) {
+                let cellText = String(matrix[r][c] || "");
+                if (cellText !== "") {
+                    let cleanText = cellText.replace(/\r\n|\n|\r/g, " "); // Convertir saltos a espacios
+                    cleanText = cleanText.replace(/[\x00-\x1F\x7F-\x9F]/g, ""); // Purgar caracteres de control nulos
+                    cleanText = cleanText.trim().replace(/\s+/g, " "); // Colapsar espacios
+                    
+                    if (cellText !== cleanText) totalCellsCleaned++;
+                    matrix[r][c] = cleanText;
+                }
+            }
+        }
+
+        // Forzar guardado en caché si se usó PDF
+        if (window.virtualWorkbookCache && window.virtualWorkbookCache["PDF_Tabulado"]) {
+             window.virtualWorkbookCache["PDF_Tabulado"] = matrix;
+        }
+
+        // Re-renderizar la tabla para mostrar los datos limpios
+        if (window.renderVirtualTable) {
+            window.renderVirtualTable(matrix);
+        }
+
+        Swal.fire({
+            icon: 'success', 
+            title: 'Matriz purificada al 100% - Formato Excel', 
+            text: `Se sanearon ${totalCellsCleaned} celdas que contenían caracteres residuales.`,
+            background: '#0f172a', 
+            color: '#f8fafc',
+            timer: 4000
+        });
+        
+    } catch(e) {
+        console.error("Error purificando matriz:", e);
+        Swal.fire({icon: 'error', title: 'Fallo de Purificación', text: e.message, background: '#0f172a', color: '#f8fafc'});
+    }
+};
+
 window.restorePdfVisual = function() {
     const pdfCont = document.getElementById('pdfContainer');
     const excelCont = document.getElementById('excelContainer');
@@ -1112,7 +1162,6 @@ window.openPdfAnchorModal = async function() {
             window._draftAnchors.sort((a,b) => a - b);
             window.redrawPdfAnchors();
         };
-
         canvas.onmouseleave = () => {
             if (isDragging) {
                 isDragging = false;
@@ -1120,6 +1169,22 @@ window.openPdfAnchorModal = async function() {
                 window._draftAnchors.sort((a,b) => a - b);
                 window.redrawPdfAnchors();
             }
+        };
+
+        canvas.oncontextmenu = (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const logicalX = Math.round(mouseX / viewport.scale);
+
+            for (let i = 0; i < window._draftAnchors.length; i++) {
+                if (Math.abs(window._draftAnchors[i] - logicalX) <= tolerance) {
+                    window._draftAnchors.splice(i, 1);
+                    window.redrawPdfAnchors();
+                    break;
+                }
+            }
+            return false;
         };
 
     } catch (e) {
