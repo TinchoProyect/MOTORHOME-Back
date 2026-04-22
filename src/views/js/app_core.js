@@ -125,10 +125,25 @@ function setupUIListeners() {
     // Initialize Provisioning Logic Listeners
     const form = document.getElementById('supplierForm');
     if (form) {
-        const nameInput = form.querySelector('input[name="nombre"]');
+        const nameInput = document.getElementById('supplierNameInput');
+        const cuitInput = document.getElementById('supplierCuitInput');
+        
         if (nameInput) {
-            // El trigger automático de Drive ha sido desacoplado (Ticket #036)
-            // nameInput.addEventListener('blur', triggerProvisioning);
+            nameInput.addEventListener('input', validateFormState);
+        }
+
+        if (cuitInput) {
+            cuitInput.addEventListener('input', function(e) {
+                // Máscara CUIT: XX-XXXXXXXX-X
+                let val = this.value.replace(/[^0-9]/g, '');
+                if (val.length > 2 && val.length <= 10) {
+                    val = val.slice(0, 2) + '-' + val.slice(2);
+                } else if (val.length > 10) {
+                    val = val.slice(0, 2) + '-' + val.slice(2, 10) + '-' + val.slice(10, 11);
+                }
+                this.value = val;
+                validateFormState();
+            });
         }
 
         form.addEventListener('submit', handleSupplierSubmit);
@@ -834,6 +849,17 @@ function openSupplierModal(isEdit = false) {
         // Reset Provisioning UI
         resetProvisioningUI();
 
+        // [TICKET #037] Reset UI Validations
+        const cuitInput = document.getElementById('supplierCuitInput');
+        const errorMsg = document.getElementById('cuitErrorMsg');
+        const submitBtn = document.getElementById('supplierSubmitBtn');
+        if (cuitInput) {
+            cuitInput.classList.remove('border-red-500', 'text-red-400');
+            cuitInput.classList.add('border-slate-800');
+        }
+        if (errorMsg) errorMsg.classList.add('hidden');
+        if (submitBtn) submitBtn.disabled = true; // Por defecto deshabilitado en Alta
+
     } else {
         // Modo Edición
         if (modalTitle) modalTitle.innerText = "Editar Proveedor";
@@ -892,6 +918,9 @@ function editSupplier(id) {
     });
 
     openSupplierModal(true);
+    
+    // [TICKET #037] Forzar validación tras cargar datos
+    validateFormState();
 }
 
 
@@ -1019,6 +1048,20 @@ async function handleSupplierSubmit(e) {
     // Recolección de datos
     const formData = new FormData(form);
     const supplierData = Object.fromEntries(formData.entries());
+
+    // [TICKET #037] Defensa en Profundidad
+    if (!supplierData.nombre || supplierData.nombre.trim().length < 3) {
+        alert("El Nombre / Empresa debe tener al menos 3 caracteres.");
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        return;
+    }
+    if (supplierData.cuit && supplierData.cuit.trim().length > 0 && !validarCuit(supplierData.cuit)) {
+        alert("El CUIT ingresado es inválido matemáticamente.");
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        return;
+    }
 
     // Fix Checkbox
     supplierData.activo = !!formData.get('activo');
@@ -1328,3 +1371,57 @@ document.addEventListener('DOMContentLoaded', () => {
     // HTML had `initSystem()` call in script.
     initSystem();
 });
+
+// =============================================================================
+// [TICKET #037] MOTOR DE VALIDACIÓN MÓDULO 11 Y ESTADO UI
+// =============================================================================
+function validarCuit(cuit) {
+    const raw = cuit.replace(/[^0-9]/g, '');
+    if (raw.length === 0) return true; // Tolerancia a nulos
+    if (raw.length !== 11) return false;
+
+    const cuitPre = raw.substring(0, 2);
+    const cuitDig = parseInt(raw.substring(10, 11));
+    const validPrefixes = ['20', '23', '24', '27', '30', '33', '34'];
+    
+    if (!validPrefixes.includes(cuitPre)) return false;
+
+    const weights = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+    let sum = 0;
+    for (let i = 0; i < 10; i++) {
+        sum += parseInt(raw[i]) * weights[i];
+    }
+    
+    let calculated = 11 - (sum % 11);
+    if (calculated === 11) calculated = 0;
+    if (calculated === 10) return false; // CUIT inválido matemáticamente
+    
+    return calculated === cuitDig;
+}
+
+window.validarCuit = validarCuit; // Expose just in case
+
+function validateFormState() {
+    const nameInput = document.getElementById('supplierNameInput');
+    const cuitInput = document.getElementById('supplierCuitInput');
+    const submitBtn = document.getElementById('supplierSubmitBtn');
+    const errorMsg = document.getElementById('cuitErrorMsg');
+
+    if (!nameInput || !cuitInput || !submitBtn) return;
+
+    const nameValid = nameInput.value.trim().length >= 3;
+    const cuitValid = validarCuit(cuitInput.value);
+
+    // Feedback visual CUIT
+    if (cuitInput.value.trim().length > 0 && !cuitValid) {
+        cuitInput.classList.add('border-red-500', 'text-red-400');
+        cuitInput.classList.remove('border-slate-800');
+        if (errorMsg) errorMsg.classList.remove('hidden');
+    } else {
+        cuitInput.classList.remove('border-red-500', 'text-red-400');
+        cuitInput.classList.add('border-slate-800');
+        if (errorMsg) errorMsg.classList.add('hidden');
+    }
+
+    submitBtn.disabled = !(nameValid && cuitValid);
+}
