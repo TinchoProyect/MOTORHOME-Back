@@ -646,9 +646,14 @@ async function showSingleSupplier(id) {
                         <span>CUIT: <span class="text-slate-400">${supplier.cuit || 'N/A'}</span></span>
                     </div>
                 </div>
-                <button onclick="editSupplier('${supplier.id}')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2 group">
-                    <i data-lucide="pencil" class="w-3 h-3 group-hover:text-white transition-colors"></i> EDITAR
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="openManualEntryModal('${supplier.id}', '${supplier.nombre.replace(/'/g, "\\'")}')" class="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-900/20">
+                        <i data-lucide="plus-circle" class="w-3 h-3"></i> CARGA MANUAL
+                    </button>
+                    <button onclick="editSupplier('${supplier.id}')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2 group">
+                        <i data-lucide="pencil" class="w-3 h-3 group-hover:text-white transition-colors"></i> EDITAR
+                    </button>
+                </div>
             </div>
 
             <!--Grid de Información-->
@@ -725,12 +730,41 @@ async function showSingleSupplier(id) {
                         ${supplier.direccion || 'Sin dirección registrada'}
                     </div>
                 </div>
-            </div>
+                        </div>
+        </div>
+    </div>
+    
+    <!-- [NEW] Visor Local de Artículos -->
+    <div class="mt-6 p-6 bg-slate-900/40 rounded-xl border border-slate-800/50">
+        <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+            <i data-lucide="layout-list" class="w-3 h-3 text-blue-400"></i> Catálogo Activo del Proveedor
+        </h3>
+        <div class="overflow-y-auto max-h-[300px] custom-scrollbar rounded-lg border border-slate-800/50 bg-slate-950/30 relative">
+            <table class="w-full text-left border-collapse">
+                <thead class="sticky top-0 bg-slate-900/90 backdrop-blur border-b border-slate-800 z-10 shadow-sm">
+                    <tr>
+                        <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">Cód / SKU</th>
+                        <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">Descripción</th>
+                        <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">P. Neto</th>
+                        <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">Origen</th>
+                        <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="supplierLocalGrid" class="divide-y divide-slate-800/50 text-xs text-slate-300">
+                    <tr>
+                        <td colspan="4" class="p-8 text-center text-slate-500 flex-col items-center gap-2 hidden">
+                            <i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500"></i>
+                            <span class="text-[10px] uppercase tracking-widest">Cargando catálogo operativo...</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
         </div >
     `;
     lucide.createIcons();
+    if (window.loadSupplierArticles) window.loadSupplierArticles(supplier.id);
 }
 
 async function loadProveedores() {
@@ -1316,7 +1350,7 @@ async function taskAction(taskName) {
 
 async function callGemini(prompt, sysInstr = null) {
     const finalSysInstr = sysInstr || ((typeof CONFIG !== 'undefined') ? CONFIG.PROMPT_DASHBOARD : "Eres el analista de LAMDA.");
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     const payload = {
         contents: [{ parts: [{ text: prompt }] }],
         systemInstruction: { parts: [{ text: finalSysInstr }] }
@@ -1667,3 +1701,273 @@ async function consultarPadronARCA() {
 }
 
 window.consultarPadronARCA = consultarPadronARCA;
+
+// ==========================================
+// V6.1: FLUJO DE CARGA MANUAL (DOBLE VÍA DATA-DRIVEN)
+// ==========================================
+
+window.lamdaMasterDictionaryCache = null;
+
+window.buildManualEntryForm = async function(prefillData = null) {
+    const container = document.getElementById('manualEntryDynamicContainer');
+    if (!container) return;
+    
+    container.innerHTML = '<div class="p-8 text-center text-slate-500"><i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500"></i><span class="text-xs">Cargando esquema...</span></div>';
+    if(window.lucide) lucide.createIcons();
+
+    // REMOVED CACHE: Fetch dynamically every time to ensure reactivity to new fields (Incidencia B)
+    let dict = [];
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendUrl}/api/master-table/dictionary`);
+        const json = await res.json();
+        if (json.success) dict = json.data || [];
+    } catch (e) {
+        container.innerHTML = '<div class="text-red-400 text-sm text-center">Error al cargar diccionario maestro.</div>';
+        return;
+    }
+    let html = '';
+
+    const fieldsToRender = dict.filter(f => f.visible_en_manual);
+
+    fieldsToRender.forEach(f => {
+        const slug = f.nombre_campo.replace(/\s+/g, '_').toLowerCase();
+        const typeStr = (f.tipo_dato || '').toLowerCase() === 'oferta' || (f.tipo_dato || '').toLowerCase() === 'precio' ? 'type="number" step="0.01"' : 'type="text"';
+        const isCode = slug === 'codigo' || slug === 'sku';
+        const value = prefillData && prefillData[slug] ? prefillData[slug] : '';
+        const reqStr = f.es_requerido ? 'required' : '';
+
+        html += `<div>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">${f.nombre_campo}</label>
+            <div class="flex gap-2">
+                <input ${typeStr} ${reqStr} id="dyn_${slug}" name="${slug}" class="w-full form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/50" value="${value}" placeholder="Ingrese ${f.nombre_campo}">
+                ${isCode ? `<button type="button" onclick="window.generateFrontendSku && window.generateFrontendSku('dyn_${slug}')" class="bg-blue-900/30 hover:bg-blue-800/50 text-blue-400 border border-blue-500/30 px-3 rounded-xl transition-colors flex items-center justify-center shrink-0" title="Generar código automático"><i data-lucide="wand-2" class="w-4 h-4"></i></button>` : ''}
+            </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+    if(window.lucide) lucide.createIcons();
+};
+
+window.generateFrontendSku = async function(inputId = 'dyn_codigo') {
+    const providerId = document.getElementById('manualEntryProviderId').value;
+    const descInput = document.getElementById('dyn_descripcion') || document.getElementById('dyn_descripción');
+    const desc = descInput ? descInput.value : "SINDESCRIPCION";
+    
+    if (!providerId) {
+        if(window.Swal) Swal.fire('Error', 'Falta el proveedor actual.', 'error');
+        return;
+    }
+    
+    // Hash SHA-256 en frontend
+    const textToHash = providerId + "-" + desc.trim().toLowerCase();
+    const encoder = new TextEncoder();
+    const data = encoder.encode(textToHash);
+    try {
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0,8).toUpperCase();
+        
+        const generatedSku = "LMD-MAN-" + hashHex;
+        // TICKET #014: Reparación de selector dinámico para la Varita Mágica
+        const skuInput = document.getElementById(inputId);
+        skuInput.value = generatedSku;
+        
+        // Destello visual
+        skuInput.classList.add('bg-blue-900/50', 'ring-2', 'ring-blue-500');
+        setTimeout(() => skuInput.classList.remove('bg-blue-900/50', 'ring-2', 'ring-blue-500'), 500);
+    } catch(e) {
+        console.error("Crypto error:", e);
+    }
+};
+
+window.loadSupplierArticles = async function(providerId) {
+    const grid = document.getElementById('supplierLocalGrid');
+    if (!grid) return;
+    
+    grid.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500"><i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500"></i>Cargando...</td></tr>';
+    if(window.lucide) lucide.createIcons();
+    
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(backendUrl + '/api/master-table/operativa');
+        if (res.ok) {
+            const json = await res.json();
+            const data = json.data || [];
+            const localData = data.filter(r => r.proveedor_id === providerId);
+            
+            if (localData.length === 0) {
+                grid.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500 text-[11px] italic">No hay artículos cargados para este proveedor.</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            localData.forEach(r => {
+                const dm = r.datos_maestros || {};
+                const origen = dm._origen || dm.Origen_Sistema || 'Drive / Auto';
+                const isManual = String(origen).toLowerCase().includes('manual');
+                const badge = isManual 
+                    ? '<span class="px-2 py-0.5 rounded text-[9px] bg-blue-900/30 text-blue-400 border border-blue-500/30 font-bold uppercase tracking-widest"><i data-lucide="user" class="w-2.5 h-2.5 inline pb-0.5"></i> Manual</span>'
+                    : '<span class="px-2 py-0.5 rounded text-[9px] bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 font-bold uppercase tracking-widest"><i data-lucide="bot" class="w-2.5 h-2.5 inline pb-0.5"></i> IA</span>';
+                
+                const sku = dm.SKU || dm['Código'] || dm.codigo || '';
+                const desc = dm['Descripción'] || dm.descripcion || dm.Producto || 'Sin descripción';
+                const precio = dm.Precio || dm.precio || dm.Precio_Unitario || 0;
+                const unidad = dm.Unidad || dm.unidad || 'UN';
+
+                const rStr = encodeURIComponent(JSON.stringify({ id: r.id, isManual, proveedor_id: providerId, nombre_proveedor: r.nombre_proveedor, ...dm }));
+                
+                html += `<tr class="hover:bg-slate-800/30 transition-colors">
+                    <td class="py-2 px-4 font-mono text-[11px] text-blue-300">${sku || '-'}</td>
+                    <td class="py-2 px-4 font-medium text-slate-200 truncate max-w-[200px]" title="${desc}">${desc}</td>
+                    <td class="py-2 px-4 font-mono text-emerald-400">${parseFloat(precio).toFixed(2)}</td>
+                    <td class="py-2 px-4">${badge}</td>
+                    <td class="py-2 px-4 text-right">
+                        ${isManual ? 
+                            `<button onclick="window.editManualArticle('${rStr}')" class="p-1.5 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 rounded transition-colors" title="Editar"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                             <button onclick="window.deleteManualArticle('${r.id}', '${providerId}')" class="p-1.5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded transition-colors ml-1" title="Eliminar"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>` 
+                        : '<span class="text-[9px] text-slate-600 italic">No editable</span>'}
+                    </td>
+                </tr>`;
+            });
+            grid.innerHTML = html;
+            if(window.lucide) lucide.createIcons();
+        }
+    } catch(e) {
+        console.error("Error loading articles:", e);
+        grid.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-red-400">Error al cargar datos.</td></tr>';
+    }
+};
+
+window.editManualArticle = function(recordDataEncoded) {
+    try {
+        const data = JSON.parse(decodeURIComponent(recordDataEncoded));
+        
+        document.getElementById('manualEntryRecordId').value = data.id;
+        document.getElementById('manualEntryProviderId').value = data.proveedor_id;
+        document.getElementById('manualEntryProviderName').value = data.nombre_proveedor || "Proveedor";
+        
+        window.buildManualEntryForm(data);
+        
+        const modal = document.getElementById('manualEntryModal');
+        if(modal) modal.classList.remove('hidden');
+    } catch(e) {
+        console.error("Error decoding record:", e);
+    }
+};
+
+window.deleteManualArticle = async function(id, providerId) {
+    if(!window.Swal) return;
+    const result = await Swal.fire({
+        title: '¿Eliminar Artículo?',
+        text: 'Esta acción no se puede deshacer.',
+        icon: 'warning',
+        background: '#0f172a', color: '#f8fafc',
+        showCancelButton: true, confirmButtonText: 'Sí, Eliminar', cancelButtonText: 'Cancelar'
+    });
+    
+    if (result.isConfirmed) {
+        try {
+            const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+            const res = await fetch(`${backendUrl}/api/master-table/manual-entry/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            
+            Swal.fire({ title: 'Eliminado', text: 'El registro fue borrado.', icon: 'success', background: '#0f172a', color: '#f8fafc', timer: 1500, showConfirmButton: false });
+            if(window.loadSupplierArticles) window.loadSupplierArticles(providerId);
+        } catch(e) {
+            Swal.fire('Error', e.message, 'error');
+        }
+    }
+};
+
+
+window.openManualEntryModal = function(providerId, providerName) {
+    const modal = document.getElementById('manualEntryModal');
+    if(!modal) return;
+    
+    document.getElementById('manualEntryRecordId').value = "";
+    document.getElementById('manualEntryProviderId').value = providerId;
+    document.getElementById('manualEntryProviderName').value = providerName;
+    document.getElementById('manualEntryForm').reset();
+    
+    window.buildManualEntryForm(null);
+    
+    modal.classList.remove('hidden');
+};
+
+window.closeManualEntryModal = function() {
+    const modal = document.getElementById('manualEntryModal');
+    if(modal) modal.classList.add('hidden');
+};
+
+window.handleManualEntrySubmit = async function(e) {
+    e.preventDefault();
+    
+    const providerId = document.getElementById('manualEntryProviderId').value;
+    const providerName = document.getElementById('manualEntryProviderName').value;
+    const recordId = document.getElementById('manualEntryRecordId').value;
+    // TICKET #013: Recolección Data-Driven dinámica
+    const container = document.getElementById('manualEntryDynamicContainer');
+    const inputs = container.querySelectorAll('input');
+    const datos_maestros = {};
+    inputs.forEach(inp => {
+        if(inp.name) {
+            datos_maestros[inp.name] = inp.type === 'number' ? parseFloat(inp.value) : inp.value.trim();
+        }
+    });
+    
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const ogHtml = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...';
+    submitBtn.disabled = true;
+    if(window.lucide) lucide.createIcons();
+
+    try {
+        const payload = {
+            id: recordId ? recordId : undefined,
+            proveedor_id: providerId,
+            nombre_proveedor: providerName,
+            datos_maestros: {
+                ...datos_maestros,
+                "Origen_Sistema": "Carga Manual"
+            }
+        };
+
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendUrl}/api/master-table/manual-entry`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        closeManualEntryModal();
+        if(window.loadSupplierArticles) window.loadSupplierArticles(providerId);
+
+        if(typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Artículo Creado',
+                text: 'El artículo ha sido registrado manualmente.',
+                icon: 'success',
+                timer: 2000,
+                background: '#0f172a', color: '#f8fafc',
+                showConfirmButton: false
+            });
+        }
+    } catch (err) {
+        console.error("Error Carga Manual:", err);
+        if(typeof Swal !== 'undefined') {
+            Swal.fire({ title: 'Error', text: err.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        } else {
+            alert(err.message);
+        }
+    } finally {
+        submitBtn.innerHTML = ogHtml;
+        submitBtn.disabled = false;
+        if(window.lucide) lucide.createIcons();
+    }
+};

@@ -23,9 +23,18 @@ async function getMasterFields(req, res) {
             console.error("[MasterTableController] Error DB:", error);
             return res.status(500).json({ success: false, error: error.message });
         }
+        
+        // TICKET #014: Todos los atributos del diccionario son comerciales, se exponen todos.
+        // Los metadatos de sistema (id, fechas, estado) ya están filtrados al no existir en esta tabla.
+        const mappedData = (data || []).map(f => {
+            return {
+                ...f,
+                visible_en_manual: true
+            };
+        });
 
-        console.log(`[MasterTableController] ✅ Datos obtenidos: ${data ? data.length : 0} campos.`);
-        return res.json({ success: true, data: data || [] });
+        console.log(`[MasterTableController] ✅ Datos obtenidos: ${mappedData.length} campos.`);
+        return res.json({ success: true, data: mappedData });
 
     } catch (error) {
         console.error("[MasterTableController] Catch Error getMasterFields:", error);
@@ -521,6 +530,7 @@ module.exports = {
                  record._estado_delta = estado_delta;
                  // Inyección de Metadata Cronológico (Efective Date / QA Requirement)
                  record.ultima_actualizacion_origen = timestamp_real;
+                 record.Origen_Sistema = 'Proceso Automático';
 
                  const payload = {
                      proveedor_id,
@@ -670,6 +680,33 @@ module.exports = {
             return res.json({ success: true, message: "Reasignación aplicada.", count: itemIds.length, upserted: writtenPayloads });
         } catch(e) { console.error(e); return res.status(500).json({ success: false, error: e.message }); }
     },
+    bulkUpdateGeneric: async (req, res) => {
+        try {
+            const { itemIds, target_col, target_val } = req.body;
+            if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) return res.status(400).json({ success: false, error: "IDs no proporcionados." });
+            if (!target_col) return res.status(400).json({ success: false, error: "Columna destino no especificada." });
+
+            const supabase = require('../config/supabaseClient');
+            
+            const { data: rows } = await supabase.from('tabla_maestra_operativa').select('id, datos_maestros').in('id', itemIds);
+            
+            if (rows && rows.length > 0) {
+                 const payloads = rows.map(r => {
+                     const dm = { ...(r.datos_maestros || {}) };
+                     if (target_val === 'UNASSIGN') {
+                         delete dm[target_col]; // Eliminamos la llave para no dejar strings vacíos si no es necesario
+                     } else {
+                         dm[target_col] = target_val;
+                     }
+                     return { id: r.id, datos_maestros: dm };
+                 });
+                 
+                 const { error: upsertErr } = await supabase.from('tabla_maestra_operativa').upsert(payloads);
+                 if (upsertErr) throw upsertErr;
+            }
+            return res.json({ success: true, message: "Actualización genérica aplicada.", count: itemIds.length });
+        } catch(e) { console.error(e); return res.status(500).json({ success: false, error: e.message }); }
+    },
     bulkUpdateUnidad: async (req, res) => {
         try {
             const { itemIds, target_unidad } = req.body;
@@ -763,10 +800,10 @@ module.exports = {
         try {
             const supabase = require('../config/supabaseClient');
             
-            // [VINCULACIÓN ESTRUCTURAL] Ahora hacemos query incluyendo maestro_rubros
+            // [VINCULACIÓN ESTRUCTURAL] Ahora hacemos query incluyendo maestro_rubros y categorias_proveedores
             const { data, error } = await supabase
                 .from('tabla_maestra_operativa')
-                .select('id, proveedor_id, archivo_origen_id, nombre_proveedor, timestamp_extraccion, datos_maestros, es_delta, rubro_id, bloqueo_edicion_manual, maestro_rubros(id, nombre_rubro)')
+                .select('id, proveedor_id, archivo_origen_id, nombre_proveedor, timestamp_extraccion, datos_maestros, es_delta, rubro_id, bloqueo_edicion_manual, maestro_rubros(id, nombre_rubro), proveedores(categorias_proveedores(nombre))')
                 .order('timestamp_extraccion', { ascending: false });
             
             if (error) {
@@ -833,6 +870,13 @@ module.exports = {
                     }
                 }
     
+
+                // TICKET #015: Inyección de Tipo de Proveedor
+                let tipoProveedor = "No Clasificado";
+                if (outRow.proveedores && outRow.proveedores.categorias_proveedores && outRow.proveedores.categorias_proveedores.nombre) {
+                    tipoProveedor = outRow.proveedores.categorias_proveedores.nombre;
+                }
+                outRow.datos_maestros['tipo_proveedor'] = tipoProveedor;
 
                 if (outRow.maestro_rubros && outRow.maestro_rubros.nombre_rubro) {
                     // Buscar si existe una key que hable de rubro y usar la Capitalizada si existe
@@ -945,6 +989,123 @@ module.exports = {
             return res.json({ success: true });
         } catch (e) {
             console.error("[MasterTableController] deletePreset error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+
+    // ==========================================
+    // V6.1: INGRESO MANUAL DE DOBLE VÍA
+    // ==========================================
+    insertManualRecord: async (req, res) => {
+        try {
+            const { proveedor_id, nombre_proveedor, datos_maestros } = req.body;
+            if (!proveedor_id || !datos_maestros) {
+                return res.status(400).json({ success: false, error: "Faltan datos obligatorios." });
+            }
+
+            // Ticket #013: Autogeneración Determinista de SKU (Adaptado a Data-Driven)
+            let skuActual = datos_maestros["sku"] || datos_maestros["codigo"] || datos_maestros["código"] || "";
+            if (!skuActual || skuActual.trim() === "") {
+                const crypto = require('crypto');
+                const desc = datos_maestros["descripcion"] || datos_maestros["descripción"] || "SINDESCRIPCION";
+                // Hash corto (8 caracteres) basado en UUID y Descripción
+                const hashInput = `${proveedor_id}-${desc.trim().toLowerCase()}`;
+                const hash = crypto.createHash('sha256').update(hashInput).digest('hex').substring(0, 8).toUpperCase();
+                
+                skuActual = `LMD-MAN-${hash}`;
+                // Ahora el frontend debe enviarnos la estructura de llaves normalizada, inyectamos en 'codigo'
+                datos_maestros["codigo"] = skuActual;
+            }
+
+            // Upsert payload (Token determinista para manual entry)
+            const payload = {
+                proveedor_id,
+                archivo_origen_id: 'MANUAL_ENTRY_V1',
+                nombre_proveedor: nombre_proveedor || 'Desconocido (Manual)',
+                datos_maestros: {
+                    ...datos_maestros,
+                    _estado_delta: 'ALTA',
+                    _origen: 'Carga Manual'
+                },
+                es_delta: true,
+                timestamp_extraccion: new Date().toISOString()
+            };
+
+            if (req.body.id) {
+                payload.id = req.body.id;
+            } else {
+                // TICKET 007: Guardia de Unicidad (Evitar duplicación de SKU)
+                // Buscar si existe un artículo de este proveedor con el mismo SKU
+                const { data: existingData, error: existError } = await supabase
+                    .from('tabla_maestra_operativa')
+                    .select('id, datos_maestros')
+                    .eq('proveedor_id', proveedor_id);
+                
+                let foundId = null;
+                if (!existError && existingData) {
+                    const skuTarget = String(skuActual).trim().toLowerCase();
+                    for (const row of existingData) {
+                        if (row.datos_maestros) {
+                            const dm = row.datos_maestros;
+                            const rowSku = String(dm.SKU || dm['Código'] || dm.codigo || "").trim().toLowerCase();
+                            if (rowSku === skuTarget && rowSku !== "") {
+                                foundId = row.id;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (foundId) {
+                    payload.id = foundId;
+                } else {
+                    payload.id = require('crypto').randomUUID();
+                }
+            }
+
+            const { data, error } = await supabase.from('tabla_maestra_operativa').upsert([payload]).select().single();
+            if (error) throw error;
+
+            return res.json({ success: true, data, message: "Ingreso manual registrado." });
+        } catch (e) {
+            console.error("[MasterTableController] insertManualRecord error:", e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    },
+
+    deleteManualRecord: async (req, res) => {
+        try {
+            const { id } = req.params;
+            if (!id) return res.status(400).json({ success: false, error: "ID requerido." });
+
+            const { data: record, error: fetchError } = await supabase
+                .from('tabla_maestra_operativa')
+                .select('archivo_origen_id, datos_maestros')
+                .eq('id', id)
+                .single();
+
+            if (fetchError || !record) {
+                return res.status(404).json({ success: false, error: "Registro no encontrado." });
+            }
+
+            // Validar que sea un registro manual
+            const isManual = record.archivo_origen_id === 'MANUAL_ENTRY_V1' || 
+                            (record.datos_maestros && String(record.datos_maestros._origen || "").toLowerCase().includes("manual"));
+            
+            if (!isManual) {
+                return res.status(403).json({ success: false, error: "Solo se pueden eliminar registros cargados manualmente." });
+            }
+
+            const { error: delError } = await supabase
+                .from('tabla_maestra_operativa')
+                .delete()
+                .eq('id', id);
+
+            if (delError) throw delError;
+
+            return res.json({ success: true, message: "Registro manual eliminado." });
+        } catch (e) {
+            console.error("[MasterTableController] deleteManualRecord error:", e);
             return res.status(500).json({ success: false, error: e.message });
         }
     }

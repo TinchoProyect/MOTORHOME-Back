@@ -42,9 +42,12 @@ router.delete('/categories/:id', masterTableController.deleteCategory);
 // V6: EXTRACCIÓN OPERATIVA (Fase 5)
 // ==========================================
 router.post('/extract', masterTableController.extractToMasterTable);
+router.post('/manual-entry', masterTableController.insertManualRecord);
+router.delete('/manual-entry/:id', masterTableController.deleteManualRecord);
 router.delete('/revert/:archivoId', masterTableController.revertExtraction);
 router.get('/operativa', masterTableController.getOperativaRecords);
 router.put('/operativa/bulk-rubro', masterTableController.bulkUpdateRubro);
 router.put('/operativa/bulk-unidad', masterTableController.bulkUpdateUnidad);
+router.put('/operativa/bulk-generic', masterTableController.bulkUpdateGeneric);
 
 module.exports = router;
