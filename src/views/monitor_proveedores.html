@@ -2898,7 +2898,13 @@
                             proveedor_nombre: row._proveedor || row.proveedor || 'Sin Proveedor',
                             codigo_producto: row.codigo || row['código'] || row.sku || row._system_id,
                             producto_descripcion: row.descripcion || row['descripción'] || 'Sin descripción',
-                            precio_unitario: row.precio ? parseFloat(String(row.precio).replace(/\./g, '').replace(/,/g, '.')) : 0,
+                            precio_unitario: (function(p) {
+                                if (!p) return 0;
+                                if (typeof p === 'number') return p;
+                                const s = String(p);
+                                if (s.includes(',') && s.includes('.')) return parseFloat(s.replace(/\./g, '').replace(/,/g, '.')) || 0;
+                                return parseFloat(s.replace(/,/g, '.')) || 0;
+                            })(row.precio),
                             cantidad: 1,
                             unidad_medida: row.unidad || 'Unidad',
                             cant_bult: row.cant_bult || 1,
