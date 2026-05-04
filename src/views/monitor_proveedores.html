@@ -116,9 +116,8 @@
                         <button onclick="if(window.openB2BCheckout) window.openB2BCheckout(); else alert('Módulo de pedidos en inicialización...');"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Gestión de
                             Pedidos</button>
-                        <button onclick="taskAction('Generar presupuestos')"
-                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Generar
-                            presupuestos</button>
+                        <button onclick="window.openReceptionModal && window.openReceptionModal()"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Recepción Fís. de Mercadería</button>
                         <button onclick="taskAction('Solicitar información a proveedor')"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Solicitar
                             información</button>
@@ -1630,6 +1629,87 @@
     
 
 
+    <!-- RECEPTION FISICA MODAL -->
+    <div id="receptionModal" class="hidden fixed inset-0 z-[400] flex flex-col bg-slate-950 overflow-hidden animate-in fade-in duration-200">
+        <div class="h-14 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0">
+            <div class="flex items-center gap-4">
+                <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                    <i data-lucide="package-check" class="w-4 h-4 text-blue-400"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center">Recepción Física de Mercadería</h2>
+                    <p class="text-[10px] text-slate-500 font-mono tracking-widest mt-0.5 uppercase">Verificación y Trazabilidad</p>
+                </div>
+            </div>
+            <div class="flex gap-2 items-center">
+                <button onclick="window.closeReceptionModal()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex flex-1 overflow-hidden transition-all duration-300">
+            <!-- Left Panel: Providers -->
+            <div class="w-48 shrink-0 border-r border-slate-800 bg-slate-900/50 p-4 flex flex-col gap-2 overflow-y-auto custom-scrollbar" id="recProviderTabs">
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 mb-2">Proveedores</p>
+                <!-- JS injects providers here -->
+            </div>
+
+            <!-- Middle/Right Panel: Orders and Items -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <!-- Top Header: Select Order -->
+                <div class="h-20 border-b border-slate-800 bg-slate-950/50 p-4 shrink-0 flex flex-col justify-center">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 id="recActiveProviderName" class="text-blue-400 font-bold text-sm tracking-wide">Seleccione un Proveedor</h3>
+                        </div>
+                        <div class="flex gap-2 items-center" id="recOrderSelectorContainer" style="display: none;">
+                            <label class="text-[10px] text-slate-400 uppercase font-bold">Pedido Activo:</label>
+                            <select id="recOrderSelect" onchange="window.loadReceptionOrder(this.value)" class="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2 outline-none focus:border-blue-500 w-64">
+                                <option value="">Seleccione un pedido...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Items Grid -->
+                <div class="flex-1 overflow-auto custom-scrollbar p-0 relative">
+                    <div id="recEmptyState" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 p-12 text-center">
+                        <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-50"></i>
+                        <p class="text-sm font-bold text-slate-300">Sin pedido seleccionado</p>
+                    </div>
+
+                    <table class="w-full text-left border-collapse" id="recItemsTable" style="display: none;">
+                        <thead class="sticky top-0 bg-slate-950/95 backdrop-blur shadow-sm z-10">
+                            <tr class="text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-800">
+                                <th class="p-3 font-medium">SKU</th>
+                                <th class="p-3 font-medium">Descripción</th>
+                                <th class="p-3 font-medium text-center">Pedido</th>
+                                <th class="p-3 font-medium text-center">Previo</th>
+                                <th class="p-3 font-medium text-center">A Recibir Físico</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recItemsBody" class="divide-y divide-slate-800/50 text-sm">
+                            <!-- JS injects items here -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Bottom Action Bar -->
+                <div class="h-16 border-t border-slate-800 bg-slate-950/80 backdrop-blur flex items-center justify-between px-6 shrink-0" id="recBottomBar" style="display: none;">
+                    <div class="flex items-center gap-4">
+                        <input type="text" id="recRemitoInput" placeholder="Nº Remito (Opcional)" class="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2 outline-none focus:border-blue-500 w-48">
+                        <input type="text" id="recNotasInput" placeholder="Notas / Observaciones" class="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2 outline-none focus:border-blue-500 w-64">
+                    </div>
+                    <button onclick="window.submitReception()" id="btnSubmitReception" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-blue-900/30">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i> Confirmar Ingreso
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/recepcion_fisica_ui.js"></script>
     <script type="module" src="js/pedidos_b2b_ui.js"></script>
     <script type="module" src="js/active_orders_ui.js"></script>
     <script type="module" src="js/app_core.js"></script>
