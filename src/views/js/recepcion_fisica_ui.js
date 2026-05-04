@@ -263,7 +263,7 @@ window.submitReception = async () => {
         if (!result.success) throw new Error(result.error);
         
         // Success
-        Swal.fire({
+        await Swal.fire({
             title: 'Recepción Registrada',
             text: `El evento ha sido guardado exitosamente. Estado actual: ${result.estado_final}`,
             icon: 'success',
@@ -272,8 +272,39 @@ window.submitReception = async () => {
             confirmButtonColor: '#2563eb'
         });
         
-        // Reload order detail
-        window.loadReceptionOrder(recActiveOrderId);
+        // Clean form inputs
+        document.getElementById('recRemitoInput').value = '';
+        document.getElementById('recNotasInput').value = '';
+
+        // Reload the provider's active orders so the dropdown reflects the new reality
+        const currentProvSelect = document.getElementById('recProviderSelect');
+        if (currentProvSelect && currentProvSelect.value) {
+            window.loadReceptionProvider(currentProvSelect.value);
+        }
+        
+        if (result.estado_final === 'Recepción Completa') {
+            // Clear the items view, as it's no longer 'Active'
+            document.getElementById('recItemsTable').style.display = 'none';
+            document.getElementById('recBottomBar').style.display = 'none';
+            
+            const emptyState = document.getElementById('recEmptyState');
+            emptyState.style.display = 'flex';
+            emptyState.innerHTML = `
+                <i data-lucide="check-circle-2" class="w-12 h-12 mb-4 opacity-50 text-emerald-500"></i>
+                <p class="text-sm font-bold tracking-widest uppercase text-emerald-400">Pedido Completado</p>
+                <p class="text-[10px] text-slate-500 mt-2">La logística de esta orden ha finalizado.</p>
+            `;
+            if (window.lucide) window.lucide.createIcons();
+            recActiveOrderId = null;
+        } else {
+            // Reload order detail (now it's Parcial) to allow further inputs
+            window.loadReceptionOrder(recActiveOrderId);
+        }
+
+        // Si la vista principal de Pedidos Activos está abierta de fondo, actualizarla
+        if (typeof window.loadActiveOrders === 'function') {
+            window.loadActiveOrders();
+        }
         
     } catch (error) {
         console.error('[RECEPCION] Error al registrar:', error);
@@ -281,7 +312,7 @@ window.submitReception = async () => {
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i data-lucide="check-circle" class="w-4 h-4"></i> Confirmar Ingreso';
-        lucide.createIcons();
+        if(window.lucide) window.lucide.createIcons();
     }
 };
 

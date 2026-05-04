@@ -26,6 +26,7 @@ app.use('/api/b2b', require('./routes/b2bRoutes'));
 app.use('/api/pdf-templates', require('./routes/pdfTemplateRoutes'));
 app.use('/api/arca', require('./routes/arcaRoutes'));
 app.use('/api/recepcion', require('./routes/recepcionRoutes'));
+app.use('/api/inventory', require('./routes/inventoryRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {

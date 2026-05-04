@@ -37,11 +37,12 @@ router.get('/pedido/:pedidoId/items', async (req, res) => {
             
         if (errorItems) throw errorItems;
 
-        // Obtenemos las recepciones previas para estos ítems
+        // Obtenemos las recepciones previas para estos ítems (Excluyendo Anuladas)
         const { data: recepciones, error: errorRec } = await supabase
             .from('recepciones_fisicas_items')
-            .select('pedido_item_id, cantidad_recibida')
-            .in('pedido_item_id', items.map(i => i.id));
+            .select('pedido_item_id, cantidad_recibida, recepciones_fisicas_cabecera!inner(estado)')
+            .in('pedido_item_id', items.map(i => i.id))
+            .neq('recepciones_fisicas_cabecera.estado', 'Anulada');
             
         if (errorRec) throw errorRec;
 
@@ -111,8 +112,9 @@ router.post('/registrar', async (req, res) => {
 
         const { data: allRecepciones } = await supabase
             .from('recepciones_fisicas_items')
-            .select('pedido_item_id, cantidad_recibida')
-            .in('pedido_item_id', allItems.map(i => i.id));
+            .select('pedido_item_id, cantidad_recibida, recepciones_fisicas_cabecera!inner(estado)')
+            .in('pedido_item_id', allItems.map(i => i.id))
+            .neq('recepciones_fisicas_cabecera.estado', 'Anulada');
 
         let totalEsperado = 0;
         let totalRecibido = 0;
@@ -158,4 +160,140 @@ router.post('/registrar', async (req, res) => {
     }
 });
 
+// GET: Obtener historial de recepciones físicas
+router.get('/historial', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('recepciones_fisicas_cabecera')
+            .select(`
+                id,
+                fecha_recepcion,
+                numero_remito,
+                estado,
+                notas,
+                pedido_id,
+                pedidos_b2b_cabecera:pedido_id (
+                    tipo_documento,
+                    proveedor_id,
+                    proveedores:proveedor_id (nombre)
+                )
+            `)
+            .order('fecha_recepcion', { ascending: false });
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[RECEPCION] Error al obtener historial:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET: Obtener ítems de una recepción específica
+router.get('/historial/:recepcionId/items', async (req, res) => {
+    try {
+        const { recepcionId } = req.params;
+        
+        const { data, error } = await supabase
+            .from('recepciones_fisicas_items')
+            .select(`
+                id,
+                cantidad_esperada,
+                cantidad_recibida,
+                pedido_item_id,
+                pedidos_b2b_items:pedido_item_id (
+                    producto_codigo,
+                    producto_descripcion,
+                    unidad_ref
+                )
+            `)
+            .eq('recepcion_id', recepcionId);
+            
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[RECEPCION] Error al obtener ítems de recepción:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;
+
+// POST: Anular recepción física (Soft-Delete)
+router.post('/anular', async (req, res) => {
+    try {
+        const { recepcion_id, motivo } = req.body;
+        
+        if (!recepcion_id || !motivo) {
+            return res.status(400).json({ success: false, error: 'Falta ID de recepción o motivo de anulación.' });
+        }
+
+        // 1. Obtener la recepción actual para saber el pedido_id
+        const { data: recepcion, error: errGet } = await supabase
+            .from('recepciones_fisicas_cabecera')
+            .select('*')
+            .eq('id', recepcion_id)
+            .single();
+
+        if (errGet) throw errGet;
+        if (recepcion.estado === 'Anulada') {
+            return res.status(400).json({ success: false, error: 'La recepción ya se encuentra anulada.' });
+        }
+
+        const nuevasNotas = (recepcion.notas ? recepcion.notas + ' | ' : '') + 'ANULADO: ' + motivo;
+
+        // 2. Marcar como Anulada
+        const { error: errUpdate } = await supabase
+            .from('recepciones_fisicas_cabecera')
+            .update({ estado: 'Anulada', notas: nuevasNotas })
+            .eq('id', recepcion_id);
+
+        if (errUpdate) throw errUpdate;
+
+        // 3. Recalcular el estado del pedido original
+        const pedido_id = recepcion.pedido_id;
+        
+        const { data: allItems } = await supabase
+            .from('pedidos_b2b_items')
+            .select('id, cantidad')
+            .eq('pedido_id', pedido_id);
+
+        const { data: allRecepciones } = await supabase
+            .from('recepciones_fisicas_items')
+            .select('pedido_item_id, cantidad_recibida, recepciones_fisicas_cabecera!inner(estado)')
+            .in('pedido_item_id', allItems.map(i => i.id))
+            .neq('recepciones_fisicas_cabecera.estado', 'Anulada');
+
+        let incompleto = false;
+        
+        const sumMap = {};
+        allRecepciones.forEach(r => {
+            if(!sumMap[r.pedido_item_id]) sumMap[r.pedido_item_id] = 0;
+            sumMap[r.pedido_item_id] += Number(r.cantidad_recibida);
+        });
+
+        allItems.forEach(i => {
+            const esperado = Number(i.cantidad);
+            const recibido = sumMap[i.id] || 0;
+            if (recibido < esperado) {
+                incompleto = true;
+            }
+        });
+
+        // Si es incompleto, retrocede a 'Recepción Parcial' (o 'Emitido' si no hay otra recepción)
+        let nuevoEstado = incompleto ? 'Recepción Parcial' : 'Recepción Completa';
+        if (incompleto && allRecepciones.length === 0) {
+            nuevoEstado = 'Emitido'; // No queda ninguna recepción válida
+        }
+
+        await supabase
+            .from('pedidos_b2b_cabecera')
+            .update({ estado: nuevoEstado })
+            .eq('id', pedido_id);
+
+        res.json({ success: true, estado_pedido: nuevoEstado });
+
+    } catch (err) {
+        console.error('[RECEPCION] Error al anular recepción:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});

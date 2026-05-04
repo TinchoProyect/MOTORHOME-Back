@@ -130,6 +130,17 @@
                     </div>
                 </div>
 
+                <!-- Inventario -->
+                <div>
+                    <button onclick="if(window.openInventory) window.openInventory();"
+                        class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="package-search" class="w-4 h-4 text-emerald-400"></i>
+                            <span>Control de Inventario</span>
+                        </div>
+                    </button>
+                </div>
+
                 <div id="infoMenuContainer">
                     <button onclick="toggleDropdown('infoDropdown', 'infoMenuContainer')"
                         class="w-full sidebar-item flex items-center justify-between px-4 py-3 rounded-lg text-sm text-slate-400 text-left">
@@ -159,6 +170,8 @@
                         <button onclick="window.openActiveOrders()"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Pedidos
                             activos</button>
+                        <button onclick="if(window.openReceptionHistory) window.openReceptionHistory();"
+                            class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Historial de Recepciones</button>
                     </div>
                 </div>
 
@@ -1710,6 +1723,8 @@
     </div>
 
     <script type="module" src="js/recepcion_fisica_ui.js"></script>
+    <script type="module" src="js/recepciones_history_ui.js"></script>
+    <script type="module" src="js/inventory_ui.js"></script>
     <script type="module" src="js/pedidos_b2b_ui.js"></script>
     <script type="module" src="js/active_orders_ui.js"></script>
     <script type="module" src="js/app_core.js"></script>

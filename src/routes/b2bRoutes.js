@@ -94,6 +94,7 @@ router.get('/pedidos', async (req, res) => {
                     unidad_ref
                 )
             `)
+            .in('estado', ['Emitido', 'Recepción Parcial'])
             .order('created_at', { ascending: false });
 
         if (error) throw error;
