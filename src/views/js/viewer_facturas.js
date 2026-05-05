@@ -14,24 +14,7 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
         if (window.lucide) window.lucide.createIcons();
     }
 
-    // Obtener la URL base del Backend
-    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-
-    // Abrir modal e Inyectar Iframe desde nuestro Proxy Local para bypassear CSP
-    modal.classList.remove('hidden');
-    iframe.src = `${backendUrl}/api/facturas/pdf/${fileId}`;
-    sub.textContent = `Procesando: ${fileName}...`;
-    
-    // Clear form
-    const inputs = ['fac_cuit', 'fac_fecha', 'fac_tipo', 'fac_pto', 'fac_num', 'fac_neto', 'fac_iva21', 'fac_iva105', 'fac_perc_iibb', 'fac_perc_iva', 'fac_nograv', 'fac_total', 'fac_cae', 'fac_vto_cae', 'fac_id_db', 'fac_file_id'];
-    inputs.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
-    
-    document.getElementById('fac_file_id').value = fileId;
-
-    // Mostrar Loading en todo el modal
+    // Mostrar Loading Inmediato (Antes de abrir el Visor)
     if (window.Swal) {
         Swal.fire({
             title: 'Motor Chofer IA',
@@ -43,6 +26,15 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
             didOpen: () => { Swal.showLoading() }
         });
     }
+
+    // Clear form preventivamente
+    const inputs = ['fac_cuit', 'fac_fecha', 'fac_tipo', 'fac_pto', 'fac_num', 'fac_neto', 'fac_iva21', 'fac_iva105', 'fac_perc_iibb', 'fac_perc_iva', 'fac_nograv', 'fac_total', 'fac_cae', 'fac_vto_cae', 'fac_id_db', 'fac_file_id'];
+    inputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    
+    document.getElementById('fac_file_id').value = fileId;
 
     try {
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -57,6 +49,11 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
         if (!res.ok) throw new Error(json.error || "Fallo en extracción IA");
         
         const data = json.data;
+        
+        // Ahora sí, abrir modal e inyectar el Iframe visualmente
+        modal.classList.remove('hidden');
+        iframe.src = `${backendUrl}/api/facturas/pdf/${fileId}`;
+        sub.textContent = `${fileName} - Revisión HITL Pendiente`;
         
         // Fill form
         document.getElementById('fac_id_db').value = data.id;
@@ -79,8 +76,6 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
         
         document.getElementById('fac_cae').value = data.cae || '';
         document.getElementById('fac_vto_cae').value = data.fecha_vto_cae || '';
-
-        sub.textContent = `${fileName} - Revisión HITL Pendiente`;
 
         if (window.Swal) Swal.close();
         

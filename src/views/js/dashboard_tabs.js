@@ -162,6 +162,9 @@ window.renderFacturasDBGrid = function(facturas) {
                 <td class="p-4 text-right text-amber-400 font-mono font-bold">$ ${window.formatCurrency ? window.formatCurrency(fac.importe_total) : fac.importe_total}</td>
                 <td class="p-4 text-center">${statusBadge}</td>
                 <td class="p-4 text-right flex items-center justify-end gap-2">
+                    <button onclick="window.deleteFacturaExtraccion('${fac.id}')" class="px-2 py-1 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white rounded text-[10px] transition-colors border border-red-500/30" title="Deshacer Extracción (Eliminar)">
+                        <i data-lucide="trash-2" class="w-3 h-3 inline"></i>
+                    </button>
                     <button onclick="window.viewFacturaDetails('${fac.id}')" class="px-3 py-1 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded text-[10px] transition-colors" title="Ver Detalles de la Factura">
                         <i data-lucide="eye" class="w-3 h-3 inline"></i>
                     </button>
@@ -187,6 +190,55 @@ window.renderFacturasDBGrid = function(facturas) {
 
     container.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
+};
+
+window.deleteFacturaExtraccion = async function(id) {
+    if (!window.Swal) return;
+    
+    const result = await Swal.fire({
+        title: '¿Deshacer Extracción?',
+        text: "Esta acción eliminará el registro de la base de datos y devolverá el archivo a la solapa PENDIENTES. Perderá las validaciones HITL y la conciliación (si tuviera).",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#334155',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        background: '#1e293b', color: '#f8fafc'
+    });
+
+    if (!result.isConfirmed) return;
+
+    Swal.fire({
+        title: 'Eliminando...',
+        background: '#0f172a', color: '#f8fafc',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+    });
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendUrl}/api/facturas/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        Swal.fire({
+            icon: 'success', title: 'Extracción Eliminada',
+            text: 'El comprobante ha regresado a estado Pendiente.',
+            timer: 2000, showConfirmButton: false,
+            background: '#1e293b', color: '#f8fafc'
+        });
+
+        // Recargar la grilla actual (estando en la pestaña procesadas)
+        if (window.exploreSupplierFiles && window.currentDriveFolderId) {
+            window.exploreSupplierFiles(window.currentDriveFolderId, 'facturas');
+        }
+
+    } catch (error) {
+        console.error("Error al eliminar extracción:", error);
+        Swal.fire('Error', 'No se pudo eliminar la extracción: ' + error.message, 'error');
+    }
 };
 
 // Logic: Load Processed Files

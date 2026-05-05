@@ -11,6 +11,9 @@ router.get('/pdf/:fileId', facturasController.getPdfProxy);
 // Guardar validación HITL
 router.put('/:id', facturasController.saveHITL);
 
+// Eliminar / Deshacer extracción
+router.delete('/:id', facturasController.deleteFactura);
+
 // Obtener facturas procesadas de un proveedor
 router.get('/provider/:providerId', facturasController.getByProvider);
 

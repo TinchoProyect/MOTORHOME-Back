@@ -173,6 +173,26 @@ const facturasController = {
         }
     },
 
+    deleteFactura: async (req, res) => {
+        const { id } = req.params;
+
+        try {
+            console.log(`[FacturasController] Eliminando extracción de factura ${id}`);
+
+            const { error } = await supabase
+                .from('facturas_raw')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            return res.json({ success: true, message: 'Extracción eliminada correctamente.' });
+        } catch (error) {
+            console.error("[FacturasController] Error deleteFactura:", error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
     getPdfProxy: async (req, res) => {
         const { fileId } = req.params;
         try {
