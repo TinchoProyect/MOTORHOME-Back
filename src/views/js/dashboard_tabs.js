@@ -32,21 +32,21 @@ window.clearSelection = function () {
 };
 
 // Init
-window.initDashboardTabs = function () {
-    console.log("[Dashboard] Initializing Tabs...");
+window.initDashboardTabs = function (contextMode = 'listas', processedDB = []) {
+    console.log("[Dashboard] Initializing Tabs... Context:", contextMode);
     // Bind Tab Click Events
     const btnDrive = document.getElementById('tabPending');
     const btnDB = document.getElementById('tabProcessed');
 
-    if (btnDrive) btnDrive.onclick = () => switchDashboardTab('DRIVE');
-    if (btnDB) btnDB.onclick = () => switchDashboardTab('DB');
+    if (btnDrive) btnDrive.onclick = () => switchDashboardTab('DRIVE', contextMode, processedDB);
+    if (btnDB) btnDB.onclick = () => switchDashboardTab('DB', contextMode, processedDB);
 
     // Default to Drive (Pending)
-    switchDashboardTab('DRIVE');
+    switchDashboardTab('DRIVE', contextMode, processedDB);
 };
 
 // Switch Logic
-window.switchDashboardTab = function (mode) {
+window.switchDashboardTab = function (mode, contextMode = 'listas', processedDB = []) {
     dashboardTabState = mode;
     const btnDrive = document.getElementById('tabPending');
     const btnDB = document.getElementById('tabProcessed');
@@ -56,15 +56,17 @@ window.switchDashboardTab = function (mode) {
     const containerDB = document.getElementById('fileListDB');
     const uploadBtnContainer = document.getElementById('uploadButtonContainer');
 
+    // Estilos basados en contexto (Facturas usan Amber, Listas usan Blue/Emerald)
+    const activeDriveColor = contextMode === 'facturas' ? 'amber' : 'blue';
+    const activeDBColor = contextMode === 'facturas' ? 'amber' : 'emerald';
+
     // Update UI Classes
     if (mode === 'DRIVE') {
         if (btnDrive) {
-            btnDrive.classList.add('text-blue-400', 'border-b-2', 'border-blue-500', 'bg-blue-500/10');
-            btnDrive.classList.remove('text-slate-500', 'hover:text-blue-300');
+            btnDrive.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-${activeDriveColor}-500 bg-${activeDriveColor}-500/10 text-${activeDriveColor}-400`;
         }
         if (btnDB) {
-            btnDB.classList.remove('text-emerald-400', 'border-b-2', 'border-emerald-500', 'bg-emerald-500/10');
-            btnDB.classList.add('text-slate-500', 'hover:text-emerald-300');
+            btnDB.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-${activeDBColor}-300`;
         }
 
         if (containerDrive) containerDrive.classList.remove('hidden');
@@ -86,26 +88,92 @@ window.switchDashboardTab = function (mode) {
     } else {
         // DB Mode
         if (btnDrive) {
-            btnDrive.classList.remove('text-blue-400', 'border-b-2', 'border-blue-500', 'bg-blue-500/10');
-            btnDrive.classList.add('text-slate-500', 'hover:text-blue-300');
+            btnDrive.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-${activeDriveColor}-300`;
         }
         if (btnDB) {
-            btnDB.classList.add('text-emerald-400', 'border-b-2', 'border-emerald-500', 'bg-emerald-500/10');
-            btnDB.classList.remove('text-slate-500', 'hover:text-emerald-300');
+            btnDB.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-${activeDBColor}-500 bg-${activeDBColor}-500/10 text-${activeDBColor}-400`;
         }
 
         if (containerDrive) containerDrive.classList.add('hidden');
         if (containerDB) containerDB.classList.remove('hidden');
 
-        // Contextual UI Reactivity (Hide / Destroy Upload Button in PROCESADOS mode)
+        // Contextual UI Reactivity
         if (uploadBtnContainer) {
             uploadBtnContainer.innerHTML = '';
         }
 
         // Trigger Load
-        window.loadProcessedFiles();
+        if (contextMode === 'facturas') {
+            window.renderFacturasDBGrid(processedDB);
+        } else {
+            window.loadProcessedFiles();
+        }
     }
 }
+
+// Render DB Grid for Facturas
+window.renderFacturasDBGrid = function(facturas) {
+    const container = document.getElementById('fileListDB');
+    if (!container) return;
+
+    if (!facturas || facturas.length === 0) {
+        container.innerHTML = `
+            <div class="flex-grow flex flex-col items-center justify-center text-slate-600 h-full py-20">
+                <i data-lucide="archive" class="w-16 h-16 mb-4 opacity-20"></i>
+                <p class="text-sm">No hay facturas procesadas aún.</p>
+            </div>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+        return;
+    }
+
+    let html = `
+        <div class="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 m-2 mt-4 shadow-inner">
+            <table class="w-full text-left text-xs text-slate-300">
+                <thead class="bg-slate-900/80 text-[10px] uppercase font-bold text-slate-500 sticky top-0 shadow-sm border-b border-slate-800">
+                    <tr>
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4">Número</th>
+                        <th class="p-4 text-right">Importe Total</th>
+                        <th class="p-4 text-center">Estado</th>
+                        <th class="p-4 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/50">
+    `;
+
+    facturas.forEach(fac => {
+        let statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-slate-800 text-slate-400">PENDIENTE</span>';
+        if (fac.status === 'REVISADO_HITL') {
+            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">REVISADO HITL</span>';
+        } else if (fac.status === 'CONCILIADO_OK') {
+            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">CONCILIADO OK</span>';
+        }
+
+        html += `
+            <tr class="hover:bg-slate-800/30 transition-colors group">
+                <td class="p-4 font-mono">${fac.fecha_emision ? new Date(fac.fecha_emision).toLocaleDateString() : '-'}</td>
+                <td class="p-4 font-mono font-bold text-white">${fac.numero_comprobante || 'S/N'}</td>
+                <td class="p-4 text-right text-amber-400 font-mono font-bold">$ ${window.formatCurrency ? window.formatCurrency(fac.importe_total) : fac.importe_total}</td>
+                <td class="p-4 text-center">${statusBadge}</td>
+                <td class="p-4 text-right">
+                    <button class="px-3 py-1 bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white rounded text-[10px] transition-colors" title="Ver Detalles (Pronto)">
+                        <i data-lucide="eye" class="w-3 h-3 inline"></i> Ver
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    container.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+};
 
 // Logic: Load Processed Files
 window.loadProcessedFiles = async function() {

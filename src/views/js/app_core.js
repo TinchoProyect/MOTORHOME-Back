@@ -226,7 +226,19 @@ async function exploreSupplierFiles(folderId, contextMode = 'listas') {
 
         if (!data.success) throw new Error(data.error || "Error desconocido");
 
-        renderFileGrid(data.files, folderId, contextMode);
+        let processedDB = [];
+        if (contextMode === 'facturas') {
+            const pid = window.currentActiveProviderId || window.globalContext?.providerId;
+            if (pid) {
+                const { data: factData } = await supabaseClient
+                    .from('facturas_raw')
+                    .select('*')
+                    .eq('proveedor_id', pid);
+                processedDB = factData || [];
+            }
+        }
+
+        renderFileGrid(data.files, folderId, contextMode, processedDB);
 
     } catch (error) {
         console.error("Error explorador:", error);
@@ -246,7 +258,7 @@ async function exploreSupplierFiles(folderId, contextMode = 'listas') {
 window.exploreSupplierFiles = exploreSupplierFiles;
 window.loadFiles = exploreSupplierFiles; // Alias requerido por viewer_ingest.js
 
-function renderFileGrid(files, folderId, contextMode = 'listas') {
+function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = []) {
     // Helpers de Iconos
     const getIcon = (mime) => {
         if (mime.includes('folder')) return 'folder';
@@ -295,20 +307,14 @@ function renderFileGrid(files, folderId, contextMode = 'listas') {
                     </div>
 
                     <!-- TABS (CONTEXT AWARE) -->
-                    ${contextMode === 'listas' ? `
                     <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 ml-4">
                         <button id="tabPending" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-blue-500 bg-blue-500/10 text-blue-400">
-                            <i data-lucide="hard-drive" class="w-3 h-3"></i> Pendientes
+                            <i data-lucide="${contextMode === 'facturas' ? 'receipt' : 'hard-drive'}" class="w-3 h-3"></i> Pendientes
                         </button>
                         <button id="tabProcessed" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-emerald-300">
-                            <i data-lucide="archive" class="w-3 h-3"></i> Procesados
+                            <i data-lucide="${contextMode === 'facturas' ? 'archive' : 'archive'}" class="w-3 h-3"></i> Procesad${contextMode === 'facturas' ? 'a' : 'o'}s
                         </button>
-                    </div>` : `
-                    <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-amber-900/30 ml-4 shadow-inner">
-                        <div class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-amber-500 bg-amber-500/10 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.1)]">
-                            <i data-lucide="receipt" class="w-3 h-3"></i> Facturas Pendientes
-                        </div>
-                    </div>`}
+                    </div>
                 </div>
                 <div class="flex items-center gap-2 relative">
                     <!-- Contenedor Reactivo Inyectable para UploadButton (Oculto en Db/Procesados o Facturas) -->
@@ -326,8 +332,28 @@ function renderFileGrid(files, folderId, contextMode = 'listas') {
             <div id="fileListDrive" class="flex-1 overflow-hidden flex flex-col">
     `;
 
+    // Filter Drive files
+    let driveFiles = files;
+    if (contextMode === 'facturas' && processedDB.length > 0) {
+        driveFiles = files.filter(f => {
+            const dbMatch = processedDB.find(db => db.archivo_id === f.id);
+            if (!dbMatch) return true; // Keep virgin files
+            // Keep if pending
+            if (dbMatch.status === 'PENDIENTE') {
+                f._isPending = true;
+                return true;
+            }
+            return false; // Filter out REVISADO_HITL or CONCILIADO_OK
+        });
+    } else if (contextMode === 'listas' && window.currentProviderLists && window.currentProviderLists.length > 0) {
+        driveFiles = files.filter(f => !window.currentProviderLists.some(db => db.archivo_id === f.id));
+    }
+
+    // Sort by modified time descending
+    driveFiles.sort((a, b) => new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime());
+
     // Grid de Contenido Drive
-    if (files.length === 0) {
+    if (driveFiles.length === 0) {
         html += `
             <div class="flex-grow flex flex-col items-center justify-center text-slate-600">
                 <i data-lucide="folder-open" class="w-16 h-16 mb-4 opacity-20"></i>
@@ -335,43 +361,81 @@ function renderFileGrid(files, folderId, contextMode = 'listas') {
             </div>
         `;
     } else {
-        html += `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto custom-scrollbar pr-2 pb-10">`;
-
-        files.forEach(file => {
-            const iconName = getIcon(file.mimeType);
-            const colorClass = getColor(file.mimeType);
-
-            const clickAction = contextMode === 'facturas' ? `window.open('${file.webViewLink}', '_blank')` : `handleFileClick('${file.id}', '${file.name}', 'ingestion')`;
-            const borderClass = contextMode === 'facturas' ? 'hover:border-amber-500/40 hover:shadow-amber-900/20' : 'hover:border-blue-500/30 hover:shadow-blue-900/10';
-
+        if (contextMode === 'facturas') {
+            // Render as Table
             html += `
-                <div class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 ${borderClass} rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl">
-                    <!-- External Link (Corner) -->
-                    <a href="${file.webViewLink}" target="_blank" class="absolute top-2 right-2 p-1 text-slate-600 hover:${contextMode === 'facturas' ? 'text-amber-400' : 'text-blue-400'} opacity-0 group-hover:opacity-100 transition-opacity" title="Abrir en Drive">
-                        <i data-lucide="external-link" class="w-3 h-3"></i>
-                    </a>
-                    
-                    <!-- Icon -->
-                    <div onclick="${clickAction}" class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg ${colorClass.replace('text-', 'shadow-').replace('400', '900')}/20 cursor-pointer">
-                        <i data-lucide="${iconName}" class="w-6 h-6 ${colorClass}"></i>
-                    </div>
-                    
-                    <!-- Name -->
-                    <p onclick="${clickAction}" class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors cursor-pointer">${file.name}</p>
-                    
-                    <!-- Date -->
-                    <span class="text-[9px] text-slate-600 font-mono mt-auto mb-2">${new Date(file.modifiedTime).toLocaleDateString()}</span>
-                    
-                    ${contextMode === 'facturas' ? `
-                    <button onclick="window.openVisorFacturas('${file.id}', '${file.name.replace(/'/g, "\\'")}', window.currentActiveProviderId || window.globalContext?.providerId, '${file.webViewLink}')" class="w-full mt-2 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 border border-amber-500/30 hover:border-amber-500">
-                        <i data-lucide="bot" class="w-3 h-3"></i> Procesar con IA
-                    </button>
-                    ` : ''}
-                </div>
+            <div class="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 m-2 mt-2 shadow-inner">
+                <table class="w-full text-left text-xs text-slate-300">
+                    <thead class="bg-slate-900/80 text-[10px] uppercase font-bold text-slate-500 sticky top-0 shadow-sm border-b border-slate-800">
+                        <tr>
+                            <th class="p-4">Comprobante</th>
+                            <th class="p-4">Fecha Modif.</th>
+                            <th class="p-4 text-center">Estado Inicial</th>
+                            <th class="p-4 text-right">Acción IA</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/50">
             `;
-        });
+            driveFiles.forEach(file => {
+                const isPending = file._isPending;
+                const statusBadge = isPending 
+                    ? '<span class="px-2 py-1 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">BORRADOR / PRE-EXTRAÍDA</span>' 
+                    : '<span class="px-2 py-1 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">NUEVA</span>';
 
-        html += `</div>`;
+                html += `
+                <tr class="hover:bg-slate-800/30 transition-colors group">
+                    <td class="p-4">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="file-text" class="w-4 h-4 text-red-400"></i>
+                            <span class="font-medium text-slate-300 line-clamp-1 group-hover:text-amber-400 cursor-pointer transition-colors" onclick="window.open('${file.webViewLink}', '_blank')" title="Abrir PDF original">${file.name}</span>
+                        </div>
+                    </td>
+                    <td class="p-4 font-mono text-[10px] text-slate-500">${new Date(file.modifiedTime).toLocaleDateString()}</td>
+                    <td class="p-4 text-center">${statusBadge}</td>
+                    <td class="p-4 text-right">
+                        <button id="btn_ai_${file.id}" onclick="window.openVisorFacturas('${file.id}', '${file.name.replace(/'/g, "\\'")}', window.currentActiveProviderId || window.globalContext?.providerId, '${file.webViewLink}', this)" class="px-4 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all inline-flex items-center gap-1.5 border border-amber-500/30 hover:border-amber-500">
+                            <i data-lucide="bot" class="w-3 h-3 pointer-events-none"></i> <span class="pointer-events-none">Procesar con IA</span>
+                        </button>
+                    </td>
+                </tr>
+                `;
+            });
+            html += `
+                    </tbody>
+                </table>
+            </div>`;
+        } else {
+            // Render as Generic Grid
+            html += `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto custom-scrollbar pr-2 pb-10">`;
+
+            driveFiles.forEach(file => {
+                const iconName = getIcon(file.mimeType);
+                const colorClass = getColor(file.mimeType);
+                const clickAction = `handleFileClick('${file.id}', '${file.name}', 'ingestion')`;
+
+                html += `
+                    <div class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 hover:shadow-blue-900/10 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl">
+                        <!-- External Link (Corner) -->
+                        <a href="${file.webViewLink}" target="_blank" class="absolute top-2 right-2 p-1 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Abrir en Drive">
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        
+                        <!-- Icon -->
+                        <div onclick="${clickAction}" class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg ${colorClass.replace('text-', 'shadow-').replace('400', '900')}/20 cursor-pointer">
+                            <i data-lucide="${iconName}" class="w-6 h-6 ${colorClass}"></i>
+                        </div>
+                        
+                        <!-- Name -->
+                        <p onclick="${clickAction}" class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors cursor-pointer">${file.name}</p>
+                        
+                        <!-- Date -->
+                        <span class="text-[9px] text-slate-600 font-mono mt-auto mb-2">${new Date(file.modifiedTime).toLocaleDateString()}</span>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+        }
     }
 
     html += `</div>`; // Close fileListDrive
@@ -387,9 +451,9 @@ function renderFileGrid(files, folderId, contextMode = 'listas') {
     reportDisplay.innerHTML = html;
     lucide.createIcons();
 
-    // Init Phase 5 Tabs ONLY for Listas
-    if (contextMode === 'listas' && window.initDashboardTabs) {
-        window.initDashboardTabs();
+    // Init Phase 5 Tabs
+    if (window.initDashboardTabs) {
+        window.initDashboardTabs(contextMode, processedDB);
     }
 }
 

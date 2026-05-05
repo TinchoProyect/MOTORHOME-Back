@@ -1,12 +1,18 @@
 // viewer_facturas.js - Satélite de Facturación HITL
 console.log("%c 🧾 VISOR HITL FACTURAS: READY ", "background: #f59e0b; color: #fff; font-weight: bold; padding: 4px;");
 
-window.openVisorFacturas = async function(fileId, fileName, providerId, webViewLink) {
+window.openVisorFacturas = async function(fileId, fileName, providerId, webViewLink, btnElement = null) {
     const modal = document.getElementById('visorFacturasModal');
     const iframe = document.getElementById('iframeFactura');
     const sub = document.getElementById('visorFacturasSub');
     
     if (!modal || !iframe || !sub) return;
+
+    if (btnElement) {
+        btnElement.disabled = true;
+        btnElement.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> <span class="pointer-events-none">Procesando...</span>';
+        if (window.lucide) window.lucide.createIcons();
+    }
 
     // Obtener la URL base del Backend
     const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -93,6 +99,12 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
             });
         }
         sub.textContent = `Error: ${e.message}`;
+    } finally {
+        if (btnElement) {
+            btnElement.disabled = false;
+            btnElement.innerHTML = '<i data-lucide="bot" class="w-3 h-3 pointer-events-none"></i> <span class="pointer-events-none">Procesar con IA</span>';
+            if (window.lucide) window.lucide.createIcons();
+        }
     }
 };
 
@@ -287,6 +299,11 @@ window.saveFacturaHITL = async function() {
         }
         
         window.closeVisorFacturas();
+
+        // [BUGFIX] Refresco visual del tablero para aplicar filtros
+        if (window.exploreSupplierFiles && window.currentDriveFolderId) {
+            window.exploreSupplierFiles(window.currentDriveFolderId, 'facturas');
+        }
 
     } catch (e) {
         if (window.Swal) {
