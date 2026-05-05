@@ -37,9 +37,11 @@ window.initDashboardTabs = function (contextMode = 'listas', processedDB = []) {
     // Bind Tab Click Events
     const btnDrive = document.getElementById('tabPending');
     const btnDB = document.getElementById('tabProcessed');
+    const btnConciliadas = document.getElementById('tabConciliadas');
 
     if (btnDrive) btnDrive.onclick = () => switchDashboardTab('DRIVE', contextMode, processedDB);
     if (btnDB) btnDB.onclick = () => switchDashboardTab('DB', contextMode, processedDB);
+    if (btnConciliadas) btnConciliadas.onclick = () => switchDashboardTab('CONCILIADAS', contextMode, processedDB);
 
     // Default to Drive (Pending)
     switchDashboardTab('DRIVE', contextMode, processedDB);
@@ -50,6 +52,7 @@ window.switchDashboardTab = function (mode, contextMode = 'listas', processedDB 
     dashboardTabState = mode;
     const btnDrive = document.getElementById('tabPending');
     const btnDB = document.getElementById('tabProcessed');
+    const btnConciliadas = document.getElementById('tabConciliadas');
 
     // Contenedores
     const containerDrive = document.getElementById('fileListDrive');
@@ -68,6 +71,9 @@ window.switchDashboardTab = function (mode, contextMode = 'listas', processedDB 
         if (btnDB) {
             btnDB.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-${activeDBColor}-300`;
         }
+        if (btnConciliadas) {
+            btnConciliadas.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-emerald-300`;
+        }
 
         if (containerDrive) containerDrive.classList.remove('hidden');
         if (containerDB) containerDB.classList.add('hidden');
@@ -84,14 +90,16 @@ window.switchDashboardTab = function (mode, contextMode = 'listas', processedDB 
             `;
             if (window.lucide) window.lucide.createIcons();
         }
-
     } else {
-        // DB Mode
+        // DB or CONCILIADAS Mode
         if (btnDrive) {
             btnDrive.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-${activeDriveColor}-300`;
         }
         if (btnDB) {
-            btnDB.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-${activeDBColor}-500 bg-${activeDBColor}-500/10 text-${activeDBColor}-400`;
+            btnDB.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 ${mode === 'DB' ? `border-${activeDBColor}-500 bg-${activeDBColor}-500/10 text-${activeDBColor}-400` : `border-transparent text-slate-500 hover:text-${activeDBColor}-300`}`;
+        }
+        if (btnConciliadas) {
+            btnConciliadas.className = `px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 ${mode === 'CONCILIADAS' ? `border-emerald-500 bg-emerald-500/10 text-emerald-400` : `border-transparent text-slate-500 hover:text-emerald-300`}`;
         }
 
         if (containerDrive) containerDrive.classList.add('hidden');
@@ -112,23 +120,39 @@ window.switchDashboardTab = function (mode, contextMode = 'listas', processedDB 
 }
 
 // Render DB Grid for Facturas
-window.renderFacturasDBGrid = function(facturas) {
+window.renderFacturasDBGrid = function(allFacturas) {
+    console.log(`[UI VIGÍA] Renderizando Facturas DB Grid. Estado actual del Tab: ${dashboardTabState}`);
+    console.log(`[UI VIGÍA] Total de facturas recibidas (allFacturas):`, allFacturas.length);
+    console.log(`[UI VIGÍA] Contenido crudo de allFacturas:`, allFacturas);
+
     const container = document.getElementById('fileListDB');
     if (!container) return;
+
+    // Filtrar facturas según el tab actual
+    const facturas = dashboardTabState === 'CONCILIADAS' 
+        ? allFacturas.filter(f => f.status_conciliacion === 'CONCILIADO_OK').sort((a,b) => new Date(b.fecha_emision) - new Date(a.fecha_emision))
+        : allFacturas.filter(f => f.status_conciliacion !== 'CONCILIADO_OK');
+
+    console.log(`[UI VIGÍA] Facturas después del filtrado (${dashboardTabState}):`, facturas.length);
 
     if (!facturas || facturas.length === 0) {
         container.innerHTML = `
             <div class="flex-grow flex flex-col items-center justify-center text-slate-600 h-full py-20">
                 <i data-lucide="archive" class="w-16 h-16 mb-4 opacity-20"></i>
-                <p class="text-sm">No hay facturas procesadas aún.</p>
+                <p class="text-sm">No hay facturas en esta bandeja.</p>
             </div>
         `;
         if (window.lucide) window.lucide.createIcons();
         return;
     }
 
-    let html = `
-        <div class="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 m-2 mt-4 shadow-inner">
+    let html = '';
+    let currentMonthYear = '';
+
+    if (dashboardTabState === 'CONCILIADAS') {
+        html += `<div class="overflow-y-auto custom-scrollbar pr-2 pb-10 pt-2 h-full w-full">`;
+    } else {
+        html += `<div class="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 m-2 mt-4 shadow-inner">
             <table class="w-full text-left text-xs text-slate-300">
                 <thead class="bg-slate-900/80 text-[10px] uppercase font-bold text-slate-500 sticky top-0 shadow-sm border-b border-slate-800">
                     <tr>
@@ -139,8 +163,9 @@ window.renderFacturasDBGrid = function(facturas) {
                         <th class="p-4 text-right">Acciones</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-800/50">
-    `;
+                <tbody class="divide-y divide-slate-800/50">`;
+    }
+
 
     facturas.forEach(fac => {
         let statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-slate-800 text-slate-400">PENDIENTE</span>';
@@ -155,38 +180,93 @@ window.renderFacturasDBGrid = function(facturas) {
             statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">PROCESADO</span>';
         }
 
-        html += `
-            <tr class="hover:bg-slate-800/30 transition-colors group">
-                <td class="p-4 font-mono">${fac.fecha_emision ? new Date(fac.fecha_emision).toLocaleDateString() : '-'}</td>
-                <td class="p-4 font-mono font-bold text-white">${fac.numero_comprobante || 'S/N'}</td>
-                <td class="p-4 text-right text-amber-400 font-mono font-bold">$ ${window.formatCurrency ? window.formatCurrency(fac.importe_total) : fac.importe_total}</td>
-                <td class="p-4 text-center">${statusBadge}</td>
-                <td class="p-4 text-right flex items-center justify-end gap-2">
-                    <button onclick="window.deleteFacturaExtraccion('${fac.id}')" class="px-2 py-1 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white rounded text-[10px] transition-colors border border-red-500/30" title="Deshacer Extracción (Eliminar)">
-                        <i data-lucide="trash-2" class="w-3 h-3 inline"></i>
-                    </button>
-                    <button onclick="window.viewFacturaDetails('${fac.id}')" class="px-3 py-1 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded text-[10px] transition-colors" title="Ver Detalles de la Factura">
-                        <i data-lucide="eye" class="w-3 h-3 inline"></i>
-                    </button>
-                    ${fac.status_conciliacion !== 'CONCILIADO_OK' ? `
-                    <button onclick="window.openConciliacionModal('${fac.id}')" class="px-3 py-1 bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600 text-amber-500 hover:text-white rounded text-[10px] transition-colors font-bold uppercase tracking-wider flex items-center gap-1" title="Conciliar con Pedido B2B">
-                        <i data-lucide="git-merge" class="w-3 h-3"></i> Conciliar
-                    </button>
-                    ` : `
-                    <button onclick="window.viewConciliacionReport('${fac.id}')" class="px-3 py-1 bg-emerald-600/20 border border-emerald-500/30 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded text-[10px] transition-colors font-bold uppercase tracking-wider flex items-center gap-1" title="Ver Reporte de Cruce">
-                        <i data-lucide="check-circle" class="w-3 h-3"></i> Reporte
-                    </button>
-                    `}
-                </td>
-            </tr>
-        `;
+        const dateStr = fac.fecha_emision ? new Date(fac.fecha_emision).toLocaleDateString() : '-';
+        const formattedTotal = window.formatCurrency ? window.formatCurrency(fac.importe_total) : fac.importe_total;
+
+        if (dashboardTabState === 'CONCILIADAS') {
+            const fileDate = new Date(fac.fecha_emision || fac.created_at);
+            const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+            const capitalizedMonthYear = `${monthNames[fileDate.getMonth()]} ${fileDate.getFullYear()}`;
+
+            if (capitalizedMonthYear !== currentMonthYear) {
+                if (currentMonthYear !== '') html += `</div></div>`; 
+                html += `
+                    <div class="mb-6">
+                        <div class="flex items-center gap-3 mb-4 mt-8 first:mt-2">
+                            <div class="h-px bg-slate-800/80 flex-1"></div>
+                            <span class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest bg-slate-900/50 px-3 py-1 rounded-full border border-emerald-500/30 shadow-inner backdrop-blur-md">
+                                <i data-lucide="calendar" class="w-3 h-3 inline-block mr-1 mb-0.5 opacity-70"></i> ${capitalizedMonthYear}
+                            </span>
+                            <div class="h-px bg-slate-800/80 flex-1"></div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                `;
+                currentMonthYear = capitalizedMonthYear;
+            }
+
+            html += `
+                <div class="bg-slate-950/80 backdrop-blur-md border border-slate-800 hover:border-emerald-500/40 rounded-xl p-4 flex flex-col justify-between shadow-lg shadow-black/20 hover:-translate-y-1 transition-all h-full group">
+                    <div class="flex items-start justify-between mb-2">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400 group-hover:scale-105 transition-transform">
+                                <i data-lucide="receipt" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-bold text-slate-200">Factura ${fac.numero_comprobante || 'S/N'}</h4>
+                                <p class="text-[10px] font-mono text-slate-500">${dateStr}</p>
+                            </div>
+                        </div>
+                        ${statusBadge}
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-slate-800/50 flex justify-between items-end">
+                        <div>
+                            <p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Importe Asentado</p>
+                            <p class="text-lg font-bold font-mono text-emerald-400">$ ${formattedTotal}</p>
+                        </div>
+                        <button onclick="window.viewConciliacionReport('${fac.id}')" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-emerald-500/30 shadow-sm flex items-center gap-2">
+                            <i data-lucide="file-search" class="w-3 h-3"></i> Trazabilidad
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            html += `
+                <tr class="hover:bg-slate-800/30 transition-colors group">
+                    <td class="p-4 font-mono">${dateStr}</td>
+                    <td class="p-4 font-mono font-bold text-white">${fac.numero_comprobante || 'S/N'}</td>
+                    <td class="p-4 text-right text-amber-400 font-mono font-bold">$ ${formattedTotal}</td>
+                    <td class="p-4 text-center">${statusBadge}</td>
+                    <td class="p-4 text-right flex items-center justify-end gap-2">
+                        <button onclick="window.deleteFacturaExtraccion('${fac.id}')" class="px-2 py-1 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white rounded text-[10px] transition-colors border border-red-500/30" title="Deshacer Extracción (Eliminar)">
+                            <i data-lucide="trash-2" class="w-3 h-3 inline"></i>
+                        </button>
+                        <button onclick="window.viewFacturaDetails('${fac.id}')" class="px-3 py-1 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded text-[10px] transition-colors" title="Ver Detalles de la Factura">
+                            <i data-lucide="eye" class="w-3 h-3 inline"></i>
+                        </button>
+                        ${fac.status_conciliacion !== 'CONCILIADO_OK' ? `
+                        <button onclick="window.openConciliacionModal('${fac.id}')" class="px-3 py-1 bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600 text-amber-500 hover:text-white rounded text-[10px] transition-colors font-bold uppercase tracking-wider flex items-center gap-1" title="Conciliar con Pedido B2B">
+                            <i data-lucide="git-merge" class="w-3 h-3"></i> Conciliar
+                        </button>
+                        ` : `
+                        <button onclick="window.viewConciliacionReport('${fac.id}')" class="px-3 py-1 bg-emerald-600/20 border border-emerald-500/30 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded text-[10px] transition-colors font-bold uppercase tracking-wider flex items-center gap-1" title="Ver Reporte de Cruce">
+                            <i data-lucide="check-circle" class="w-3 h-3"></i> Reporte
+                        </button>
+                        `}
+                    </td>
+                </tr>
+            `;
+        }
     });
 
-    html += `
-                </tbody>
-            </table>
-        </div>
-    `;
+    if (dashboardTabState === 'CONCILIADAS') {
+        if (currentMonthYear !== '') html += `</div></div></div>`; // Cierra la iteración
+    } else {
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
 
     container.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();

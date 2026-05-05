@@ -28,6 +28,7 @@ app.use('/api/arca', require('./routes/arcaRoutes'));
 app.use('/api/recepcion', require('./routes/recepcionRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/facturas', require('./routes/facturasRoutes'));
+app.use('/api/cuenta-corriente', require('./routes/cuentaCorrienteRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {

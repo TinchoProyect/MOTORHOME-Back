@@ -23,4 +23,7 @@ router.get('/:id', facturasController.getById);
 // Matchmaking (Conciliación contra Pedido)
 router.post('/:id/match', facturasController.matchFactura);
 
+// Confirmar Match (Etapa 4 - Cuenta Corriente)
+router.post('/:id/confirmar', facturasController.confirmarMatch);
+
 module.exports = router;

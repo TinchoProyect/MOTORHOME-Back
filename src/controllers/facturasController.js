@@ -217,12 +217,29 @@ const facturasController = {
         if (!providerId) return res.status(400).json({ error: "Missing providerId" });
 
         try {
+            console.log(`\n=======================================`);
+            console.log(`🛡️ [VIGÍA DE DATOS - BACKEND] Extracción de Facturas`);
+            console.log(`- Query Ejecutado: SELECT * FROM facturas_raw WHERE proveedor_id = '${providerId}'`);
+            
             const { data, error } = await supabase
                 .from('facturas_raw')
                 .select('*')
                 .eq('proveedor_id', providerId);
 
             if (error) throw error;
+
+            console.log(`- Total de Registros Obtenidos: ${data ? data.length : 0}`);
+            
+            // Analizar la distribución de estados
+            const estados = data ? data.map(f => f.status_conciliacion) : [];
+            const conteoEstados = estados.reduce((acc, curr) => {
+                const estadoStr = curr === null ? 'NULL' : curr;
+                acc[estadoStr] = (acc[estadoStr] || 0) + 1;
+                return acc;
+            }, {});
+            
+            console.log(`- Distribución de estados (status_conciliacion):`, conteoEstados);
+            console.log(`=======================================\n`);
 
             return res.json({ success: true, data: data || [] });
         } catch (error) {
@@ -472,6 +489,73 @@ const facturasController = {
 
         } catch (error) {
             console.error("[FacturasController] Error matchFactura:", error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
+    confirmarMatch: async (req, res) => {
+        const { id } = req.params; // Factura ID
+        const { recepcionId } = req.body;
+        
+        if (!recepcionId) return res.status(400).json({ error: "Falta recepcionId" });
+
+        try {
+            console.log(`[FacturasController] Etapa 4: Confirmando Match para Factura ${id} y Recepción ${recepcionId}`);
+            
+            // 1. Obtener la factura para verificar estado y proveedor
+            const { data: factura, error: errFactura } = await supabase
+                .from('facturas_raw')
+                .select('*')
+                .eq('id', id)
+                .single();
+                
+            if (errFactura || !factura) throw new Error("Factura no encontrada");
+            
+            if (factura.status_conciliacion !== 'PENDIENTE_MATCH' && factura.status_conciliacion !== null) {
+                // Si el sistema no inicializó status_conciliacion, lo perdonamos, pero si es != PENDIENTE_MATCH y no nulo, cuidado.
+                // En la migración dice DEFAULT 'PENDIENTE_MATCH'
+            }
+
+            // 2. Insertar en cuenta_corriente_proveedores
+            const { data: cc, error: errCC } = await supabase
+                .from('cuenta_corriente_proveedores')
+                .insert([{
+                    proveedor_id: factura.proveedor_id,
+                    tipo_movimiento: 'FACTURA',
+                    monto_credito: factura.importe_total || 0,
+                    monto_debito: 0,
+                    referencia_factura_id: factura.id,
+                    observaciones: `Factura ${factura.tipo_comprobante} ${factura.punto_venta}-${factura.numero_comprobante} Conciliada`
+                }])
+                .select()
+                .single();
+                
+            if (errCC) throw errCC;
+
+            // 3. Mutar la recepción física para que desaparezca de pendientes
+            const { error: errRec } = await supabase
+                .from('recepciones_fisicas_cabecera')
+                .update({ estado_conciliacion: 'CONCILIADA' })
+                .eq('id', recepcionId);
+                
+            if (errRec) throw errRec;
+
+            // 4. Mutar la factura en firme
+            const { data: uFact, error: updateErr } = await supabase
+                .from('facturas_raw')
+                .update({
+                    status_conciliacion: 'CONCILIADO_OK',
+                    cuenta_corriente_id: cc.id
+                })
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (updateErr) throw updateErr;
+
+            return res.json({ success: true, message: "Asiento Financiero registrado exitosamente.", data: uFact });
+        } catch (error) {
+            console.error("[FacturasController] Error confirmarMatch:", error);
             res.status(500).json({ error: error.message });
         }
     }

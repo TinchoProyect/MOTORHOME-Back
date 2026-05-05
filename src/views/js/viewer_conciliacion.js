@@ -156,17 +156,49 @@ window.onConciliacionPedidoChange = async function() {
         let errCant = 0;
 
         data.matchReport.forEach(row => {
-            const hasDesvioPrecio = row.desvios.some(d => d.includes('Precio'));
             const hasFaltante = row.desvios.some(d => d.includes('Faltante'));
-            
-            if (hasDesvioPrecio) errPrec++;
             if (hasFaltante) errCant++;
 
             const cantClass = hasFaltante ? 'text-red-400 font-bold bg-red-500/10' : 'text-emerald-400';
-            const priceClass = hasDesvioPrecio ? 'text-red-400 font-bold bg-red-500/10' : 'text-slate-400';
-            const statusIcon = row.status === 'OK' 
-                ? '<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto"></i>' 
-                : '<i data-lucide="alert-triangle" class="w-4 h-4 text-amber-500 mx-auto" title="'+row.desvios.join(' | ')+'"></i>';
+            
+            // Lógica de Semáforo Financiero
+            let priceClass = 'text-emerald-400';
+            let deltaHtml = '<span class="text-slate-500 font-mono text-2xl">-</span>';
+            let statusIcon = '<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto" title="Match Perfecto"></i>';
+            
+            if (row.pedido && row.delta_monto !== undefined) {
+                const deltaMonto = parseFloat(row.delta_monto);
+                const deltaPct = parseFloat(row.delta_porcentaje);
+                
+                const isMarginal = (Math.abs(deltaPct) <= 0.5 || Math.abs(deltaMonto) <= 25.0) && deltaMonto !== 0;
+                
+                if (isMarginal) {
+                    // AMARILLO (Redondeo/Marginal)
+                    priceClass = 'text-amber-400 font-bold bg-amber-500/10';
+                    deltaHtml = `<span class="text-amber-400 font-bold font-mono text-2xl" title="Diferencia Marginal / Redondeo">${deltaMonto > 0 ? '+' : '-'}$${window.formatCurrency ? window.formatCurrency(Math.abs(deltaMonto)) : Math.abs(deltaMonto)} (${deltaPct > 0 ? '+' : ''}${deltaPct}%)</span>`;
+                    statusIcon = '<i data-lucide="check-circle" class="w-4 h-4 text-amber-500 mx-auto" title="Aprobado con Tolerancia"></i>';
+                } else if (deltaMonto > 25.0) {
+                    // ROJO (Sobreprecio)
+                    priceClass = 'text-red-400 font-bold bg-red-500/10';
+                    deltaHtml = `<span class="text-red-400 font-bold font-mono text-2xl" title="Alerta: Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(deltaMonto) : deltaMonto} (+${deltaPct}%)</span>`;
+                    statusIcon = '<i data-lucide="alert-triangle" class="w-4 h-4 text-red-500 mx-auto" title="Sobreprecio detectado"></i>';
+                    errPrec++;
+                } else if (deltaMonto < -25.0) {
+                    // VERDE (Ahorro)
+                    priceClass = 'text-emerald-400 font-bold bg-emerald-500/10';
+                    deltaHtml = `<span class="text-emerald-400 font-bold font-mono text-2xl" title="Ahorro: Nos cobran más barato">-$${window.formatCurrency ? window.formatCurrency(Math.abs(deltaMonto)) : Math.abs(deltaMonto)} (${deltaPct}%)</span>`;
+                    statusIcon = '<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto" title="Ahorro Detectado"></i>';
+                } else {
+                    // EXACTO ($0)
+                    priceClass = 'text-emerald-400';
+                    deltaHtml = `<span class="text-emerald-400 font-mono text-2xl">$0.00 (0%)</span>`;
+                }
+            }
+
+            // Si hay faltante, el icono general de la fila también debe ser una alerta roja
+            if (hasFaltante) {
+                statusIcon = '<i data-lucide="alert-triangle" class="w-4 h-4 text-red-500 mx-auto" title="Faltante Físico Detectado"></i>';
+            }
 
             let logisticaHtml = '-';
             if (row.pedido) {
@@ -174,17 +206,6 @@ window.onConciliacionPedidoChange = async function() {
                 logisticaHtml = `<span class="text-[10px] text-slate-500 block">${row.pedido.codigo}</span><span class="line-clamp-1 text-xs" title="${row.pedido.descripcion}">${row.pedido.descripcion}${facDesc}</span>`;
             } else {
                 logisticaHtml = `<span class="text-red-400 italic text-xs">No hallado en Pedido</span>`;
-            }
-
-            let deltaHtml = '<span class="text-slate-500 font-mono text-2xl">-</span>';
-            if (row.pedido && row.delta_monto !== undefined) {
-                if (row.delta_monto > 0.1) {
-                    deltaHtml = `<span class="text-red-400 font-bold font-mono text-2xl" title="Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto} (+${row.delta_porcentaje}%)</span>`;
-                } else if (row.delta_monto < -0.1) {
-                    deltaHtml = `<span class="text-emerald-400 font-bold font-mono text-2xl" title="Nos cobran más barato">-$${window.formatCurrency ? window.formatCurrency(Math.abs(row.delta_monto)) : Math.abs(row.delta_monto)} (${row.delta_porcentaje}%)</span>`;
-                } else {
-                    deltaHtml = `<span class="text-slate-500 font-mono text-2xl">0%</span>`;
-                }
             }
 
             tbody.innerHTML += `
@@ -237,9 +258,9 @@ window.confirmarConciliacion = async function() {
     });
 
     try {
-        const res = await fetch(`${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/match`, {
+        const res = await fetch(`${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/confirmar`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ recepcionId: window.currentConciliacion.pedidoId, confirm: true })
+            body: JSON.stringify({ recepcionId: window.currentConciliacion.pedidoId })
         });
         const data = await res.json();
         
@@ -335,5 +356,113 @@ window.viewFacturaDetails = async function(facturaId) {
 
     } catch (e) {
         Swal.fire('Error', 'No se pudo cargar la factura: ' + e.message, 'error');
+    }
+};
+
+window.viewConciliacionReport = async function(facturaId) {
+    if (!window.Swal) return;
+
+    try {
+        Swal.fire({
+            title: 'Cargando Reporte de Cruce...',
+            background: '#0f172a', color: '#f8fafc',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const resFac = await fetch(`${backendBaseUrl}/api/facturas/${facturaId}`);
+        const facJson = await resFac.json();
+        if (!facJson.success) throw new Error(facJson.error || "No se pudo obtener la factura");
+        const factura = facJson.data;
+
+        if (!factura.match_report || factura.match_report.length === 0) {
+            Swal.fire({
+                title: 'Reporte No Estructurado',
+                html: `
+                    <p class="text-sm text-slate-300 mb-4">Esta factura (<strong>${factura.numero_comprobante || 'S/N'}</strong>) fue conciliada, pero no posee un log estructurado del cruce algorítmico (es posible que se haya forzado manualmente o conciliado en una versión anterior).</p>
+                    <button onclick="Swal.close(); setTimeout(() => window.viewFacturaDetails('${factura.id}'), 300)" class="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-600 hover:text-white transition-colors uppercase font-bold text-xs tracking-widest">Ver Detalles de Extracción en su lugar</button>
+                `,
+                icon: 'info',
+                background: '#1e293b', color: '#f8fafc',
+                showConfirmButton: false,
+                showCloseButton: true
+            });
+            return;
+        }
+
+        let reportHtml = `
+            <div class="mt-4 bg-slate-900 border border-slate-700 rounded-lg overflow-hidden">
+                <div class="max-h-[400px] overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-left text-xs text-slate-300 relative">
+                        <thead class="bg-slate-950 text-[10px] uppercase text-slate-500 sticky top-0 shadow-sm border-b border-slate-700">
+                            <tr>
+                                <th class="px-3 py-2">Artículo</th>
+                                <th class="px-3 py-2 text-center">Cant.</th>
+                                <th class="px-3 py-2 text-right">Pactado</th>
+                                <th class="px-3 py-2 text-right">Facturado</th>
+                                <th class="px-3 py-2 text-right">Delta</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/50">
+        `;
+
+        factura.match_report.forEach(row => {
+            const isError = row.status !== 'OK';
+            const bgClass = isError ? 'bg-amber-900/10' : 'hover:bg-slate-800/50';
+            const pactado = row.pedido ? row.pedido.precio_unitario : 0;
+            const facturado = row.factura ? row.factura.precio_unitario : 0;
+            const cant = row.recibido || (row.factura ? row.factura.cantidad : 0);
+            const desc = row.factura ? row.factura.descripcion : (row.pedido ? row.pedido.descripcion : '-');
+            
+            reportHtml += `
+                <tr class="${bgClass}">
+                    <td class="px-3 py-2 line-clamp-2" title="${desc}">${desc}</td>
+                    <td class="px-3 py-2 text-center font-bold text-blue-400">${window.formatCurrency ? window.formatCurrency(cant) : cant}</td>
+                    <td class="px-3 py-2 text-right font-mono text-slate-400">$${window.formatCurrency ? window.formatCurrency(pactado) : pactado}</td>
+                    <td class="px-3 py-2 text-right font-mono text-slate-200">$${window.formatCurrency ? window.formatCurrency(facturado) : facturado}</td>
+                    <td class="px-3 py-2 text-right font-mono font-bold ${isError ? 'text-amber-400' : 'text-emerald-400'}">
+                        ${row.delta_monto > 0 ? '+' : ''}$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto}
+                    </td>
+                </tr>
+            `;
+            if (row.desvios && row.desvios.length > 0) {
+                reportHtml += `
+                    <tr class="${bgClass}">
+                        <td colspan="5" class="px-3 py-1 text-[10px] text-amber-500 italic pb-2 border-none">
+                            <i data-lucide="alert-triangle" class="w-3 h-3 inline-block mr-1 mb-0.5"></i> ${row.desvios.join(' | ')}
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+
+        reportHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        Swal.fire({
+            title: `Reporte de Cruce - Factura ${factura.numero_comprobante || 'S/N'}`,
+            html: `
+                <div class="text-left text-sm text-slate-300">
+                    <p><strong>Estado:</strong> <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-widest ${factura.status_conciliacion === 'CONCILIADO_OK' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'} uppercase">${factura.status_conciliacion}</span></p>
+                    <p class="mt-2 text-xs text-slate-400 font-mono"><strong>Recepción Logística Vinculada:</strong> ${factura.pedido_b2b_id || 'N/A'}</p>
+                    ${reportHtml}
+                </div>
+            `,
+            background: '#1e293b', color: '#f8fafc',
+            width: '800px',
+            confirmButtonColor: '#334155',
+            confirmButtonText: 'Cerrar',
+            didOpen: () => {
+                if (window.lucide) window.lucide.createIcons();
+            }
+        });
+
+    } catch (e) {
+        Swal.fire('Error', 'No se pudo cargar el reporte: ' + e.message, 'error');
     }
 };

@@ -231,7 +231,7 @@ async function exploreSupplierFiles(folderId, contextMode = 'listas') {
             const pid = window.currentActiveProviderId || window.globalContext?.providerId;
             if (pid) {
                 try {
-                    const resDB = await fetch(`${backendBaseUrl}/api/facturas/provider/${pid}`);
+                    const resDB = await fetch(`${backendBaseUrl}/api/facturas/provider/${pid}?_t=${ts}`);
                     const dbJson = await resDB.json();
                     if (dbJson.success) {
                         processedDB = dbJson.data || [];
@@ -318,6 +318,11 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
                         <button id="tabProcessed" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-emerald-300">
                             <i data-lucide="${contextMode === 'facturas' ? 'archive' : 'archive'}" class="w-3 h-3"></i> Procesad${contextMode === 'facturas' ? 'a' : 'o'}s
                         </button>
+                        ${contextMode === 'facturas' ? `
+                        <button id="tabConciliadas" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-emerald-300">
+                            <i data-lucide="check-square" class="w-3 h-3"></i> Conciliadas
+                        </button>
+                        ` : ''}
                     </div>
                 </div>
                 <div class="flex items-center gap-2 relative">
@@ -753,6 +758,9 @@ async function showSingleSupplier(id) {
                     </div>
                 </div>
                 <div class="flex gap-2">
+                    <button onclick="window.openCuentaCorriente('${supplier.id}', '${supplier.nombre.replace(/'/g, "\\'")}')" class="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 border border-amber-500/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-amber-900/20">
+                        <i data-lucide="wallet" class="w-3 h-3"></i> CUENTA CORRIENTE
+                    </button>
                     <button onclick="openManualEntryModal('${supplier.id}', '${supplier.nombre.replace(/'/g, "\\'")}')" class="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/50 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-900/20">
                         <i data-lucide="plus-circle" class="w-3 h-3"></i> CARGA MANUAL
                     </button>

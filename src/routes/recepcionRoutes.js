@@ -208,6 +208,7 @@ router.get('/provider/:proveedorId', async (req, res) => {
             `)
             .eq('pedidos_b2b_cabecera.proveedor_id', proveedorId)
             .neq('estado', 'Anulada')
+            .eq('estado_conciliacion', 'NO_CONCILIADA')
             .order('fecha_recepcion', { ascending: false });
 
         if (error) throw error;
