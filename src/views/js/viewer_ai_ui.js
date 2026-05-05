@@ -189,9 +189,14 @@ class ViewerAiUi {
                 
                 <div class="flex items-center justify-between">
                     <div id="vaiFeedback" class="text-[9px] font-bold px-2 py-0.5 rounded-full hidden"></div>
-                    <button id="vaiTriggerBtn" class="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/30 disabled:border-slate-800 disabled:text-slate-600 disabled:hover:bg-transparent px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase shrink-0 min-w-min ml-auto" disabled>
-                        <i data-lucide="zap" class="w-3.5 h-3.5"></i> Generar AST
-                    </button>
+                    <div class="flex items-center gap-2 ml-auto">
+                        <button id="vaiTriggerBtn" class="bg-slate-800/50 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-600/50 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase shrink-0 min-w-min" disabled title="Forzar barrido completo (ignora estado actual)">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Generar desde cero
+                        </button>
+                        <button id="vaiReprocessAnomaliesBtn" class="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/30 disabled:border-slate-800 disabled:text-slate-600 disabled:hover:bg-transparent px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase shrink-0 min-w-min" disabled>
+                            <i data-lucide="zap" class="w-3.5 h-3.5"></i> Reprocesar Anomalías
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -212,16 +217,20 @@ class ViewerAiUi {
         this.promptEl = document.getElementById('vaiPrompt');
         this.feedbackEl = document.getElementById('vaiFeedback');
         this.btnEl = document.getElementById('vaiTriggerBtn');
+        this.btnAnomaliesEl = document.getElementById('vaiReprocessAnomaliesBtn');
         this.healthIcon = document.getElementById('vaiHealthIndicator');
 
-        this.btnEl.onclick = () => this.handleGenerate();
+        this.btnEl.onclick = () => this.handleGenerate({ onlyAnomalous: false });
+        if (this.btnAnomaliesEl) this.btnAnomaliesEl.onclick = () => this.handleGenerate({ onlyAnomalous: true });
         
         // [BUGFIX] Habilitar botón instantáneamente si el usuario escribe o pega texto (siempre que el vigía haya dado OK previo)
         this.promptEl.addEventListener('input', () => {
             if (this.btnEl.disabled && this.promptEl.value.trim() !== '' && this.statusEl.innerText === 'Conectado') {
                 this.btnEl.disabled = false;
+                if (this.btnAnomaliesEl) this.btnAnomaliesEl.disabled = false;
             } else if (this.promptEl.value.trim() === '') {
                 this.btnEl.disabled = true;
+                if (this.btnAnomaliesEl) this.btnAnomaliesEl.disabled = true;
             }
         });
 
@@ -293,10 +302,12 @@ class ViewerAiUi {
             this._setStatus('Conectado', 'success');
             this.promptEl.disabled = false;
             this.btnEl.disabled = false;
+            if (this.btnAnomaliesEl) this.btnAnomaliesEl.disabled = false;
         } else {
             this._setStatus('Nodo Off-line', 'error');
             this.promptEl.disabled = true;
             this.btnEl.disabled = true;
+            if (this.btnAnomaliesEl) this.btnAnomaliesEl.disabled = true;
             if (this.healthIcon) this.healthIcon.classList.replace('text-emerald-500', 'text-red-500');
         }
     }
@@ -324,7 +335,7 @@ class ViewerAiUi {
         this.feedbackEl.classList.remove('hidden');
     }
 
-    async _buildUniqueSet(extractionDataIdx, pipeline) {
+    async _buildUniqueSet(extractionDataIdx, pipeline, options = { onlyAnomalous: false }) {
         // [UNIFICACIÓN ESTRUCTURAL] El Chofer IA deja de tener su propio motor de lectura en crudo.
         // Forzamos la actualización silenciosa del Sandbox del Visor de Extracción
         // para absorber todas las lógicas de limpieza, vacíos y flags de rechazo.
@@ -478,7 +489,35 @@ class ViewerAiUi {
                     };
 
                     let val = "";
-                    if (Array.isArray(extractionDataIdx)) {
+                    // [FIX TICKET #034] Priorizar la extracción post-ETL (_richContext) para columnas fantasmas (Caza Rubros)
+                    // Si armamos 'val' con datos crudos saltando las transformaciones previas (ej. UPPERCASE de un operando),
+                    // el Chofer arrojará un Falso Positivo (Cache Miss) porque el string no coincide case-sensitively con la Libreta.
+                    
+                    let localCompDefOperands = null;
+                    if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+                        const localState = window.viewerRuleWorkshop.getActiveState();
+                        if (localState && localState.colIndex && window.computedColumns) {
+                            const cDef = window.computedColumns.find(c => c.id === localState.colIndex);
+                            if (cDef && cDef.operands && cDef.operands.length > 0) {
+                                localCompDefOperands = cDef.operands;
+                            }
+                        }
+                    }
+
+                    if (localCompDefOperands && rawRows[i]._richContext) {
+                        val = localCompDefOperands.map(opId => {
+                             const op = rawRows[i]._richContext[opId];
+                             if (!op) return "";
+                             const candidates = [op.clean, op.raw, op.display];
+                             for (let c of candidates) {
+                                  if (c !== undefined && c !== null && String(c).trim() !== '') {
+                                      const s = String(c).trim();
+                                      if (!s.startsWith('<')) return sanitizeForAI(s);
+                                  }
+                             }
+                             return "";
+                        }).filter(v => v).join(" ");
+                    } else if (Array.isArray(extractionDataIdx)) {
                         val = extractionDataIdx.map(idx => sanitizeForAI(rawRows[i][idx])).filter(v => v).join(" ");
                     } else {
                         val = sanitizeForAI(rawRows[i][extractionDataIdx]);
@@ -491,31 +530,84 @@ class ViewerAiUi {
                     
                     let effectiveVal = val;
                     if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
-                        const mutateRs = window.viewerETL.transformCell(val, pipeline);
-                        // [FIX TICKET #032] Aislamiento del Asesino Silencioso:
-                        // Solo saltar registros resueltos si estamos estrictamente en Caza-rubros.
-                        // En Agregar HITL (Extracción) necesitamos ver el string crudo independientemente de si el pipeline
-                        // actual no lo vació, para permitir que el IA reciba la celda y proponga un mejor AST.
-                        if (this.selectedRoute === 'caza-rubros') {
-                            const hasAST = pipeline.some(r => r.tipo === 'ast_conditional');
-                            const outVal = String(mutateRs.display || mutateRs.result || "").trim();
-                            
-                            // Si existe un AST, significa que hay reglas de categorización. 
-                            // Si el valor resultante no está vacío, significa que el AST lo categorizó con éxito.
-                            if (hasAST && !mutateRs.rejected && outVal !== "") {
-                                stats.skippedByRegex++;
-                                continue; // ¡Cruce de PK superado! Delta bypassing
-                            }
+                        // [FIX TICKET #034] Inyección de 'rawRows[i]' (contextRow)
+                        // Crítico para que las columnas fantasmas procesadas por Caza-Rubros (combine_hash/numeric)
+                        // puedan resolver operandos y generar el hash correcto antes de chocar contra el AST.
+                        const mutateRs = window.viewerETL.transformCell(val, pipeline, rawRows[i]);
+                        
+                        // [NUEVO CORTAFUEGOS DE ECONOMÍA IA - REQUERIMIENTO 2]
+                        if (options.onlyAnomalous) {
+                             const outVal = String(mutateRs.display || mutateRs.result || "").trim();
+                             let isResolved = true; // Asumimos resuelto por defecto
+                             
+                             if (mutateRs.rejected) {
+                                 isResolved = false; // Anomalía estricta (Rojo)
+                             } else {
+                                 // Detectar Cache Miss analizando el pipeline
+                                 let libretaDict = null;
+                                 pipeline.forEach(r => {
+                                      if (r.tipo === 'ast_conditional' && r.logica) {
+                                           // [FIX TICKET #034] Escanear TODAS las ramas de la lógica, no solo la posición 0
+                                           for (let b of r.logica) {
+                                               const cond = b.condicion;
+                                               const act = b.accion;
+                                               if (cond && cond.operador === 'IN_DICT_KEYS' && typeof cond.valor === 'object' && cond.valor !== null) {
+                                                   libretaDict = cond.valor; break;
+                                               } else if (act && act.tipo_accion === 'DICTIONARY_REPLACE' && typeof act.valor === 'object' && act.valor !== null) {
+                                                   libretaDict = act.valor; break;
+                                               }
+                                           }
+                                      }
+                                 });
+
+                                 if (libretaDict && val.trim() !== "") {
+                                      // [FIX TICKET #034] Heurística Case-Insensitive para emular comportamiento nativo del AST Parser
+                                      const valLower = val.trim().toLowerCase();
+                                      const outValLower = outVal.toLowerCase();
+                                      
+                                      const keyExists = Object.keys(libretaDict).some(k => {
+                                           const kl = String(k).trim().toLowerCase();
+                                           return kl === valLower || kl === outValLower;
+                                      });
+                                      
+                                      if (!keyExists) {
+                                          if (outVal === "" || outVal === val) {
+                                               isResolved = false; // Cache Miss (Naranja)
+                                          }
+                                      }
+                                 } else if (outVal === "") {
+                                      isResolved = false; // Si quedó vacío
+                                 }
+                             }
+
+                             if (isResolved) {
+                                 stats.skippedByRegex++; // Repurposing metric
+                                 continue; // ECONOMÍA IA: NO enviar al Chofer
+                             }
+                             effectiveVal = val;
                         } else {
-                            // En modo extracción (HITL), si una regla rechaza la celda explícitamente, la saltamos.
-                            // Pero NUNCA saltamos solo por no estar vacía. El string crudo debe fluir hacia el IA.
-                            if (mutateRs.rejected) {
-                                stats.skippedByRegex++;
-                                continue;
+                            // [COMPORTAMIENTO ORIGINAL LEGACY - Generar desde cero]
+                            if (this.selectedRoute === 'caza-rubros') {
+                                const hasAST = pipeline.some(r => r.tipo === 'ast_conditional');
+                                const outVal = String(mutateRs.display || mutateRs.result || "").trim();
+                                
+                                // Si existe un AST, significa que hay reglas de categorización. 
+                                // Si el valor resultante no está vacío, significa que el AST lo categorizó con éxito.
+                                if (hasAST && !mutateRs.rejected && outVal !== "") {
+                                    stats.skippedByRegex++;
+                                    continue; // ¡Cruce de PK superado! Delta bypassing
+                                }
+                            } else {
+                                // En modo extracción (HITL), si una regla rechaza la celda explícitamente, la saltamos.
+                                // Pero NUNCA saltamos solo por no estar vacía. El string crudo debe fluir hacia el IA.
+                                if (mutateRs.rejected) {
+                                    stats.skippedByRegex++;
+                                    continue;
+                                }
+                                // Usar el valor crudo inicial (val) o el transformado parcial (effectiveVal)
+                                // Para IA, queremos nutrirlo del valor original para que el AST opere sobre la base cruda
+                                effectiveVal = val; 
                             }
-                            // Usar el valor crudo inicial (val) o el transformado parcial (effectiveVal)
-                            // Para IA, queremos nutrirlo del valor original para que el AST opere sobre la base cruda
-                            effectiveVal = val; 
                         }
                     }
                     if (effectiveVal.trim()) {
@@ -540,7 +632,7 @@ class ViewerAiUi {
         });
     }
 
-    async handleGenerate() {
+    async handleGenerate(options = { onlyAnomalous: false }) {
         const promptText = this.promptEl.value.trim();
         if (!promptText) return;
 
@@ -561,6 +653,7 @@ class ViewerAiUi {
             let targetColName = "Columna Desconocida";
             let foundPhysical = false;
             let vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
+            let compDefOperands = null; // [FIX TICKET #034] Referencia estricta a operandos virtuales
             
             // [UX FIX] Auto-guardar ecuación si el usuario está en el Taller con una operación matemática abierta 
             // pero olvidó presionar "Guardar Ecuación" antes de intentar extraer AST con Chofer IA.
@@ -573,7 +666,7 @@ class ViewerAiUi {
             if (window.computedColumns && Array.isArray(window.computedColumns)) {
                 const compDef = window.computedColumns.find(c => c.id === state.colIndex);
                 if (compDef && compDef.operands && compDef.operands.length > 0) {
-                    
+                    compDefOperands = compDef.operands; // Guardamos para evaluación de val post-ETL
                     let resolvedIndices = [];
                     let hasMissing = false;
                     
@@ -659,7 +752,7 @@ class ViewerAiUi {
                 });
             }
 
-            const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, bypassPipelineForAI);
+            const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, bypassPipelineForAI, options);
             
             // [TICKET #028] VIGÍA DEPURADOR DEL CHOFER IA (COMO ERROR PARA BYPASSEAR FILTROS)
             console.error("🚨 [VIGÍA - CHOFER IA] Array extraído (uniqueDictionary):", uniqueDictionary);
@@ -669,12 +762,26 @@ class ViewerAiUi {
                  throw new Error("La columna carece de datos parseables bajo este contexto.");
             }
             
-            // Update Overlay
-            if (window.Swal && Swal.isVisible()) {
-                Swal.update({
-                    title: 'Inspeccionando Matriz...',
-                    html: 'Mapeo completado: <b>' + uniqueDictionary.length + '</b> valores únicos detectados.<br>Solicitando filtrado semántico y categorización profunda al Motor IA...'
+            // Predictive UI Modal (Requerimiento 1)
+            if (options.onlyAnomalous && window.Swal) {
+                if (Swal.isVisible()) Swal.close();
+                const { isConfirmed } = await Swal.fire({
+                     title: 'Auditoría Predictiva',
+                     html: `Se detectaron <b>${uniqueDictionary.length}</b> valores anómalos o huérfanos tras aplicar las reglas actuales.<br><br>¿Desea realizar el gasto de IA enviando este lote al Chofer para su resolución?`,
+                     icon: 'info',
+                     showCancelButton: true,
+                     confirmButtonText: 'Sí, procesar con IA',
+                     cancelButtonText: 'Cancelar',
+                     background: '#0f172a', color: '#f8fafc',
+                     confirmButtonColor: '#4f46e5'
                 });
+                
+                if (!isConfirmed) {
+                     this.btnEl.disabled = false;
+                     if (this.btnAnomaliesEl) this.btnAnomaliesEl.disabled = false;
+                     this._setStatus('Cancelado por el usuario', 'info');
+                     return;
+                }
             }
             
             // Overlays Cinematográficos

@@ -1,0 +1,1050 @@
+﻿commit 73ff3b3743c7c89a61884eaa689446927da09deb
+Author: Martin Ignacio Serrano <miserrano75@gmail.com>
+Date:   Wed Apr 15 19:31:14 2026 -0300
+
+    72
+
+diff --git a/src/views/js/viewer_ai_ui.js b/src/views/js/viewer_ai_ui.js
+index 855762c..b5ea0d4 100644
+--- a/src/views/js/viewer_ai_ui.js
++++ b/src/views/js/viewer_ai_ui.js
+@@ -62,7 +62,8 @@ class ViewerAiUi {
+                     <button data-intent="Limpieza y Separaci├│n" data-route="ast" data-placeholder="Ej: Separar descripci├│n y peso dejando solo desc..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Separar Limpiar</button>
+                     <button data-intent="Limpieza Literal (1 a 1)" data-route="literal" data-placeholder="Ej: Purificar manteniendo estricto el original..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-teal-600/40 text-slate-400 hover:text-teal-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-teal-500/50 font-mono">Limpieza 1 a 1</button>
+                     <button data-intent="Mapeo y Agrupaci├│n de Texto" data-route="cluster" data-placeholder="Ej: Agrupar marcas comerciales y uniformar nombres..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-purple-600/40 text-slate-400 hover:text-purple-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-purple-500/50 font-mono">Agrupar (HITL)</button>
+-                </div>
++                <button data-intent="Fusi├│n Sem├íntica Asistida" data-route="caza-rubros" data-placeholder="[Autom├ítico] Extraer├í la Llave Maestra e importar├í el valor oficial..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-orange-600/40 text-slate-400 hover:text-orange-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-orange-500/50 font-mono">Caza-Rubros</button>
++                    </div>
+                 
+                 <div class="flex items-center justify-between">
+                     <div id="vaiFeedback" class="text-[9px] font-bold px-2 py-0.5 rounded-full hidden"></div>
+@@ -93,8 +94,8 @@ class ViewerAiUi {
+             btn.onclick = () => {
+                 if (this.promptEl.disabled) return;
+                 
+-                const hoverColorClass = btn.dataset.route === 'cluster' ? 'bg-purple-600' : (btn.dataset.route === 'literal' ? 'bg-teal-600' : 'bg-indigo-600');
+-                const borderColorClass = btn.dataset.route === 'cluster' ? 'border-purple-500' : (btn.dataset.route === 'literal' ? 'border-teal-500' : 'border-indigo-500');
++                const hoverColorClass = btn.dataset.route === 'cluster' ? 'bg-purple-600' : (btn.dataset.route === 'literal' ? 'bg-teal-600' : (btn.dataset.route === 'caza-rubros' ? 'bg-orange-600' : 'bg-indigo-600'));
++                const borderColorClass = btn.dataset.route === 'cluster' ? 'border-purple-500' : (btn.dataset.route === 'literal' ? 'border-teal-500' : (btn.dataset.route === 'caza-rubros' ? 'border-orange-500' : 'border-indigo-500'));
+                 
+                 if (this.selectedIntent === btn.dataset.intent) {
+                     // Deseleccionar
+@@ -103,11 +104,13 @@ class ViewerAiUi {
+                     btn.classList.remove(hoverColorClass, 'text-white', borderColorClass);
+                     btn.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                     this.promptEl.placeholder = "Ej: Condiciona la extracci├│n aislando los prefijos...";
++                    this.promptEl.value = '';
++                    this.promptEl.disabled = false;
+                 } else {
+                     // Limpiar todos
+                     quickBtns.forEach(b => {
+-                        const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : (b.dataset.route === 'literal' ? 'bg-teal-600' : 'bg-indigo-600');
+-                        const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : (b.dataset.route === 'literal' ? 'border-teal-500' : 'border-indigo-500');
++                        const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : (b.dataset.route === 'literal' ? 'bg-teal-600' : (b.dataset.route === 'caza-rubros' ? 'bg-orange-600' : 'bg-indigo-600'));
++                        const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : (b.dataset.route === 'literal' ? 'border-teal-500' : (b.dataset.route === 'caza-rubros' ? 'border-orange-500' : 'border-indigo-500'));
+                         b.classList.remove(hColor, 'text-white', bColor);
+                         b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                     });
+@@ -117,8 +120,15 @@ class ViewerAiUi {
+                     this.selectedRoute = btn.dataset.route;
+                     btn.classList.remove('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                     btn.classList.add(hoverColorClass, 'text-white', borderColorClass);
+-                    if(btn.dataset.placeholder) {
+-                        this.promptEl.placeholder = btn.dataset.placeholder;
++                                        if (this.selectedRoute === 'caza-rubros') {
++                        this.promptEl.value = "[Autom├ítico] Fusi├│n Sem├íntica Activa. El sistema evaluar├í el diccionario y agrupar├í or├¡genes utilizando conocimiento general guiado por el contexto de la regla.";
++                        this.promptEl.disabled = true;
++                    } else {
++                        this.promptEl.value = '';
++                        this.promptEl.disabled = false;
++                        if(btn.dataset.placeholder) {
++                            this.promptEl.placeholder = btn.dataset.placeholder;
++                        }
+                     }
+                     this.promptEl.focus();
+                 }
+@@ -313,12 +323,35 @@ class ViewerAiUi {
+             // FASE 2: Data Profiling Activo (Extracci├│n Silente Completa)
+             this._setStatus('Extrayendo Perfil...', 'working');
+             
++                        // Inyectar GUI Loader Inmediato Bloqueante
++            if (window.Swal) {
++                Swal.fire({
++                    title: 'Despertando Chofer IA...',
++                    html: 'Preparando entorno inteligente para ' + targetColName + '.<br>Calculando diccionario de valores ├║nicos...',
++                    allowOutsideClick: false,
++                    allowEscapeKey: false,
++                    didOpen: () => { Swal.showLoading(); },
++                    background: '#0f172a', color: '#f8fafc'
++                });
++            }
++
+             const incrementalCheckbox = document.getElementById('vaiIncrementalMode');
+             this.incrementalMode = incrementalCheckbox ? incrementalCheckbox.checked : false;
+             
+             const uniqueDictionary = await this._buildUniqueSet(extractionDataIdx, state.pipeline);
+             
+-            if (uniqueDictionary.length === 0) throw new Error("La columna carece de datos parseables.");
++                        if (uniqueDictionary.length === 0) {
++                 if (window.Swal) Swal.close();
++                 throw new Error("La columna carece de datos parseables.");
++            }
++            
++            // Update Overlay
++            if (window.Swal && Swal.isVisible()) {
++                Swal.update({
++                    title: 'Inspeccionando Matriz...',
++                    html: 'Mapeo completado: <b>' + uniqueDictionary.length + '</b> valores ├║nicos detectados.<br>Solicitando filtrado sem├íntico y categorizaci├│n profunda al Motor IA...'
++                });
++            }
+             
+             // Overlays Cinematogr├íficos
+             if (window.Swal) {
+@@ -337,7 +370,7 @@ class ViewerAiUi {
+             
+             // Si el chip seleccionado exige AST => fuerza AST. Si exige Cluster => fuerza Cluster.
+             const forceAstMode = this.selectedRoute === 'ast' || (!this.selectedRoute && isFormattingPattern && this.selectedRoute !== 'literal');
+-            const forceClusterMode = this.selectedRoute === 'cluster';
++            const forceClusterMode = this.selectedRoute === 'cluster' || this.selectedRoute === 'caza-rubros';
+             const forceLiteralMode = this.selectedRoute === 'literal';
+             
+             // Si el diccionario es enorme, obligatoriamente se usa AST para evitar OOM, excepto que lo forcemos
+@@ -428,8 +461,8 @@ class ViewerAiUi {
+                              const wrapper = this.container || document.getElementById('m_ai_copilot_container');
+                              if (wrapper) {
+                                  wrapper.querySelectorAll('.vai-quick-btn').forEach(b => {
+-                                     const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+-                                     const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
++                                     const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : (b.dataset.route === 'literal' ? 'bg-teal-600' : (b.dataset.route === 'caza-rubros' ? 'bg-orange-600' : 'bg-indigo-600'));
++                                     const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : (b.dataset.route === 'literal' ? 'border-teal-500' : (b.dataset.route === 'caza-rubros' ? 'border-orange-500' : 'border-indigo-500'));
+                                      b.classList.remove(hColor, 'text-white', bColor);
+                                      b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                                  });
+@@ -571,8 +604,8 @@ class ViewerAiUi {
+                     const wrapper = this.container || document.getElementById('m_ai_copilot_container');
+                     if (wrapper) {
+                         wrapper.querySelectorAll('.vai-quick-btn').forEach(b => {
+-                            const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+-                            const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
++                            const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : (b.dataset.route === 'literal' ? 'bg-teal-600' : (b.dataset.route === 'caza-rubros' ? 'bg-orange-600' : 'bg-indigo-600'));
++                            const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : (b.dataset.route === 'literal' ? 'border-teal-500' : (b.dataset.route === 'caza-rubros' ? 'border-orange-500' : 'border-indigo-500'));
+                             b.classList.remove(hColor, 'text-white', bColor);
+                             b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                         });
+@@ -783,6 +816,459 @@ class ViewerAiUi {
+         
+         this._setFeedback(`Ô£ô ${altered} Modificadas <span class="pl-2 relative"><span class="absolute left-1 border-l border-emerald-700/50 h-3 top-0.5"></span>Nulos finales: ${nullsAfter}</span>`, altered > 0 ? 'success' : 'warning');
+     }
++
++
++    async _displayCategoryAuditPanel(translationMap, vCol) {
++         let groupedMatches = {}; 
++         let totalPending = 0;
++         let exactMatches = {};
++         let existingCategoriesCount = new Set();
++         
++         const rawKeys = Object.keys(translationMap);
++         for (const rawKey of rawKeys) {
++             let baseName = translationMap[rawKey] || "S/D";
++             let narrativa = "";
++             if (baseName.includes('|NARRATIVA|')) {
++                 const parts = baseName.split('|NARRATIVA|');
++                 baseName = parts[0];
++                 narrativa = parts[1] || "";
++             }
++             
++             if (baseName.includes('[NUEVO_RUBRO_PROPUESTO]')) {
++                 const destName = baseName.replace('[NUEVO_RUBRO_PROPUESTO]:', '').replace(/<[^>]*>?/gm, '').trim().toUpperCase();
++                 if(!groupedMatches[destName]) groupedMatches[destName] = { subItems: [], narrativa: "" };
++                 groupedMatches[destName].subItems.push(rawKey);
++                 if (narrativa && !groupedMatches[destName].narrativa) groupedMatches[destName].narrativa = narrativa;
++                 totalPending++;
++             } else {
++                 exactMatches[rawKey] = baseName;
++                 existingCategoriesCount.add(baseName);
++             }
++        }
++
++        if (existingCategoriesCount.size >= 15) {
++             if (window.Swal) {
++                  Swal.fire({
++                      toast: true, position: 'top-end', icon: 'warning',
++                      title: 'Alerta de Arquitectura',
++                      text: `Existen ${existingCategoriesCount.size} rubros cruzados. LAMDA recomienda 6-10 para no degradar la IA.`,
++                      showConfirmButton: false, timer: 6000
++                  });
++             }
++        }
++
++        // Auto-ingest exact matches that don't need audit
++        if (Object.keys(exactMatches).length > 0 && window.viewerRuleWorkshop) {
++             await window.viewerRuleWorkshop.createLocalRuleDirect({
++                 nombre_regla: "T├®rminos Hist├│ricos Re-Conocidos (IA)",
++                 accion: { tipo_accion: "DICTIONARY_REPLACE", valor: exactMatches }
++             });
++        }
++
++        // GUI Overlay Construction
++        const panelId = 'viewerRightPanel';
++        let panel = document.getElementById(panelId);
++        if (panel) panel.remove();
++        
++        panel = document.createElement('div');
++        panel.id = panelId;
++        panel.className = "fixed inset-0 z-[9999] flex items-center justify-center p-8 bg-slate-950/80 backdrop-blur-sm transition-all duration-300 pointer-events-none";
++        
++        panel.innerHTML = `
++            <div class="w-full max-w-7xl h-full mx-auto shadow-2xl flex flex-col bg-slate-900 border border-slate-700 pointer-events-auto shadow-[0_15px_40px_-5px_rgba(0,0,0,0.8)] relative" style="animation: slideUp 0.3s ease-out forwards;">
++                <!-- HEAD -->
++                <div class="px-8 py-5 border-b border-slate-800 flex justify-between items-center shrink-0 bg-slate-950/80">
++                    <div class="flex items-center gap-4">
++                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-lg border border-orange-400/50">
++                            <i data-lucide="bot" class="w-5 h-5 text-white"></i>
++                        </div>
++                        <div>
++                            <h2 class="text-white font-black text-lg tracking-wildest uppercase drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] title-shadow pt-1">Auditor├¡a Jer├írquica</h2>
++                            <p class="text-orange-400 font-bold text-[10px] tracking-widest uppercase mt-0.5">Asistente de Ingesta Inteligente</p>
++                        </div>
++                    </div>
++                    
++                    <!-- ACTIONS -->
++                    <div class="flex gap-4">
++                        <button id="vaiCloseAuditBtn" class="w-10 h-10 rounded-full bg-slate-900 border border-slate-700 text-slate-400 hover:text-white hover:bg-red-500/20 hover:border-red-500/50 transition-all flex items-center justify-center">
++                            <i data-lucide="x" class="w-5 h-5"></i>
++                        </button>
++                    </div>
++                </div>
++
++                <!-- TOOLBAR -->
++                 <div class="flex justify-between items-center px-8 py-4 bg-slate-900 border-b border-slate-800/80 shadow-sm shrink-0">
++                    <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-2"><i data-lucide="layers" class="w-4 h-4 text-orange-500"></i> Sugerencias de Clasificaci├│n (${totalPending} SKUs hu├®rfanos)</p>
++                    <button id="vaiNewGroupBtn" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-blue-400 text-xs font-bold rounded-lg uppercase tracking-widest transition-colors flex items-center gap-2"><i data-lucide="folder-plus" class="w-4 h-4"></i> Pendientes de Clasificaci├│n</button>
++                </div>
++
++                <!-- CARDS CONTAINER -->
++                <div id="vaiAuditCardsContainer" class="flex-grow overflow-y-auto custom-scrollbar p-8 bg-slate-950 space-y-8">
++                </div>
++            </div>
++        `;
++        document.body.appendChild(panel);
++        
++        const container = panel.querySelector('#vaiAuditCardsContainer');
++        
++        /** FUNCION RENDER GROUP **/
++        const renderGroup = (groupName, items, narrativa = "") => {
++            const cardId = 'vai_card_' + Math.random().toString(36).substr(2, 9);
++            const card = document.createElement('div');
++            card.id = cardId;
++            card.className = "bg-slate-900 border border-slate-700/80 rounded-xl flex flex-col shadow-xl overflow-hidden group-card transition-all duration-300";
++            
++            // Render Header
++            let rowsHtml = '';
++            items.forEach((sku, idx) => {
++                const skuId = cardId + '_sku_' + idx;
++                rowsHtml += `
++                    
++                    <div id="${skuId}" class="flex items-center justify-between p-3 border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors grouper-row group" data-raw="${String(sku).replace(/"/g, '&quot;')}">
++                        <div class="flex items-center gap-3 flex-1 min-w-0 pr-4">
++                             <input type="checkbox" class="bulk-chk form-checkbox h-4 w-4 text-orange-500 rounded border-slate-600 bg-slate-900 focus:ring-0 cursor-pointer">
++                             <span class="text-[13px] text-slate-300 font-mono truncate group-hover:text-amber-200 transition-colors" title="${String(sku).replace(/"/g, '&quot;')}">${String(sku).replace(/</g, "&lt;")}</span>
++                        </div>
++                        <div class="flex items-center gap-1 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
++                            <button type="button" class="text-slate-500 hover:text-blue-400 p-1.5 transition-colors move-sku-btn rounded hover:bg-slate-800" title="Transferir Art├¡culo a Otro Lote"><i data-lucide="arrow-right-left" class="w-4 h-4"></i></button>
++                            <button type="button" class="text-slate-500 hover:text-red-400 p-1.5 transition-colors remove-sku-btn rounded hover:bg-slate-800" title="Descartar ├ìtem del Mapeo"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
++                        </div>
++                    </div>`;
++            });
++
++            card.innerHTML = `
++                
++                <!-- CARD HEADER (Editable) -->
++                <div class="bg-gradient-to-r from-slate-950/80 to-slate-900 p-6 border-b border-slate-800 flex flex-col gap-4">
++                    <div class="flex justify-between items-start gap-6">
++                        <div class="flex-1 flex flex-col gap-4">
++                            <div class="space-y-1 relative">
++                                <label class="text-[9px] font-black uppercase text-orange-500 tracking-widest pl-1 absolute -top-2 left-3 bg-slate-950 px-1 border border-orange-500/20 rounded z-10">Rubro Maestro (Destino)</label>
++                                <input type="text" class="card-rubro-name w-full bg-slate-950 border border-slate-700/80 text-orange-400 text-sm font-black uppercase rounded-lg px-4 py-3.5 focus:border-orange-500 focus:bg-slate-900 shadow-inner outline-none transition-all" value="${groupName}">
++                                <i data-lucide="edit-3" class="w-4 h-4 absolute right-4 top-4 text-slate-600 pointer-events-none"></i>
++                            </div>
++                            <div class="space-y-1">
++                                <label class="text-[9px] font-black uppercase text-slate-500 tracking-widest pl-1">Directiva de Clasificaci├│n / Narrativa (Opcional)</label>
++                                <input type="text" class="card-rubro-desc w-full bg-slate-900/60 border border-slate-700/50 text-slate-300 text-xs rounded-lg px-4 py-2.5 focus:border-blue-500 outline-none transition-colors" placeholder="Ej: Agrupa todos los elementos derivados del pl├ístico exceptuando PET..." value="${narrativa.replace(/"/g, '&quot;')}">
++                            </div>
++                        </div>
++                        <div class="flex flex-col items-end gap-3 shrink-0 pt-2">
++                            <span class="bg-slate-950 text-slate-400 border border-slate-700 px-4 py-1.5 rounded-lg text-xs font-mono shadow-inner"><span class="card-count font-bold text-orange-400">${items.length}</span> SKUs Inyectados</span>
++                            <!-- ACTIONS CONTAINER -->
++                            <div class="flex flex-col gap-2 w-full mt-2">
++                                <button type="button" class="btn-approve-card px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all shadow-[0_4px_15px_rgba(234,88,12,0.3)] border border-orange-400/20 flex items-center justify-center gap-2">
++                                    <i data-lucide="check-circle" class="w-4 h-4"></i> Ingestar
++                                </button>
++                                <button type="button" class="btn-discard-group px-4 py-2 bg-red-950/40 hover:bg-red-900/60 text-red-400 font-bold rounded-xl text-[9px] uppercase tracking-widest transition-colors border border-red-500/20 flex items-center justify-center gap-2" title="Descartar este bloque por completo">
++                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Descartar
++                                </button>
++                            </div>
++                        </div>
++                    </div>
++                    <!-- BULK ACTION BAR -->
++                    <div class="flex items-center justify-between mt-2 pt-3 border-t border-slate-800/50 relative z-20">
++                          <label class="flex items-center gap-2 cursor-pointer group px-2">
++                               <input type="checkbox" class="select-all-chk form-checkbox h-4 w-4 text-orange-500 rounded border-slate-600 bg-slate-900 focus:ring-0 cursor-pointer">
++                               <span class="text-[10px] uppercase font-bold text-slate-400 group-hover:text-slate-300">Seleccionar Todo</span>
++                          </label>
++                          <div class="flex items-center gap-2">
++                               <button type="button" class="btn-bulk-move px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded text-[9px] font-bold uppercase tracking-widest transition-colors disabled:opacity-30 disabled:cursor-not-allowed" disabled>­ƒôª Mover Selecci├│n</button>
++                               <button type="button" class="btn-bulk-trash px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-red-400 rounded text-[9px] font-bold uppercase tracking-widest transition-colors disabled:opacity-30 disabled:cursor-not-allowed" disabled>­ƒùæ´©Å Eliminar</button>
++                          </div>
++                    </div>
++                </div>
++
++                <!-- CARD BODY (Entities) -->
++                <div class="bg-slate-900/50 flex flex-col card-body" style="max-height: 350px; overflow-y: auto;">
++                    ${rowsHtml}
++                    <div class="p-8 text-center text-xs text-slate-500 italic hidden empty-msg flex flex-col items-center justify-center gap-3">
++                        <i data-lucide="ghost" class="w-8 h-8 opacity-40"></i>
++                        Contenedor Sem├íntico Vac├¡o. Transfiera art├¡culos o elimine este lote.
++                    </div>
++                </div>
++            `;
++            
++            // ================= BULK ACTIONS LOGIC =================
++            const bulkCheckboxes = card.querySelectorAll('.bulk-chk');
++            const selectAllChk = card.querySelector('.select-all-chk');
++            const btnBulkMove = card.querySelector('.btn-bulk-move');
++            const btnBulkTrash = card.querySelector('.btn-bulk-trash');
++            const btnDiscardGroup = card.querySelector('.btn-discard-group');
++            
++            const updateBulkButtonsState = () => {
++                const checkedCount = card.querySelectorAll('.bulk-chk:checked').length;
++                const totalCount = card.querySelectorAll('.bulk-chk').length;
++                
++                if (checkedCount > 0) {
++                     btnBulkMove.disabled = false;
++                     btnBulkTrash.disabled = false;
++                } else {
++                     btnBulkMove.disabled = true;
++                     btnBulkTrash.disabled = true;
++                }
++                
++                if (selectAllChk) selectAllChk.checked = (checkedCount === totalCount && totalCount > 0);
++            };
++
++            if (selectAllChk) {
++                selectAllChk.addEventListener('change', (e) => {
++                     const isChecked = e.target.checked;
++                     card.querySelectorAll('.bulk-chk').forEach(chk => {
++                          const row = chk.closest('.grouper-row');
++                          if (row && row.style.display !== 'none') chk.checked = isChecked;
++                     });
++                     updateBulkButtonsState();
++                });
++            }
++
++            // Must use event delegation or attach to each. We attach to each generated row initially.
++            card.querySelectorAll('.bulk-chk').forEach(chk => chk.addEventListener('change', updateBulkButtonsState));
++            
++            if (btnBulkTrash) {
++                 btnBulkTrash.onclick = () => {
++                      card.querySelectorAll('.bulk-chk:checked').forEach(chk => {
++                           const row = chk.closest('.grouper-row');
++                           if(row) row.remove();
++                      });
++                      const remaining = card.querySelectorAll('.grouper-row').length;
++                      card.querySelector('.card-count').innerText = remaining;
++                      if(remaining === 0) {
++                          const emptyMsg = card.querySelector('.empty-msg');
++                          if(emptyMsg) emptyMsg.classList.remove('hidden');
++                          const btnApprove = card.querySelector('.btn-approve-card');
++                          if(btnApprove) btnApprove.classList.add('opacity-50', 'pointer-events-none');
++                      }
++                      if(selectAllChk) selectAllChk.checked = false;
++                      updateBulkButtonsState();
++                 };
++            }
++            
++            if (btnDiscardGroup) {
++                 btnDiscardGroup.onclick = () => { card.remove(); };
++            }
++
++            if (btnBulkMove) {
++                 btnBulkMove.onclick = async () => {
++                      const sel = card.querySelectorAll('.bulk-chk:checked');
++                      if (sel.length === 0) return;
++                      
++                      let options = {};
++                      document.querySelectorAll('.group-card').forEach(c => {
++                           const nInput = c.querySelector('.card-rubro-name');
++                           if(nInput) {
++                               const n = nInput.value.trim().toUpperCase();
++                               if(n && c.id !== cardId) options[c.id] = n;
++                           }
++                      });
++                      
++                      if (Object.keys(options).length === 0) {
++                          if (window.Swal) Swal.fire({ toast: true, position: 'top', icon: 'info', title: 'Aviso', text: 'Crea otro lote desde "Nuevo Lote" para poder transferir.', timer: 3000});
++                          return;
++                      }
++                      
++                      if(window.Swal) {
++                          const { value: destCardId } = await Swal.fire({
++                              title: 'Transferencia Masiva',
++                              text: `Selecciona el Lote de destino para los ${sel.length} agrupamientos:`,
++                              input: 'select',
++                              inputOptions: options,
++                              inputPlaceholder: '-- Determina un nuevo contenedor --',
++                              showCancelButton: true,
++                              cancelButtonText: 'Cancelar',
++                              confirmButtonText: 'Mover Fila(s)',
++                              background: '#0f172a', color: '#e2e8f0',
++                              customClass: { input: 'bg-slate-900 border-slate-700 text-sm w-full p-2 rounded' }
++                          });
++                          
++                          if (destCardId) {
++                               const destCard = document.getElementById(destCardId);
++                               if(destCard) {
++                                    const destBody = destCard.querySelector('.card-body');
++                                    let newTrashList = [];
++                                    
++                                    sel.forEach(chk => {
++                                         const row = chk.closest('.grouper-row');
++                                         if(row) {
++                                             chk.checked = false;
++                                             destBody.insertBefore(row, destBody.querySelector('.empty-msg'));
++                                             newTrashList.push(row);
++                                         }
++                                    });
++                                    
++                                    newTrashList.forEach(row => {
++                                        const tBtn = row.querySelector('.remove-sku-btn');
++                                        if(tBtn) {
++                                            tBtn.onclick = () => {
++                                                row.remove();
++                                                const ct2 = destCard.querySelectorAll('.grouper-row').length;
++                                                const ctEl = destCard.querySelector('.card-count');
++                                                if(ctEl) ctEl.innerText = ct2;
++                                                if(ct2===0) {
++                                                    const msg = destCard.querySelector('.empty-msg');
++                                                    if(msg) msg.classList.remove('hidden');
++                                                    destCard.querySelector('.btn-approve-card').classList.add('opacity-50', 'pointer-events-none');
++                                                }
++                                            };
++                                        }
++                                        const mBtn = row.querySelector('.move-sku-btn');
++                                        if(mBtn) {
++                                            mBtn.onclick = async () => {
++                                                // Keep the old generic logic for moving since it calculates on the fly and gets prompt again.
++                                                // We don't redefine single move because single move just relies on .closest('.grouper-row')
++                                            }
++                                        }
++                                    });
++                                    
++                                    [card, destCard].forEach(c => {
++                                        const ct = c.querySelectorAll('.grouper-row').length;
++                                        const ctEl = c.querySelector('.card-count');
++                                        if(ctEl) ctEl.innerText = ct;
++                                        if(ct === 0) {
++                                            const msg = c.querySelector('.empty-msg');
++                                            if(msg) msg.classList.remove('hidden');
++                                            const aBtn = c.querySelector('.btn-approve-card');
++                                            if(aBtn) aBtn.classList.add('opacity-50', 'pointer-events-none');
++                                        } else {
++                                            const msg = c.querySelector('.empty-msg');
++                                            if(msg) msg.classList.add('hidden');
++                                            const aBtn = c.querySelector('.btn-approve-card');
++                                            if(aBtn) aBtn.classList.remove('opacity-50', 'pointer-events-none');
++                                        }
++                                    });
++                                    
++                                    if(selectAllChk) selectAllChk.checked = false;
++                                    updateBulkButtonsState();
++                               }
++                          }
++                      }
++                 };
++            }
++
++            // Single Delete Logic
++            const trashBtns = card.querySelectorAll('.remove-sku-btn');
++            trashBtns.forEach(btn => {
++                btn.onclick = () => {
++                    btn.closest('.grouper-row').remove();
++                    const remaining = card.querySelectorAll('.grouper-row').length;
++                    card.querySelector('.card-count').innerText = remaining;
++                    if(remaining === 0) {
++                        card.querySelector('.empty-msg').classList.remove('hidden');
++                        card.querySelector('.btn-approve-card').classList.add('opacity-50', 'pointer-events-none');
++                    }
++                    updateBulkButtonsState();
++                };
++            });
++            
++            // Single Move Logic (Redeclared explicitly to persist re-moves correctly)
++            const bindMoveLogic = (btn) => {
++                btn.onclick = async () => {
++                    const row = btn.closest('.grouper-row');
++                    let options = {};
++                    document.querySelectorAll('.group-card').forEach(c => {
++                         const n = c.querySelector('.card-rubro-name').value.trim().toUpperCase();
++                         if(n && c.id !== cardId) options[c.id] = n;
++                    });
++                    
++                    if (Object.keys(options).length === 0) return;
++                    
++                    if(window.Swal) {
++                        const { value: destCardId2 } = await Swal.fire({
++                            title: 'Mover Art├¡culo (1)',
++                            input: 'select',
++                            inputOptions: options,
++                            showCancelButton: true
++                        });
++                        if (destCardId2) {
++                             const destCard2 = document.getElementById(destCardId2);
++                             if(destCard2) {
++                                  const destBody2 = destCard2.querySelector('.card-body');
++                                  destBody2.insertBefore(row, destBody2.querySelector('.empty-msg'));
++                                  
++                                  [card, destCard2].forEach(c => {
++                                        const ct = c.querySelectorAll('.grouper-row').length;
++                                        const ctEl = c.querySelector('.card-count');
++                                        if(ctEl) ctEl.innerText = ct;
++                                  });
++                                  updateBulkButtonsState();
++                             }
++                        }
++                    }
++                };
++            };
++            const moveBtns = card.querySelectorAll('.move-sku-btn');
++            moveBtns.forEach(bindMoveLogic);
++
++            // APPROVE CARD (INGEST)
++            const approveBtn = card.querySelector('.btn-approve-card');
++            if (approveBtn) {
++                approveBtn.onclick = async () => {
++                    const destName = card.querySelector('.card-rubro-name').value.trim().toUpperCase();
++                    if(!destName) return;
++                    
++                    const rows = card.querySelectorAll('.grouper-row');
++                    let objMap = {};
++                    rows.forEach(r => {
++                         objMap[r.dataset.raw.replace(/&quot;/g, '"')] = destName;
++                    });
++                    
++                    if (window.viewerRuleWorkshop) {
++                         const state = window.viewerRuleWorkshop.getActiveState();
++                         if (state) {
++                              const newTranslationNode = {
++                                  nombre_regla: "Clasificaci├│n IA: " + destName,
++                                  accion: { tipo_accion: "DICTIONARY_REPLACE", valor: objMap }
++                              };
++                              await window.viewerRuleWorkshop.createLocalRuleDirect(newTranslationNode);
++                              
++                              if (window.Swal) Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Agrupamiento Ingestado', showConfirmButton: false, timer: 2000 });
++                              
++                              card.remove();
++                              
++                              const totalPendingCards = document.querySelectorAll('.group-card').length;
++                              if (totalPendingCards === 0) {
++                                  if (window.Swal) Swal.fire({title: "Auditor├¡a Completa", icon: "success", background: "#0f172a", color: "#fff"});
++                                  panel.remove();
++                              }
++                         }
++                    }
++                };
++            }
++            
++            container.appendChild(card);
++            if(window.lucide) window.lucide.createIcons({root: card});
++        };
++        
++        // Render initial exact match groups
++        for (const [gName, data] of Object.entries(groupedMatches)) {
++            renderGroup(gName, data.subItems, data.narrativa);
++        }
++        
++        // Add "New Empty Group" logic
++        panel.querySelector('#vaiNewGroupBtn').onclick = () => {
++             renderGroup("NUEVO_LOTE_"+Math.floor(Math.random()*1000), []);
++        };
++
++        const closeFn = () => {
++             panel.classList.add('opacity-0');
++             setTimeout(() => panel.remove(), 300);
++        };
++
++        panel.querySelector('#vaiCloseAuditBtn').onclick = closeFn;
++        if(window.lucide) window.lucide.createIcons({root: panel});
++    }
++
++    _mergeDictionary(pipeline, newObj) {
++         let base = {};
++         if (pipeline && pipeline.length) {
++              const ruleArr = Array.isArray(pipeline) ? pipeline : [pipeline];
++              for(const r of ruleArr) {
++                  if (r.accion && r.accion.tipo_accion === 'DICTIONARY_REPLACE') {
++                      base = { ...base, ...r.accion.valor };
++                  }
++              }
++         }
++         return { ...base, ...newObj };
++    }
+ }
+ const viewerAiUi = new ViewerAiUi();
+ window.viewerAiUi = viewerAiUi;
+
+commit e45d7edc8002f95184dd2b2f144a4d28fdecad46
+Author: Martin Ignacio Serrano <miserrano75@gmail.com>
+Date:   Tue Apr 7 01:55:31 2026 -0300
+
+    37
+
+diff --git a/src/views/js/viewer_ai_ui.js b/src/views/js/viewer_ai_ui.js
+index a57b161..44073b1 100644
+--- a/src/views/js/viewer_ai_ui.js
++++ b/src/views/js/viewer_ai_ui.js
+@@ -53,6 +53,7 @@ class ViewerAiUi {
+                     <button data-intent="Relleno de Vac├¡os" data-route="ast" data-placeholder="Ej: Rellenar con 0,00..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Rellenar vac├¡os</button>
+                     <button data-intent="Extracci├│n Espec├¡fica" data-route="ast" data-placeholder="Ej: Extraer el primer n├║mero..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Extraer datos</button>
+                     <button data-intent="Limpieza y Separaci├│n" data-route="ast" data-placeholder="Ej: Separar descripci├│n y peso dejando solo desc..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-indigo-600/40 text-slate-400 hover:text-indigo-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-indigo-500/50 font-mono">Separar Limpiar</button>
++                    <button data-intent="Limpieza Literal (1 a 1)" data-route="literal" data-placeholder="Ej: Purificar manteniendo estricto el original..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-teal-600/40 text-slate-400 hover:text-teal-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-teal-500/50 font-mono">Limpieza 1 a 1</button>
+                     <button data-intent="Mapeo y Agrupaci├│n de Texto" data-route="cluster" data-placeholder="Ej: Agrupar marcas comerciales y uniformar nombres..." class="vai-quick-btn text-[9px] bg-slate-800/80 hover:bg-purple-600/40 text-slate-400 hover:text-purple-200 px-2 py-0.5 rounded transition-colors border border-slate-700/50 hover:border-purple-500/50 font-mono">Agrupar (HITL)</button>
+                 </div>
+                 
+@@ -85,8 +86,8 @@ class ViewerAiUi {
+             btn.onclick = () => {
+                 if (this.promptEl.disabled) return;
+                 
+-                const hoverColorClass = btn.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+-                const borderColorClass = btn.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
++                const hoverColorClass = btn.dataset.route === 'cluster' ? 'bg-purple-600' : (btn.dataset.route === 'literal' ? 'bg-teal-600' : 'bg-indigo-600');
++                const borderColorClass = btn.dataset.route === 'cluster' ? 'border-purple-500' : (btn.dataset.route === 'literal' ? 'border-teal-500' : 'border-indigo-500');
+                 
+                 if (this.selectedIntent === btn.dataset.intent) {
+                     // Deseleccionar
+@@ -98,8 +99,8 @@ class ViewerAiUi {
+                 } else {
+                     // Limpiar todos
+                     quickBtns.forEach(b => {
+-                        const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : 'bg-indigo-600';
+-                        const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : 'border-indigo-500';
++                        const hColor = b.dataset.route === 'cluster' ? 'bg-purple-600' : (b.dataset.route === 'literal' ? 'bg-teal-600' : 'bg-indigo-600');
++                        const bColor = b.dataset.route === 'cluster' ? 'border-purple-500' : (b.dataset.route === 'literal' ? 'border-teal-500' : 'border-indigo-500');
+                         b.classList.remove(hColor, 'text-white', bColor);
+                         b.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700/50');
+                     });
+@@ -314,18 +315,18 @@ class ViewerAiUi {
+             const isFormattingPattern = promptText.toLowerCase().match(/(extraer|quit|borrar|separar|remplazar|reemplazar|regex|limpiar|vaci|vac├¡o|vacio|vac├¡a|agregar|completar|rellenar|cero)/);
+             
+             // Si el chip seleccionado exige AST => fuerza AST. Si exige Cluster => fuerza Cluster.
+-            const forceAstMode = this.selectedRoute === 'ast' || (!this.selectedRoute && isFormattingPattern);
++            const forceAstMode = this.selectedRoute === 'ast' || (!this.selectedRoute && isFormattingPattern && this.selectedRoute !== 'literal');
+             const forceClusterMode = this.selectedRoute === 'cluster';
++            const forceLiteralMode = this.selectedRoute === 'literal';
+             
+             // Si el diccionario es enorme, obligatoriamente se usa AST para evitar OOM, excepto que lo forcemos
+-            const useClustering = forceClusterMode ? true : (uniqueDictionary.length <= 60 && !forceAstMode);
++            const useClustering = forceClusterMode ? true : (uniqueDictionary.length <= 60 && !forceAstMode && !forceLiteralMode);
+ 
+             const combinedPrompt = this.selectedIntent ? `CONTEXTO DE LA TAREA: Operaci├│n estructurada del tipo "${this.selectedIntent}".\nINTRUCCIONES ESPEC├ìFICAS DEL USUARIO: ${promptText}` : promptText;
+ 
+             // Restringir max de muestras generativas.
+-            // Para AST bastan pocas l├¡neas. Para CLUSTERING (HITL), pasamos de 80 a 1200 para abarcar un diccionario monstruoso
+-            // sin saturar la red ni causar un OOM del token threshold (max 8192 salida Gemini).
+-            const limiteMuestras = useClustering ? 1200 : 25;
++            // Para AST bastan pocas l├¡neas. Para CLUSTERING (HITL) o LITERAL, pasamos de 80 a 1200 para abarcar diccionarios
++            const limiteMuestras = (useClustering || forceLiteralMode) ? 1200 : 25;
+             const dictLimitado = uniqueDictionary.slice(0, limiteMuestras);
+             
+             if (uniqueDictionary.length > limiteMuestras && useClustering) {
+@@ -341,12 +342,27 @@ class ViewerAiUi {
+                 column_name: targetColName,
+                 prompt: combinedPrompt,
+                 samples: dictLimitado, 
+-                require_ast: !useClustering
++                require_ast: !useClustering && !forceLiteralMode,
++                literal_mode: forceLiteralMode
+             };
+ 
+             this._setStatus('IA Analizando...', 'working');
+             
+-            if (useClustering) {
++            if (forceLiteralMode) {
++                // === RUTA LENTA 2: LITERAL TRANSLATION (1-A-1) ===
++                const responseData = await aiService.discoverEntities(payload);
++                if (window.Swal && Swal.isVisible()) Swal.close();
++                
++                if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
++                    throw new Error("El modelo retorn├│ formato de traducci├│n literal inv├ílido.");
++                }
++                
++                const translationMap = responseData.cluster;
++                if (Object.keys(translationMap).length === 0) throw new Error("La IA no devolvi├│ traducciones.");
++                
++                await this._displayLiteralModal(translationMap, promptText, vCol);
++
++            } else if (useClustering) {
+                 // === RUTA LENTA: DISCOVER ENTITIES (CLUSTERING) ===
+                 const responseData = await aiService.discoverEntities(payload);
+                 if (window.Swal && Swal.isVisible()) Swal.close();
+@@ -550,6 +566,116 @@ class ViewerAiUi {
+         }
+     }
+ 
++    async _displayLiteralModal(translationMap, promptText, vCol) {
++        if (!window.Swal) return;
++        
++        let tableRowsHtml = Object.entries(translationMap).map(([rawVal, cleanVal], idx) => {
++             return `
++               <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
++                   <td class="p-2 w-8 text-center border-r border-slate-700/50 text-slate-400">
++                       <input type="checkbox" id="literal_chk_${idx}" data-raw="${String(rawVal).replace(/"/g, '&quot;')}" value="${String(cleanVal).replace(/"/g, '&quot;')}" checked class="literal-raw-chk form-checkbox h-3.5 w-3.5 text-teal-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
++                   </td>
++                   <td class="p-2 text-[10px] text-slate-400 font-mono truncate max-w-[200px]" title="${String(rawVal).replace(/"/g, '&quot;')}">${String(rawVal).replace(/</g, "&lt;")}</td>
++                   <td class="p-2 text-[10px] font-bold text-teal-400 font-mono max-w-[200px] break-words" title="${String(cleanVal).replace(/"/g, '&quot;')}">${String(cleanVal).replace(/</g, "&lt;")}</td>
++               </tr>
++             `;
++        }).join('');
++        
++        const { isConfirmed } = await Swal.fire({
++            title: 'Traducci├│n Literal (1 a 1)',
++            html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA ha analizado los crudos ├║nicos y devuelto una limpieza 1 a 1 en base a tu petici├│n <i>"${promptText}"</i>.<br>Desmarca las conversiones incorrectas para ignorarlas:</div>
++                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1 border border-slate-700/50 rounded" id="literal_checkbox_container">
++                      <table class="w-full text-left border-collapse">
++                        <thead class="bg-slate-900 sticky top-0 border-b border-slate-700/50 z-10 hover:bg-slate-800/80 transition">
++                            <tr>
++                                <th class="p-2 w-8 text-center border-r border-slate-700/50">
++                                    <input type="checkbox" id="literal_global_chk" class="form-checkbox h-4 w-4 text-teal-500 rounded border-teal-500/50 bg-slate-800 focus:ring-0 focus:ring-offset-0 cursor-pointer" checked>
++                                </th>
++                                <th class="p-2 text-[10px] font-bold text-slate-300 uppercase tracking-wider"><label for="literal_global_chk" class="cursor-pointer">Original Crudo</label></th>
++                                <th class="p-2 text-[10px] font-bold text-teal-300 uppercase tracking-wider"><label for="literal_global_chk" class="cursor-pointer">Traducci├│n Limpia</label></th>
++                            </tr>
++                        </thead>
++                        <tbody>
++                            ${tableRowsHtml}
++                        </tbody>
++                      </table>
++                   </div>`,
++            showCancelButton: true,
++            confirmButtonText: '<i data-lucide="split-square-horizontal" class="w-4 h-4 inline mt-0.5"></i> Insertar Regla (DIRECT_REPLACE)',
++            cancelButtonText: 'Descartar',
++            confirmButtonColor: '#0d9488',
++            background: '#0f172a', color: '#f8fafc',
++            width: '600px',
++            didOpen: () => {
++                const container = document.getElementById('literal_checkbox_container');
++                if (!container) return;
++                
++                container.addEventListener('change', (e) => {
++                    if (e.target.id === 'literal_global_chk') {
++                        const isChecked = e.target.checked;
++                        const childChecks = container.querySelectorAll(`.literal-raw-chk`);
++                        childChecks.forEach(chk => chk.checked = isChecked);
++                        e.target.indeterminate = false;
++                    } else if (e.target.classList.contains('literal-raw-chk')) {
++                       const globalChk = document.getElementById('literal_global_chk');
++                       if (globalChk) {
++                           const childChecks = container.querySelectorAll(`.literal-raw-chk`);
++                           const allChecked = Array.from(childChecks).every(c => c.checked);
++                           const someChecked = Array.from(childChecks).some(c => c.checked);
++                           globalChk.checked = allChecked;
++                           globalChk.indeterminate = someChecked && !allChecked;
++                       }
++                    }
++                });
++                if(window.lucide) window.lucide.createIcons();
++            }
++        });
++        
++        if (isConfirmed) {
++            const finalMap = {};
++            let mappedCount = 0;
++            
++            document.querySelectorAll('.literal-raw-chk').forEach(chk => {
++                if (chk.checked) {
++                     finalMap[chk.getAttribute('data-raw')] = chk.value;
++                     mappedCount++;
++                }
++            });
++            
++            if (mappedCount === 0) return;
++            
++            this._setStatus('Aterrizando Regla...', 'working');
++            
++            const aiRuleObj = {
++                nombre_regla: `[IA] Limpieza Literal: ${promptText}`,
++                descripcion: `Regla generada purificando 1 a 1 bajo la directiva AI. Convierte de forma dura ${mappedCount} valores ├║nicos.`,
++                tipo: 'ast_conditional',
++                logica: [
++                     {
++                         condicion: { operador: "IN_DICT_KEYS", valor: finalMap },
++                         accion: { tipo_accion: "DICTIONARY_REPLACE", valor: finalMap }
++                     }
++                ],
++                fromAI: true
++            };
++            
++            if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
++                await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
++                this.promptEl.value = "";
++                this.promptEl.placeholder = "Ej: Condiciona la extracci├│n aislando los prefijos...";
++                if (this.selectedIntent) {
++                    const btn = document.querySelector(`button[data-intent="${this.selectedIntent}"]`);
++                    if(btn) btn.click();
++                }
++                this._setStatus('Completado', 'success');
++            } else {
++                throw new Error("API del Taller Cerrada.");
++            }
++        } else {
++             this._setStatus('Descartado', 'success');
++        }
++    }
++
+     async _displayASTModal(responseData, promptText) {
+         if (!window.Swal) return true;
+         
+
+commit b79bc6ccf702baa0c2056a6dc35fe2db9d0fd56b
+Author: Martin Ignacio Serrano <miserrano75@gmail.com>
+Date:   Sat Apr 4 00:45:12 2026 -0300
+
+    27
+
+diff --git a/src/views/js/viewer_ai_ui.js b/src/views/js/viewer_ai_ui.js
+index 590936a..f722687 100644
+--- a/src/views/js/viewer_ai_ui.js
++++ b/src/views/js/viewer_ai_ui.js
+@@ -120,11 +120,45 @@ class ViewerAiUi {
+         this.feedbackEl.classList.remove('hidden');
+     }
+ 
++    async _buildUniqueSet(dataIdx, pipeline) {
++        return new Promise((resolve) => {
++            const rawRows = window.currentSheetData.slice(1);
++            const total = rawRows.length;
++            const uniqueSet = new Set();
++            const chunkSize = 5000;
++            let i = 0;
++
++            const processChunk = () => {
++                const end = Math.min(i + chunkSize, total);
++                for (; i < end; i++) {
++                    let val = String(rawRows[i][dataIdx] || "").trim();
++                    if (!val) continue;
++                    if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
++                        const mutateRs = window.viewerETL.transformCell(val, pipeline);
++                        if (mutateRs.rejected) continue;
++                        val = mutateRs.display || mutateRs.result || "";
++                    }
++                    if (val.trim()) uniqueSet.add(val.trim());
++                }
++                
++                // Excluir Strings gigantes (Data profiling no sirve en p├írrafos)
++                for (let k of uniqueSet) { if (k.length > 150) uniqueSet.delete(k); }
++                
++                if (i < total) {
++                    this._setStatus(`Escaneando: ${Math.floor((i/total)*100)}%`, 'working');
++                    setTimeout(processChunk, 0); // Lote as├¡ncrono preventivo
++                } else {
++                    resolve(Array.from(uniqueSet));
++                }
++            };
++            processChunk();
++        });
++    }
++
+     async handleGenerate() {
+         const promptText = this.promptEl.value.trim();
+         if (!promptText) return;
+ 
+-        // Prevent Double Click
+         this.btnEl.disabled = true;
+         
+         try {
+@@ -135,62 +169,154 @@ class ViewerAiUi {
+             const state = window.viewerRuleWorkshop.getActiveState();
+             if (!state || !state.colIndex) throw new Error("Abre el taller de una columna");
+ 
+-            // Geometrics Sampling (Objeci├│n 1)
+-            this._setStatus('Muestreando Disp...', 'working');
+-            
+             const vCol = window.virtualColumns ? window.virtualColumns.find(v => v.id === state.colIndex) : null;
+             if (!vCol || vCol.dataIdx === undefined) throw new Error("Columna virtual corrupta.");
+             
+-            const samples = aiSampler.extractSmartSample(vCol.dataIdx, state.pipeline, 100);
+-            if (samples.length === 0) throw new Error("Sin datos para muestrear");
++            // FASE 2: Data Profiling Activo (Extracci├│n Silente Completa)
++            this._setStatus('Extrayendo Perfil...', 'working');
++            const uniqueDictionary = await this._buildUniqueSet(vCol.dataIdx, state.pipeline);
++            
++            if (uniqueDictionary.length === 0) throw new Error("La columna carece de datos parseables.");
++            
++            // Overlays Cinematogr├íficos
++            if (window.Swal) {
++                Swal.fire({
++                    title: 'Inspeccionando Matriz...',
++                    html: `Mapeo completado: <b>${uniqueDictionary.length}</b> valores ├║nicos detectados.<br>
++                           Solicitando filtrado sem├íntico al Motor IA...`,
++                    allowOutsideClick: false,
++                    didOpen: () => { Swal.showLoading(); },
++                    background: '#0f172a', color: '#f8fafc'
++                });
++            }
+ 
+             const colTitle = window.currentSheetData[0][vCol.dataIdx] || "┬┐?";
+ 
+             const payload = {
+                 column_name: colTitle,
+                 prompt: promptText,
+-                samples: samples,
+-                require_ast: true // Indicador obligatorio para el backend/chofer de devolver arbol JSON
++                samples: uniqueDictionary, 
++                require_ast: false
+             };
+ 
+-            this._setStatus('Pensando...', 'working');
++            this._setStatus('IA Analizando...', 'working');
++            
++            // Reemplazo del Viejo "GenerateRule" bal├¡stico por el nuevo DiscoverEntities
++            const responseData = await aiService.discoverEntities(payload);
+             
+-            // Request to Service
+-            const responseData = await aiService.generateETLRule(payload);
++            // Cerramos modal de carga
++            if (window.Swal && Swal.isVisible()) Swal.close();
+             
+-            // Revisa si trajo un arreglo de reglas v├ílidas
+-            if (!responseData || !Array.isArray(responseData.rules) || responseData.rules.length === 0) {
+-                throw new Error("El modelo retorn├│ formato pipeline inv├ílido o vac├¡o.");
++            if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
++                throw new Error("El modelo retorn├│ formato de cluster inv├ílido.");
+             }
+-
+-            this._setStatus('Inyectando AST...', 'working');
+-
+-            // Inyectar visual y conceptualmente al sistema local
+-            if (typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
+-                for (let rConfig of responseData.rules) {
+-                    const aiRuleObj = { ...rConfig, fromAI: true };
+-                    await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
+-                }
+-                
+-                this.promptEl.value = "";
+-                this._setStatus('Conectado', 'success');
+-                
+-                // Calcular Exito AST sobre la iteracion final completa (usando el current pipeline)
+-                const finalState = window.viewerRuleWorkshop.getActiveState();
+-                this._evaluateUX(vCol.dataIdx, state.pipeline, finalState.pipeline);
+-            } else {
+-                throw new Error("El API del Taller visual (createLocalRule) fue cerrado.");
++            
++            const clusterMap = responseData.cluster;
++            
++            if (Object.keys(clusterMap).length === 0) {
++                 throw new Error("La IA no detect├│ ninguna coincidencia ni agrupaciones.");
+             }
++            
++            // FASE 2.5: Consenso Visual UI Jer├írquico (HITL Clustering)
++            await this._displayConsensusModal(clusterMap, promptText, vCol);
+ 
+         } catch (err) {
+             console.error("ÔØî Chofer AST Fall├│:", err);
++            if (window.Swal && Swal.isVisible()) Swal.close();
+             this._setStatus('Error Cr├¡tico', 'error');
+             this._setFeedback(`Fallo: ${err.message}`, 'error');
+         } finally {
+-            // Anti-Spam de 1.5 secs extra local UI
+             setTimeout(() => { if (aiService.isHealthy) this.btnEl.disabled = false; }, 1500);
+         }
+     }
++    
++    async _displayConsensusModal(clusterMap, promptText, vCol) {
++        if (!window.Swal) return;
++        
++        let accordionHtml = Object.keys(clusterMap).map((masterVal, gIdx) => {
++             const rawValues = clusterMap[masterVal];
++             if (!Array.isArray(rawValues)) return '';
++             
++             let childrenHtml = rawValues.map((val, idx) => `
++                <div class="flex items-center gap-2 mb-1.5 pl-3 p-1.5 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
++                    <input type="checkbox" id="hitl_chk_${gIdx}_${idx}" data-master="${masterVal.replace(/"/g, '&quot;')}" value="${val.replace(/"/g, '&quot;')}" checked class="hitl-raw-chk form-checkbox h-3.5 w-3.5 text-indigo-500 rounded border-slate-600 bg-slate-900 focus:ring-0 focus:ring-offset-0 cursor-pointer">
++                    <label for="hitl_chk_${gIdx}_${idx}" class="text-[11px] text-slate-400 cursor-pointer select-none truncate font-mono">${val}</label>
++                </div>
++             `).join('');
++
++             return `
++             <div class="mb-3 bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden">
++                 <div class="bg-indigo-950/20 p-2 border-b border-indigo-500/10 flex items-center justify-between">
++                     <span class="text-xs font-bold text-indigo-300 font-mono tracking-wide">${masterVal}</span>
++                     <span class="text-[10px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded font-bold">${rawValues.length} crudos</span>
++                 </div>
++                 <div class="p-2 py-1 bg-slate-950/30">
++                    ${childrenHtml}
++                 </div>
++             </div>
++             `;
++        }).join('');
++        
++        const { isConfirmed } = await Swal.fire({
++            title: 'Mapeo Sem├íntico Completado',
++            html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA ha agrupado los siguientes valores (Target Maestros) en base a tu petici├│n <i>"${promptText}"</i>.<br>Desmarca las variaciones crudas incorrectas:</div>
++                   <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1" id="hitl_checkbox_container">
++                      ${accordionHtml}
++                   </div>`,
++            showCancelButton: true,
++            confirmButtonText: '<i data-lucide="merge" class="w-4 h-4 inline mt-0.5"></i> Insertar Regla (MAP_REPLACE)',
++            cancelButtonText: 'Descartar',
++            confirmButtonColor: '#4f46e5',
++            background: '#0f172a', color: '#f8fafc',
++            width: '500px'
++        });
++        
++        if (isConfirmed) {
++            const finalMap = {};
++            let mappedCount = 0;
++            const masterSet = new Set();
++            
++            document.querySelectorAll('.hitl-raw-chk').forEach(chk => {
++                if (chk.checked) {
++                     finalMap[chk.value] = chk.getAttribute('data-master');
++                     masterSet.add(chk.getAttribute('data-master'));
++                     mappedCount++;
++                }
++            });
++            
++            if (mappedCount === 0) return;
++            
++            this._setStatus('Aterrizando Regla...', 'working');
++            
++            // CREAR AST EST├üTICO DE MAPEO ESTRUCTURAL (Determinismo Absoluto)
++            const aiRuleObj = {
++                nombre_regla: `[IA] Mapeo Sem├íntico: ${promptText}`,
++                descripcion: `Regla determinista generada bajo perfilamiento. Clusteriz├│ ${mappedCount} variaciones bajo ${masterSet.size} grupos maestros. Purga el resto.`,
++                tipo: 'ast_conditional',
++                logica: [
++                     {
++                         condicion: { operador: "IN_DICT_KEYS", valor: finalMap },
++                         accion: { tipo_accion: "DICTIONARY_REPLACE", valor: finalMap } // Estandariza Mapeo Maestro
++                     },
++                     {
++                         condicion: { operador: "DEFAULT" },
++                         accion: { tipo_accion: "DROP" } // Excluye alien├¡genas
++                     }
++                ],
++                fromAI: true
++            };
++            
++            if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
++                await window.viewerRuleWorkshop.createLocalRuleDirect(aiRuleObj);
++                this.promptEl.value = "";
++                this._setStatus('Conectado', 'success');
++            } else {
++                throw new Error("API del Taller Cerrada.");
++            }
++        } else {
++             this._setStatus('Descartado', 'success');
++        }
++    }
+ 
+     _evaluateUX(dataIdx, oldPipeline, currentPipeline) {
+         if (!window.currentSheetData || !window.viewerETL) return;

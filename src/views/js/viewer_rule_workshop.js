@@ -10,8 +10,24 @@ export function resolveRawValueForRow(row, targetColId) {
     if (window.computedColumns) {
         const comp = window.computedColumns.find(c => c.id === targetColId);
         if (comp && comp.operands && comp.operands.length > 0) {
-            let opA = comp.operands[0];
-            return resolveRawValueForRow(row, opA); 
+            // [FIX TICKET #034] Recuperar la cadena combinada usando el _richContext (Post-ETL de operandos)
+            // Esto es imperativo para que el Taller Semántico ("Procesar Pendientes") refleje la misma realidad que el Chofer IA.
+            if (row._richContext) {
+                return comp.operands.map(opId => {
+                    const op = row._richContext[opId];
+                    if (!op) return resolveRawValueForRow(row, opId);
+                    const candidates = [op.clean, op.raw, op.display];
+                    for (let c of candidates) {
+                        if (c !== undefined && c !== null && String(c).trim() !== '') {
+                            const s = String(c).trim();
+                            if (!s.startsWith('<')) return s;
+                        }
+                    }
+                    return "";
+                }).filter(v => v).join(" ");
+            } else {
+                return comp.operands.map(opId => resolveRawValueForRow(row, opId)).filter(v => v).join(" ");
+            }
         }
     }
 
@@ -987,7 +1003,7 @@ async function renderCacheMissGatillo(container) {
 
     // [FIX CAPA 3 - SIMULADOR SYNC] Validar si la Capa 3 (Maestra) posee reglas depositadas nativamente 
     // y fusionarlas temporalmente para que la pre-evaluación del Contador (Taller) no sea ciega.
-    const masterId = window.draftPipelines && window.draftPipelines[targetColId] && window.draftPipelines[targetColId].masterField ? window.draftPipelines[targetColId].masterField.id : null;
+    const masterId = window.draftPipelines && window.draftPipelines[activeContext.colIndex] && window.draftPipelines[activeContext.colIndex].masterField ? window.draftPipelines[activeContext.colIndex].masterField.id : null;
     if (masterId && typeof nomenclatureCache !== 'undefined') {
         const masterTerm = nomenclatureCache.find(t => String(t.id) === String(masterId));
         if (masterTerm && masterTerm.reglas_procesamiento) {
