@@ -581,11 +581,12 @@ async function provisionVendorFolders(req, res) {
         console.log(`   - Root Created: ${rootFolder.id}`);
 
         // 2. Create Subfolders (Parallel)
-        const [pricesFolder, extractedFolder] = await Promise.all([
+        const [pricesFolder, extractedFolder, facturasFolder] = await Promise.all([
             driveService.createFolder('Listas de Precios', rootFolder.id),
-            driveService.createFolder('Listas Extraídas', rootFolder.id)
+            driveService.createFolder('Listas Extraídas', rootFolder.id),
+            driveService.createFolder('Facturas', rootFolder.id)
         ]);
-        console.log(`   - Subfolders Created. Prices: ${pricesFolder.id}, Extracted: ${extractedFolder.id}`);
+        console.log(`   - Subfolders Created. Prices: ${pricesFolder.id}, Extracted: ${extractedFolder.id}, Facturas: ${facturasFolder.id}`);
 
         res.json({
             success: true,
@@ -593,6 +594,7 @@ async function provisionVendorFolders(req, res) {
                 rootId: rootFolder.id,
                 pricesId: pricesFolder.id,
                 extractedId: extractedFolder.id,
+                facturasId: facturasFolder.id,
                 rootLink: rootFolder.webViewLink
             }
         });
@@ -600,6 +602,32 @@ async function provisionVendorFolders(req, res) {
     } catch (error) {
         console.error("[Provisioning] Error:", error);
         res.status(500).json({ error: "Provisioning Failed: " + error.message });
+    }
+}
+
+// =============================================================================
+// PROVISION FACTURAS FOLDER (FOR LEGACY VENDORS)
+// =============================================================================
+async function provisionFacturasFolder(req, res) {
+    const { rootId } = req.body;
+
+    if (!rootId) return res.status(400).json({ error: "Missing rootId" });
+
+    try {
+        console.log(`[Provisioning] Creating Facturas folder for existing root: ${rootId}`);
+        const facturasFolder = await driveService.createFolder('Facturas', rootId);
+        
+        console.log(`   - Facturas Folder Created: ${facturasFolder.id}`);
+
+        res.json({
+            success: true,
+            data: {
+                facturasId: facturasFolder.id
+            }
+        });
+    } catch (error) {
+        console.error("[Provisioning Facturas] Error:", error);
+        res.status(500).json({ error: "Provisioning Facturas Failed: " + error.message });
     }
 }
 
@@ -1067,6 +1095,7 @@ module.exports = {
     deleteDictionaryTerm,
     downloadFile,
     provisionVendorFolders,
+    provisionFacturasFolder,
     listProcessedFiles,
     getProcessedFileContent,
     rollbackFiles,

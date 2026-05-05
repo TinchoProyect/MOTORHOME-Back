@@ -80,6 +80,14 @@ async function getFileContent(fileId) {
     }
 }
 
+/**
+ * Get file content as Buffer (for Facturas AI Ingestion)
+ */
+async function downloadFileToBuffer(fileId) {
+    const arrayBuffer = await getFileContent(fileId);
+    return Buffer.from(arrayBuffer);
+}
+
 async function getFileMetadata(fileId) {
     const drive = await getDriveClient();
     try {
@@ -239,6 +247,7 @@ async function uploadBufferToFile(fileName, mimeType, fileBuffer, parentId) {
 module.exports = {
     listFiles,
     getFileContent,
+    downloadFileToBuffer,
     getFileMetadata,
     getFileStream,
     createFolder,

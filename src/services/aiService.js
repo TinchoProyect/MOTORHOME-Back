@@ -550,6 +550,87 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
             translationMap: finalMap,
             dictionaryRef: dictionarySamples
         };
+    },
+
+    executeInvoiceExtraction: async (base64Data, mimeType) => {
+        if (!genAI) throw new Error("Gemini API no inicializada");
+
+        console.log(`[AI Service - Facturas] ⏱️ Ejecutando Motor Chofer en documento...`);
+
+        // Validamos si es base64Data directo o un dataUrl
+        if (base64Data.startsWith('data:')) {
+            base64Data = base64Data.split(',')[1];
+        }
+
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash", 
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
+        });
+
+        const systemInstruction = `Eres un auditor fiscal de altísima precisión ("Chofer") especializado en facturación electrónica de Argentina (AFIP).
+Se te provee un comprobante fiscal. Tu tarea es extraer la metadata y totales, y devolver estrictamente un objeto JSON plano.
+
+REGLAS DE EXTRACCIÓN:
+1. "cuit_emisor": El CUIT del emisor (solo números o formato XX-XXXXXXXX-X).
+2. "tipo_comprobante": Factura A, Factura B, Factura C, Nota de Crédito A, etc.
+3. "punto_venta": Solo el número entero (ej: 3).
+4. "numero_comprobante": Solo el número entero (ej: 14502).
+5. "fecha_emision": En formato YYYY-MM-DD.
+6. "cae": El código de autorización electrónico.
+7. "fecha_vto_cae": Fecha de vencimiento del CAE (YYYY-MM-DD).
+
+REGLAS NUMÉRICAS PARA TOTALES (OBLIGATORIO):
+Extrae los importes numéricos. Si no existen, devuelve 0. Deben ser floats válidos.
+- "importe_neto_gravado": El importe neto o subtotal sin impuestos.
+- "importe_iva_21": El monto correspondiente al IVA 21%.
+- "importe_iva_105": El monto correspondiente al IVA 10.5%.
+- "importe_iva_27": El monto correspondiente al IVA 27%.
+- "percepciones_iibb": Sumatoria de percepciones de Ingresos Brutos.
+- "percepciones_iva": Sumatoria de percepciones de IVA.
+- "conceptos_no_gravados": Importe no gravado o exento.
+- "importe_total": El total exacto facturado.
+
+ESTRUCTURA JSON REQUERIDA:
+{
+  "cuit_emisor": "...",
+  "tipo_comprobante": "...",
+  "punto_venta": 0,
+  "numero_comprobante": 0,
+  "fecha_emision": "YYYY-MM-DD",
+  "cae": "...",
+  "fecha_vto_cae": "YYYY-MM-DD",
+  "importe_neto_gravado": 0.0,
+  "importe_iva_21": 0.0,
+  "importe_iva_105": 0.0,
+  "importe_iva_27": 0.0,
+  "percepciones_iibb": 0.0,
+  "percepciones_iva": 0.0,
+  "conceptos_no_gravados": 0.0,
+  "importe_total": 0.0
+}`;
+
+        const prompt = [
+            systemInstruction,
+            {
+                inlineData: {
+                    data: base64Data,
+                    mimeType: mimeType || "application/pdf"
+                }
+            }
+        ];
+
+        try {
+            const startTime = performance.now();
+            const result = await model.generateContent(prompt);
+            const text = result.response.text();
+            console.log(`[AI Service - Facturas] ⏱️ Extracción Completada en ${((performance.now() - startTime) / 1000).toFixed(2)}s`);
+            
+            const extractedText = module.exports.extractJSONFromInference(text);
+            return JSON.parse(extractedText);
+        } catch (e) {
+            console.error("[AI Service - Facturas] ❌ Error en Inferencia:", e);
+            throw new Error("Fallo en la inferencia del Chofer IA: " + e.message);
+        }
     }
 };
 

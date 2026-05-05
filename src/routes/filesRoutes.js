@@ -40,6 +40,9 @@ router.delete('/dictionary/:id', filesController.deleteDictionaryTerm);
 // POST /api/files/drive/provision-vendor
 router.post('/drive/provision-vendor', filesController.provisionVendorFolders);
 
+// POST /api/files/drive/provision-facturas
+router.post('/drive/provision-facturas', filesController.provisionFacturasFolder);
+
 // [PHASE 5] Processed Files
 router.get('/processed-list', filesController.listProcessedFiles);
 router.get('/processed-content/:rawListId', filesController.getProcessedFileContent);

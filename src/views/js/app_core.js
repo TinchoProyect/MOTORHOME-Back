@@ -173,7 +173,7 @@ function setupUIListeners() {
 
 
 // --- EXPLORADOR DE ARCHIVOS (DRIVE) ---
-async function exploreSupplierFiles(folderId) {
+async function exploreSupplierFiles(folderId, contextMode = 'listas') {
     if (!folderId) return;
 
     // [CONTEXT FIX] Capture this folder as the active Drive Context
@@ -226,7 +226,7 @@ async function exploreSupplierFiles(folderId) {
 
         if (!data.success) throw new Error(data.error || "Error desconocido");
 
-        renderFileGrid(data.files, folderId);
+        renderFileGrid(data.files, folderId, contextMode);
 
     } catch (error) {
         console.error("Error explorador:", error);
@@ -246,7 +246,7 @@ async function exploreSupplierFiles(folderId) {
 window.exploreSupplierFiles = exploreSupplierFiles;
 window.loadFiles = exploreSupplierFiles; // Alias requerido por viewer_ingest.js
 
-function renderFileGrid(files, folderId) {
+function renderFileGrid(files, folderId, contextMode = 'listas') {
     // Helpers de Iconos
     const getIcon = (mime) => {
         if (mime.includes('folder')) return 'folder';
@@ -294,7 +294,8 @@ function renderFileGrid(files, folderId) {
                         </div>
                     </div>
 
-                    <!-- TABS (PHASE 5) -->
+                    <!-- TABS (CONTEXT AWARE) -->
+                    ${contextMode === 'listas' ? `
                     <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 ml-4">
                         <button id="tabPending" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-blue-500 bg-blue-500/10 text-blue-400">
                             <i data-lucide="hard-drive" class="w-3 h-3"></i> Pendientes
@@ -302,11 +303,16 @@ function renderFileGrid(files, folderId) {
                         <button id="tabProcessed" class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-emerald-300">
                             <i data-lucide="archive" class="w-3 h-3"></i> Procesados
                         </button>
-                    </div>
+                    </div>` : `
+                    <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-amber-900/30 ml-4 shadow-inner">
+                        <div class="px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all flex items-center gap-2 border-b-2 border-amber-500 bg-amber-500/10 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.1)]">
+                            <i data-lucide="receipt" class="w-3 h-3"></i> Facturas Pendientes
+                        </div>
+                    </div>`}
                 </div>
                 <div class="flex items-center gap-2 relative">
-                    <!-- Contenedor Reactivo Inyectable para UploadButton (Oculto en Db/Procesados) -->
-                    <div id="uploadButtonContainer"></div>
+                    <!-- Contenedor Reactivo Inyectable para UploadButton (Oculto en Db/Procesados o Facturas) -->
+                    ${contextMode === 'listas' ? `<div id="uploadButtonContainer"></div>` : ''}
 
                     <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" 
                         class="px-3 py-2 bg-slate-900/50 hover:bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-800 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 shrink-0"
@@ -335,23 +341,32 @@ function renderFileGrid(files, folderId) {
             const iconName = getIcon(file.mimeType);
             const colorClass = getColor(file.mimeType);
 
+            const clickAction = contextMode === 'facturas' ? `window.open('${file.webViewLink}', '_blank')` : `handleFileClick('${file.id}', '${file.name}', 'ingestion')`;
+            const borderClass = contextMode === 'facturas' ? 'hover:border-amber-500/40 hover:shadow-amber-900/20' : 'hover:border-blue-500/30 hover:shadow-blue-900/10';
+
             html += `
-                <div onclick="handleFileClick('${file.id}', '${file.name}', 'ingestion')" class="cursor-pointer group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/10">
+                <div class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 ${borderClass} rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl">
                     <!-- External Link (Corner) -->
-                    <a href="${file.webViewLink}" target="_blank" onclick="event.stopPropagation()" class="absolute top-2 right-2 p-1 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Abrir en Drive">
+                    <a href="${file.webViewLink}" target="_blank" class="absolute top-2 right-2 p-1 text-slate-600 hover:${contextMode === 'facturas' ? 'text-amber-400' : 'text-blue-400'} opacity-0 group-hover:opacity-100 transition-opacity" title="Abrir en Drive">
                         <i data-lucide="external-link" class="w-3 h-3"></i>
                     </a>
                     
                     <!-- Icon -->
-                    <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg ${colorClass.replace('text-', 'shadow-').replace('400', '900')}/20">
+                    <div onclick="${clickAction}" class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg ${colorClass.replace('text-', 'shadow-').replace('400', '900')}/20 cursor-pointer">
                         <i data-lucide="${iconName}" class="w-6 h-6 ${colorClass}"></i>
                     </div>
                     
                     <!-- Name -->
-                    <p class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors">${file.name}</p>
+                    <p onclick="${clickAction}" class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors cursor-pointer">${file.name}</p>
                     
                     <!-- Date -->
-                    <span class="text-[9px] text-slate-600 font-mono mt-auto">${new Date(file.modifiedTime).toLocaleDateString()}</span>
+                    <span class="text-[9px] text-slate-600 font-mono mt-auto mb-2">${new Date(file.modifiedTime).toLocaleDateString()}</span>
+                    
+                    ${contextMode === 'facturas' ? `
+                    <button onclick="window.openVisorFacturas('${file.id}', '${file.name.replace(/'/g, "\\'")}', window.currentActiveProviderId || window.globalContext?.providerId, '${file.webViewLink}')" class="w-full mt-2 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 border border-amber-500/30 hover:border-amber-500">
+                        <i data-lucide="bot" class="w-3 h-3"></i> Procesar con IA
+                    </button>
+                    ` : ''}
                 </div>
             `;
         });
@@ -372,8 +387,10 @@ function renderFileGrid(files, folderId) {
     reportDisplay.innerHTML = html;
     lucide.createIcons();
 
-    // Init Phase 5 Tabs
-    if (window.initDashboardTabs) window.initDashboardTabs();
+    // Init Phase 5 Tabs ONLY for Listas
+    if (contextMode === 'listas' && window.initDashboardTabs) {
+        window.initDashboardTabs();
+    }
 }
 
 // ============================================================================
@@ -671,25 +688,61 @@ async function showSingleSupplier(id) {
                     <i data-lucide="hard-drive" class="w-3 h-3"></i> Digital Assets
                 </h3>
                 ${supplier.drive_folder_id
-            ? `<div onclick="exploreSupplierFiles('${supplier.drive_folder_prices_id || supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
-                                <div class="flex items-center gap-3">
-                                    <div class="p-2 bg-slate-900 rounded-md text-blue-500">
-                                        <i data-lucide="${supplier.drive_folder_prices_id ? 'layers' : 'folder'}" class="w-5 h-5"></i>
-                                    </div>
-                                    <div class="flex flex-col">
-                                        <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">
-                                            ${supplier.drive_folder_prices_id ? 'Listas de Precios' : 'Carpeta Vinculada'}
-                                        </span>
-                                        <span class="text-[9px] text-slate-600 font-mono">
-                                            ID: ${(supplier.drive_folder_prices_id || supplier.drive_folder_id).substring(0, 8)}...
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    ${supplier.drive_folder_extracted_id ? '<span title="Extracciones Activas" class="w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50"></span>' : ''}
-                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors"></i>
-                                </div>
-                               </div>`
+            ? `<div class="space-y-3">
+                   <div onclick="exploreSupplierFiles('${supplier.drive_folder_prices_id || supplier.drive_folder_id}', 'listas')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
+                       <div class="flex items-center gap-3">
+                           <div class="p-2 bg-slate-900 rounded-md text-blue-500">
+                               <i data-lucide="${supplier.drive_folder_prices_id ? 'layers' : 'folder'}" class="w-5 h-5"></i>
+                           </div>
+                           <div class="flex flex-col">
+                               <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">
+                                   ${supplier.drive_folder_prices_id ? 'Listas de Precios' : 'Carpeta Vinculada'}
+                               </span>
+                               <span class="text-[9px] text-slate-600 font-mono">
+                                   ID: ${(supplier.drive_folder_prices_id || supplier.drive_folder_id).substring(0, 8)}...
+                               </span>
+                           </div>
+                       </div>
+                       <div class="flex items-center gap-2">
+                           ${supplier.drive_folder_extracted_id ? '<span title="Extracciones Activas" class="w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50"></span>' : ''}
+                           <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors"></i>
+                       </div>
+                   </div>
+                   ${supplier.drive_folder_facturas_id ? `
+                   <div onclick="exploreSupplierFiles('${supplier.drive_folder_facturas_id}', 'facturas')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-amber-500/30 transition-colors cursor-pointer">
+                       <div class="flex items-center gap-3">
+                           <div class="p-2 bg-slate-900 rounded-md text-amber-500">
+                               <i data-lucide="receipt" class="w-5 h-5"></i>
+                           </div>
+                           <div class="flex flex-col">
+                               <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">
+                                   Bandeja de Facturas
+                               </span>
+                               <span class="text-[9px] text-slate-600 font-mono">
+                                   ID: ${supplier.drive_folder_facturas_id.substring(0, 8)}...
+                               </span>
+                           </div>
+                       </div>
+                       <div class="flex items-center gap-2">
+                           <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-amber-400 transition-colors"></i>
+                       </div>
+                   </div>` : `
+                   <div id="btnCrearFacturas_${supplier.id}" onclick="event.stopPropagation(); window.provisionFacturasFolder('${supplier.id}', '${supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-amber-900/50 group hover:border-amber-500/50 transition-colors cursor-pointer">
+                       <div class="flex items-center gap-3">
+                           <div class="p-2 bg-slate-900 rounded-md text-slate-500 group-hover:text-amber-500 transition-colors">
+                               <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                           </div>
+                           <div class="flex flex-col">
+                               <span class="text-xs font-bold text-slate-400 group-hover:text-white transition-colors">
+                                   Habilitar Bandeja de Facturas
+                               </span>
+                               <span class="text-[9px] text-slate-600 font-mono group-hover:text-amber-400/70">
+                                   Clic para provisionar infraestructura
+                               </span>
+                           </div>
+                       </div>
+                   </div>`}
+               </div>`
             : `<div class="text-xs text-slate-600 italic py-2">Sin carpeta vinculada</div>`
         }
             </div>
@@ -1005,6 +1058,7 @@ function resetProvisioningUI() {
     document.getElementById('h_rootId').value = "";
     document.getElementById('h_pricesId').value = "";
     document.getElementById('h_extractedId').value = "";
+    document.getElementById('h_facturasId').value = "";
     lucide.createIcons();
 }
 
@@ -1049,6 +1103,7 @@ async function triggerProvisioning() {
             document.getElementById('h_rootId').value = result.data.rootId;
             document.getElementById('h_pricesId').value = result.data.pricesId;
             document.getElementById('h_extractedId').value = result.data.extractedId;
+            document.getElementById('h_facturasId').value = result.data.facturasId;
 
             // UI Success
             driveDisplay.value = `Vinculado: ${result.data.rootId.substring(0, 8)}...`;
@@ -1076,6 +1131,46 @@ async function triggerProvisioning() {
         }
     }
 }
+
+window.provisionFacturasFolder = async function(providerId, rootId) {
+    if (!rootId) return alert("El proveedor no tiene infraestructura base.");
+    const btn = document.getElementById(`btnCrearFacturas_${providerId}`);
+    if (btn) btn.innerHTML = '<div class="p-3 text-xs text-amber-500 animate-pulse font-bold tracking-widest uppercase">Creando...</div>';
+    
+    try {
+        const baseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${baseUrl}/api/files/drive/provision-facturas`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rootId })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
+        
+        // Update Supabase
+        const { error } = await supabaseClient
+            .from('proveedores')
+            .update({ drive_folder_facturas_id: result.data.facturasId })
+            .eq('id', providerId);
+            
+        if (error) throw error;
+        
+        // Update local cache
+        const supplier = window.currentSuppliers.find(s => s.id === providerId);
+        if (supplier) supplier.drive_folder_facturas_id = result.data.facturasId;
+        
+        // Refresh view
+        if (typeof showSingleSupplier === 'function') {
+            showSingleSupplier(providerId);
+        }
+    } catch (e) {
+        alert("Error al habilitar bandeja: " + e.message);
+        if (typeof showSingleSupplier === 'function') {
+            showSingleSupplier(providerId); // Reset UI
+        }
+    }
+}
+
 
 // Función Eliminar
 async function deleteSupplier(id, nombre) {
@@ -1133,6 +1228,7 @@ async function handleSupplierSubmit(e) {
     if (!supplierData.drive_folder_id) supplierData.drive_folder_id = null;
     if (!supplierData.drive_folder_prices_id) supplierData.drive_folder_prices_id = null;
     if (!supplierData.drive_folder_extracted_id) supplierData.drive_folder_extracted_id = null;
+    if (!supplierData.drive_folder_facturas_id) supplierData.drive_folder_facturas_id = null;
 
     try {
         let error = null;
