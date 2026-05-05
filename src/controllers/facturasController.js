@@ -293,6 +293,72 @@ const facturasController = {
                 }
             }
 
+            // 4b. Obtener el Catálogo Maestro del Proveedor para Extraer Factores de Conversión
+            const { data: masterData, error: errMaster } = await supabase
+                .from('tabla_maestra_operativa')
+                .select('datos_maestros')
+                .eq('proveedor_id', factura.proveedor_id);
+
+            const masterCatalogMap = new Map();
+            if (!errMaster && masterData) {
+                masterData.forEach(row => {
+                    const dm = row.datos_maestros || {};
+                    // Buscamos heurísticamente el código
+                    let codigo = dm.codigo || dm['código'] || dm.sku || dm.SKU;
+                    if (!codigo) {
+                        for (let k in dm) {
+                            if (k.toLowerCase().includes('codigo') || k.toLowerCase().includes('código')) {
+                                codigo = dm[k]; break;
+                            }
+                        }
+                    }
+                    if (codigo) {
+                        // Cálculo exacto del factor de conversión (cant_bult * cant_valor)
+                        let factor = 1;
+                        let cantBult = 1;
+                        let cantValor = 1;
+
+                        // 1. Buscar cant_bult
+                        const keyBult = Object.keys(dm).find(k => k.toLowerCase() === 'cant_bult' || k.toLowerCase() === 'cant_bulto');
+                        if (keyBult) {
+                            const valStr = String(dm[keyBult]).replace(',', '.');
+                            const val = parseFloat(valStr);
+                            if (!isNaN(val) && val > 0) cantBult = val;
+                        }
+
+                        // 2. Buscar cant_valor
+                        const keyValor = Object.keys(dm).find(k => k.toLowerCase() === 'cant_valor' || k.toLowerCase() === 'cant_unidad');
+                        if (keyValor) {
+                            const valStr = String(dm[keyValor]).replace(',', '.');
+                            const val = parseFloat(valStr);
+                            if (!isNaN(val) && val > 0) cantValor = val;
+                        }
+
+                        factor = cantBult * cantValor;
+
+                        // Si no hay cant_bult ni cant_valor, fallback heurístico por si otro proveedor usa 'presentacion'
+                        if (factor === 1) {
+                            for (let k in dm) {
+                                const kt = k.toLowerCase();
+                                if (kt.includes('dun') || kt.includes('ean') || kt.includes('codigo') || kt.includes('barras')) {
+                                    continue;
+                                }
+                                if (kt.includes('presentacion') || kt.includes('presentación') || kt === 'peso') {
+                                    const valStr = String(dm[k]).replace(',', '.');
+                                    const val = parseFloat(valStr);
+                                    if (!isNaN(val) && val > 0) {
+                                        factor = val;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        masterCatalogMap.set(String(codigo).trim().toLowerCase(), factor);
+                    }
+                });
+            }
+
             // 5. MOTOR DE MATCHMAKING
             let totalDesvios = 0;
             const matchReport = [];
@@ -328,11 +394,27 @@ const facturasController = {
                 }
 
                 const cantR = recibidosMap[match.id] || 0;
-                const precioP = parseFloat(match.valor_unitario_ref || 0);
+                let precioP = parseFloat(match.valor_unitario_ref || 0);
+
+                // 5b. Aplicar Factor de Conversión
+                const matchCodigo = String(match.producto_codigo || '').trim().toLowerCase();
+                const factorConversion = masterCatalogMap.get(matchCodigo) || 1;
+                
+                // El precio pactado viene por Kilo/Unidad base, lo multiplicamos por la presentación de la caja
+                if (factorConversion !== 1) {
+                    precioP = parseFloat((precioP * factorConversion).toFixed(2));
+                }
+
+                // Cálculo de Deltas
+                const deltaMonto = parseFloat((precioF - precioP).toFixed(2));
+                let deltaPorcentaje = 0;
+                if (precioP > 0) {
+                    deltaPorcentaje = parseFloat(((deltaMonto / precioP) * 100).toFixed(2));
+                }
 
                 const desvios = [];
                 if (cantF > cantR) desvios.push(`Faltante Físico: Cobran ${cantF} pero se recibió ${cantR}`);
-                if (precioF > precioP) desvios.push(`Desvío Precio: Facturado a $${precioF} (Pactado: $${precioP})`);
+                if (Math.abs(deltaMonto) > 25.0) desvios.push(`Desvío Precio: Facturado a $${precioF} (Pactado: $${precioP})`);
 
                 if (desvios.length > 0) totalDesvios++;
 
@@ -342,9 +424,13 @@ const facturasController = {
                     pedido: {
                         codigo: match.producto_codigo,
                         descripcion: match.producto_descripcion,
-                        precio_unitario: precioP
+                        precio_unitario_base: parseFloat(match.valor_unitario_ref || 0),
+                        factor_conversion: factorConversion,
+                        precio_unitario: precioP // Ya convertido
                     },
                     recibido: cantR,
+                    delta_monto: deltaMonto,
+                    delta_porcentaje: deltaPorcentaje,
                     desvios: desvios
                 });
             }

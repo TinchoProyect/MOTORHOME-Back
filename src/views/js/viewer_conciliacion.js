@@ -57,10 +57,10 @@ window.openConciliacionModal = async function(facturaId) {
             articulos.forEach(art => {
                 facTbody.innerHTML += `
                     <tr class="hover:bg-slate-800/30">
-                        <td class="px-3 py-2 font-mono text-[10px] text-slate-400">${art.codigo || '-'}</td>
-                        <td class="px-3 py-2 text-[10px] text-slate-300 line-clamp-1" title="${art.descripcion}">${art.descripcion || '-'}</td>
-                        <td class="px-3 py-2 font-mono text-[10px] text-center text-blue-400 font-bold">${art.cantidad || 0}</td>
-                        <td class="px-3 py-2 font-mono text-[10px] text-right text-slate-400">$${art.precio_unitario || 0}</td>
+                        <td class="px-3 py-2 font-mono text-xs text-slate-400">${art.codigo || '-'}</td>
+                        <td class="px-3 py-2 text-xs text-slate-300 line-clamp-1" title="${art.descripcion}">${art.descripcion || '-'}</td>
+                        <td class="px-3 py-2 font-mono text-sm text-center text-blue-400 font-bold">${art.cantidad || 0}</td>
+                        <td class="px-3 py-2 font-mono text-sm font-bold text-right text-slate-200">$${art.precio_unitario || 0}</td>
                     </tr>
                 `;
             });
@@ -169,16 +169,29 @@ window.onConciliacionPedidoChange = async function() {
 
             let logisticaHtml = '-';
             if (row.pedido) {
-                logisticaHtml = `<span class="text-[9px] text-slate-500 block">${row.pedido.codigo}</span><span class="line-clamp-1" title="${row.pedido.descripcion}">${row.pedido.descripcion}</span>`;
+                const facDesc = row.pedido.factor_conversion > 1 ? ` (x${row.pedido.factor_conversion})` : '';
+                logisticaHtml = `<span class="text-[10px] text-slate-500 block">${row.pedido.codigo}</span><span class="line-clamp-1 text-xs" title="${row.pedido.descripcion}">${row.pedido.descripcion}${facDesc}</span>`;
             } else {
-                logisticaHtml = `<span class="text-red-400 italic text-[10px]">No hallado en Pedido</span>`;
+                logisticaHtml = `<span class="text-red-400 italic text-xs">No hallado en Pedido</span>`;
+            }
+
+            let deltaHtml = '<span class="text-slate-500 font-mono text-xs">-</span>';
+            if (row.pedido && row.delta_monto !== undefined) {
+                if (row.delta_monto > 0.1) {
+                    deltaHtml = `<span class="text-red-400 font-bold font-mono text-sm" title="Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto} (+${row.delta_porcentaje}%)</span>`;
+                } else if (row.delta_monto < -0.1) {
+                    deltaHtml = `<span class="text-emerald-400 font-bold font-mono text-sm" title="Nos cobran más barato">-$${window.formatCurrency ? window.formatCurrency(Math.abs(row.delta_monto)) : Math.abs(row.delta_monto)} (${row.delta_porcentaje}%)</span>`;
+                } else {
+                    deltaHtml = `<span class="text-slate-500 font-mono text-sm">0%</span>`;
+                }
             }
 
             tbody.innerHTML += `
                 <tr class="hover:bg-slate-800/30">
-                    <td class="px-3 py-2 text-[10px] text-slate-300 leading-tight">${logisticaHtml}</td>
-                    <td class="px-3 py-2 font-mono text-[10px] text-center ${cantClass}">${row.recibido}</td>
-                    <td class="px-3 py-2 font-mono text-[10px] text-right ${priceClass}">$${row.pedido ? row.pedido.precio_unitario : 0}</td>
+                    <td class="px-3 py-2 text-slate-300 leading-tight">${logisticaHtml}</td>
+                    <td class="px-3 py-2 font-mono text-sm text-center ${cantClass}">${row.recibido}</td>
+                    <td class="px-3 py-2 font-mono text-sm font-bold text-right ${priceClass}">$${row.pedido ? (window.formatCurrency ? window.formatCurrency(row.pedido.precio_unitario) : row.pedido.precio_unitario) : 0}</td>
+                    <td class="px-3 py-2 text-right">${deltaHtml}</td>
                     <td class="px-3 py-2 text-center cursor-help">${statusIcon}</td>
                 </tr>
             `;
