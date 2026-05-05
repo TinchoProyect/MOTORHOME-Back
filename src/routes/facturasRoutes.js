@@ -11,4 +11,7 @@ router.get('/pdf/:fileId', facturasController.getPdfProxy);
 // Guardar validación HITL
 router.put('/:id', facturasController.saveHITL);
 
+// Obtener facturas procesadas de un proveedor
+router.get('/provider/:providerId', facturasController.getByProvider);
+
 module.exports = router;

@@ -230,11 +230,15 @@ async function exploreSupplierFiles(folderId, contextMode = 'listas') {
         if (contextMode === 'facturas') {
             const pid = window.currentActiveProviderId || window.globalContext?.providerId;
             if (pid) {
-                const { data: factData } = await supabaseClient
-                    .from('facturas_raw')
-                    .select('*')
-                    .eq('proveedor_id', pid);
-                processedDB = factData || [];
+                try {
+                    const resDB = await fetch(`${backendBaseUrl}/api/facturas/provider/${pid}`);
+                    const dbJson = await resDB.json();
+                    if (dbJson.success) {
+                        processedDB = dbJson.data || [];
+                    }
+                } catch (e) {
+                    console.error("[exploreSupplierFiles] Error fetching facturas db:", e);
+                }
             }
         }
 
@@ -362,6 +366,15 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
         `;
     } else {
         if (contextMode === 'facturas') {
+            // Group by Month/Year
+            const groupedFiles = {};
+            driveFiles.forEach(file => {
+                const d = new Date(file.modifiedTime);
+                const monthYear = d.toLocaleString('es-AR', { month: 'long', year: 'numeric' }).toUpperCase();
+                if (!groupedFiles[monthYear]) groupedFiles[monthYear] = [];
+                groupedFiles[monthYear].push(file);
+            });
+
             // Render as Table
             html += `
             <div class="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 m-2 mt-2 shadow-inner">
@@ -376,30 +389,42 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
                     </thead>
                     <tbody class="divide-y divide-slate-800/50">
             `;
-            driveFiles.forEach(file => {
-                const isPending = file._isPending;
-                const statusBadge = isPending 
-                    ? '<span class="px-2 py-1 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">BORRADOR / PRE-EXTRAÍDA</span>' 
-                    : '<span class="px-2 py-1 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">NUEVA</span>';
-
+            
+            for (const [monthYear, gFiles] of Object.entries(groupedFiles)) {
                 html += `
-                <tr class="hover:bg-slate-800/30 transition-colors group">
-                    <td class="p-4">
-                        <div class="flex items-center gap-3">
-                            <i data-lucide="file-text" class="w-4 h-4 text-red-400"></i>
-                            <span class="font-medium text-slate-300 line-clamp-1 group-hover:text-amber-400 cursor-pointer transition-colors" onclick="window.open('${file.webViewLink}', '_blank')" title="Abrir PDF original">${file.name}</span>
-                        </div>
-                    </td>
-                    <td class="p-4 font-mono text-[10px] text-slate-500">${new Date(file.modifiedTime).toLocaleDateString()}</td>
-                    <td class="p-4 text-center">${statusBadge}</td>
-                    <td class="p-4 text-right">
-                        <button id="btn_ai_${file.id}" onclick="window.openVisorFacturas('${file.id}', '${file.name.replace(/'/g, "\\'")}', window.currentActiveProviderId || window.globalContext?.providerId, '${file.webViewLink}', this)" class="px-4 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all inline-flex items-center gap-1.5 border border-amber-500/30 hover:border-amber-500">
-                            <i data-lucide="bot" class="w-3 h-3 pointer-events-none"></i> <span class="pointer-events-none">Procesar con IA</span>
-                        </button>
-                    </td>
-                </tr>
+                    <tr>
+                        <td colspan="4" class="p-2 bg-slate-800/50 border-y border-slate-700/50">
+                            <span class="text-[10px] font-bold text-emerald-500 tracking-widest uppercase ml-2 flex items-center gap-2">
+                                <i data-lucide="calendar-days" class="w-3 h-3"></i> ${monthYear}
+                            </span>
+                        </td>
+                    </tr>
                 `;
-            });
+                gFiles.forEach(file => {
+                    const isPending = file._isPending;
+                    const statusBadge = isPending 
+                        ? '<span class="px-2 py-1 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">BORRADOR / PRE-EXTRAÍDA</span>' 
+                        : '<span class="px-2 py-1 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">NUEVA</span>';
+
+                    html += `
+                    <tr class="hover:bg-slate-800/30 transition-colors group">
+                        <td class="p-4">
+                            <div class="flex items-center gap-3">
+                                <i data-lucide="file-text" class="w-4 h-4 text-red-400"></i>
+                                <span class="font-medium text-slate-300 line-clamp-1 group-hover:text-amber-400 cursor-pointer transition-colors" onclick="window.open('${file.webViewLink}', '_blank')" title="Abrir PDF original">${file.name}</span>
+                            </div>
+                        </td>
+                        <td class="p-4 font-mono text-[10px] text-slate-500">${new Date(file.modifiedTime).toLocaleDateString()}</td>
+                        <td class="p-4 text-center">${statusBadge}</td>
+                        <td class="p-4 text-right">
+                            <button id="btn_ai_${file.id}" onclick="window.openVisorFacturas('${file.id}', '${file.name.replace(/'/g, "\\'")}', window.currentActiveProviderId || window.globalContext?.providerId, '${file.webViewLink}', this)" class="px-4 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all inline-flex items-center gap-1.5 border border-amber-500/30 hover:border-amber-500">
+                                <i data-lucide="bot" class="w-3 h-3 pointer-events-none"></i> <span class="pointer-events-none">Procesar con IA</span>
+                            </button>
+                        </td>
+                    </tr>
+                    `;
+                });
+            }
             html += `
                     </tbody>
                 </table>

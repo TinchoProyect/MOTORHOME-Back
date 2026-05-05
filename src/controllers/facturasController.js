@@ -144,6 +144,25 @@ const facturasController = {
             console.error("[FacturasController] Error getPdfProxy:", error);
             res.status(500).send("No se pudo cargar el PDF");
         }
+    },
+
+    getByProvider: async (req, res) => {
+        const { providerId } = req.params;
+        if (!providerId) return res.status(400).json({ error: "Missing providerId" });
+
+        try {
+            const { data, error } = await supabase
+                .from('facturas_raw')
+                .select('*')
+                .eq('proveedor_id', providerId);
+
+            if (error) throw error;
+
+            return res.json({ success: true, data: data || [] });
+        } catch (error) {
+            console.error("[FacturasController] Error getByProvider:", error);
+            res.status(500).json({ error: error.message });
+        }
     }
 };
 
