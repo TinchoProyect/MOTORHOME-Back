@@ -552,7 +552,7 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
         };
     },
 
-    executeInvoiceExtraction: async (base64Data, mimeType) => {
+    executeInvoiceExtraction: async (base64Data, mimeType, mapaExtraccion = null) => {
         if (!genAI) throw new Error("Gemini API no inicializada");
 
         console.log(`[AI Service - Facturas] ⏱️ Ejecutando Motor Chofer en documento...`);
@@ -567,9 +567,10 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
             generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
         });
 
-        const systemInstruction = `Eres un auditor fiscal de altísima precisión ("Chofer") especializado en facturación electrónica de Argentina (AFIP).
+        let systemInstruction = `Eres un auditor fiscal de altísima precisión ("Chofer") especializado en facturación electrónica de Argentina (AFIP).
 Se te provee un comprobante fiscal. Tu tarea es extraer la metadata y totales, y devolver estrictamente un objeto JSON plano.
 
+${mapaExtraccion ? `[INSTRUCCIONES DE EXTRACCIÓN ESPECÍFICAS PARA ESTE PROVEEDOR (¡PRIORIDAD MÁXIMA!)]\n${mapaExtraccion}\n` : ''}
 REGLAS DE EXTRACCIÓN:
 1. "cuit_emisor": El CUIT del emisor (solo números o formato XX-XXXXXXXX-X).
 2. "tipo_comprobante": Factura A, Factura B, Factura C, Nota de Crédito A, etc.

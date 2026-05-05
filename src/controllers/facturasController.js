@@ -45,6 +45,19 @@ const facturasController = {
             // Construimos el Data URI esperado por el Motor Chofer
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
             
+            // 3. Obtener el Mapa de Extracción IA específico del proveedor
+            let mapaExtraccion = null;
+            const { data: proveedorInfo } = await supabase
+                .from('proveedores')
+                .select('mapa_extraccion_ia')
+                .eq('id', providerId)
+                .single();
+            
+            if (proveedorInfo && proveedorInfo.mapa_extraccion_ia) {
+                mapaExtraccion = proveedorInfo.mapa_extraccion_ia;
+                console.log(`[FacturasController] Mapa de Extracción detectado para el proveedor. Inyectando directivas en IA.`);
+            }
+
             let intentos = 0;
             const MAX_INTENTOS = 3;
             let saneamientoJson = null;
@@ -54,7 +67,7 @@ const facturasController = {
                 console.log(`[FacturasController] Extracción IA (Intento ${intentos}/${MAX_INTENTOS})...`);
                 
                 try {
-                    const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType);
+                    const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType, mapaExtraccion);
                     
                     // ==========================================
                     // MIDDLEWARE DE SANEAMIENTO Y CHECKSUM

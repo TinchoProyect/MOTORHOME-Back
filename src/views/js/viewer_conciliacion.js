@@ -59,8 +59,8 @@ window.openConciliacionModal = async function(facturaId) {
                     <tr class="hover:bg-slate-800/30">
                         <td class="px-3 py-2 font-mono text-xs text-slate-400">${art.codigo || '-'}</td>
                         <td class="px-3 py-2 text-xs text-slate-300 line-clamp-1" title="${art.descripcion}">${art.descripcion || '-'}</td>
-                        <td class="px-3 py-2 font-mono text-sm text-center text-blue-400 font-bold">${art.cantidad || 0}</td>
-                        <td class="px-3 py-2 font-mono text-sm font-bold text-right text-slate-200">$${art.precio_unitario || 0}</td>
+                        <td class="px-3 py-2 font-mono text-2xl text-center text-blue-400 font-bold">${window.formatCurrency ? window.formatCurrency(art.cantidad || 0) : (art.cantidad || 0)}</td>
+                        <td class="px-3 py-2 font-mono text-2xl font-bold text-right text-slate-200">$${window.formatCurrency ? window.formatCurrency(art.precio_unitario || 0) : (art.precio_unitario || 0)}</td>
                     </tr>
                 `;
             });
@@ -86,7 +86,8 @@ window.openConciliacionModal = async function(facturaId) {
                 if (descItems.length > 0) {
                     const firstTwo = descItems.slice(0, 2).join(', ');
                     snippet = ` (${firstTwo}${descItems.length > 2 ? '...' : ''})`;
-                    fullTooltip = descItems.join(' | ');
+                    // [TICKET UX] Formato de lista con salto de línea (\n codificado como &#10;)
+                    fullTooltip = descItems.map(d => `• ${d}`).join('&#10;');
                 } else {
                     snippet = ' (Sin detalle)';
                     fullTooltip = 'Sin detalle de artículos';
@@ -175,22 +176,22 @@ window.onConciliacionPedidoChange = async function() {
                 logisticaHtml = `<span class="text-red-400 italic text-xs">No hallado en Pedido</span>`;
             }
 
-            let deltaHtml = '<span class="text-slate-500 font-mono text-xs">-</span>';
+            let deltaHtml = '<span class="text-slate-500 font-mono text-2xl">-</span>';
             if (row.pedido && row.delta_monto !== undefined) {
                 if (row.delta_monto > 0.1) {
-                    deltaHtml = `<span class="text-red-400 font-bold font-mono text-sm" title="Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto} (+${row.delta_porcentaje}%)</span>`;
+                    deltaHtml = `<span class="text-red-400 font-bold font-mono text-2xl" title="Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto} (+${row.delta_porcentaje}%)</span>`;
                 } else if (row.delta_monto < -0.1) {
-                    deltaHtml = `<span class="text-emerald-400 font-bold font-mono text-sm" title="Nos cobran más barato">-$${window.formatCurrency ? window.formatCurrency(Math.abs(row.delta_monto)) : Math.abs(row.delta_monto)} (${row.delta_porcentaje}%)</span>`;
+                    deltaHtml = `<span class="text-emerald-400 font-bold font-mono text-2xl" title="Nos cobran más barato">-$${window.formatCurrency ? window.formatCurrency(Math.abs(row.delta_monto)) : Math.abs(row.delta_monto)} (${row.delta_porcentaje}%)</span>`;
                 } else {
-                    deltaHtml = `<span class="text-slate-500 font-mono text-sm">0%</span>`;
+                    deltaHtml = `<span class="text-slate-500 font-mono text-2xl">0%</span>`;
                 }
             }
 
             tbody.innerHTML += `
                 <tr class="hover:bg-slate-800/30">
                     <td class="px-3 py-2 text-slate-300 leading-tight">${logisticaHtml}</td>
-                    <td class="px-3 py-2 font-mono text-sm text-center ${cantClass}">${row.recibido}</td>
-                    <td class="px-3 py-2 font-mono text-sm font-bold text-right ${priceClass}">$${row.pedido ? (window.formatCurrency ? window.formatCurrency(row.pedido.precio_unitario) : row.pedido.precio_unitario) : 0}</td>
+                    <td class="px-3 py-2 font-mono text-2xl text-center ${cantClass}">${row.recibido}</td>
+                    <td class="px-3 py-2 font-mono text-2xl font-bold text-right ${priceClass}">$${row.pedido ? (window.formatCurrency ? window.formatCurrency(row.pedido.precio_unitario) : row.pedido.precio_unitario) : 0}</td>
                     <td class="px-3 py-2 text-right">${deltaHtml}</td>
                     <td class="px-3 py-2 text-center cursor-help">${statusIcon}</td>
                 </tr>
@@ -301,8 +302,8 @@ window.viewFacturaDetails = async function(facturaId) {
                                     <tr class="hover:bg-slate-800/50">
                                         <td class="px-3 py-2 font-mono text-[10px] text-slate-400">${art.codigo || '-'}</td>
                                         <td class="px-3 py-2 line-clamp-1" title="${art.descripcion}">${art.descripcion || '-'}</td>
-                                        <td class="px-3 py-2 text-center font-bold text-blue-400">${art.cantidad || 0}</td>
-                                        <td class="px-3 py-2 text-right font-mono text-amber-400">$${art.precio_unitario || 0}</td>
+                                        <td class="px-3 py-2 text-center font-bold text-blue-400">${window.formatCurrency ? window.formatCurrency(art.cantidad || 0) : (art.cantidad || 0)}</td>
+                                        <td class="px-3 py-2 text-right font-mono text-amber-400">$${window.formatCurrency ? window.formatCurrency(art.precio_unitario || 0) : (art.precio_unitario || 0)}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
