@@ -1,5 +1,6 @@
 const aiService = require('../services/aiService');
 const driveService = require('../services/driveService');
+const { applyBillingRule } = require('../services/billingRules');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -43,51 +44,39 @@ const facturasController = {
             
             // Construimos el Data URI esperado por el Motor Chofer
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
-            const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType);
-
-            // ==========================================
-            // MIDDLEWARE DE SANEAMIENTO FINANCIERO
-            // ==========================================
-            const descuentoGlobal = parseFloat(extractedJson.descuento_global_aplicado || 0);
-            const netoGravado = parseFloat(extractedJson.importe_neto_gravado || 0);
             
-            if (extractedJson.articulos && extractedJson.articulos.length > 0) {
-                let factorDescuento = 1.0;
+            let intentos = 0;
+            const MAX_INTENTOS = 3;
+            let saneamientoJson = null;
+
+            while (intentos < MAX_INTENTOS) {
+                intentos++;
+                console.log(`[FacturasController] Extracción IA (Intento ${intentos}/${MAX_INTENTOS})...`);
                 
-                if (descuentoGlobal > 0 && netoGravado > 0) {
-                    let sumaSubtotales = 0;
-                    extractedJson.articulos.forEach(art => {
-                        const cant = parseFloat(art.cantidad || 1);
-                        const pu = parseFloat(art.precio_unitario || 0);
-                        sumaSubtotales += parseFloat(art.subtotal || (cant * pu));
-                    });
-
-                    if (sumaSubtotales > 0) {
-                        // El factor de descuento es la proporción entre lo que realmente se cobra neto y la suma de subtotales impresos
-                        factorDescuento = netoGravado / sumaSubtotales;
+                try {
+                    const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType);
+                    
+                    // ==========================================
+                    // MIDDLEWARE DE SANEAMIENTO Y CHECKSUM
+                    // ==========================================
+                    saneamientoJson = applyBillingRule(providerId, null, extractedJson);
+                    
+                    if (saneamientoJson.checksum_valido) {
+                        console.log(`[FacturasController] Checksum Verde logrado en intento ${intentos}. Éxito.`);
+                        break;
+                    } else {
+                        console.warn(`[FacturasController] Checksum Rojo en intento ${intentos}. Desvío: $${saneamientoJson.checksum_diferencia}`);
                     }
+                } catch (iaError) {
+                    console.error(`[FacturasController] Fallo en servicio IA en intento ${intentos}:`, iaError.message);
+                    if (intentos >= MAX_INTENTOS) throw iaError;
                 }
-
-                // Sanear decimales y aplicar factor
-                extractedJson.articulos = extractedJson.articulos.map(art => {
-                    const cant = parseFloat(art.cantidad || 1);
-                    let puOriginal = parseFloat(art.precio_unitario || 0);
-                    
-                    let puProrrateado = puOriginal * factorDescuento;
-                    
-                    // Sanear a 2 decimales (Redondeo Comercial)
-                    puProrrateado = Math.round(puProrrateado * 100) / 100;
-                    const subtotalSaneado = Math.round(cant * puProrrateado * 100) / 100;
-
-                    return {
-                        ...art,
-                        precio_unitario_original: puOriginal,
-                        precio_unitario: puProrrateado,
-                        subtotal: subtotalSaneado
-                    };
-                });
             }
-            // ==========================================
+
+            // Si agotó intentos y no tiene data válida, tiramos error o seguimos con el rojo
+            if (!saneamientoJson) {
+                throw new Error("La Inteligencia Artificial falló en retornar un JSON estructurado luego de 3 intentos.");
+            }
 
             // 4. Save or Update Database
             const newRecord = {
@@ -95,23 +84,23 @@ const facturasController = {
                 archivo_id: fileId,
                 archivo_nombre: fileName,
                 status: 'PENDIENTE',
-                cuit_emisor: extractedJson.cuit_emisor || null,
-                punto_venta: extractedJson.punto_venta || null,
-                numero_comprobante: extractedJson.numero_comprobante || null,
-                tipo_comprobante: extractedJson.tipo_comprobante || null,
-                fecha_emision: extractedJson.fecha_emision || null,
-                fecha_vto_cae: extractedJson.fecha_vto_cae || null,
-                cae: extractedJson.cae || null,
-                importe_neto_gravado: extractedJson.importe_neto_gravado || 0,
-                importe_iva_21: extractedJson.importe_iva_21 || 0,
-                importe_iva_105: extractedJson.importe_iva_105 || 0,
-                importe_iva_27: extractedJson.importe_iva_27 || 0,
-                percepciones_iibb: extractedJson.percepciones_iibb || 0,
-                percepciones_iva: extractedJson.percepciones_iva || 0,
-                conceptos_no_gravados: extractedJson.conceptos_no_gravados || 0,
-                importe_total: extractedJson.importe_total || 0,
-                articulos: extractedJson.articulos || [],
-                datos_extraidos: extractedJson
+                cuit_emisor: saneamientoJson.cuit_emisor || null,
+                punto_venta: saneamientoJson.punto_venta || null,
+                numero_comprobante: saneamientoJson.numero_comprobante || null,
+                tipo_comprobante: saneamientoJson.tipo_comprobante || null,
+                fecha_emision: saneamientoJson.fecha_emision || null,
+                fecha_vto_cae: saneamientoJson.fecha_vto_cae || null,
+                cae: saneamientoJson.cae || null,
+                importe_neto_gravado: saneamientoJson.importe_neto_gravado || 0,
+                importe_iva_21: saneamientoJson.importe_iva_21 || 0,
+                importe_iva_105: saneamientoJson.importe_iva_105 || 0,
+                importe_iva_27: saneamientoJson.importe_iva_27 || 0,
+                percepciones_iibb: saneamientoJson.percepciones_iibb || 0,
+                percepciones_iva: saneamientoJson.percepciones_iva || 0,
+                conceptos_no_gravados: saneamientoJson.conceptos_no_gravados || 0,
+                importe_total: saneamientoJson.importe_total || 0,
+                articulos: saneamientoJson.articulos || [],
+                datos_extraidos: saneamientoJson
             };
 
             let finalData;

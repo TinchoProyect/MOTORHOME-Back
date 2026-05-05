@@ -28,11 +28,17 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
     }
 
     // Clear form preventivamente
-    const inputs = ['fac_cuit', 'fac_fecha', 'fac_tipo', 'fac_pto', 'fac_num', 'fac_neto', 'fac_iva21', 'fac_iva105', 'fac_perc_iibb', 'fac_perc_iva', 'fac_nograv', 'fac_total', 'fac_cae', 'fac_vto_cae', 'fac_id_db', 'fac_file_id'];
+    const inputs = ['fac_cuit', 'fac_fecha', 'fac_tipo', 'fac_pto', 'fac_num', 'fac_neto', 'fac_iva21', 'fac_iva105', 'fac_perc_iibb', 'fac_perc_iva', 'fac_nograv', 'fac_total', 'fac_cae', 'fac_vto_cae', 'fac_id_db', 'fac_file_id', 'fac_descuento_global'];
     inputs.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
+    
+    const cs = document.getElementById('fac_checksum_status');
+    if (cs) {
+        cs.classList.add('hidden');
+        cs.innerHTML = '';
+    }
     
     document.getElementById('fac_file_id').value = fileId;
 
@@ -70,6 +76,33 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
         document.getElementById('fac_perc_iva').value = window.formatCurrency(data.percepciones_iva || 0);
         document.getElementById('fac_nograv').value = window.formatCurrency(data.conceptos_no_gravados || 0);
         document.getElementById('fac_total').value = window.formatCurrency(data.importe_total || 0);
+        
+        // Descuento Global o Bonificación
+        const ext = data.datos_extraidos || {};
+        const bPct = ext.bonificacion_porcentaje || 0;
+        const dGlob = ext.descuento_global_aplicado || 0;
+        const descField = document.getElementById('fac_descuento_global');
+        if (descField) {
+            if (bPct > 0) {
+                descField.value = `${bPct}%`;
+            } else if (dGlob > 0) {
+                descField.value = `$ ${window.formatCurrency(dGlob)}`;
+            } else {
+                descField.value = '0.00';
+            }
+        }
+
+        // Checksum Status
+        const cs = document.getElementById('fac_checksum_status');
+        if (cs && ext.checksum_valido !== undefined) {
+            cs.classList.remove('hidden');
+            if (ext.checksum_valido) {
+                cs.innerHTML = `<i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-500" title="Checksum Válido: Diferencia de $${ext.checksum_diferencia}"></i>`;
+            } else {
+                cs.innerHTML = `<i data-lucide="alert-triangle" class="w-5 h-5 text-red-500" title="Checksum Fallido: Desvío de $${ext.checksum_diferencia}"></i>`;
+            }
+            if (window.lucide) window.lucide.createIcons();
+        }
         
         window.currentArticulos = data.articulos || [];
         window.renderGridArticulos();
@@ -157,6 +190,33 @@ window.calcularTotalesFactura = function() {
         totalInput.classList.remove('border-red-500', 'text-red-400', 'border-amber-900/50', 'text-amber-400');
         totalInput.classList.add('border-emerald-500', 'text-emerald-400');
         if (statusIcon) statusIcon.classList.remove('hidden');
+    }
+
+    // =====================================
+    // CHECKSUM DETERMINISTA (Grilla vs Neto Gravado)
+    // =====================================
+    const cs = document.getElementById('fac_checksum_status');
+    const btnSave = document.getElementById('btn_save_factura_hitl');
+    
+    if (cs) {
+        const diffChecksum = Math.abs(sumaArticulos - neto);
+        cs.classList.remove('hidden');
+        if (diffChecksum <= 5.00) {
+            cs.innerHTML = `<i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-500" title="Checksum Válido (Grilla coincide con Neto Gravado)"></i>`;
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.classList.remove('cursor-not-allowed', 'bg-slate-800', 'text-slate-500');
+                btnSave.classList.add('bg-amber-600', 'hover:bg-amber-500', 'text-white', 'shadow-amber-600/30');
+            }
+        } else {
+            cs.innerHTML = `<i data-lucide="alert-triangle" class="w-5 h-5 text-red-500" title="Checksum Fallido: Desvío de $${window.formatCurrency(diffChecksum)} entre Grilla y Neto"></i>`;
+            if (btnSave) {
+                btnSave.disabled = true;
+                btnSave.classList.add('cursor-not-allowed', 'bg-slate-800', 'text-slate-500');
+                btnSave.classList.remove('bg-amber-600', 'hover:bg-amber-500', 'text-white', 'shadow-amber-600/30');
+            }
+        }
+        if (window.lucide) window.lucide.createIcons();
     }
 };
 
