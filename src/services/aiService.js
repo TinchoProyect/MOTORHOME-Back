@@ -579,6 +579,15 @@ REGLAS DE EXTRACCIÓN:
 6. "cae": El código de autorización electrónico.
 7. "fecha_vto_cae": Fecha de vencimiento del CAE (YYYY-MM-DD).
 
+REGLAS PARA GRILLA DE ARTÍCULOS (NUEVO REQUISITO OBLIGATORIO):
+Identifica la tabla o matriz donde se listan los artículos/productos facturados.
+Extrae una lista de objetos JSON bajo la clave "articulos", cada uno con:
+- "codigo": Código interno del producto (si no tiene, devuelve string vacío "").
+- "descripcion": El nombre o descripción literal del artículo.
+- "cantidad": Valor numérico flotante. Si no hay, asume 1.
+- "precio_unitario": El importe unitario como número flotante.
+- "subtotal": El importe total de esa línea (cantidad * precio_unitario), como flotante.
+
 REGLAS NUMÉRICAS PARA TOTALES (OBLIGATORIO):
 Extrae los importes numéricos. Si no existen, devuelve 0. Deben ser floats válidos.
 - "importe_neto_gravado": El importe neto o subtotal sin impuestos.
@@ -606,7 +615,16 @@ ESTRUCTURA JSON REQUERIDA:
   "percepciones_iibb": 0.0,
   "percepciones_iva": 0.0,
   "conceptos_no_gravados": 0.0,
-  "importe_total": 0.0
+  "importe_total": 0.0,
+  "articulos": [
+    {
+      "codigo": "...",
+      "descripcion": "...",
+      "cantidad": 0.0,
+      "precio_unitario": 0.0,
+      "subtotal": 0.0
+    }
+  ]
 }`;
 
         const prompt = [

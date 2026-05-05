@@ -22,8 +22,16 @@ const facturasController = {
                 .single();
 
             if (existing) {
-                console.log(`[FacturasController] Factura ya extraída previamente. Retornando caché.`);
-                return res.json({ success: true, data: existing });
+                // Verificar si la extracción antigua no tiene la grilla de artículos (Refinamiento Etapa 2)
+                const hasArticulos = existing.articulos && Array.isArray(existing.articulos) && existing.articulos.length > 0;
+                
+                if (hasArticulos || existing.status === 'REVISADO_HITL') {
+                    console.log(`[FacturasController] Factura ya extraída previamente con grilla. Retornando caché.`);
+                    return res.json({ success: true, data: existing });
+                } else {
+                    console.log(`[FacturasController] Caché antigua detectada sin artículos. Forzando re-extracción IA...`);
+                    // Procederá a descargar y extraer de nuevo, haciendo un UPDATE al final en lugar de INSERT
+                }
             }
 
             // 2. Descargar el Buffer binario directamente del Drive
@@ -37,7 +45,7 @@ const facturasController = {
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
             const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType);
 
-            // 4. Save to Database
+            // 4. Save or Update Database
             const newRecord = {
                 proveedor_id: providerId,
                 archivo_id: fileId,
@@ -58,18 +66,35 @@ const facturasController = {
                 percepciones_iva: extractedJson.percepciones_iva || 0,
                 conceptos_no_gravados: extractedJson.conceptos_no_gravados || 0,
                 importe_total: extractedJson.importe_total || 0,
+                articulos: extractedJson.articulos || [],
                 datos_extraidos: extractedJson
             };
 
-            const { data: inserted, error: insertError } = await supabase
-                .from('facturas_raw')
-                .insert([newRecord])
-                .select()
-                .single();
+            let finalData;
+            if (existing) {
+                // Actualizar registro existente (Refinamiento retroactivo)
+                const { data: updated, error: updateError } = await supabase
+                    .from('facturas_raw')
+                    .update(newRecord)
+                    .eq('id', existing.id)
+                    .select()
+                    .single();
+                
+                if (updateError) throw updateError;
+                finalData = updated;
+            } else {
+                // Insertar nuevo registro
+                const { data: inserted, error: insertError } = await supabase
+                    .from('facturas_raw')
+                    .insert([newRecord])
+                    .select()
+                    .single();
 
-            if (insertError) throw insertError;
+                if (insertError) throw insertError;
+                finalData = inserted;
+            }
 
-            return res.json({ success: true, data: inserted });
+            return res.json({ success: true, data: finalData });
 
         } catch (error) {
             console.error("[FacturasController] Error:", error);

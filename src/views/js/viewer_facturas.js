@@ -60,13 +60,16 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
         document.getElementById('fac_pto').value = data.punto_venta || '';
         document.getElementById('fac_num').value = data.numero_comprobante || '';
         
-        document.getElementById('fac_neto').value = Number(data.importe_neto_gravado || 0).toFixed(2);
-        document.getElementById('fac_iva21').value = Number(data.importe_iva_21 || 0).toFixed(2);
-        document.getElementById('fac_iva105').value = Number(data.importe_iva_105 || 0).toFixed(2);
-        document.getElementById('fac_perc_iibb').value = Number(data.percepciones_iibb || 0).toFixed(2);
-        document.getElementById('fac_perc_iva').value = Number(data.percepciones_iva || 0).toFixed(2);
-        document.getElementById('fac_nograv').value = Number(data.conceptos_no_gravados || 0).toFixed(2);
-        document.getElementById('fac_total').value = Number(data.importe_total || 0).toFixed(2);
+        document.getElementById('fac_neto').value = window.formatCurrency(data.importe_neto_gravado || 0);
+        document.getElementById('fac_iva21').value = window.formatCurrency(data.importe_iva_21 || 0);
+        document.getElementById('fac_iva105').value = window.formatCurrency(data.importe_iva_105 || 0);
+        document.getElementById('fac_perc_iibb').value = window.formatCurrency(data.percepciones_iibb || 0);
+        document.getElementById('fac_perc_iva').value = window.formatCurrency(data.percepciones_iva || 0);
+        document.getElementById('fac_nograv').value = window.formatCurrency(data.conceptos_no_gravados || 0);
+        document.getElementById('fac_total').value = window.formatCurrency(data.importe_total || 0);
+        
+        window.currentArticulos = data.articulos || [];
+        window.renderGridArticulos();
         
         document.getElementById('fac_cae').value = data.cae || '';
         document.getElementById('fac_vto_cae').value = data.fecha_vto_cae || '';
@@ -93,31 +96,141 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
     }
 };
 
+// Helpers para Máscara LatAm
+window.formatCurrency = function(val) {
+    if (val === null || val === undefined || val === '') return '';
+    const num = parseFloat(val);
+    if (isNaN(num)) return val;
+    return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+};
+
+window.parseCurrency = function(val) {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    // Remueve puntos (miles) y cambia coma por punto (decimal)
+    const cleaned = String(val).replace(/\./g, '').replace(',', '.');
+    return parseFloat(cleaned) || 0;
+};
+
+// Array global para la grilla
+window.currentArticulos = [];
+
 window.calcularTotalesFactura = function() {
-    const neto = parseFloat(document.getElementById('fac_neto').value) || 0;
-    const iva21 = parseFloat(document.getElementById('fac_iva21').value) || 0;
-    const iva105 = parseFloat(document.getElementById('fac_iva105').value) || 0;
-    const percIibb = parseFloat(document.getElementById('fac_perc_iibb').value) || 0;
-    const percIva = parseFloat(document.getElementById('fac_perc_iva').value) || 0;
-    const noGrav = parseFloat(document.getElementById('fac_nograv').value) || 0;
+    const neto = window.parseCurrency(document.getElementById('fac_neto').value);
+    const iva21 = window.parseCurrency(document.getElementById('fac_iva21').value);
+    const iva105 = window.parseCurrency(document.getElementById('fac_iva105').value);
+    const percIibb = window.parseCurrency(document.getElementById('fac_perc_iibb').value);
+    const percIva = window.parseCurrency(document.getElementById('fac_perc_iva').value);
+    const noGrav = window.parseCurrency(document.getElementById('fac_nograv').value);
     
-    const suma = neto + iva21 + iva105 + percIibb + percIva + noGrav;
+    // Suma de la grilla de artículos
+    let sumaArticulos = 0;
+    if (window.currentArticulos && window.currentArticulos.length > 0) {
+        window.currentArticulos.forEach(art => {
+            sumaArticulos += window.parseCurrency(art.subtotal);
+        });
+    } else {
+        // Si no hay artículos, la base de cálculo recae sobre el neto digitado
+        sumaArticulos = neto;
+    }
+    
+    // Cálculo integral: Grilla + Impuestos
+    const suma = sumaArticulos + iva21 + iva105 + percIibb + percIva + noGrav;
     const totalInput = document.getElementById('fac_total');
-    const totalOriginal = parseFloat(totalInput.value) || 0;
+    const statusIcon = document.getElementById('fac_math_status');
+    const totalOriginal = window.parseCurrency(totalInput.value);
     
-    // Si la suma de desgloses difiere del total original extraido por IA, lo marcamos visualmente
+    // Si la suma difiere del total original extraido por IA, alertamos.
     if (Math.abs(suma - totalOriginal) > 0.5) {
         totalInput.classList.add('border-red-500', 'text-red-400');
-        totalInput.classList.remove('border-amber-900/50', 'text-amber-400');
+        totalInput.classList.remove('border-emerald-500', 'text-emerald-400', 'border-amber-900/50', 'text-amber-400');
+        if (statusIcon) statusIcon.classList.add('hidden');
     } else {
-        totalInput.classList.remove('border-red-500', 'text-red-400');
-        totalInput.classList.add('border-amber-900/50', 'text-amber-400');
+        // Coincidencia exacta -> Visado Verde
+        totalInput.classList.remove('border-red-500', 'text-red-400', 'border-amber-900/50', 'text-amber-400');
+        totalInput.classList.add('border-emerald-500', 'text-emerald-400');
+        if (statusIcon) statusIcon.classList.remove('hidden');
     }
 };
 
-// Bind auto-calc on input changes
+window.renderGridArticulos = function() {
+    const tbody = document.getElementById('fac_articulos_tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    window.currentArticulos.forEach((art, index) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/30 transition-colors';
+        
+        tr.innerHTML = `
+            <td class="px-4 py-2">
+                <input type="text" class="w-full bg-transparent border border-transparent focus:border-slate-700 rounded px-1 py-1 text-xs outline-none fac-grid-input" 
+                       data-index="${index}" data-field="codigo" value="${art.codigo || ''}">
+            </td>
+            <td class="px-4 py-2">
+                <input type="text" class="w-full bg-transparent border border-transparent focus:border-slate-700 rounded px-1 py-1 text-xs outline-none fac-grid-input" 
+                       data-index="${index}" data-field="descripcion" value="${art.descripcion || ''}">
+            </td>
+            <td class="px-4 py-2">
+                <input type="text" class="w-full bg-transparent border border-transparent focus:border-slate-700 rounded px-1 py-1 text-xs outline-none text-center fac-grid-input fac-grid-num" 
+                       data-index="${index}" data-field="cantidad" value="${window.formatCurrency(art.cantidad)}">
+            </td>
+            <td class="px-4 py-2">
+                <input type="text" class="w-full bg-transparent border border-transparent focus:border-slate-700 rounded px-1 py-1 text-xs outline-none text-right fac-grid-input fac-grid-num" 
+                       data-index="${index}" data-field="precio_unitario" value="${window.formatCurrency(art.precio_unitario)}">
+            </td>
+            <td class="px-4 py-2">
+                <input type="text" class="w-full bg-transparent border border-transparent focus:border-slate-700 rounded px-1 py-1 text-xs outline-none text-right fac-grid-input fac-grid-num font-bold text-slate-200" 
+                       data-index="${index}" data-field="subtotal" value="${window.formatCurrency(art.subtotal)}">
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // Bind event listeners para inputs de la grilla
+    document.querySelectorAll('.fac-grid-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const idx = e.target.getAttribute('data-index');
+            const field = e.target.getAttribute('data-field');
+            let val = e.target.value;
+            
+            if (e.target.classList.contains('fac-grid-num')) {
+                val = window.parseCurrency(val);
+                e.target.value = window.formatCurrency(val);
+            }
+            window.currentArticulos[idx][field] = val;
+            window.calcularTotalesFactura();
+        });
+
+        if (input.classList.contains('fac-grid-num')) {
+            input.addEventListener('focus', (e) => {
+                const val = window.parseCurrency(e.target.value);
+                e.target.value = val === 0 ? '' : val.toString().replace('.', ',');
+            });
+            input.addEventListener('blur', (e) => {
+                e.target.value = window.formatCurrency(e.target.value.replace(',', '.'));
+            });
+        }
+    });
+};
+
+// Bind auto-calc on input changes and mask events
 ['fac_neto', 'fac_iva21', 'fac_iva105', 'fac_perc_iibb', 'fac_perc_iva', 'fac_nograv', 'fac_total'].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', window.calcularTotalesFactura);
+    const el = document.getElementById(id);
+    if (!el) return;
+    
+    el.addEventListener('input', window.calcularTotalesFactura);
+    
+    el.addEventListener('focus', (e) => {
+        const val = window.parseCurrency(e.target.value);
+        e.target.value = val === 0 ? '' : val.toString().replace('.', ',');
+    });
+    
+    el.addEventListener('blur', (e) => {
+        e.target.value = window.formatCurrency(e.target.value.replace(',', '.'));
+        window.calcularTotalesFactura();
+    });
 });
 
 window.closeVisorFacturas = function() {
@@ -138,15 +251,16 @@ window.saveFacturaHITL = async function() {
         tipo_comprobante: document.getElementById('fac_tipo').value,
         punto_venta: parseInt(document.getElementById('fac_pto').value) || 0,
         numero_comprobante: parseInt(document.getElementById('fac_num').value) || 0,
-        importe_neto_gravado: parseFloat(document.getElementById('fac_neto').value) || 0,
-        importe_iva_21: parseFloat(document.getElementById('fac_iva21').value) || 0,
-        importe_iva_105: parseFloat(document.getElementById('fac_iva105').value) || 0,
-        percepciones_iibb: parseFloat(document.getElementById('fac_perc_iibb').value) || 0,
-        percepciones_iva: parseFloat(document.getElementById('fac_perc_iva').value) || 0,
-        conceptos_no_gravados: parseFloat(document.getElementById('fac_nograv').value) || 0,
-        importe_total: parseFloat(document.getElementById('fac_total').value) || 0,
+        importe_neto_gravado: window.parseCurrency(document.getElementById('fac_neto').value),
+        importe_iva_21: window.parseCurrency(document.getElementById('fac_iva21').value),
+        importe_iva_105: window.parseCurrency(document.getElementById('fac_iva105').value),
+        percepciones_iibb: window.parseCurrency(document.getElementById('fac_perc_iibb').value),
+        percepciones_iva: window.parseCurrency(document.getElementById('fac_perc_iva').value),
+        conceptos_no_gravados: window.parseCurrency(document.getElementById('fac_nograv').value),
+        importe_total: window.parseCurrency(document.getElementById('fac_total').value),
         cae: document.getElementById('fac_cae').value,
-        fecha_vto_cae: document.getElementById('fac_vto_cae').value || null
+        fecha_vto_cae: document.getElementById('fac_vto_cae').value || null,
+        articulos: window.currentArticulos
     };
 
     try {
