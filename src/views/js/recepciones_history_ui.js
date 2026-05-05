@@ -89,61 +89,100 @@ function renderReceptionHistoryCards(data) {
         return;
     }
 
-    let cardsHtml = '';
+    let temporalGroups = {};
     
     data.forEach(rec => {
-        const fecha = new Date(rec.fecha_recepcion);
-        const fechaFormat = fecha.toLocaleDateString('es-AR') + ' ' + fecha.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
-        
-        const provData = rec.pedidos_b2b_cabecera || {};
-        const provName = (provData.proveedores && provData.proveedores.nombre) ? provData.proveedores.nombre : 'Proveedor Desconocido';
-        const docType = provData.tipo_documento || 'Orden';
-        const remito = rec.numero_remito || 'S/N';
-        
-        let colorEstado = 'bg-slate-800 text-slate-400 border-slate-700';
-        let isAnulada = rec.estado === 'Anulada';
-        if (rec.estado === 'Recepción Completa') colorEstado = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
-        if (rec.estado === 'Recepción Parcial') colorEstado = 'bg-amber-900/30 text-amber-400 border-amber-500/50';
-        if (isAnulada) colorEstado = 'bg-red-900/50 text-red-400 border-red-500/50 line-through';
+        let monthYear = "Fecha Desconocida";
+        if (rec.fecha_recepcion) {
+            const d = new Date(rec.fecha_recepcion);
+            const formatter = new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: 'long' });
+            let fStr = formatter.format(d);
+            monthYear = fStr.charAt(0).toUpperCase() + fStr.slice(1);
+        }
+        if (!temporalGroups[monthYear]) temporalGroups[monthYear] = [];
+        temporalGroups[monthYear].push(rec);
+    });
 
-        const opacityClass = isAnulada ? 'opacity-50 grayscale' : '';
+    let cardsHtml = '';
+    
+    // Sort temporal groups (descending roughly by checking the first element's date)
+    const sortedTemporalKeys = Object.keys(temporalGroups).sort((a, b) => {
+        if (a === "Fecha Desconocida") return 1;
+        if (b === "Fecha Desconocida") return -1;
+        return new Date(temporalGroups[b][0].fecha_recepcion) - new Date(temporalGroups[a][0].fecha_recepcion);
+    });
 
+    sortedTemporalKeys.forEach(tKey => {
         cardsHtml += `
-            <div class="relative w-full bg-slate-800/20 border border-slate-700/50 rounded-lg p-3 hover:bg-slate-800/40 transition-colors flex flex-col md:flex-row md:items-center justify-between group overflow-hidden shadow-sm gap-4 ${opacityClass}">
-                
-                <div class="flex-1 flex flex-col justify-center">
-                    <div class="flex items-center gap-3 mb-1">
-                        <span class="text-sm font-black text-white tracking-tight flex items-center gap-2">
-                            <i data-lucide="truck" class="w-4 h-4 text-slate-400"></i> ${provName}
-                        </span>
-                        <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border ${colorEstado}">${rec.estado}</span>
-                    </div>
-                    <div class="flex items-center gap-4 text-[10px] font-mono text-slate-400">
-                        <span title="ID de Recepción">REC: ${rec.id.split('-')[0]}</span>
-                        <span title="Remito Declarado" class="text-blue-300 font-bold bg-blue-900/20 px-1 rounded">RTO: ${remito}</span>
-                        <span title="Pedido Origen">PED: ${rec.pedido_id.split('-')[0]} (${docType})</span>
-                    </div>
-                </div>
-                
-                <div class="flex items-center gap-6 shrink-0">
-                    <div class="flex flex-col items-end opacity-70">
-                        <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1"><i data-lucide="calendar" class="w-3 h-3"></i> ${fechaFormat}</span>
-                    </div>
+            <div class="mt-6 mb-4">
+                <h4 class="text-sm font-bold text-indigo-400 border-b border-slate-800 pb-2 mb-4 uppercase tracking-widest flex items-center gap-2">
+                    <i data-lucide="calendar" class="w-4 h-4"></i> ${tKey}
+                </h4>
+                <div class="space-y-4">
+        `;
 
-                    <div class="flex items-center gap-2">
-                        ${!isAnulada ? `
-                        <button onclick="window.anularReception('${rec.id}')" class="px-3 py-2 bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Anular esta Recepción">
-                            <i data-lucide="ban" class="w-4 h-4"></i> Anular
-                        </button>
-                        ` : ''}
-                        <button onclick="window.viewReceptionDetails('${rec.id}', '${provName}', '${remito}')" class="px-3 py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Ver Detalle de Ítems">
-                            <i data-lucide="list-checks" class="w-4 h-4"></i> Ver Ítems
-                        </button>
+        temporalGroups[tKey].forEach(rec => {
+            const fecha = new Date(rec.fecha_recepcion);
+            const fechaFormat = fecha.toLocaleDateString('es-AR') + ' ' + fecha.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+            
+            const provData = rec.pedidos_b2b_cabecera || {};
+            const provName = (provData.proveedores && provData.proveedores.nombre) ? provData.proveedores.nombre : 'Proveedor Desconocido';
+            const docType = provData.tipo_documento || 'Orden';
+            const remito = rec.numero_remito || 'S/N';
+            
+            let colorEstado = 'bg-slate-800 text-slate-400 border-slate-700';
+            let isAnulada = rec.estado === 'Anulada';
+            if (rec.estado === 'Recepción Completa') colorEstado = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
+            if (rec.estado === 'Recepción Parcial') colorEstado = 'bg-amber-900/30 text-amber-400 border-amber-500/50';
+            if (isAnulada) colorEstado = 'bg-red-900/50 text-red-400 border-red-500/50 line-through';
+
+            const opacityClass = isAnulada ? 'opacity-50 grayscale' : '';
+
+            cardsHtml += `
+                <div class="relative w-full bg-slate-800/20 border border-slate-700/50 rounded-lg p-3 hover:bg-slate-800/40 transition-colors flex flex-col md:flex-row md:items-center justify-between group overflow-hidden shadow-sm gap-4 ${opacityClass}">
+                    
+                    <div class="flex-1 flex flex-col justify-center">
+                        <div class="flex items-center gap-3 mb-1">
+                            <span class="text-sm font-black text-white tracking-tight flex items-center gap-2">
+                                <i data-lucide="truck" class="w-4 h-4 text-slate-400"></i> ${provName}
+                            </span>
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border ${colorEstado}">${rec.estado}</span>
+                        </div>
+                        <div class="flex items-center gap-4 text-[10px] font-mono text-slate-400">
+                            <span title="ID de Recepción">REC: ${rec.id.split('-')[0]}</span>
+                            <span title="Remito Declarado" class="text-blue-300 font-bold bg-blue-900/20 px-1 rounded">RTO: ${remito}</span>
+                            <span title="Pedido Origen">PED: ${rec.pedido_id.split('-')[0]} (${docType})</span>
+                        </div>
                     </div>
+                    
+                    <div class="flex items-center gap-6 shrink-0">
+                        <div class="flex flex-col items-end opacity-70">
+                            <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1"><i data-lucide="calendar" class="w-3 h-3"></i> ${fechaFormat}</span>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            ${!isAnulada ? `
+                            <button onclick="window.anularReception('${rec.id}')" class="px-3 py-2 bg-amber-600/10 text-amber-400 hover:bg-amber-600 hover:text-white border border-amber-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Anular esta Recepción (Soft Delete)">
+                                <i data-lucide="ban" class="w-4 h-4"></i> Anular
+                            </button>
+                            ` : ''}
+                            <button onclick="window.revertirReception('${rec.id}')" class="px-3 py-2 bg-red-600/10 text-red-400 hover:bg-red-700 hover:text-white border border-red-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Revertir y Eliminar Físicamente">
+                                <i data-lucide="undo-2" class="w-4 h-4"></i> Revertir
+                            </button>
+                            <button onclick="window.viewReceptionDetails('${rec.id}', '${provName}', '${remito}')" class="px-3 py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Ver Detalle de Ítems">
+                                <i data-lucide="list-checks" class="w-4 h-4"></i> Ver Ítems
+                            </button>
+                        </div>
+                    </div>
+                    
+                    ${rec.notas ? `<div class="absolute bottom-0 right-0 p-1 mr-2 opacity-50 text-[9px] text-slate-500 italic max-w-xs truncate" title="${rec.notas}">Notas: ${rec.notas}</div>` : ''}
                 </div>
-                
-                ${rec.notas ? `<div class="absolute bottom-0 right-0 p-1 mr-2 opacity-50 text-[9px] text-slate-500 italic max-w-xs truncate" title="${rec.notas}">Notas: ${rec.notas}</div>` : ''}
-            </div>
+            `;
+        });
+        
+        cardsHtml += `
+                </div> <!-- End of space-y-4 -->
+            </div> <!-- End of temporal block -->
         `;
     });
     
@@ -311,6 +350,64 @@ window.anularReception = async function(recepcionId) {
             Swal.fire({
                 icon: 'error', 
                 title: 'Fallo al Anular', 
+                text: e.message,
+                background: '#0f172a', 
+                color: '#ef4444'
+            });
+        }
+    }
+}
+
+window.revertirReception = async function(recepcionId) {
+    if (!window.Swal) {
+        alert("SweetAlert2 no está cargado.");
+        return;
+    }
+
+    const result = await Swal.fire({
+        title: 'REVERSIÓN DESTRUCTIVA',
+        text: 'Esta acción eliminará FÍSICAMENTE la recepción de la base de datos, revertirá el inventario, y retrocederá el estado del pedido a su punto original. Esta acción NO se puede deshacer.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#b91c1c',
+        cancelButtonColor: '#334155',
+        confirmButtonText: 'Sí, Destruir y Revertir',
+        cancelButtonText: 'Cancelar',
+        background: '#0f172a',
+        color: '#f8fafc'
+    });
+
+    if (result.isConfirmed) {
+        Swal.fire({ title: 'Ejecutando Reversión...', background: '#0f172a', color: '#f8fafc', didOpen: () => Swal.showLoading() });
+        
+        try {
+            const res = await fetch(`${API_BASE}/api/recepcion/revertir`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recepcion_id: recepcionId })
+            });
+            
+            const reqResult = await res.json();
+            if (!reqResult.success) throw new Error(reqResult.error);
+            
+            Swal.fire({
+                icon: 'success', 
+                title: 'Recepción Revertida', 
+                text: `Se ha purgado el registro e inventario. El pedido retrocedió al estado: ${reqResult.estado_pedido}`,
+                background: '#0f172a', 
+                color: '#10b981'
+            });
+            
+            // Recargar datos
+            window.loadReceptionHistory();
+            if (window.loadActiveOrders) window.loadActiveOrders(); // Update "Pedidos Activos"
+            if (window.loadInventory) window.loadInventory(); // Opcional
+
+        } catch (e) {
+            console.error("Error al revertir recepción:", e);
+            Swal.fire({
+                icon: 'error', 
+                title: 'Fallo al Revertir', 
                 text: e.message,
                 background: '#0f172a', 
                 color: '#ef4444'

@@ -216,7 +216,6 @@ router.get('/historial/:recepcionId/items', async (req, res) => {
     }
 });
 
-module.exports = router;
 
 // POST: Anular recepción física (Soft-Delete)
 router.post('/anular', async (req, res) => {
@@ -297,3 +296,90 @@ router.post('/anular', async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
+// POST: Revertir recepción física (Hard-Delete)
+router.post('/revertir', async (req, res) => {
+    try {
+        const { recepcion_id } = req.body;
+        
+        if (!recepcion_id) {
+            return res.status(400).json({ success: false, error: 'Falta ID de recepción.' });
+        }
+
+        // 1. Obtener la recepción actual para saber el pedido_id
+        const { data: recepcion, error: errGet } = await supabase
+            .from('recepciones_fisicas_cabecera')
+            .select('*')
+            .eq('id', recepcion_id)
+            .single();
+
+        if (errGet || !recepcion) {
+            return res.status(400).json({ success: false, error: 'Recepción no encontrada.' });
+        }
+
+        const pedido_id = recepcion.pedido_id;
+
+        // 2. Eliminar físicamente los ítems de la recepción (Hard Delete)
+        const { error: errItems } = await supabase
+            .from('recepciones_fisicas_items')
+            .delete()
+            .eq('recepcion_id', recepcion_id);
+
+        if (errItems) throw errItems;
+
+        // 3. Eliminar físicamente la cabecera de la recepción (Hard Delete)
+        const { error: errCabecera } = await supabase
+            .from('recepciones_fisicas_cabecera')
+            .delete()
+            .eq('id', recepcion_id);
+
+        if (errCabecera) throw errCabecera;
+
+        // 4. Recalcular el estado del pedido original
+        const { data: allItems } = await supabase
+            .from('pedidos_b2b_items')
+            .select('id, cantidad')
+            .eq('pedido_id', pedido_id);
+
+        const { data: allRecepciones } = await supabase
+            .from('recepciones_fisicas_items')
+            .select('pedido_item_id, cantidad_recibida, recepciones_fisicas_cabecera!inner(estado)')
+            .in('pedido_item_id', allItems.map(i => i.id))
+            .neq('recepciones_fisicas_cabecera.estado', 'Anulada');
+
+        let incompleto = false;
+        
+        const sumMap = {};
+        allRecepciones.forEach(r => {
+            if(!sumMap[r.pedido_item_id]) sumMap[r.pedido_item_id] = 0;
+            sumMap[r.pedido_item_id] += Number(r.cantidad_recibida);
+        });
+
+        allItems.forEach(i => {
+            const esperado = Number(i.cantidad);
+            const recibido = sumMap[i.id] || 0;
+            if (recibido < esperado) {
+                incompleto = true;
+            }
+        });
+
+        // Si es incompleto, retrocede a 'Recepción Parcial' (o 'Emitido' si no hay otra recepción)
+        let nuevoEstado = incompleto ? 'Recepción Parcial' : 'Recepción Completa';
+        if (incompleto && allRecepciones.length === 0) {
+            nuevoEstado = 'Emitido'; // No queda ninguna recepción válida
+        }
+
+        await supabase
+            .from('pedidos_b2b_cabecera')
+            .update({ estado: nuevoEstado })
+            .eq('id', pedido_id);
+
+        res.json({ success: true, estado_pedido: nuevoEstado });
+
+    } catch (err) {
+        console.error('[RECEPCION] Error al revertir recepción:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+module.exports = router;

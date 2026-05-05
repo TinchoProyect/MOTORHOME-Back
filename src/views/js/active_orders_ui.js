@@ -8,23 +8,35 @@ window.openActiveOrders = function() {
     const reportDisplay = document.getElementById('reportDisplay');
     if(!reportDisplay) return;
 
+    window.activeOrdersTab = window.activeOrdersTab || 'pendientes';
+
     reportDisplay.innerHTML = `
         <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
             <!-- Header section -->
-            <div class="flex justify-between items-start mb-6 border-b border-slate-800 pb-4 shrink-0">
+            <div class="flex justify-between items-start mb-4 border-b border-slate-800 pb-4 shrink-0">
                 <div>
                     <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                        <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i> Pedidos Confirmados
+                        <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i> Pedidos Activos
                     </h3>
                 </div>
                 <div class="flex items-center gap-3">
                     <button onclick="window.purgeTestOrdersB2B()" class="px-3 py-2 bg-red-900/30 hover:bg-red-600 border border-red-500/30 text-red-300 hover:text-white text-[10px] font-bold uppercase tracking-widest rounded-lg flex items-center gap-2 transition-all" title="Purgar tests">
-                        <i data-lucide="flame" class="w-4 h-4"></i> Purgar Seleccionados
+                        <i data-lucide="flame" class="w-4 h-4"></i> Purgar
                     </button>
                     <button onclick="window.loadActiveOrders()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2">
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i> Actualizar
                     </button>
                 </div>
+            </div>
+
+            <!-- Tabs Navigation -->
+            <div class="flex gap-2 mb-4 border-b border-slate-800 pb-2 shrink-0">
+                <button onclick="window.switchActiveOrdersTab('pendientes')" class="px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 ${window.activeOrdersTab === 'pendientes' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/50' : 'text-slate-500 hover:text-slate-300'}" id="tab-pendientes">
+                    Pendientes <span class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-[10px]" id="count-pendientes">0</span>
+                </button>
+                <button onclick="window.switchActiveOrdersTab('parciales')" class="px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 ${window.activeOrdersTab === 'parciales' ? 'bg-amber-900/30 text-amber-400 border border-amber-500/50' : 'text-slate-500 hover:text-slate-300'}" id="tab-parciales">
+                    Procesados / Diferencias <span class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-[10px]" id="count-parciales">0</span>
+                </button>
             </div>
 
             <!-- Content Area: Cards Wrapper -->
@@ -46,6 +58,20 @@ window.openActiveOrders = function() {
     window.loadActiveOrders();
 }
 
+window.switchActiveOrdersTab = function(tabId) {
+    window.activeOrdersTab = tabId;
+    // Update active tab styling directly to avoid full reload just for header
+    const tPend = document.getElementById('tab-pendientes');
+    const tParc = document.getElementById('tab-parciales');
+    if(tPend) {
+        tPend.className = `px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 ${tabId === 'pendientes' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/50' : 'text-slate-500 hover:text-slate-300'}`;
+    }
+    if(tParc) {
+        tParc.className = `px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors flex items-center gap-2 ${tabId === 'parciales' ? 'bg-amber-900/30 text-amber-400 border border-amber-500/50' : 'text-slate-500 hover:text-slate-300'}`;
+    }
+    window.renderActiveOrdersCards(window.activeOrdersCache || []);
+}
+
 window.renderActiveOrdersCards = function(data) {
     const container = document.getElementById('activeOrdersCardsContainer');
     const statusLabel = document.getElementById('aoCountStatus');
@@ -53,125 +79,177 @@ window.renderActiveOrdersCards = function(data) {
     
     if(!container) return; // If user navigated away
 
-    if (statusLabel) statusLabel.innerText = `Mostrando ${data.length} pedidos confirmados`;
+    // Calculate counts for tabs
+    const countPendientes = data.filter(o => o.estado === 'Emitido').length;
+    const countParciales = data.filter(o => o.estado === 'Recepción Parcial').length;
+    
+    const countPNode = document.getElementById('count-pendientes');
+    const countDNode = document.getElementById('count-parciales');
+    if(countPNode) countPNode.innerText = countPendientes;
+    if(countDNode) countDNode.innerText = countParciales;
+
+    // Filter data based on active tab
+    const filteredData = data.filter(order => {
+        if(window.activeOrdersTab === 'pendientes') return order.estado === 'Emitido';
+        if(window.activeOrdersTab === 'parciales') return order.estado === 'Recepción Parcial';
+        return false;
+    });
+
+    if (statusLabel) statusLabel.innerText = `Mostrando ${filteredData.length} pedidos`;
     if (selectedStatus) selectedStatus.innerText = `0 Seleccionados`;
 
-    if (data.length === 0) {
+    if (filteredData.length === 0) {
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center py-20 text-slate-500">
                 <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-50"></i>
-                <p class="text-sm font-bold tracking-widest uppercase">Sin pedidos activos</p>
+                <p class="text-sm font-bold tracking-widest uppercase">Sin pedidos en esta bandeja</p>
             </div>
         `;
         if (window.lucide) window.lucide.createIcons();
         return;
     }
 
-    let groups = {};
-    data.forEach(order => {
-        let fetchStr = order.fecha_recepcion_estimada || 'SinFecha';
-        let provId = order.proveedor_id || 'SinProv';
-        let gKey = `${provId}_${fetchStr}`;
-        if (!groups[gKey]) groups[gKey] = [];
-        groups[gKey].push(order);
+    // Group 1: By Month and Year of created_at
+    let temporalGroups = {};
+    filteredData.forEach(order => {
+        let monthYear = "Fecha Desconocida";
+        if (order.created_at) {
+            const d = new Date(order.created_at);
+            const formatter = new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: 'long' });
+            let fStr = formatter.format(d);
+            monthYear = fStr.charAt(0).toUpperCase() + fStr.slice(1);
+        }
+        if (!temporalGroups[monthYear]) temporalGroups[monthYear] = [];
+        temporalGroups[monthYear].push(order);
     });
 
     let cardsHtml = '';
     
-    Object.values(groups).forEach(groupArr => {
-        let primaryOrder = groupArr[0];
-        let fechaLlegadaHuman = 'Sin asignar';
-        if (primaryOrder.fecha_recepcion_estimada) {
-            const d = new Date(primaryOrder.fecha_recepcion_estimada);
-            d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
-            const formatter = new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
-            let fStr = formatter.format(d);
-            fechaLlegadaHuman = fStr.charAt(0).toUpperCase() + fStr.slice(1);
-        }
-        
-        const proveedorNombre = primaryOrder.proveedores ? primaryOrder.proveedores.nombre : 'Desconocido';
-        const totalSKUs = groupArr.reduce((acc, current) => acc + (current.pedidos_b2b_items ? current.pedidos_b2b_items.length : 0), 0);
-        
+    // Sort temporal groups (descending roughly by checking the first element's date)
+    const sortedTemporalKeys = Object.keys(temporalGroups).sort((a, b) => {
+        if (a === "Fecha Desconocida") return 1;
+        if (b === "Fecha Desconocida") return -1;
+        return new Date(temporalGroups[b][0].created_at) - new Date(temporalGroups[a][0].created_at);
+    });
+
+    sortedTemporalKeys.forEach(tKey => {
         cardsHtml += `
-            <div class="mb-5 bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-slate-700 transition-colors">
-                <!-- Group Header -->
-                <div class="bg-slate-950/40 p-4 border-b border-slate-800/80 flex items-center justify-between">
-                    <div class="flex items-center gap-4">
-                        <i data-lucide="truck" class="w-5 h-5 text-indigo-400"></i>
-                        <span class="text-xl font-black text-white tracking-tight">${proveedorNombre}</span>
-                        <span class="px-2 py-0.5 rounded border text-[9px] uppercase font-bold tracking-widest bg-indigo-900/30 text-indigo-400 border-indigo-500/50">Entrega Confirmada</span>
-                    </div>
-                    <div class="flex items-center gap-4 text-xs font-mono">
-                        <div class="flex items-center gap-1.5 text-blue-400">
-                            <i data-lucide="calendar-clock" class="w-4 h-4 opacity-80"></i>
-                            <span class="font-bold">${fechaLlegadaHuman}</span>
-                        </div>
-                        <div class="w-px h-3 bg-slate-700"></div>
-                        <div class="flex items-center gap-1.5 text-slate-400">
-                            <i data-lucide="package" class="w-4 h-4 opacity-70"></i>
-                            <span>${groupArr.length} Órdenes (${totalSKUs} SKUs)</span>
-                        </div>
-                    </div>
-                </div>
-                <!-- Sub-items -->
-                <div class="p-2 space-y-2">
+            <div class="mt-6 mb-4">
+                <h4 class="text-sm font-bold text-slate-400 border-b border-slate-800 pb-2 mb-4 uppercase tracking-widest flex items-center gap-2">
+                    <i data-lucide="calendar" class="w-4 h-4"></i> ${tKey}
+                </h4>
         `;
-        
-        groupArr.forEach(order => {
-            let fechaEmision = '--';
-            if (order.created_at) {
-                const d = new Date(order.created_at);
-                fechaEmision = d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
-            }
-            const skuCount = order.pedidos_b2b_items ? order.pedidos_b2b_items.length : 0;
-            
-            let colorEstado = 'bg-slate-800 text-slate-400 border-slate-700';
-            const st = order.estado || 'Emitido';
-            if (st === 'Emitido') colorEstado = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
-            if (st === 'RECIBIDO') colorEstado = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
-            if (st === 'CANCELADO') colorEstado = 'bg-red-900/30 text-red-400 border-red-500/50';
 
+        // Group 2: Provider + Estimada (Legacy logic but inside temporal)
+        let groups = {};
+        temporalGroups[tKey].forEach(order => {
+            let fetchStr = order.fecha_recepcion_estimada || 'SinFecha';
+            let provId = order.proveedor_id || 'SinProv';
+            let gKey = `${provId}_${fetchStr}`;
+            if (!groups[gKey]) groups[gKey] = [];
+            groups[gKey].push(order);
+        });
+
+        Object.values(groups).forEach(groupArr => {
+            let primaryOrder = groupArr[0];
+            let fechaLlegadaHuman = 'Sin asignar';
+            if (primaryOrder.fecha_recepcion_estimada) {
+                const d = new Date(primaryOrder.fecha_recepcion_estimada);
+                d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
+                const formatter = new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' });
+                let fStr = formatter.format(d);
+                fechaLlegadaHuman = fStr.charAt(0).toUpperCase() + fStr.slice(1);
+            }
+            
+            const proveedorNombre = primaryOrder.proveedores ? primaryOrder.proveedores.nombre : 'Desconocido';
+            const totalSKUs = groupArr.reduce((acc, current) => acc + (current.pedidos_b2b_items ? current.pedidos_b2b_items.length : 0), 0);
+            
             cardsHtml += `
-                <div class="relative w-full bg-slate-800/20 border border-slate-700/50 rounded-lg p-3 hover:bg-slate-800/40 transition-colors flex items-center justify-between group overflow-hidden pl-14 shadow-sm">
-                    <!-- Checkbox -->
-                    <div class="absolute inset-y-0 left-0 w-10 flex items-center justify-center border-r border-slate-700/50 bg-slate-900/20">
-                        <input type="checkbox" value="${order.id}" class="w-4 h-4 rounded border-slate-600 text-blue-600 focus:ring-blue-600/50 bg-slate-700 b2b-order-checkbox cursor-pointer" onchange="window.updateB2BSelectionUI()">
-                    </div>
-                    
-                    <div class="flex-1 flex flex-col justify-center">
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs font-black text-slate-300 uppercase tracking-widest font-mono">ID: ${order.id.split('-')[0]}</span>
-                            <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border ${colorEstado}">${st}</span>
-                            <span class="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800/50 text-slate-400 uppercase tracking-widest border border-slate-700/50">${order.tipo_documento || 'Orden'}</span>
+                <div class="mb-5 bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-slate-700 transition-colors">
+                    <!-- Group Header -->
+                    <div class="bg-slate-950/40 p-4 border-b border-slate-800/80 flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <i data-lucide="truck" class="w-5 h-5 text-indigo-400"></i>
+                            <span class="text-xl font-black text-white tracking-tight">${proveedorNombre}</span>
+                            <span class="px-2 py-0.5 rounded border text-[9px] uppercase font-bold tracking-widest bg-indigo-900/30 text-indigo-400 border-indigo-500/50">Entrega Confirmada</span>
+                        </div>
+                        <div class="flex items-center gap-4 text-xs font-mono">
+                            <div class="flex items-center gap-1.5 text-blue-400">
+                                <i data-lucide="calendar-clock" class="w-4 h-4 opacity-80"></i>
+                                <span class="font-bold">${fechaLlegadaHuman}</span>
+                            </div>
+                            <div class="w-px h-3 bg-slate-700"></div>
+                            <div class="flex items-center gap-1.5 text-slate-400">
+                                <i data-lucide="package" class="w-4 h-4 opacity-70"></i>
+                                <span>${groupArr.length} Órdenes (${totalSKUs} SKUs)</span>
+                            </div>
                         </div>
                     </div>
-                    
-                    <div class="hidden lg:flex flex-col items-end pr-8 justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        <span class="text-[9px] text-slate-500 font-mono">Emitido: ${fechaEmision}</span>
-                        <span class="text-[9px] text-slate-500 uppercase font-mono tracking-widest">${skuCount} SKUs</span>
-                    </div>
+                    <!-- Sub-items -->
+                    <div class="p-2 space-y-2">
+            `;
+            
+            groupArr.forEach(order => {
+                let fechaEmision = '--';
+                if (order.created_at) {
+                    const d = new Date(order.created_at);
+                    fechaEmision = d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+                }
+                const skuCount = order.pedidos_b2b_items ? order.pedidos_b2b_items.length : 0;
+                
+                let colorEstado = 'bg-slate-800 text-slate-400 border-slate-700';
+                const st = order.estado || 'Emitido';
+                if (st === 'Emitido') colorEstado = 'bg-blue-900/30 text-blue-400 border-blue-500/50';
+                if (st === 'Recepción Parcial') colorEstado = 'bg-amber-900/30 text-amber-400 border-amber-500/50';
+                if (st === 'RECIBIDO') colorEstado = 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50';
+                if (st === 'CANCELADO') colorEstado = 'bg-red-900/30 text-red-400 border-red-500/50';
 
-                    <div class="flex items-center gap-2 shrink-0">
-                        <button onclick="window.viewB2BItems('${order.id}')" class="px-3 py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Ver Manifiesto">
-                            <i data-lucide="layout-list" class="w-4 h-4"></i> Detalles
-                        </button>
-                        <button onclick="window.reprintB2B('${order.id}')" class="px-3 py-2 bg-purple-600/10 text-purple-400 hover:bg-purple-600 hover:text-white border border-purple-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
-                            <i data-lucide="printer" class="w-4 h-4"></i> PDF
-                        </button>
-                        <button onclick="window.sendB2BWhatsAppActive('${order.id}')" class="px-3 py-2 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
-                            WA
-                        </button>
+                cardsHtml += `
+                    <div class="relative w-full bg-slate-800/20 border border-slate-700/50 rounded-lg p-3 hover:bg-slate-800/40 transition-colors flex items-center justify-between group overflow-hidden pl-14 shadow-sm">
+                        <!-- Checkbox -->
+                        <div class="absolute inset-y-0 left-0 w-10 flex items-center justify-center border-r border-slate-700/50 bg-slate-900/20">
+                            <input type="checkbox" value="${order.id}" class="w-4 h-4 rounded border-slate-600 text-blue-600 focus:ring-blue-600/50 bg-slate-700 b2b-order-checkbox cursor-pointer" onchange="window.updateB2BSelectionUI()">
+                        </div>
+                        
+                        <div class="flex-1 flex flex-col justify-center">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-black text-slate-300 uppercase tracking-widest font-mono">ID: ${order.id.split('-')[0]}</span>
+                                <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border ${colorEstado}">${st}</span>
+                                <span class="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-800/50 text-slate-400 uppercase tracking-widest border border-slate-700/50">${order.tipo_documento || 'Orden'}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="hidden lg:flex flex-col items-end pr-8 justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                            <span class="text-[9px] text-slate-500 font-mono">Emitido: ${fechaEmision}</span>
+                            <span class="text-[9px] text-slate-500 uppercase font-mono tracking-widest">${skuCount} SKUs</span>
+                        </div>
+
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button onclick="window.viewB2BItems('${order.id}')" class="px-3 py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Ver Manifiesto">
+                                <i data-lucide="layout-list" class="w-4 h-4"></i> Detalles
+                            </button>
+                            <button onclick="window.reprintB2B('${order.id}')" class="px-3 py-2 bg-purple-600/10 text-purple-400 hover:bg-purple-600 hover:text-white border border-purple-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
+                                <i data-lucide="printer" class="w-4 h-4"></i> PDF
+                            </button>
+                            <button onclick="window.sendB2BWhatsAppActive('${order.id}')" class="px-3 py-2 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                                WA
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            cardsHtml += `
                     </div>
                 </div>
             `;
-        });
+        }); // Object.values(groups)
         
         cardsHtml += `
-                </div>
-            </div>
+            </div> <!-- End of Temporal Group -->
         `;
-    });
+    }); // sortedTemporalKeys
 
     container.innerHTML = cardsHtml;
     if (window.lucide) window.lucide.createIcons();
@@ -348,17 +426,41 @@ window.sendB2BWhatsAppActive = function(pedido_id) {
     window.open(uri, '_blank');
 };
 
-window.viewB2BItems = function(pedido_id) {
+window.viewB2BItems = async function(pedido_id) {
     if(!window.activeOrdersCache) return;
     const orderData = window.activeOrdersCache.find(x => x.id === pedido_id);
     if(!orderData) return;
     
-    const items = orderData.pedidos_b2b_items || [];
+    let items = orderData.pedidos_b2b_items || [];
     const proveedorNombre = orderData.proveedores ? orderData.proveedores.nombre : 'Desconocido';
+    const isParcial = orderData.estado === 'Recepción Parcial';
     
-    // Inject SPA inside reportDisplay
     const reportDisplay = document.getElementById('reportDisplay');
     if(!reportDisplay) return;
+
+    reportDisplay.innerHTML = `
+        <div class="h-full flex items-center justify-center bg-slate-900/50 text-blue-500">
+            <i data-lucide="loader-2" class="w-8 h-8 animate-spin mr-3"></i> 
+            <span class="text-sm font-bold uppercase tracking-widest">Cargando Detalle...</span>
+        </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+
+    if (isParcial) {
+        try {
+            const res = await fetch(`http://localhost:5655/api/recepcion/pedido/${pedido_id}/items`);
+            const json = await res.json();
+            if (json.success && json.data) {
+                // Merge quantities
+                items = items.map(i => {
+                    const found = json.data.find(j => j.id === i.id);
+                    return { ...i, cantidad_previa_recibida: found ? found.cantidad_previa_recibida : 0 };
+                });
+            }
+        } catch(e) {
+            console.error('Error al obtener ítems enriquecidos:', e);
+        }
+    }
 
     let sumTotalVol = 0;
     const parseVolForSum = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
@@ -384,7 +486,6 @@ window.viewB2BItems = function(pedido_id) {
 
     let html = `
         <div class="h-full flex flex-col animate-in slide-in-from-right-4 duration-300 p-2">
-            <!-- Header SPA -->
             <div class="flex justify-between items-start mb-6 border-b border-slate-800 pb-4 shrink-0">
                 <div class="flex items-center gap-4">
                     <button onclick="window.returnToOrdersList()" class="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg transition-colors group" title="Volver al Listado">
@@ -427,6 +528,10 @@ window.viewB2BItems = function(pedido_id) {
                             <th class="w-full p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Descripción de Mercadería</th>
                             <th class="py-4 pr-12 pl-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-left w-24 whitespace-nowrap" title="Presentación Física">Presentación</th>
                             <th class="p-4 text-[10px] font-bold text-blue-300 uppercase tracking-widest border-b border-blue-900/50 text-center bg-blue-900/10 border-l border-blue-900/30 shadow-inner">Cant. Pedida</th>
+                            ${isParcial ? `
+                            <th class="p-4 text-[10px] font-bold text-amber-300 uppercase tracking-widest border-b border-amber-900/50 text-center bg-amber-900/10 border-l border-amber-900/30 shadow-inner">Recibida</th>
+                            <th class="p-4 text-[10px] font-bold text-red-300 uppercase tracking-widest border-b border-red-900/50 text-center bg-red-900/10 border-l border-red-900/30 shadow-inner">Faltante</th>
+                            ` : ''}
                             <th class="p-4 text-[10px] font-bold text-emerald-400 uppercase tracking-widest border-b border-emerald-900/50 text-right bg-emerald-900/20 border-l border-emerald-900/30 shadow-inner">T. Kilos</th>
                         </tr>
                     </thead>
@@ -435,8 +540,9 @@ window.viewB2BItems = function(pedido_id) {
         
         items.forEach(i => {
             const pedida = parseFloat(i.cantidad) || 0;
+            const recibida = parseFloat(i.cantidad_previa_recibida) || 0;
+            const faltante = pedida - recibida;
             
-            // Búsqueda Dinámica Catálogo (Fallback para Schema Restrictivo)
             let rawBult = 1; let rawVal = 1;
             const parseVol = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
             if (window._rawLamdaData) {
@@ -455,7 +561,6 @@ window.viewB2BItems = function(pedido_id) {
             const valor = parseFloat(i.cant_valor) || rawVal;
             const totalVol = pedida * bulto * valor;
 
-            // Formateador de Unidad (Evitar palabras completas)
             let abrevUnit = (i.unidad_ref || 'U').trim();
             const upperRef = abrevUnit.toUpperCase();
             if (upperRef.includes('KILO') || upperRef === 'KILOGRAMO' || upperRef === 'K' || upperRef === 'KG') abrevUnit = 'Kg';
@@ -469,6 +574,10 @@ window.viewB2BItems = function(pedido_id) {
                     <td class="p-4 text-xs font-bold text-slate-200 w-full truncate" title="${i.producto_descripcion}">${i.producto_descripcion}</td>
                     <td class="py-4 pr-12 pl-2 text-xs font-mono text-slate-500 text-left opacity-80 whitespace-nowrap">${bulto.toLocaleString('es-AR')} x ${valor.toLocaleString('es-AR')}</td>
                     <td class="p-4 text-sm font-black text-blue-300 text-center bg-blue-900/10 border-l border-blue-900/30 font-mono shadow-inner">${pedida.toLocaleString('es-AR')}</td>
+                    ${isParcial ? `
+                    <td class="p-4 text-sm font-black text-amber-300 text-center bg-amber-900/10 border-l border-amber-900/30 font-mono shadow-inner">${recibida.toLocaleString('es-AR')}</td>
+                    <td class="p-4 text-sm font-black text-center bg-red-900/10 border-l border-red-900/30 font-mono shadow-inner ${faltante > 0 ? 'text-red-400' : 'text-slate-500 opacity-50'}">${faltante > 0 ? faltante.toLocaleString('es-AR') : '-'}</td>
+                    ` : ''}
                     <td class="p-4 text-right bg-emerald-900/20 border-l border-emerald-900/30 shadow-inner">
                         <span class="text-sm font-black text-emerald-400 font-mono tracking-tight">${totalVol.toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 2})}</span>
                         <span class="text-[10px] font-bold text-emerald-500/80 ml-1 uppercase tracking-widest">${abrevUnit}</span>

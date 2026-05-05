@@ -53,7 +53,8 @@ router.get('/pedidos/count', async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('pedidos_b2b_cabecera')
-            .select('proveedor_id, fecha_recepcion_estimada');
+            .select('proveedor_id, fecha_recepcion_estimada')
+            .eq('estado', 'Emitido');
 
         if (error) throw error;
         
