@@ -45,6 +45,50 @@ const facturasController = {
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
             const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType);
 
+            // ==========================================
+            // MIDDLEWARE DE SANEAMIENTO FINANCIERO
+            // ==========================================
+            const descuentoGlobal = parseFloat(extractedJson.descuento_global_aplicado || 0);
+            const netoGravado = parseFloat(extractedJson.importe_neto_gravado || 0);
+            
+            if (extractedJson.articulos && extractedJson.articulos.length > 0) {
+                let factorDescuento = 1.0;
+                
+                if (descuentoGlobal > 0 && netoGravado > 0) {
+                    let sumaSubtotales = 0;
+                    extractedJson.articulos.forEach(art => {
+                        const cant = parseFloat(art.cantidad || 1);
+                        const pu = parseFloat(art.precio_unitario || 0);
+                        sumaSubtotales += parseFloat(art.subtotal || (cant * pu));
+                    });
+
+                    if (sumaSubtotales > 0) {
+                        // El factor de descuento es la proporción entre lo que realmente se cobra neto y la suma de subtotales impresos
+                        factorDescuento = netoGravado / sumaSubtotales;
+                    }
+                }
+
+                // Sanear decimales y aplicar factor
+                extractedJson.articulos = extractedJson.articulos.map(art => {
+                    const cant = parseFloat(art.cantidad || 1);
+                    let puOriginal = parseFloat(art.precio_unitario || 0);
+                    
+                    let puProrrateado = puOriginal * factorDescuento;
+                    
+                    // Sanear a 2 decimales (Redondeo Comercial)
+                    puProrrateado = Math.round(puProrrateado * 100) / 100;
+                    const subtotalSaneado = Math.round(cant * puProrrateado * 100) / 100;
+
+                    return {
+                        ...art,
+                        precio_unitario_original: puOriginal,
+                        precio_unitario: puProrrateado,
+                        subtotal: subtotalSaneado
+                    };
+                });
+            }
+            // ==========================================
+
             // 4. Save or Update Database
             const newRecord = {
                 proveedor_id: providerId,
@@ -161,6 +205,165 @@ const facturasController = {
             return res.json({ success: true, data: data || [] });
         } catch (error) {
             console.error("[FacturasController] Error getByProvider:", error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
+    getById: async (req, res) => {
+        const { id } = req.params;
+        if (!id) return res.status(400).json({ error: "Missing factura id" });
+
+        try {
+            const { data, error } = await supabase
+                .from('facturas_raw')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (error) throw error;
+
+            return res.json({ success: true, data });
+        } catch (error) {
+            console.error("[FacturasController] Error getById:", error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
+    matchFactura: async (req, res) => {
+        const { id } = req.params; // factura_id
+        const { recepcionId, confirm } = req.body;
+
+        if (!recepcionId) return res.status(400).json({ error: "Missing recepcionId" });
+
+        try {
+            // 1. Obtener la Factura
+            const { data: factura, error: errFact } = await supabase
+                .from('facturas_raw')
+                .select('*')
+                .eq('id', id)
+                .single();
+            if (errFact || !factura) throw new Error("Factura no encontrada");
+
+            // 2. Obtener la Recepción Física
+            const { data: recepcion, error: errRecCab } = await supabase
+                .from('recepciones_fisicas_cabecera')
+                .select('*')
+                .eq('id', recepcionId)
+                .single();
+            if (errRecCab || !recepcion) throw new Error("Recepción no encontrada");
+
+            const pedidoId = recepcion.pedido_id;
+
+            // 2b. Obtener el Pedido B2B
+            const { data: pedido, error: errPed } = await supabase
+                .from('pedidos_b2b_cabecera')
+                .select('*')
+                .eq('id', pedidoId)
+                .single();
+            if (errPed || !pedido) throw new Error("Pedido B2B no encontrado");
+
+            // 3. Obtener los Items del Pedido
+            const { data: pedidoItems, error: errPedItems } = await supabase
+                .from('pedidos_b2b_items')
+                .select('*')
+                .eq('pedido_id', pedidoId);
+            if (errPedItems) throw errPedItems;
+
+            // 4. Obtener las Recepciones Físicas SOLO de esta recepción
+            const { data: recepcionesItems, error: errRec } = await supabase
+                .from('recepciones_fisicas_items')
+                .select('pedido_item_id, cantidad_recibida')
+                .eq('recepcion_id', recepcionId);
+            if (errRec) throw errRec;
+
+            // Agrupar cantidades recibidas (en este remito específico)
+            const recibidosMap = {};
+            if (recepcionesItems && recepcionesItems.length > 0) {
+                for (const rec of recepcionesItems) {
+                    recibidosMap[rec.pedido_item_id] = (recibidosMap[rec.pedido_item_id] || 0) + parseFloat(rec.cantidad_recibida || 0);
+                }
+            }
+
+            // 5. MOTOR DE MATCHMAKING
+            let totalDesvios = 0;
+            const matchReport = [];
+            const articulosFactura = factura.articulos || [];
+
+            for (const artFactura of articulosFactura) {
+                const codigoF = (artFactura.codigo || '').toLowerCase().trim();
+                const descF = (artFactura.descripcion || '').toLowerCase().trim();
+                const cantF = parseFloat(artFactura.cantidad || 0);
+                const precioF = parseFloat(artFactura.precio_unitario || 0);
+
+                // Find matching item in Pedido
+                // Strategy: exact match by code, or fallback to description contains
+                let match = pedidoItems.find(pi => (pi.producto_codigo || '').toLowerCase().trim() === codigoF && codigoF !== '');
+                if (!match) {
+                    match = pedidoItems.find(pi => 
+                        (descF.length > 3 && (pi.producto_descripcion || '').toLowerCase().trim().includes(descF)) || 
+                        ((pi.producto_descripcion || '').length > 3 && descF.includes((pi.producto_descripcion || '').toLowerCase().trim()))
+                    );
+                }
+
+                if (!match) {
+                    // Item facturado no está en el pedido
+                    totalDesvios++;
+                    matchReport.push({
+                        status: 'ERROR_NO_MATCH',
+                        factura: artFactura,
+                        pedido: null,
+                        recibido: 0,
+                        mensaje: "Artículo facturado no existe en el Pedido."
+                    });
+                    continue;
+                }
+
+                const cantR = recibidosMap[match.id] || 0;
+                const precioP = parseFloat(match.valor_unitario_ref || 0);
+
+                const desvios = [];
+                if (cantF > cantR) desvios.push(`Faltante Físico: Cobran ${cantF} pero se recibió ${cantR}`);
+                if (precioF > precioP) desvios.push(`Desvío Precio: Facturado a $${precioF} (Pactado: $${precioP})`);
+
+                if (desvios.length > 0) totalDesvios++;
+
+                matchReport.push({
+                    status: desvios.length > 0 ? 'DESVIO' : 'OK',
+                    factura: artFactura,
+                    pedido: {
+                        codigo: match.producto_codigo,
+                        descripcion: match.producto_descripcion,
+                        precio_unitario: precioP
+                    },
+                    recibido: cantR,
+                    desvios: desvios
+                });
+            }
+
+            // 6. Actualizar Factura (SÓLO SI ES HITL CONFIRMADO)
+            const finalStatus = totalDesvios > 0 ? 'OBSERVADO_POR_DESVIOS' : 'CONCILIADO_OK';
+            
+            let updatedFact = factura;
+            if (req.body.confirm === true) {
+                const { data: uFact, error: updateErr } = await supabase
+                    .from('facturas_raw')
+                    .update({
+                        pedido_b2b_id: pedidoId,
+                        status_conciliacion: finalStatus,
+                        match_report: matchReport
+                    })
+                    .eq('id', id)
+                    .select()
+                    .single();
+
+                if (updateErr) throw updateErr;
+                updatedFact = uFact;
+            }
+
+            return res.json({ success: true, status: finalStatus, matchReport, data: updatedFact });
+
+        } catch (error) {
+            console.error("[FacturasController] Error matchFactura:", error);
             res.status(500).json({ error: error.message });
         }
     }

@@ -3822,7 +3822,137 @@
         </div>
     </div>
 
+    <!-- ========================================== -->
+    <!-- [ETAPA 3] ESCRITORIO DE CONCILIACIÓN DUAL  -->
+    <!-- ========================================== -->
+    <div id="visorConciliacionOverlay" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300 flex items-center justify-center p-4">
+        <div class="bg-slate-900 w-full max-w-[95vw] h-[90vh] rounded-2xl shadow-2xl border border-slate-800 flex flex-col overflow-hidden transform scale-95 transition-transform duration-300" id="visorConciliacionModal">
+            
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
+                        <i data-lucide="git-merge" class="w-5 h-5 text-blue-400"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-200 tracking-tight flex items-center gap-2">
+                            Mesa de Conciliación (HITL)
+                            <span id="concil_status_badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">PENDIENTE</span>
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5 font-mono">Control Humano de Desvíos Financieros/Logísticos</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="btn_aprobar_conciliacion" onclick="window.confirmarConciliacion()" class="px-4 py-2 bg-slate-800 text-slate-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 cursor-not-allowed border border-slate-700" disabled>
+                        <i data-lucide="check-circle" class="w-4 h-4"></i> Aprobar Conciliación
+                    </button>
+                    <button onclick="window.closeVisorConciliacion()" class="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Split View -->
+            <div class="flex-1 overflow-hidden flex">
+                
+                <!-- CUADRANTE IZQUIERDO: MUNDO FINANCIERO (FACTURA) -->
+                <div class="w-1/2 border-r border-slate-800 flex flex-col bg-slate-900/30 relative">
+                    <div class="p-4 border-b border-slate-800/50 bg-slate-900/80 sticky top-0 z-10 flex items-center justify-between">
+                        <span class="text-xs font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+                            <i data-lucide="receipt" class="w-4 h-4"></i> Factura Extraída (Finanzas)
+                        </span>
+                        <div class="text-[10px] font-mono text-slate-400 px-2 py-1 bg-slate-950 rounded border border-slate-800" id="concil_fac_nro">---</div>
+                    </div>
+                    
+                    <div class="p-4 flex-1 overflow-y-auto custom-scrollbar">
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                                <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Importe Total</span>
+                                <span class="font-mono font-bold text-amber-400 text-sm" id="concil_fac_total">---</span>
+                            </div>
+                            <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                                <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Fecha Emisión</span>
+                                <span class="font-mono text-slate-300 text-sm" id="concil_fac_fecha">---</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden shadow-inner">
+                            <table class="w-full text-left text-xs text-slate-300 relative">
+                                <thead class="text-[9px] uppercase text-slate-500 bg-slate-900 sticky top-0 shadow-sm border-b border-slate-800">
+                                    <tr>
+                                        <th class="px-3 py-2 font-bold">Cód.</th>
+                                        <th class="px-3 py-2 font-bold w-1/2">Descripción</th>
+                                        <th class="px-3 py-2 font-bold text-center">Cant.</th>
+                                        <th class="px-3 py-2 font-bold text-right">P.Unit</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="concil_fac_articulos" class="divide-y divide-slate-800/50">
+                                    <!-- Dynamic -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CUADRANTE DERECHO: MUNDO LOGÍSTICO (PEDIDOS) -->
+                <div class="w-1/2 flex flex-col bg-slate-900/30 relative">
+                    <div class="p-4 border-b border-slate-800/50 bg-slate-900/80 sticky top-0 z-10">
+                        <div class="flex flex-col gap-2">
+                            <span class="text-xs font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-2">
+                                <i data-lucide="package-check" class="w-4 h-4"></i> Antecedente Logístico
+                            </span>
+                            <div class="flex gap-2 w-full">
+                                <select id="concil_pedido_select" onchange="window.onConciliacionPedidoChange()" class="flex-1 bg-slate-950 border border-emerald-500/30 rounded-lg px-3 py-2 text-xs text-slate-300 focus:border-emerald-500 outline-none transition-colors">
+                                    <option value="">-- Buscar Recepciones / Pedidos Ingresados --</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 flex-1 overflow-y-auto custom-scrollbar relative" id="concil_logistica_container">
+                        <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-600 z-0 opacity-50" id="concil_empty_state">
+                            <i data-lucide="git-pull-request" class="w-16 h-16 mb-4 opacity-20"></i>
+                            <p class="text-sm font-mono text-center px-8">Seleccione un antecedente logístico arriba<br>para cruzar cantidades y precios.</p>
+                        </div>
+                        
+                        <div id="concil_match_content" class="hidden relative z-10">
+                            <!-- Match Summary -->
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                                    <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Desvíos Precio</span>
+                                    <span class="font-mono font-bold text-slate-300 text-sm" id="concil_desvios_precio">0</span>
+                                </div>
+                                <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                                    <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Faltantes Físicos</span>
+                                    <span class="font-mono font-bold text-slate-300 text-sm" id="concil_desvios_cant">0</span>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden shadow-inner">
+                                <table class="w-full text-left text-xs text-slate-300 relative">
+                                    <thead class="text-[9px] uppercase text-slate-500 bg-slate-900 sticky top-0 shadow-sm border-b border-slate-800">
+                                        <tr>
+                                            <th class="px-3 py-2 font-bold w-1/2">Logística</th>
+                                            <th class="px-3 py-2 font-bold text-center">Recibido</th>
+                                            <th class="px-3 py-2 font-bold text-right">P.Pactado</th>
+                                            <th class="px-3 py-2 font-bold text-center">Cruce</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="concil_match_tbody" class="divide-y divide-slate-800/50">
+                                        <!-- Dynamic -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts de Vista -->
     <script src="js/viewer_facturas.js"></script>
+    <script src="js/viewer_conciliacion.js"></script>
 </body>
 </html>

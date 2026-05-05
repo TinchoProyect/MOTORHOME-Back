@@ -188,6 +188,36 @@ router.get('/historial', async (req, res) => {
     }
 });
 
+// GET: Obtener recepciones de un proveedor específico
+router.get('/provider/:proveedorId', async (req, res) => {
+    try {
+        const { proveedorId } = req.params;
+        const { data, error } = await supabase
+            .from('recepciones_fisicas_cabecera')
+            .select(`
+                id,
+                fecha_recepcion,
+                numero_remito,
+                estado,
+                pedido_id,
+                pedidos_b2b_cabecera!inner(proveedor_id),
+                recepciones_fisicas_items(
+                    cantidad_recibida,
+                    pedidos_b2b_items(producto_descripcion)
+                )
+            `)
+            .eq('pedidos_b2b_cabecera.proveedor_id', proveedorId)
+            .neq('estado', 'Anulada')
+            .order('fecha_recepcion', { ascending: false });
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[RECEPCION] Error al listar recepciones de proveedor:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // GET: Obtener ítems de una recepción específica
 router.get('/historial/:recepcionId/items', async (req, res) => {
     try {

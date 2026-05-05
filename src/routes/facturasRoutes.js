@@ -14,4 +14,10 @@ router.put('/:id', facturasController.saveHITL);
 // Obtener facturas procesadas de un proveedor
 router.get('/provider/:providerId', facturasController.getByProvider);
 
+// Obtener detalle de factura
+router.get('/:id', facturasController.getById);
+
+// Matchmaking (Conciliación contra Pedido)
+router.post('/:id/match', facturasController.matchFactura);
+
 module.exports = router;

@@ -144,10 +144,15 @@ window.renderFacturasDBGrid = function(facturas) {
 
     facturas.forEach(fac => {
         let statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-slate-800 text-slate-400">PENDIENTE</span>';
-        if (fac.status === 'REVISADO_HITL') {
-            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">REVISADO HITL</span>';
-        } else if (fac.status === 'CONCILIADO_OK') {
-            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">CONCILIADO OK</span>';
+        
+        if (fac.status_conciliacion === 'OBSERVADO_POR_DESVIOS') {
+            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-red-500/20 text-red-400 border border-red-500/30" title="Desvíos hallados en el cruce logístico">OBSERVADO</span>';
+        } else if (fac.status_conciliacion === 'CONCILIADO_OK') {
+            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" title="Cruce perfecto con Pedido B2B">CONCILIADO OK</span>';
+        } else if (fac.status === 'REVISADO_HITL') {
+            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30" title="Esperando Conciliación">REVISADO HITL</span>';
+        } else if (fac.status === 'PROCESADO') {
+            statusBadge = '<span class="px-2 py-1 rounded text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">PROCESADO</span>';
         }
 
         html += `
@@ -156,10 +161,19 @@ window.renderFacturasDBGrid = function(facturas) {
                 <td class="p-4 font-mono font-bold text-white">${fac.numero_comprobante || 'S/N'}</td>
                 <td class="p-4 text-right text-amber-400 font-mono font-bold">$ ${window.formatCurrency ? window.formatCurrency(fac.importe_total) : fac.importe_total}</td>
                 <td class="p-4 text-center">${statusBadge}</td>
-                <td class="p-4 text-right">
-                    <button class="px-3 py-1 bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white rounded text-[10px] transition-colors" title="Ver Detalles (Pronto)">
-                        <i data-lucide="eye" class="w-3 h-3 inline"></i> Ver
+                <td class="p-4 text-right flex items-center justify-end gap-2">
+                    <button onclick="window.viewFacturaDetails('${fac.id}')" class="px-3 py-1 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded text-[10px] transition-colors" title="Ver Detalles de la Factura">
+                        <i data-lucide="eye" class="w-3 h-3 inline"></i>
                     </button>
+                    ${fac.status_conciliacion !== 'CONCILIADO_OK' ? `
+                    <button onclick="window.openConciliacionModal('${fac.id}')" class="px-3 py-1 bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600 text-amber-500 hover:text-white rounded text-[10px] transition-colors font-bold uppercase tracking-wider flex items-center gap-1" title="Conciliar con Pedido B2B">
+                        <i data-lucide="git-merge" class="w-3 h-3"></i> Conciliar
+                    </button>
+                    ` : `
+                    <button onclick="window.viewConciliacionReport('${fac.id}')" class="px-3 py-1 bg-emerald-600/20 border border-emerald-500/30 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded text-[10px] transition-colors font-bold uppercase tracking-wider flex items-center gap-1" title="Ver Reporte de Cruce">
+                        <i data-lucide="check-circle" class="w-3 h-3"></i> Reporte
+                    </button>
+                    `}
                 </td>
             </tr>
         `;

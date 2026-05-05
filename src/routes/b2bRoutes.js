@@ -72,6 +72,26 @@ router.get('/pedidos/count', async (req, res) => {
     }
 });
 
+// GET /api/b2b/pedidos/provider/:providerId
+router.get('/pedidos/provider/:providerId', async (req, res) => {
+    try {
+        const { providerId } = req.params;
+        const { data, error } = await supabase
+            .from('pedidos_b2b_cabecera')
+            .select('id, fecha_emision, estado, tipo_documento')
+            .eq('proveedor_id', providerId)
+            .in('estado', ['Emitido', 'Completado'])
+            .order('fecha_emision', { ascending: false });
+
+        if (error) throw error;
+        
+        return res.json({ success: true, pedidos: data || [] });
+    } catch(e) {
+        console.error("Error al obtener pedidos por proveedor B2B:", e);
+        return res.status(500).json({ error: e.message });
+    }
+});
+
 // GET /api/b2b/pedidos
 router.get('/pedidos', async (req, res) => {
     try {

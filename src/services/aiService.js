@@ -597,6 +597,7 @@ Extrae los importes numéricos. Si no existen, devuelve 0. Deben ser floats vál
 - "percepciones_iibb": Sumatoria de percepciones de Ingresos Brutos.
 - "percepciones_iva": Sumatoria de percepciones de IVA.
 - "conceptos_no_gravados": Importe no gravado o exento.
+- "descuento_global_aplicado": El valor monetario de cualquier descuento global impreso en la factura. Si no hay, 0.0.
 - "importe_total": El total exacto facturado.
 
 ESTRUCTURA JSON REQUERIDA:
@@ -615,6 +616,7 @@ ESTRUCTURA JSON REQUERIDA:
   "percepciones_iibb": 0.0,
   "percepciones_iva": 0.0,
   "conceptos_no_gravados": 0.0,
+  "descuento_global_aplicado": 0.0,
   "importe_total": 0.0,
   "articulos": [
     {
