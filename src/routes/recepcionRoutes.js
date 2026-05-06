@@ -170,6 +170,7 @@ router.get('/historial', async (req, res) => {
                 fecha_recepcion,
                 numero_remito,
                 estado,
+                estado_conciliacion,
                 notas,
                 pedido_id,
                 pedidos_b2b_cabecera:pedido_id (
