@@ -3,12 +3,14 @@ const crypto = require('crypto');
 
 const bancosParserService = {
     /**
-     * Procesa un buffer de Excel y extrae las filas de pagos con CUIT matcheado
+     * Procesa un buffer de Excel y extrae las filas de pagos con CUIT matcheado o huérfanas
      * @param {Buffer} fileBuffer Buffer del archivo Excel
      * @param {Array} proveedores Padrón de proveedores [{id, cuit}]
-     * @returns {Object} { pagosValidos, omitidos }
+     * @param {Array} memoriaMapeo Diccionario de mapeos manuales [{patron_busqueda, proveedor_id}]
+     * @param {String} archivoId ID de Google Drive
+     * @returns {Object} { pagosCrudos, estadisticas }
      */
-    parseExtracto: (fileBuffer, proveedores) => {
+    parseExtracto: (fileBuffer, proveedores, memoriaMapeo, archivoId) => {
         try {
             console.log(`[BancosParser] Iniciando parseo de Excel...`);
             const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
@@ -22,7 +24,7 @@ const bancosParserService = {
             
             console.log(`[BancosParser] Total de filas crudas: ${rawData.length}`);
 
-            // Heurística de Cabeceras: Buscar fila con ['Fecha', 'Movimiento' | 'Débito']
+            // Heurística de Cabeceras
             let headerRowIndex = -1;
             let headerMap = {};
 
@@ -33,7 +35,6 @@ const bancosParserService = {
                 const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
                 if (rowStr.includes('fecha') && (rowStr.includes('movimiento') || rowStr.includes('concepto')) && (rowStr.includes('débito') || rowStr.includes('debito') || rowStr.includes('importe'))) {
                     headerRowIndex = i;
-                    // Construir mapa de índices
                     row.forEach((col, idx) => {
                         const colName = String(col || '').toLowerCase().trim();
                         if (colName.includes('fecha')) headerMap['fecha'] = idx;
@@ -49,13 +50,13 @@ const bancosParserService = {
                 throw new Error("No se pudo detectar la fila de cabeceras (Fecha, Movimiento, Débito). El formato del banco no es reconocido.");
             }
 
-            console.log(`[BancosParser] Cabeceras detectadas en la fila ${headerRowIndex}`);
-
-            const pagosValidos = [];
-            const omitidos = {
-                sin_cuit: 0,
-                cuit_no_encontrado: 0,
-                ingresos: 0
+            const pagosCrudos = [];
+            const stats = {
+                procesados: 0,
+                auto_vinculados_cuit: 0,
+                auto_vinculados_memoria: 0,
+                pendientes_hitl: 0,
+                ignorados_ingresos: 0
             };
 
             for (let i = headerRowIndex + 1; i < rawData.length; i++) {
@@ -69,8 +70,6 @@ const bancosParserService = {
                 }
                 let debitoRaw = row[headerMap['debito']];
 
-                // 1. Filtrar solo salidas de dinero (Débito > 0)
-                // A veces el excel trae strings con comas, o números
                 let debito = 0;
                 if (typeof debitoRaw === 'number') {
                     debito = debitoRaw;
@@ -80,17 +79,15 @@ const bancosParserService = {
                 }
 
                 if (isNaN(debito) || debito <= 0) {
-                    omitidos.ingresos++;
-                    continue; // No es un pago, o es un ingreso/crédito
+                    stats.ignorados_ingresos++;
+                    continue; // Solo Débitos
                 }
 
-                // Normalizar fecha Excel (número de serie) a String YYYY-MM-DD
                 let fechaIso = null;
                 if (typeof fechaRaw === 'number') {
                     const dateObj = new Date(Math.round((fechaRaw - 25569) * 86400 * 1000));
                     fechaIso = dateObj.toISOString().split('T')[0];
                 } else if (typeof fechaRaw === 'string') {
-                    // Intento de parseo DD/MM/YYYY
                     const parts = fechaRaw.split('/');
                     if (parts.length === 3) {
                         fechaIso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
@@ -98,49 +95,61 @@ const bancosParserService = {
                         fechaIso = new Date(fechaRaw).toISOString().split('T')[0];
                     }
                 }
+                if (!fechaIso) fechaIso = new Date().toISOString().split('T')[0];
 
-                if (!fechaIso) fechaIso = new Date().toISOString().split('T')[0]; // fallback
-
-                // 2. Pesca de CUIT (Regex)
-                // Buscamos secuencias de 11 dígitos, con o sin guiones
-                const cuitRegex = /\b(\d{2})[-]?(\d{8})[-]?(\d{1})\b/;
-                const match = movimientoStr.match(cuitRegex);
-
-                if (!match) {
-                    omitidos.sin_cuit++;
-                    continue;
-                }
-
-                // Saneamiento de CUIT extraído
-                const cuitPescado = match[1] + match[2] + match[3];
-
-                // 3. Vinculación Unívoca
-                const proveedorMatch = proveedores.find(p => p.cuit && p.cuit.replace(/[^0-9]/g, '') === cuitPescado);
-
-                if (!proveedorMatch) {
-                    omitidos.cuit_no_encontrado++;
-                    continue;
-                }
-
-                // 4. Generación de Hash Anti-Duplicados
-                // Hash = md5(fechaIso + debito + movimientoLimpio)
                 const strForHash = `${fechaIso}_${debito.toFixed(2)}_${movimientoStr.replace(/\s+/g, '').toLowerCase()}`;
                 const hash_id = crypto.createHash('md5').update(strForHash).digest('hex');
 
-                pagosValidos.push({
+                let estado = 'PENDIENTE';
+                let proveedor_id = null;
+                let cuitPescado = null;
+
+                // 1. Matcheo por CUIT (Máxima Certeza)
+                const cuitRegex = /\b(\d{2})[-]?(\d{8})[-]?(\d{1})\b/;
+                const match = movimientoStr.match(cuitRegex);
+                
+                if (match) {
+                    cuitPescado = match[1] + match[2] + match[3];
+                    const proveedorMatch = proveedores.find(p => p.cuit && p.cuit.replace(/[^0-9]/g, '') === cuitPescado);
+                    if (proveedorMatch) {
+                        proveedor_id = proveedorMatch.id;
+                        estado = 'AUTO_VINCULADO';
+                        stats.auto_vinculados_cuit++;
+                    }
+                }
+
+                // 2. Matcheo por Memoria (Si no hubo CUIT o no se encontró)
+                if (estado === 'PENDIENTE' && memoriaMapeo && memoriaMapeo.length > 0) {
+                    const movimientoLower = movimientoStr.toLowerCase();
+                    const hitMemoria = memoriaMapeo.find(m => movimientoLower.includes(m.patron_busqueda.toLowerCase()));
+                    if (hitMemoria) {
+                        proveedor_id = hitMemoria.proveedor_id;
+                        estado = 'AUTO_VINCULADO'; // Se trata igual que vinculado, se dispara el trigger
+                        stats.auto_vinculados_memoria++;
+                    }
+                }
+
+                if (estado === 'PENDIENTE') {
+                    stats.pendientes_hitl++;
+                }
+
+                pagosCrudos.push({
                     hash_id,
-                    proveedor_id: proveedorMatch.id,
+                    archivo_origen_id: archivoId,
+                    proveedor_id,
                     fecha_pago: fechaIso,
                     monto_pago: debito,
                     descripcion_original: movimientoStr,
-                    cuit_pescado: cuitPescado,
-                    proveedor_nombre: proveedorMatch.razon_social
+                    cuit_detectado: cuitPescado,
+                    estado
                 });
+                
+                stats.procesados++;
             }
 
-            console.log(`[BancosParser] Finalizado. Válidos: ${pagosValidos.length}. Sin CUIT: ${omitidos.sin_cuit}. No Encontrados: ${omitidos.cuit_no_encontrado}.`);
+            console.log(`[BancosParser] Finalizado. Procesados: ${stats.procesados}. Auto (CUIT): ${stats.auto_vinculados_cuit}. Auto (Memoria): ${stats.auto_vinculados_memoria}. Pendientes (HITL): ${stats.pendientes_hitl}.`);
 
-            return { success: true, pagosValidos, omitidos };
+            return { success: true, pagosCrudos, estadisticas: stats };
 
         } catch (error) {
             console.error("[BancosParser] Error crítico en parseo:", error);
