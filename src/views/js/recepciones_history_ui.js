@@ -10,7 +10,7 @@ window.openReceptionHistory = async function() {
     reportDisplay.innerHTML = `
         <div class="h-full flex flex-col animate-in fade-in zoom-in-95 duration-300 p-2">
             <!-- Header section -->
-            <div class="flex justify-between items-start mb-6 border-b border-slate-800 pb-4 shrink-0">
+            <div class="flex justify-between items-start mb-4 pb-4 shrink-0">
                 <div>
                     <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                         <i data-lucide="history" class="w-5 h-5 text-indigo-400"></i> Historial de Recepciones
@@ -22,6 +22,16 @@ window.openReceptionHistory = async function() {
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i> Actualizar
                     </button>
                 </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex border-b border-slate-800 mb-4 shrink-0">
+                <button id="tabRhPendientes" onclick="window.switchReceptionTab('PENDIENTES')" class="px-4 py-3 text-xs font-bold uppercase tracking-widest border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition-colors">
+                    <i data-lucide="inbox" class="w-4 h-4"></i> Pendientes de Facturar
+                </button>
+                <button id="tabRhConciliados" onclick="window.switchReceptionTab('CONCILIADOS')" class="px-4 py-3 text-xs font-bold uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-300 flex items-center gap-2 transition-colors">
+                    <i data-lucide="archive" class="w-4 h-4"></i> Conciliados / Histórico
+                </button>
             </div>
 
             <!-- Content Area -->
@@ -39,7 +49,27 @@ window.openReceptionHistory = async function() {
     `;
 
     if (window.lucide) window.lucide.createIcons();
+    window.rhTabState = 'PENDIENTES'; // Inicializar estado
     await window.loadReceptionHistory();
+}
+
+window.switchReceptionTab = function(tab) {
+    window.rhTabState = tab;
+    
+    const tabPendientes = document.getElementById('tabRhPendientes');
+    const tabConciliados = document.getElementById('tabRhConciliados');
+    
+    if (tab === 'PENDIENTES') {
+        tabPendientes.className = "px-4 py-3 text-xs font-bold uppercase tracking-widest border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition-colors";
+        tabConciliados.className = "px-4 py-3 text-xs font-bold uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-300 flex items-center gap-2 transition-colors";
+    } else {
+        tabConciliados.className = "px-4 py-3 text-xs font-bold uppercase tracking-widest border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition-colors";
+        tabPendientes.className = "px-4 py-3 text-xs font-bold uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-300 flex items-center gap-2 transition-colors";
+    }
+    
+    if (window.receptionHistoryCache) {
+        renderReceptionHistoryCards(window.receptionHistoryCache);
+    }
 }
 
 window.loadReceptionHistory = async function() {
@@ -76,9 +106,16 @@ function renderReceptionHistoryCards(data) {
     
     if(!container) return;
 
-    if (statusLabel) statusLabel.innerText = `Mostrando ${data.length} registros de recepción`;
+    let filteredData = [];
+    if (window.rhTabState === 'PENDIENTES') {
+        filteredData = data.filter(r => r.estado_conciliacion !== 'CONCILIADA' && r.estado !== 'Anulada');
+    } else {
+        filteredData = data.filter(r => r.estado_conciliacion === 'CONCILIADA' || r.estado === 'Anulada');
+    }
 
-    if (data.length === 0) {
+    if (statusLabel) statusLabel.innerText = `Mostrando ${filteredData.length} registros en esta solapa`;
+
+    if (filteredData.length === 0) {
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center py-20 text-slate-500">
                 <i data-lucide="inbox" class="w-12 h-12 mb-4 opacity-50"></i>
@@ -91,7 +128,7 @@ function renderReceptionHistoryCards(data) {
 
     let temporalGroups = {};
     
-    data.forEach(rec => {
+    filteredData.forEach(rec => {
         let monthYear = "Fecha Desconocida";
         if (rec.fecha_recepcion) {
             const d = new Date(rec.fecha_recepcion);
@@ -147,6 +184,7 @@ function renderReceptionHistoryCards(data) {
                                 <i data-lucide="truck" class="w-4 h-4 text-slate-400"></i> ${provName}
                             </span>
                             <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border ${colorEstado}">${rec.estado}</span>
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border ${rec.estado_conciliacion === 'CONCILIADA' ? 'bg-indigo-900/30 text-indigo-400 border-indigo-500/50' : 'bg-slate-800 text-slate-400 border-slate-700'}">${rec.estado_conciliacion || 'PENDIENTE'}</span>
                         </div>
                         <div class="flex items-center gap-4 text-[10px] font-mono text-slate-400">
                             <span title="ID de Recepción">REC: ${rec.id.split('-')[0]}</span>
