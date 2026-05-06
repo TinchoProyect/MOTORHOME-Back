@@ -156,10 +156,10 @@ window.onConciliacionPedidoChange = async function() {
         let errCant = 0;
 
         data.matchReport.forEach(row => {
-            const hasFaltante = row.desvios.some(d => d.includes('Faltante'));
-            if (hasFaltante) errCant++;
+            const hasFaltante = (row.desvios || []).some(d => d.includes('Faltante'));
+            if (hasFaltante || !row.pedido) errCant++;
 
-            const cantClass = hasFaltante ? 'text-red-400 font-bold bg-red-500/10' : 'text-emerald-400';
+            const cantClass = (hasFaltante || !row.pedido) ? 'text-red-400 font-bold bg-red-500/10' : 'text-emerald-400';
             
             // Lógica de Semáforo Financiero
             let priceClass = 'text-emerald-400';
@@ -196,7 +196,9 @@ window.onConciliacionPedidoChange = async function() {
             }
 
             // Si hay faltante, el icono general de la fila también debe ser una alerta roja
-            if (hasFaltante) {
+            if (!row.pedido) {
+                statusIcon = '<i data-lucide="x-circle" class="w-4 h-4 text-red-500 mx-auto" title="No hallado en Pedido"></i>';
+            } else if (hasFaltante) {
                 statusIcon = '<i data-lucide="alert-triangle" class="w-4 h-4 text-red-500 mx-auto" title="Faltante Físico Detectado"></i>';
             }
 

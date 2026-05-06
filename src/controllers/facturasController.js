@@ -439,7 +439,8 @@ const facturasController = {
                         factura: artFactura,
                         pedido: null,
                         recibido: 0,
-                        mensaje: "Artículo facturado no existe en el Pedido."
+                        mensaje: "Artículo facturado no existe en el Pedido.",
+                        desvios: ["Artículo facturado no existe en el Pedido."]
                     });
                     continue;
                 }
