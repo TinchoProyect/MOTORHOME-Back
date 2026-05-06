@@ -63,6 +63,34 @@ async function getActiveProvidersCount(req, res) {
     }
 }
 
+// GET /api/master-table/proveedores
+async function getProveedores(req, res) {
+    try {
+        console.log(`[MasterTableController] 🔍 Consultando padrón de proveedores activos...`);
+        const { data, error } = await supabase
+            .from('proveedores')
+            .select('id, cuit, nombre, afip_razon_social')
+            .eq('activo', true)
+            .order('nombre', { ascending: true });
+
+        if (error) {
+            console.error("[MasterTableController] Error DB al obtener proveedores:", error);
+            return res.status(500).json({ success: false, error: error.message });
+        }
+
+        // Map para compatibilidad con razon_social
+        const mappedData = (data || []).map(p => ({
+            ...p,
+            razon_social: p.nombre || p.afip_razon_social || 'Proveedor Sin Nombre'
+        }));
+
+        return res.json({ success: true, data: mappedData });
+    } catch (error) {
+        console.error("[MasterTableController] Catch Error getProveedores:", error);
+        return res.status(500).json({ success: false, error: "Error interno del servidor", details: error.message });
+    }
+}
+
 // POST /api/master-table/dictionary
 async function createMasterField(req, res) {
     try {
@@ -378,6 +406,7 @@ async function deleteCategory(req, res) {
 module.exports = {
     getMasterFields,
     getActiveProvidersCount,
+    getProveedores,
     createMasterField,
     updateMasterField,
     toggleMasterFieldStatus,

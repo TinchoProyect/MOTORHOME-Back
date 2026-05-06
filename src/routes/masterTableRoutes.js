@@ -26,9 +26,10 @@ router.put('/presets/:id', masterTableController.updatePreset);
 router.delete('/presets/:id', masterTableController.deletePreset);
 
 // ==========================================
-// WIDGETS DATA
+// WIDGETS DATA & PADRÓN
 // ==========================================
 router.get('/providers/active-count', masterTableController.getActiveProvidersCount);
+router.get('/proveedores', masterTableController.getProveedores);
 
 // ==========================================
 // V5: CRUD DE CATEGORÍAS (Solapas Dinámicas)

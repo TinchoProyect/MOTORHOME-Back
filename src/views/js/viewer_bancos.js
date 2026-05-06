@@ -262,7 +262,7 @@ window.loadBancosMovimientos = async function(archivoId) {
                     <button onclick="window.ignorarMovimiento('${m.hash_id}')" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-[10px] font-bold transition-colors ml-1">Ignorar</button>
                 `;
             } else if (m.estado === 'VINCULADO' || m.estado === 'AUTO_VINCULADO') {
-                const provName = m.proveedores ? m.proveedores.razon_social : 'Proveedor';
+                const provName = m.proveedores ? (m.proveedores.nombre || m.proveedores.afip_razon_social) : 'Proveedor';
                 estadoHtml = `
                     <div class="flex items-center gap-1 text-emerald-400">
                         <i data-lucide="check-circle-2" class="w-3 h-3"></i>
@@ -310,7 +310,7 @@ window.abrirModalVincular = async function(hashId, descripcionOriginal) {
 
         let options = '<option value="">-- Seleccionar Proveedor --</option>';
         proveedores.forEach(p => {
-            options += `<option value="${p.id}">${p.razon_social} (${p.cuit})</option>`;
+            options += `<option value="${p.id}">${p.razon_social} (${p.cuit || 'Sin CUIT'})</option>`;
         });
 
         Swal.fire({

@@ -72,7 +72,7 @@ const bancosController = {
 
             // 1. Obtener Padrón de Proveedores y Memoria de Mapeo
             const [provRes, memoriaRes] = await Promise.all([
-                supabase.from('proveedores').select('id, cuit, razon_social').eq('status', 'activo'),
+                supabase.from('proveedores').select('id, cuit, nombre, afip_razon_social').eq('activo', true),
                 supabase.from('bancos_memoria_mapeo').select('patron_busqueda, proveedor_id')
             ]);
 
@@ -158,7 +158,7 @@ const bancosController = {
                 .from('pagos_bancarios_raw')
                 .select(`
                     *,
-                    proveedores ( razon_social, cuit )
+                    proveedores ( nombre, cuit, afip_razon_social )
                 `)
                 .order('fecha_pago', { ascending: false });
 
