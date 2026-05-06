@@ -19,8 +19,11 @@ const cuentaCorrienteController = {
 
             if (error) throw error;
 
-            // 2. Obtener saldo (al vuelo)
-            const saldoTotal = movimientos.reduce((acc, mov) => acc + (mov.monto_credito - mov.monto_debito), 0);
+            // 2. Obtener saldo (al vuelo), ignorando los movimientos omitidos
+            const saldoTotal = movimientos.reduce((acc, mov) => {
+                if (mov.es_omitido) return acc;
+                return acc + (mov.monto_credito - mov.monto_debito);
+            }, 0);
 
             // 3. Obtener recepciones históricas conciliadas
             const { data: recepciones, error: recErr } = await supabase
@@ -37,6 +40,26 @@ const cuentaCorrienteController = {
             res.json({ success: true, movimientos, saldoTotal, recepciones: recepciones || [] });
         } catch (error) {
             console.error("Error getByProvider CC:", error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
+    toggleOmitir: async (req, res) => {
+        const { id } = req.params;
+        const { es_omitido } = req.body;
+        
+        try {
+            const { data, error } = await supabase
+                .from('cuenta_corriente_proveedores')
+                .update({ es_omitido: !!es_omitido })
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw error;
+            res.json({ success: true, data });
+        } catch (error) {
+            console.error("Error toggleOmitir CC:", error);
             res.status(500).json({ error: error.message });
         }
     }

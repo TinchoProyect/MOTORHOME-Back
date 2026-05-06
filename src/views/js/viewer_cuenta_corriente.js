@@ -36,10 +36,11 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                                 <th class="p-2">Factura</th>
                                 <th class="p-2 text-right">Crédito (+)</th>
                                 <th class="p-2 text-right">Débito (-)</th>
+                                <th class="p-2 text-center w-20">Acción</th>
                             </tr>
                         </thead>
                         <tbody id="cc_tbody_movimientos" class="divide-y divide-slate-800 text-slate-300">
-                            <tr><td colspan="5" class="p-4 text-center">Cargando...</td></tr>
+                            <tr><td colspan="6" class="p-4 text-center">Cargando...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -83,18 +84,30 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                 // Render Movimientos
                 const tbMovs = document.getElementById('cc_tbody_movimientos');
                 if (data.movimientos.length === 0) {
-                    tbMovs.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500 italic">No hay movimientos financieros registrados.</td></tr>';
+                    tbMovs.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-500 italic">No hay movimientos financieros registrados.</td></tr>';
                 } else {
                     tbMovs.innerHTML = data.movimientos.map(m => {
                         const date = new Date(m.fecha_movimiento).toLocaleDateString('es-AR');
                         const fact = m.facturas_raw ? `${m.facturas_raw.tipo_comprobante} ${m.facturas_raw.punto_venta}-${m.facturas_raw.numero_comprobante}` : '-';
+                        const isOmitido = m.es_omitido;
+                        
+                        const rowClass = isOmitido ? 'opacity-50 line-through bg-slate-900/80 hover:bg-slate-800/80' : 'hover:bg-slate-800/50';
+                        const tagHtml = isOmitido ? '<br><span class="text-[9px] bg-slate-700 px-1 rounded text-slate-300 no-underline inline-block mt-1">OMITIDO</span>' : '';
+                        
                         return `
-                            <tr class="hover:bg-slate-800/50">
+                            <tr class="${rowClass}">
                                 <td class="p-2 font-mono text-[10px] text-slate-400">${date}</td>
-                                <td class="p-2 font-bold">${m.tipo_movimiento}</td>
+                                <td class="p-2 font-bold">${m.tipo_movimiento} ${tagHtml}</td>
                                 <td class="p-2 text-slate-400">${fact}</td>
                                 <td class="p-2 text-right text-red-400 font-mono">${m.monto_credito > 0 ? formatter.format(m.monto_credito) : '-'}</td>
                                 <td class="p-2 text-right text-emerald-400 font-mono">${m.monto_debito > 0 ? formatter.format(m.monto_debito) : '-'}</td>
+                                <td class="p-2 text-center">
+                                    <button onclick="window.toggleOmitirMovimiento('${m.id}', ${isOmitido}, '${providerId}', '${providerName}')" 
+                                            class="p-1 rounded ${isOmitido ? 'text-amber-500 hover:text-amber-400 hover:bg-amber-500/10' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700'}" 
+                                            title="${isOmitido ? 'Restaurar Saldo' : 'Omitir del Saldo (Histórico)'}">
+                                        <i data-lucide="${isOmitido ? 'rotate-ccw' : 'eye-off'}" class="w-4 h-4"></i>
+                                    </button>
+                                </td>
                             </tr>
                         `;
                     }).join('');
@@ -123,6 +136,8 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                     }).join('');
                 }
 
+                if (window.lucide) window.lucide.createIcons();
+
             } catch (err) {
                 console.error(err);
                 document.getElementById('cc_saldo_total').innerText = 'ERROR';
@@ -148,5 +163,25 @@ window.switchCCTab = function(tabName) {
         btnMovs.className = "px-4 py-2 border-b-2 border-transparent text-slate-400 hover:text-slate-300 text-sm font-bold tracking-wide flex items-center gap-2";
         contentRecs.classList.remove('hidden');
         contentMovs.classList.add('hidden');
+    }
+};
+
+window.toggleOmitirMovimiento = async function(movId, currentState, providerId, providerName) {
+    try {
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const newState = !currentState;
+        const res = await fetch(backendBaseUrl + '/api/cuenta-corriente/' + movId + '/omitir', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ es_omitido: newState })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Recargar el modal para actualizar el saldo y la tabla visualmente
+        window.openCuentaCorriente(providerId, providerName);
+    } catch(err) {
+        console.error('Error al cambiar estado de omision:', err);
+        Swal.fire({ icon: 'error', title: 'Error', text: err.message, background: '#0f172a', color: '#f8fafc' });
     }
 };

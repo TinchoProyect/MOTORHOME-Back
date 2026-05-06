@@ -3,5 +3,6 @@ const router = express.Router();
 const ccController = require('../controllers/cuentaCorrienteController');
 
 router.get('/proveedor/:providerId', ccController.getByProvider);
+router.patch('/:id/omitir', ccController.toggleOmitir);
 
 module.exports = router;
