@@ -3674,10 +3674,29 @@
 
     <!-- Dual Layout -->
     <div class="flex-1 flex overflow-hidden">
-        <!-- Izquierda: Documento Original (Iframe) -->
-        <div class="w-1/2 border-r border-slate-800 bg-black flex flex-col relative">
+        <!-- Izquierda: Documento Original (Iframe/Imagen) -->
+        <div class="w-1/2 border-r border-slate-800 bg-black flex flex-col relative overflow-hidden" id="visorFacturasIframeContainer">
             <div class="absolute top-2 left-2 bg-black/60 backdrop-blur text-slate-400 text-[10px] font-bold uppercase px-3 py-1 rounded shadow-lg z-10 border border-slate-800 pointer-events-none">Documento Físico Original</div>
-            <iframe id="iframeFactura" class="w-full h-full border-none" src=""></iframe>
+            
+            <!-- Controles de Zoom Aislado -->
+            <div id="visorZoomControls" class="absolute bottom-4 right-4 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-lg shadow-2xl flex items-center p-1 z-20 hidden">
+                <button onclick="window.zoomVisor(0.1)" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors" title="Zoom In">
+                    <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                </button>
+                <div class="w-px h-4 bg-slate-700 mx-1"></div>
+                <button onclick="window.zoomVisor(-0.1)" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors" title="Zoom Out">
+                    <i data-lucide="zoom-out" class="w-4 h-4"></i>
+                </button>
+                <div class="w-px h-4 bg-slate-700 mx-1"></div>
+                <button onclick="window.resetZoomVisor()" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors" title="Restaurar Vista">
+                    <i data-lucide="maximize" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <!-- Wrapper para inyección dinámica y transform-gpu -->
+            <div id="visorZoomWrapper" class="w-full h-full flex items-center justify-center transform-gpu origin-center transition-transform duration-200">
+                <iframe id="iframeFactura" class="w-full h-full border-none" src=""></iframe>
+            </div>
         </div>
 
         <!-- Derecha: Formulario de Extracción estructurada -->
@@ -3741,7 +3760,7 @@
                         </div>
                         <div class="relative w-40">
                             <span class="absolute left-3 top-2 text-slate-500 text-xs">$</span>
-                            <input type="text" id="fac_neto" class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-6 pr-3 py-2 text-xs font-mono text-slate-200 text-right focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none" value="0,00">
+                            <input type="text" id="fac_neto" class="w-full bg-slate-950 border-2 border-slate-700 rounded-lg pl-6 pr-3 py-2 text-xs font-mono text-slate-200 text-right focus:border-amber-500 focus:ring-1 outline-none transition-all" value="0,00">
                         </div>
                     </div>
                     

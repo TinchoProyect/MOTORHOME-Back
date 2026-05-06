@@ -1,6 +1,29 @@
 // viewer_facturas.js - Satélite de Facturación HITL
 console.log("%c 🧾 VISOR HITL FACTURAS: READY ", "background: #f59e0b; color: #fff; font-weight: bold; padding: 4px;");
 
+window.currentVisorZoom = 1;
+
+window.zoomVisor = function(delta) {
+    window.currentVisorZoom += delta;
+    if (window.currentVisorZoom < 0.5) window.currentVisorZoom = 0.5;
+    if (window.currentVisorZoom > 4) window.currentVisorZoom = 4;
+    const wrapper = document.getElementById('visorZoomWrapper');
+    if (!wrapper) return;
+    const tx = wrapper.dataset.tx || 0;
+    const ty = wrapper.dataset.ty || 0;
+    wrapper.style.transform = `translate(${tx}px, ${ty}px) scale(${window.currentVisorZoom})`;
+};
+
+window.resetZoomVisor = function() {
+    window.currentVisorZoom = 1;
+    const wrapper = document.getElementById('visorZoomWrapper');
+    if (wrapper) {
+        wrapper.style.transform = `translate(0px, 0px) scale(1)`;
+        wrapper.dataset.tx = 0;
+        wrapper.dataset.ty = 0;
+    }
+};
+
 window.openVisorFacturas = async function(fileId, fileName, providerId, webViewLink, btnElement = null) {
     const modal = document.getElementById('visorFacturasModal');
     const iframe = document.getElementById('iframeFactura');
@@ -58,7 +81,59 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
         
         // Ahora sí, abrir modal e inyectar el Iframe visualmente
         modal.classList.remove('hidden');
-        iframe.src = `${backendUrl}/api/facturas/pdf/${fileId}?name=${encodeURIComponent(fileName)}`;
+        
+        const lowerFileName = fileName.toLowerCase();
+        const isImage = lowerFileName.endsWith('.jpg') || lowerFileName.endsWith('.jpeg') || lowerFileName.endsWith('.png') || lowerFileName.endsWith('.webp');
+        const proxyUrl = `${backendUrl}/api/facturas/pdf/${fileId}?name=${encodeURIComponent(fileName)}`;
+        const wrapper = document.getElementById('visorZoomWrapper');
+        const zoomControls = document.getElementById('visorZoomControls');
+        
+        if (wrapper) {
+            wrapper.innerHTML = ''; // Limpiar previo
+            window.resetZoomVisor();
+            
+            if (isImage) {
+                if (zoomControls) zoomControls.classList.remove('hidden');
+                const img = document.createElement('img');
+                img.id = 'imgFactura';
+                img.src = proxyUrl;
+                img.className = 'w-full h-full object-contain cursor-grab active:cursor-grabbing';
+                img.draggable = false;
+                wrapper.appendChild(img);
+                
+                let isDragging = false;
+                let startX, startY;
+                
+                img.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    startX = e.clientX - parseFloat(wrapper.dataset.tx || 0);
+                    startY = e.clientY - parseFloat(wrapper.dataset.ty || 0);
+                    e.preventDefault(); // Evitar selección/arrastre fantasma
+                });
+                window.addEventListener('mouseup', () => { isDragging = false; });
+                window.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    const tx = e.clientX - startX;
+                    const ty = e.clientY - startY;
+                    wrapper.dataset.tx = tx;
+                    wrapper.dataset.ty = ty;
+                    wrapper.style.transform = `translate(${tx}px, ${ty}px) scale(${window.currentVisorZoom})`;
+                });
+                
+                wrapper.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    window.zoomVisor(e.deltaY > 0 ? -0.1 : 0.1);
+                });
+            } else {
+                if (zoomControls) zoomControls.classList.add('hidden');
+                const iframeObj = document.createElement('iframe');
+                iframeObj.id = 'iframeFactura';
+                iframeObj.src = proxyUrl;
+                iframeObj.className = 'w-full h-full border-none';
+                wrapper.appendChild(iframeObj);
+            }
+        }
+        
         sub.textContent = `${fileName} - Revisión HITL Pendiente`;
         
         // Fill form
@@ -197,12 +272,17 @@ window.calcularTotalesFactura = function() {
     // =====================================
     const cs = document.getElementById('fac_checksum_status');
     const btnSave = document.getElementById('btn_save_factura_hitl');
+    const inputNeto = document.getElementById('fac_neto');
     
     if (cs) {
         const diffChecksum = Math.abs(sumaArticulos - neto);
         cs.classList.remove('hidden');
         if (diffChecksum <= 5.00) {
             cs.innerHTML = `<i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-500" title="Checksum Válido (Grilla coincide con Neto Gravado)"></i>`;
+            if (inputNeto) {
+                inputNeto.classList.remove('border-red-500', 'border-slate-700');
+                inputNeto.classList.add('border-emerald-500');
+            }
             if (btnSave) {
                 btnSave.disabled = false;
                 btnSave.classList.remove('cursor-not-allowed', 'bg-slate-800', 'text-slate-500');
@@ -210,6 +290,10 @@ window.calcularTotalesFactura = function() {
             }
         } else {
             cs.innerHTML = `<i data-lucide="alert-triangle" class="w-5 h-5 text-red-500" title="Checksum Fallido: Desvío de $${window.formatCurrency(diffChecksum)} entre Grilla y Neto"></i>`;
+            if (inputNeto) {
+                inputNeto.classList.remove('border-emerald-500', 'border-slate-700');
+                inputNeto.classList.add('border-red-500');
+            }
             if (btnSave) {
                 btnSave.disabled = true;
                 btnSave.classList.add('cursor-not-allowed', 'bg-slate-800', 'text-slate-500');
@@ -267,6 +351,21 @@ window.renderGridArticulos = function() {
                 e.target.value = window.formatCurrency(val);
             }
             window.currentArticulos[idx][field] = val;
+            
+            // Subtotal Dinámico (Tarea 3)
+            if (field === 'cantidad' || field === 'precio_unitario') {
+                const c = window.parseCurrency(window.currentArticulos[idx].cantidad) || 1;
+                const p = window.parseCurrency(window.currentArticulos[idx].precio_unitario) || 0;
+                const newSubtotal = c * p;
+                window.currentArticulos[idx].subtotal = newSubtotal;
+                
+                const row = e.target.closest('tr');
+                if (row) {
+                    const subInput = row.querySelector('[data-field="subtotal"]');
+                    if (subInput) subInput.value = window.formatCurrency(newSubtotal);
+                }
+            }
+            
             window.calcularTotalesFactura();
         });
 
@@ -276,7 +375,7 @@ window.renderGridArticulos = function() {
                 e.target.value = val === 0 ? '' : val.toString().replace('.', ',');
             });
             input.addEventListener('blur', (e) => {
-                e.target.value = window.formatCurrency(e.target.value.replace(',', '.'));
+                e.target.value = window.formatCurrency(window.parseCurrency(e.target.value));
             });
         }
     });
@@ -295,7 +394,7 @@ window.renderGridArticulos = function() {
     });
     
     el.addEventListener('blur', (e) => {
-        e.target.value = window.formatCurrency(e.target.value.replace(',', '.'));
+        e.target.value = window.formatCurrency(window.parseCurrency(e.target.value));
         window.calcularTotalesFactura();
     });
 });
