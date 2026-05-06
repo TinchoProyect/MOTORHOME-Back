@@ -784,8 +784,9 @@ async function showSingleSupplier(id) {
                 <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                     <i data-lucide="hard-drive" class="w-3 h-3"></i> Digital Assets
                 </h3>
+                <div class="space-y-3">
                 ${supplier.drive_folder_id
-            ? `<div class="space-y-3">
+            ? `
                    <div onclick="exploreSupplierFiles('${supplier.drive_folder_prices_id || supplier.drive_folder_id}', 'listas')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-blue-500/30 transition-colors cursor-pointer">
                        <div class="flex items-center gap-3">
                            <div class="p-2 bg-slate-900 rounded-md text-blue-500">
@@ -804,8 +805,11 @@ async function showSingleSupplier(id) {
                            ${supplier.drive_folder_extracted_id ? '<span title="Extracciones Activas" class="w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50"></span>' : ''}
                            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors"></i>
                        </div>
-                   </div>
-                   ${supplier.drive_folder_facturas_id ? `
+                   </div>`
+            : `<div class="text-xs text-slate-600 italic py-2">Sin Listas de Precios vinculadas</div>`
+        }
+        
+        ${supplier.drive_folder_facturas_id ? `
                    <div onclick="exploreSupplierFiles('${supplier.drive_folder_facturas_id}', 'facturas')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800 group hover:border-amber-500/30 transition-colors cursor-pointer">
                        <div class="flex items-center gap-3">
                            <div class="p-2 bg-slate-900 rounded-md text-amber-500">
@@ -824,7 +828,7 @@ async function showSingleSupplier(id) {
                            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-amber-400 transition-colors"></i>
                        </div>
                    </div>` : `
-                   <div id="btnCrearFacturas_${supplier.id}" onclick="event.stopPropagation(); window.provisionFacturasFolder('${supplier.id}', '${supplier.drive_folder_id}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-amber-900/50 group hover:border-amber-500/50 transition-colors cursor-pointer">
+                   <div id="btnCrearFacturas_${supplier.id}" onclick="event.stopPropagation(); window.provisionFacturasFolder('${supplier.id}', '${supplier.drive_folder_id || ''}')" class="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-amber-900/50 group hover:border-amber-500/50 transition-colors cursor-pointer">
                        <div class="flex items-center gap-3">
                            <div class="p-2 bg-slate-900 rounded-md text-slate-500 group-hover:text-amber-500 transition-colors">
                                <i data-lucide="plus-circle" class="w-5 h-5"></i>
@@ -839,9 +843,7 @@ async function showSingleSupplier(id) {
                            </div>
                        </div>
                    </div>`}
-               </div>`
-            : `<div class="text-xs text-slate-600 italic py-2">Sin carpeta vinculada</div>`
-        }
+               </div>
             </div>
         </div>
 
@@ -1168,69 +1170,103 @@ async function triggerProvisioning() {
 
     const name = nameInput.value.trim();
 
-    // Si estamos editando y ya tiene ID, no re-provisionamos salvo que se pida (Futuro)
-    // Si es Alta nueva:
-    if (!editingSupplierId) {
-        if (name.length < 3) {
-            alert("Por favor, ingrese un Nombre / Empresa válido (mínimo 3 caracteres) antes de crear la infraestructura.");
-            return;
-        }
-        if (document.getElementById('h_rootId').value) return; // Ya aprovisionado
+    // Permitir aprovisionamiento si no existe rootId, independientemente de si es alta nueva o edición.
+    if (name.length < 3) {
+        alert("Por favor, ingrese un Nombre / Empresa válido (mínimo 3 caracteres) antes de crear la infraestructura.");
+        return;
+    }
+    if (document.getElementById('h_rootId').value) return; // Ya aprovisionado
 
-        // UI Loading
-        driveDisplay.value = "Conectando con Drive...";
-        driveDisplay.classList.add('animate-pulse');
-        statusContainer.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin text-blue-500"></i>';
-        helpText.innerText = "Creando carpetas seguras...";
+    // UI Loading
+    driveDisplay.value = "Conectando con Drive...";
+    driveDisplay.classList.add('animate-pulse');
+    statusContainer.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin text-blue-500"></i>';
+    helpText.innerText = "Creando carpetas seguras...";
+    lucide.createIcons();
+
+    try {
+        // Usar backendBaseUrl global
+        const baseUrl = backendBaseUrl;
+        const response = await fetch(`${baseUrl}/api/files/drive/provision-vendor`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendorName: name })
+        });
+
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
+
+        // Success Bindings
+        document.getElementById('h_rootId').value = result.data.rootId;
+        document.getElementById('h_pricesId').value = result.data.pricesId;
+        document.getElementById('h_extractedId').value = result.data.extractedId;
+        document.getElementById('h_facturasId').value = result.data.facturasId;
+
+        // UI Success
+        driveDisplay.value = `Vinculado: ${result.data.rootId.substring(0, 8)}...`;
+        driveDisplay.classList.remove('animate-pulse', 'text-slate-400');
+        driveDisplay.classList.add('text-green-400', 'font-bold');
+
+        statusContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>';
+        helpText.innerText = "Infraestructura certificada: Raíz + Precios + Extracción.";
+        helpText.className = "text-[9px] text-green-500/80 ml-1 mt-1 font-bold";
         lucide.createIcons();
 
-        try {
-            // Usar backendBaseUrl global
-            const baseUrl = backendBaseUrl;
-            const response = await fetch(`${baseUrl}/api/files/drive/provision-vendor`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ vendorName: name })
-            });
-
-            const result = await response.json();
-            if (!result.success) throw new Error(result.error);
-
-            // Success Bindings
-            document.getElementById('h_rootId').value = result.data.rootId;
-            document.getElementById('h_pricesId').value = result.data.pricesId;
-            document.getElementById('h_extractedId').value = result.data.extractedId;
-            document.getElementById('h_facturasId').value = result.data.facturasId;
-
-            // UI Success
-            driveDisplay.value = `Vinculado: ${result.data.rootId.substring(0, 8)}...`;
-            driveDisplay.classList.remove('animate-pulse', 'text-slate-400');
-            driveDisplay.classList.add('text-green-400', 'font-bold');
-
-            statusContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>';
-            helpText.innerText = "Infraestructura certificada: Raíz + Precios + Extracción.";
-            helpText.className = "text-[9px] text-green-500/80 ml-1 mt-1 font-bold";
-            lucide.createIcons();
-
-        } catch (e) {
-            console.error("Provisioning Error:", e);
-            driveDisplay.value = "Error de Conexión";
-            statusContainer.innerHTML = '<i data-lucide="alert-circle" class="w-4 h-4 text-red-500"></i>';
-            helpText.innerText = "Error: " + e.message;
-            helpText.className = "text-[9px] text-red-500 ml-1 mt-1";
-            lucide.createIcons();
-        }
-    } else {
-        // Modo Edición: Solo mostrar estado
-        if (document.getElementById('h_rootId').value) {
-            driveDisplay.value = "Infraestructura Vinculada";
-            statusContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>';
-        }
+    } catch (e) {
+        console.error("Provisioning Error:", e);
+        driveDisplay.value = "Error de Conexión";
+        statusContainer.innerHTML = '<i data-lucide="alert-circle" class="w-4 h-4 text-red-500"></i>';
+        helpText.innerText = "Error: " + e.message;
+        helpText.className = "text-[9px] text-red-500 ml-1 mt-1";
+        lucide.createIcons();
     }
 }
 
 window.provisionFacturasFolder = async function(providerId, rootId) {
-    if (!rootId) return alert("El proveedor no tiene infraestructura base.");
+    if (!rootId || rootId === 'null' || rootId === 'undefined') {
+        const btn = document.getElementById(`btnCrearFacturas_${providerId}`);
+        if (btn) btn.innerHTML = '<div class="p-3 text-xs text-amber-500 animate-pulse font-bold tracking-widest uppercase">Creando Base...</div>';
+        
+        try {
+            const baseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+            const supplier = window.currentSuppliers.find(s => s.id === providerId);
+            const response = await fetch(`${baseUrl}/api/files/drive/provision-vendor`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vendorName: supplier.nombre })
+            });
+            const result = await response.json();
+            if (!result.success) throw new Error(result.error);
+            
+            // Update Supabase
+            const { error } = await supabaseClient
+                .from('proveedores')
+                .update({ 
+                    drive_folder_id: result.data.rootId,
+                    drive_folder_prices_id: result.data.pricesId,
+                    drive_folder_extracted_id: result.data.extractedId,
+                    drive_folder_facturas_id: result.data.facturasId
+                })
+                .eq('id', providerId);
+                
+            if (error) throw error;
+            
+            // Update local cache
+            if (supplier) {
+                supplier.drive_folder_id = result.data.rootId;
+                supplier.drive_folder_prices_id = result.data.pricesId;
+                supplier.drive_folder_extracted_id = result.data.extractedId;
+                supplier.drive_folder_facturas_id = result.data.facturasId;
+            }
+            
+            if (typeof showSingleSupplier === 'function') showSingleSupplier(providerId);
+        } catch (e) {
+            alert("Error al provisionar infraestructura base: " + e.message);
+            if (typeof showSingleSupplier === 'function') showSingleSupplier(providerId);
+        }
+        return;
+    }
+
     const btn = document.getElementById(`btnCrearFacturas_${providerId}`);
     if (btn) btn.innerHTML = '<div class="p-3 text-xs text-amber-500 animate-pulse font-bold tracking-widest uppercase">Creando...</div>';
     
