@@ -58,7 +58,7 @@ window.openVisorFacturas = async function(fileId, fileName, providerId, webViewL
         
         // Ahora sí, abrir modal e inyectar el Iframe visualmente
         modal.classList.remove('hidden');
-        iframe.src = `${backendUrl}/api/facturas/pdf/${fileId}`;
+        iframe.src = `${backendUrl}/api/facturas/pdf/${fileId}?name=${encodeURIComponent(fileName)}`;
         sub.textContent = `${fileName} - Revisión HITL Pendiente`;
         
         // Fill form

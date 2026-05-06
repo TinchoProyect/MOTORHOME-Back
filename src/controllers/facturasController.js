@@ -40,7 +40,17 @@ const facturasController = {
             
             // Convertir a base64 para Gemini
             const base64Data = buffer.toString('base64');
-            const mimeType = 'application/pdf'; // Etapa 1/2 asume PDF
+            
+            // Soporte Multiformato IA (Deducir MimeType)
+            let mimeType = 'application/pdf'; // Default
+            const lowerFileName = fileName.toLowerCase();
+            if (lowerFileName.endsWith('.jpg') || lowerFileName.endsWith('.jpeg')) {
+                mimeType = 'image/jpeg';
+            } else if (lowerFileName.endsWith('.png')) {
+                mimeType = 'image/png';
+            } else if (lowerFileName.endsWith('.webp')) {
+                mimeType = 'image/webp';
+            }
             
             // Construimos el Data URI esperado por el Motor Chofer
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
@@ -197,18 +207,29 @@ const facturasController = {
 
     getPdfProxy: async (req, res) => {
         const { fileId } = req.params;
+        const fileName = req.query.name || '';
         try {
-            console.log(`[FacturasController] Sirviendo PDF por Proxy para bypass CSP: ${fileId}`);
+            console.log(`[FacturasController] Sirviendo archivo por Proxy para bypass CSP: ${fileId} (${fileName})`);
             const buffer = await driveService.downloadFileToBuffer(fileId);
             
-            res.setHeader('Content-Type', 'application/pdf');
+            let mimeType = 'application/pdf';
+            const lowerFileName = fileName.toLowerCase();
+            if (lowerFileName.endsWith('.jpg') || lowerFileName.endsWith('.jpeg')) {
+                mimeType = 'image/jpeg';
+            } else if (lowerFileName.endsWith('.png')) {
+                mimeType = 'image/png';
+            } else if (lowerFileName.endsWith('.webp')) {
+                mimeType = 'image/webp';
+            }
+            
+            res.setHeader('Content-Type', mimeType);
             // 'inline' permite que el navegador lo renderice en el iframe en lugar de descargarlo
-            res.setHeader('Content-Disposition', `inline; filename="factura_${fileId}.pdf"`);
+            res.setHeader('Content-Disposition', `inline; filename="${fileName || `factura_${fileId}.pdf`}"`);
             
             res.send(buffer);
         } catch (error) {
             console.error("[FacturasController] Error getPdfProxy:", error);
-            res.status(500).send("No se pudo cargar el PDF");
+            res.status(500).send("No se pudo cargar el archivo");
         }
     },
 
