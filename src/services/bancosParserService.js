@@ -33,13 +33,17 @@ const bancosParserService = {
                 if (!row) continue;
                 
                 const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
-                if (rowStr.includes('fecha') && (rowStr.includes('movimiento') || rowStr.includes('concepto')) && (rowStr.includes('débito') || rowStr.includes('debito') || rowStr.includes('importe'))) {
+                // Heurística flexible para encontrar la cabecera
+                if ((rowStr.includes('fec') || rowStr.includes('fecha')) && 
+                    (rowStr.includes('movimiento') || rowStr.includes('concepto') || rowStr.includes('detalle') || rowStr.includes('descrip')) && 
+                    (rowStr.includes('debito') || rowStr.includes('débito') || rowStr.includes('importe') || rowStr.includes('salida') || rowStr.includes('cargo'))) {
+                    
                     headerRowIndex = i;
                     row.forEach((col, idx) => {
                         const colName = String(col || '').toLowerCase().trim();
-                        if (colName.includes('fecha')) headerMap['fecha'] = idx;
-                        if (colName.includes('movimiento') || colName.includes('concepto') || colName.includes('descrip')) headerMap['movimiento'] = idx;
-                        if (colName.includes('débito') || colName.includes('debito') || colName.includes('salida') || colName.includes('importe')) headerMap['debito'] = idx;
+                        if (colName.includes('fec') || colName.includes('fecha')) headerMap['fecha'] = idx;
+                        if (colName.includes('movimiento') || colName.includes('concepto') || colName.includes('descrip') || colName.includes('detalle')) headerMap['movimiento'] = idx;
+                        if (colName.includes('debito') || colName.includes('débito') || colName.includes('salida') || colName.includes('importe') || colName.includes('cargo')) headerMap['debito'] = idx;
                         if (colName.includes('comentario') || colName.includes('observacion')) headerMap['comentario'] = idx;
                     });
                     break;
@@ -47,7 +51,12 @@ const bancosParserService = {
             }
 
             if (headerRowIndex === -1) {
-                throw new Error("No se pudo detectar la fila de cabeceras (Fecha, Movimiento, Débito). El formato del banco no es reconocido.");
+                // Fallback posicional si no se detectan cabeceras
+                headerRowIndex = 0;
+                headerMap['fecha'] = 0;
+                headerMap['movimiento'] = 1;
+                headerMap['debito'] = 2;
+                console.warn("[BancosParser] No se detectó cabecera clara. Usando fallback posicional.");
             }
 
             const pagosCrudos = [];
@@ -74,14 +83,23 @@ const bancosParserService = {
                 if (typeof debitoRaw === 'number') {
                     debito = debitoRaw;
                 } else if (typeof debitoRaw === 'string') {
-                    const cleanStr = debitoRaw.replace(/[^0-9,\.-]/g, '').replace(',', '.');
+                    let cleanStr = debitoRaw.replace(/[^0-9,\.-]/g, '');
+                    // Formato AR 1.500,00 -> 1500.00
+                    if (cleanStr.includes(',') && cleanStr.includes('.')) {
+                        cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
+                    } else if (cleanStr.includes(',')) {
+                        cleanStr = cleanStr.replace(',', '.');
+                    }
                     debito = parseFloat(cleanStr);
                 }
 
-                if (isNaN(debito) || debito <= 0) {
+                if (isNaN(debito) || debito === 0) {
                     stats.ignorados_ingresos++;
-                    continue; // Solo Débitos
+                    continue; // Ignoramos si es cero o no parseable
                 }
+
+                // Tomamos el valor absoluto (si el banco pone débitos en negativo, los convertimos a monto absoluto)
+                const montoFinal = Math.abs(debito);
 
                 let fechaIso = null;
                 if (typeof fechaRaw === 'number') {
@@ -138,7 +156,7 @@ const bancosParserService = {
                     archivo_origen_id: archivoId,
                     proveedor_id,
                     fecha_pago: fechaIso,
-                    monto_pago: debito,
+                    monto_pago: montoFinal,
                     descripcion_original: movimientoStr,
                     cuit_detectado: cuitPescado,
                     estado
