@@ -29,6 +29,8 @@ app.use('/api/recepcion', require('./routes/recepcionRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/facturas', require('./routes/facturasRoutes'));
 app.use('/api/cuenta-corriente', require('./routes/cuentaCorrienteRoutes'));
+app.use('/api/bancos', require('./routes/bancosRoutes'));
+app.use('/api/config', require('./routes/configRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {

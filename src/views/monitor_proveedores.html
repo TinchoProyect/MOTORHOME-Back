@@ -174,6 +174,11 @@
                             activos</button>
                         <button onclick="if(window.openReceptionHistory) window.openReceptionHistory();"
                             class="submenu-item text-left py-2 text-[11px] text-slate-500 hover:text-blue-400 text-xs">Historial de Recepciones</button>
+                        <div class="h-px w-full bg-slate-800 my-1"></div>
+                        <button onclick="if(window.openBancosIngesta) window.openBancosIngesta();"
+                            class="submenu-item text-left py-2 text-[11px] text-amber-500 hover:text-amber-400 text-xs font-bold tracking-widest uppercase flex items-center gap-2">
+                            <i data-lucide="landmark" class="w-3 h-3"></i> Ingesta Bancaria
+                        </button>
                     </div>
                 </div>
 
@@ -206,6 +211,10 @@
                     <button onclick="openSupplierModal()"
                         class="submenu-item text-left py-2 text-[11px] text-slate-400 hover:text-blue-400 text-xs font-medium">Alta
                         de proveedor</button>
+                    <button onclick="if(window.openGlobalConfig) window.openGlobalConfig()"
+                        class="submenu-item text-left py-2 text-[11px] text-blue-400 hover:text-blue-300 text-xs font-medium w-full flex items-center gap-2 border-b border-slate-800 pb-3 mb-1">
+                        <i data-lucide="sliders" class="w-3 h-3"></i> Parámetros Globales
+                    </button>
                     <button id="logoutBtn"
                         class="submenu-item text-left py-2 text-[11px] text-red-400 hover:text-red-300 text-xs font-medium w-full flex items-center gap-2">
                         <i data-lucide="log-out" class="w-3 h-3"></i> Cerrar Sesión
@@ -1791,6 +1800,8 @@
     <script src="js/viewer_remap_flow.js"></script>
     <script src="js/viewer_facturas.js"></script>
     <script src="js/provider_resolver.js"></script>
+    <script src="js/viewer_bancos.js"></script>
+    <script src="js/viewer_config.js"></script>
 
     <!-- MASTER TABLE V2 -->
     <script type="module" src="js/master_table_ui.js"></script>
