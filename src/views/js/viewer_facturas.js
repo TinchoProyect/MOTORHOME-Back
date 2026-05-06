@@ -401,7 +401,10 @@ window.renderGridArticulos = function() {
 
 window.closeVisorFacturas = function() {
     document.getElementById('visorFacturasModal').classList.add('hidden');
-    document.getElementById('iframeFactura').src = '';
+    const iframe = document.getElementById('iframeFactura');
+    if (iframe) iframe.src = '';
+    const img = document.getElementById('imgFactura');
+    if (img) img.src = '';
 };
 
 window.saveFacturaHITL = async function() {

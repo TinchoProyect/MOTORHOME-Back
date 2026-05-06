@@ -1111,7 +1111,7 @@ function editSupplier(id) {
     editingSupplierId = id;
 
     // Rellenar formulario inputs
-    const inputs = form.querySelectorAll('input, select');
+    const inputs = form.querySelectorAll('input, select, textarea');
     inputs.forEach(input => {
         const key = input.name;
         if (supplier[key] !== undefined) {
