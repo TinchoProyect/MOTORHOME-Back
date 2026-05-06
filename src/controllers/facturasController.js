@@ -5,6 +5,69 @@ const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// HELPER: Heurística avanzada de matching para descripciones difusas (Jaccard-Levenshtein híbrido)
+function levenshtein(a, b) {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    let matrix = [];
+    for (let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+    for (let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) == a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+function areWordsSimilar(w1, w2) {
+    if (w1 === w2) return true;
+    if (w1.length <= 2 || w2.length <= 2) {
+        if (w1.length === 1 && w2.startsWith(w1)) return true;
+        if (w2.length === 1 && w1.startsWith(w2)) return true;
+        return false;
+    }
+    if (w1.includes(w2) || w2.includes(w1)) return true;
+    
+    const dist = levenshtein(w1, w2);
+    const maxLen = Math.max(w1.length, w2.length);
+    if (dist <= 1 && maxLen <= 5) return true;
+    if (dist <= 2 && maxLen > 5) return true;
+    return false;
+}
+
+function calculateSimilarityScore(descFactura, descPedido) {
+    if (!descFactura || !descPedido) return 0;
+    const s1 = descFactura.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0);
+    const s2 = descPedido.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0);
+    
+    if (s1.length === 0 || s2.length === 0) return 0;
+
+    let matches = 0;
+    const usedS2 = new Set();
+    
+    for (let w1 of s1) {
+        let bestMatchIdx = -1;
+        for (let i = 0; i < s2.length; i++) {
+            if (usedS2.has(i)) continue;
+            if (areWordsSimilar(w1, s2[i])) {
+                bestMatchIdx = i;
+                if (w1 === s2[i]) break; // exact match priority
+            }
+        }
+        if (bestMatchIdx !== -1) {
+            matches++;
+            usedS2.add(bestMatchIdx);
+        }
+    }
+    
+    return matches / Math.min(s1.length, s2.length);
+}
+
 const facturasController = {
     extractInvoice: async (req, res) => {
         const { providerId, fileId, fileName } = req.body;
@@ -422,13 +485,31 @@ const facturasController = {
                 const precioF = parseFloat(artFactura.precio_unitario || 0);
 
                 // Find matching item in Pedido
-                // Strategy: exact match by code, or fallback to description contains
+                // Strategy: exact match by code, or fallback to token overlap heuristic
                 let match = pedidoItems.find(pi => (pi.producto_codigo || '').toLowerCase().trim() === codigoF && codigoF !== '');
+                
                 if (!match) {
-                    match = pedidoItems.find(pi => 
-                        (descF.length > 3 && (pi.producto_descripcion || '').toLowerCase().trim().includes(descF)) || 
-                        ((pi.producto_descripcion || '').length > 3 && descF.includes((pi.producto_descripcion || '').toLowerCase().trim()))
-                    );
+                    let bestScore = 0;
+                    let bestCandidate = null;
+                    
+                    for (const pi of pedidoItems) {
+                        const piDesc = (pi.producto_descripcion || '').toLowerCase().trim();
+                        if (piDesc === descF) {
+                            bestCandidate = pi;
+                            bestScore = 1.0;
+                            break;
+                        }
+                        
+                        const score = calculateSimilarityScore(descF, piDesc);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestCandidate = pi;
+                        }
+                    }
+                    
+                    if (bestScore >= 0.6) {
+                        match = bestCandidate;
+                    }
                 }
 
                 if (!match) {
