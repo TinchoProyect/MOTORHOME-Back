@@ -5,11 +5,11 @@
 
 // --- 1. CORE STATE (Variables Globales) ---
 var viewerWorker = null;
-var currentSheetData = [];
+var currentSheetData = []; window.currentSheetData = currentSheetData;
 var workbook = null;
 var currentFileBuffer = null;
 var useWorker = true;
-var currentSheetName = null;
+var currentSheetName = null; window.currentSheetName = currentSheetName;
 var sheetConfigStore = {}; // Almacena configuraciones (offset/mapping) por hoja
 
 // --- 2. GLOBAL CONTEXT (Datos del Proveedor/Archivo) ---
@@ -249,8 +249,8 @@ window.resetViewerState = function (preserveData = false) {
 
     // Variables de Datos
     if (!preserveData) {
-        currentSheetData = [];
-        currentSheetName = null;
+        currentSheetData = []; window.currentSheetData = currentSheetData;
+        currentSheetName = null; window.currentSheetName = currentSheetName;
         currentFileBuffer = null;
         workbook = null;
         window.virtualWorkbookCache = null;
@@ -1055,13 +1055,59 @@ window.loadSavedConfiguration = async function () {
                     // Multi-Hoja vs Legacy (Flat)
                     if (payload.isMultiSheet && payload.sheets) {
                         console.log("📂 [FLUJOS] Hidratando arquitectura Multi-Hoja (V8)");
-                        window.sheetConfigStore = payload.sheets;
+                        
+                        // [QA-FIX] Mapeo resiliente por índice para soportar nombres de hoja dinámicos (Ej: fechas)
+                        const storedSheets = Object.keys(payload.sheets);
+                        const currentFileSheets = window.currentSheetList || [window.currentSheetName];
+                        
+                        let mappedStore = {};
+                        
+                        currentFileSheets.forEach((currentName, idx) => {
+                            if (payload.sheets[currentName]) {
+                                // Coincidencia exacta
+                                mappedStore[currentName] = payload.sheets[currentName];
+                            } else if (idx < storedSheets.length) {
+                                // Coincidencia por índice (Fallback)
+                                console.warn(`[FLUJOS] Nombre de hoja difiere. Mapeando plantilla de '${storedSheets[idx]}' a '${currentName}' (Índice ${idx})`);
+                                mappedStore[currentName] = payload.sheets[storedSheets[idx]];
+                            }
+                        });
+                        
+                        // Si sobraron hojas en el payload que no matchearon (por si acaso)
+                        storedSheets.forEach(stName => {
+                            if (!Object.values(mappedStore).includes(payload.sheets[stName])) {
+                                mappedStore[stName] = payload.sheets[stName];
+                            }
+                        });
+
+                        // [CRITICAL NORMALIZATION FIX] Garantizar formato V8 estricto
+                        Object.keys(mappedStore).forEach(sName => {
+                            if (mappedStore[sName] && mappedStore[sName].pipelines) {
+                                Object.keys(mappedStore[sName].pipelines).forEach(vId => {
+                                    if (Array.isArray(mappedStore[sName].pipelines[vId])) {
+                                        mappedStore[sName].pipelines[vId] = {
+                                            masterField: null,
+                                            rules: mappedStore[sName].pipelines[vId]
+                                        };
+                                    }
+                                });
+                            }
+                        });
+
+                        window.sheetConfigStore = mappedStore;
+                        console.warn("🪲 [DEBUG] sheetConfigStore asignado:", window.sheetConfigStore);
+                        console.warn("🪲 [DEBUG] window.currentSheetName es:", window.currentSheetName);
                         
                         // Reactivar el estado solo para la hoja actual (Virgin State para las demas)
                         if (typeof loadSheetState === 'function' && window.currentSheetName) {
+                            console.warn(`🪲 [DEBUG] Ejecutando loadSheetState('${window.currentSheetName}')`);
                             loadSheetState(window.currentSheetName);
+                            console.warn("🪲 [DEBUG] window.columnMapping DESPUÉS de loadSheetState:", window.columnMapping);
+                        } else {
+                            console.warn("🪲 [DEBUG] No se ejecutó loadSheetState! typeof loadSheetState:", typeof loadSheetState, "currentSheetName:", window.currentSheetName);
                         }
                     } else {
+                        console.warn("🪲 [DEBUG] Flujo NO es isMultiSheet o no tiene sheets!");
                         console.log("⚠️ [FLUJOS] Fallback: Hidratando formato Legacy Plano");
                         
                         // 1. Offset y EndOffset
@@ -1081,8 +1127,19 @@ window.loadSavedConfiguration = async function () {
                         // 3. Mapping
                         if (payload.columnMapping) window.columnMapping = payload.columnMapping;
 
-                        // 4. Pipelines ETL
-                        if (payload.draftPipelines) window.draftPipelines = payload.draftPipelines;
+                        // 4. Pipelines ETL (Con Normalización V8 In-Place para prevenir Crashes)
+                        if (payload.draftPipelines) {
+                            let normDraft = {};
+                            Object.keys(payload.draftPipelines).forEach(vId => {
+                                let item = payload.draftPipelines[vId];
+                                if (Array.isArray(item)) {
+                                    normDraft[vId] = { masterField: null, rules: item };
+                                } else {
+                                    normDraft[vId] = item;
+                                }
+                            });
+                            window.draftPipelines = normDraft;
+                        }
 
                         // 5. Layout (Anchos y Orden)
                         if (payload.layoutConfig) {

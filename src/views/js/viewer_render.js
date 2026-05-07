@@ -2663,8 +2663,8 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
     let scannedCount = 0;
 
     data.forEach((row, rowIdx) => {
-        // Obviamos filas desechadas o vacías virtualmente
-        if (row._rejectedSim || row._emptySilently || row._rejectedByCode) return;
+        // Obviamos filas vacías virtualmente o sin código
+        if (row._emptySilently || row._rejectedByCode) return;
         
         let cellVal = null;
         if (isComputed) {
@@ -2673,24 +2673,22 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
             cellVal = row[lookupKey];
         }
         
-        let strVal = '';
+        let rawStrVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
+        if (rawStrVal === '') return;
+        
+        let processedStrVal = rawStrVal;
         if (viewMode === 'processed' && pipeObj && pipeObj.length > 0 && window.viewerETL) {
             const tr = window.viewerETL.transformCell(cellVal, pipeObj, row);
-            strVal = String(tr.display || tr.result || "").trim();
-        } else {
-            strVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
+            processedStrVal = String(tr.display || tr.result || "").trim();
         }
-        
-        // 3. Omitir nulos o vacíos ("Manejo de Celdas Vacías")
-        if (strVal === '') return; 
         
         scannedCount++;
         
-        if (!valueMap[strVal]) valueMap[strVal] = [];
-        valueMap[strVal].push({ index: rowIdx, rawData: row });
+        if (!valueMap[rawStrVal]) valueMap[rawStrVal] = [];
+        valueMap[rawStrVal].push({ index: rowIdx, rawData: row, rawStrVal: rawStrVal, processedStrVal: processedStrVal });
     });
     
-    // 4. Analizar Conflicto (Valores duplicados)
+    // 4. Analizar Conflicto (Agrupado siempre por Origen Crudo)
     const duplicates = Object.entries(valueMap).filter(([val, occurrences]) => occurrences.length > 1);
     
     const toggleHtml = `
@@ -2791,10 +2789,27 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
                          const rawVal = occ.rawData[k] !== undefined && occ.rawData[k] !== null ? occ.rawData[k] : '';
                          return `<span class="opacity-50">[${k}]:</span> <span class="text-slate-200">${rawVal}</span>`;
                      })
-                     .join(' <span class="text-slate-700 mx-1">•</span> ');
+                     .join(' <span class="text-slate-700 mx-1">&bull;</span> ');
                      
-                conflictHtml += `<div class="bg-slate-950 px-2 py-1.5 text-[11px] font-mono rounded overflow-hidden text-ellipsis whitespace-nowrap hover:whitespace-normal transition-all border border-slate-800 shadow-inner" style="word-break: break-all;">
-                    <span class="text-slate-500 mr-2 font-bold bg-slate-900 px-1 rounded">#${occ.index}</span> ${displayRow || 'Fila Vacia'}
+                let isRejected = false;
+                let valDisplay = occ.rawStrVal;
+                let styleStr = '';
+                let tagStr = '';
+                
+                if (viewMode === 'processed') {
+                    isRejected = occ.rawData._rejectedSim === true;
+                    if (isRejected) {
+                        styleStr = 'opacity: 0.4; text-decoration: line-through;';
+                        tagStr = '<span class="ml-2 text-[9px] bg-red-900/50 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-red-500/30">[DESCARTADO]</span>';
+                    } else if (occ.processedStrVal !== occ.rawStrVal) {
+                        valDisplay = `<span class="text-slate-500 line-through mr-1">${occ.rawStrVal}</span> <span class="text-emerald-400 font-bold">&#8594; ${occ.processedStrVal}</span>`;
+                        tagStr = '<span class="ml-2 text-[9px] bg-emerald-900/50 text-emerald-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-emerald-500/30">[DIFERENCIADO]</span>';
+                    }
+                }
+                     
+                conflictHtml += `<div class="bg-slate-950 px-2 py-1.5 text-[11px] font-mono rounded overflow-hidden text-ellipsis whitespace-nowrap hover:whitespace-normal transition-all border border-slate-800 shadow-inner" style="word-break: break-all; ${styleStr}">
+                    <div class="mb-1"><span class="text-slate-500 mr-2 font-bold bg-slate-900 px-1 rounded">#${occ.index}</span> ${displayRow || 'Fila Vacia'}</div>
+                    ${viewMode === 'processed' ? `<div class="font-bold text-blue-300 mt-1">Valor Final: ${valDisplay} ${tagStr}</div>` : ''}
                 </div>`;
             });
             
@@ -2867,6 +2882,9 @@ window.unifyDuplicates = function(colId, viewMode) {
                 timer: 3000
             });
             
+            if (typeof window.generatePreview === 'function') {
+                window.generatePreview();
+            }
             if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
                 window.viewerRuleWorkshop.syncToGlobalState();
             } else if (typeof window.triggerSafeRender === 'function') {
@@ -2874,6 +2892,13 @@ window.unifyDuplicates = function(colId, viewMode) {
             } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
                 window.renderVirtualTable(window.currentSheetData);
             }
+            
+            // Reopen modal to show processed results
+            const vCol = window.virtualColumns && window.virtualColumns.find(c => String(c.id) === String(colId));
+            const cName = vCol ? vCol.name : colId;
+            setTimeout(() => {
+                 window.runUniqueValueAudit(colId, cName, 'processed');
+            }, 3500); // 3 seconds for Swal success timer
         }
     });
 };

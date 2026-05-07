@@ -109,7 +109,7 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
         viewerWorker = null;
     }
 
-    currentSheetData = [];
+    currentSheetData = []; window.currentSheetData = currentSheetData;
     if (excelContainer) {
         excelContainer.onscroll = null;
         excelContainer.innerHTML = '';
@@ -298,7 +298,7 @@ function loadSheet(sheetName) {
     // [FIX] Reset Viewer State REMOVED to prevent Context Loss (Provider Name)
     // if (window.resetViewerState) window.resetViewerState();
 
-    currentSheetName = sheetName;
+    currentSheetName = sheetName; window.currentSheetName = currentSheetName;
     loadSheetState(sheetName);
     renderSheetTabs();
 
@@ -334,10 +334,10 @@ function loadSheet(sheetName) {
                     }
                 } catch (err) {
                     console.error("Error converting sheet to json:", err);
-                    currentSheetData = [];
+                    currentSheetData = []; window.currentSheetData = currentSheetData;
                 }
             } else {
-                currentSheetData = cachedData;
+                currentSheetData = cachedData; window.currentSheetData = currentSheetData;
             }
 
             // 1. Render inicial (crudo)
@@ -392,7 +392,7 @@ const processLocally = (wb, sName) => {
 
         if ((!sName || sName === "") && workbook.SheetNames.length > 0) {
             sName = workbook.SheetNames[0];
-            currentSheetName = sName;
+            currentSheetName = sName; window.currentSheetName = currentSheetName;
         }
 
         const ws = workbook.Sheets[sName];
@@ -492,48 +492,69 @@ function renderSheetTabs(sheetNames) {
 }
 
 function toggleOffsetMode(isEnd = false) {
-    if (isEnd) {
-        window.endOffsetSelectionMode = !window.endOffsetSelectionMode;
-        window.offsetSelectionMode = false;
-        const btnEnd = document.getElementById('btnEndOffsetMode');
-        const btnStart = document.getElementById('btnOffsetMode');
-        if (btnStart) btnStart.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
+    try {
+        const t0 = performance.now();
+        console.error(`🚨 [VIGÍA DETERMINISTA] toggleOffsetMode(${isEnd}) INICIO`);
         
-        if (window.endOffsetSelectionMode) {
-            if (window.viewerMapper) window.viewerMapper.cancelMapping();
-            if (btnEnd) btnEnd.classList.add('bg-red-600', 'text-white', 'animate-pulse');
-        } else {
-            if (btnEnd) btnEnd.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
-        }
-    } else {
-        window.offsetSelectionMode = !window.offsetSelectionMode;
-        window.endOffsetSelectionMode = false;
-        const btnStart = document.getElementById('btnOffsetMode');
-        const btnEnd = document.getElementById('btnEndOffsetMode');
-        if (btnEnd) btnEnd.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
-        
-        if (window.offsetSelectionMode) {
-            if (window.viewerMapper) window.viewerMapper.cancelMapping();
-            if (btnStart) btnStart.classList.add('bg-amber-600', 'text-white', 'animate-pulse');
-        } else {
+        if (isEnd) {
+            window.endOffsetSelectionMode = !window.endOffsetSelectionMode;
+            window.offsetSelectionMode = false;
+            const btnEnd = document.getElementById('btnEndOffsetMode');
+            const btnStart = document.getElementById('btnOffsetMode');
             if (btnStart) btnStart.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
+            
+            if (window.endOffsetSelectionMode) {
+                if (window.viewerMapper) window.viewerMapper.cancelMapping();
+                if (btnEnd) btnEnd.classList.add('bg-red-600', 'text-white', 'animate-pulse');
+            } else {
+                if (btnEnd) btnEnd.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
+            }
+        } else {
+            window.offsetSelectionMode = !window.offsetSelectionMode;
+            window.endOffsetSelectionMode = false;
+            const btnStart = document.getElementById('btnOffsetMode');
+            const btnEnd = document.getElementById('btnEndOffsetMode');
+            if (btnEnd) btnEnd.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
+            
+            if (window.offsetSelectionMode) {
+                if (window.viewerMapper) window.viewerMapper.cancelMapping();
+                if (btnStart) btnStart.classList.add('bg-amber-600', 'text-white', 'animate-pulse');
+            } else {
+                if (btnStart) btnStart.classList.remove('bg-amber-600', 'text-white', 'animate-pulse');
+            }
         }
+        
+        // Ensure we refer to window.currentSheetData explicitly if 'currentSheetData' local scope is masking it in a module
+        const activeData = (typeof currentSheetData !== 'undefined' && currentSheetData) ? currentSheetData : window.currentSheetData;
+        console.error(`🚨 [VIGÍA DETERMINISTA] toggleOffsetMode evaluando activeData. Length: ${activeData ? activeData.length : 'NULL'}`);
+        
+        if (activeData) renderVirtualTable(activeData);
+        else console.error(`🚨 [VIGÍA DETERMINISTA] renderVirtualTable NO ejecutado porque activeData es falsy!`);
+        
+        const t1 = performance.now();
+        console.error(`🚨 [VIGÍA DETERMINISTA] toggleOffsetMode COMPLETADO en ${t1 - t0}ms`);
+    } catch (e) {
+        console.error(`🚨 [VIGÍA FALLA CRÍTICA] toggleOffsetMode CRASHED:`, e);
     }
-    
-    if (currentSheetData) renderVirtualTable(currentSheetData);
 }
 
 function handleOffsetClick(i, j) {
-    if (window.offsetSelectionMode) {
-        window.currentOffset = { row: i, col: j };
-        toggleOffsetMode(false);
-        saveSheetState(currentSheetName);
-        renderSheetTabs();
-    } else if (window.endOffsetSelectionMode) {
-        window.currentEndOffset = { row: i, col: j };
-        toggleOffsetMode(true);
-        saveSheetState(currentSheetName);
-        renderSheetTabs();
+    try {
+        console.error(`🚨 [VIGÍA DETERMINISTA] handleOffsetClick(${i}, ${j}) INICIO. offsetSelectionMode=${window.offsetSelectionMode}`);
+        if (window.offsetSelectionMode) {
+            window.currentOffset = { row: i, col: j };
+            toggleOffsetMode(false);
+            saveSheetState(currentSheetName);
+            renderSheetTabs();
+        } else if (window.endOffsetSelectionMode) {
+            window.currentEndOffset = { row: i, col: j };
+            toggleOffsetMode(true);
+            saveSheetState(currentSheetName);
+            renderSheetTabs();
+        }
+        console.error(`🚨 [VIGÍA DETERMINISTA] handleOffsetClick COMPLETADO`);
+    } catch (e) {
+        console.error(`🚨 [VIGÍA FALLA CRÍTICA] handleOffsetClick CRASHED:`, e);
     }
 }
 
@@ -687,8 +708,8 @@ window.runPdfSampling = function(preserveOmissions = false) {
         const tabsEl = document.getElementById('sheetTabs');
         if (sheetNames.length > 1 && tabsEl) tabsEl.classList.remove('hidden');
         
-        currentSheetName = sheetNames[0];
-        currentSheetData = matrix;
+        currentSheetName = sheetNames[0]; window.currentSheetName = currentSheetName;
+        currentSheetData = matrix; window.currentSheetData = currentSheetData;
         if (currentSheetData && currentSheetData.length > 0) {
             currentSheetData.forEach((row, idx) => {
                 if (row && typeof row === 'object') row._rowUid = idx;
