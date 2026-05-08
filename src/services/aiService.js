@@ -654,6 +654,92 @@ ESTRUCTURA JSON REQUERIDA:
             console.error("[AI Service - Facturas] ❌ Error en Inferencia:", e);
             throw new Error("Fallo en la inferencia del Chofer IA: " + e.message);
         }
+    },
+
+    executePriceListOCR: async (base64Data, mimeType) => {
+        if (!genAI) throw new Error("Gemini API no inicializada");
+
+        console.log(`[AI Service - OCR] ⏱️ Ejecutando Motor Chofer en Lista de Precios...`);
+
+        if (base64Data.startsWith('data:')) {
+            base64Data = base64Data.split(',')[1];
+        }
+
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash", 
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
+        });
+
+        let systemInstruction = `Eres un extractor de datos de altísima precisión ("Chofer OCR").
+Se te provee una imagen de una lista de precios de un proveedor. Tu tarea es tabular la información de la imagen en formato JSON.
+
+REGLAS DE EXTRACCIÓN:
+1. Identifica la tabla o matriz donde se listan los artículos/productos con sus precios y características.
+2. Extrae una lista de objetos JSON bajo la clave "productos".
+3. Intenta extraer para cada producto:
+   - "codigo": Código interno o SKU (si no hay, string vacío "").
+   - "descripcion": El nombre o descripción del artículo.
+   - "precio_unitario": El importe unitario como flotante. Si no hay, 0.0.
+   - "presentacion": String con detalles de empaque (ej: "Caja x 12", "500g"). Si no hay, "".
+   - "marca": Marca del producto si está explícita. Si no, "".
+
+ESTRUCTURA JSON REQUERIDA:
+{
+  "productos": [
+    {
+      "codigo": "...",
+      "descripcion": "...",
+      "precio_unitario": 0.0,
+      "presentacion": "...",
+      "marca": "..."
+    }
+  ]
+}`;
+
+        const prompt = [
+            systemInstruction,
+            {
+                inlineData: {
+                    data: base64Data,
+                    mimeType: mimeType || "image/jpeg"
+                }
+            }
+        ];
+
+        try {
+            const startTime = performance.now();
+            const result = await model.generateContent(prompt);
+            const text = result.response.text();
+            console.log(`[AI Service - OCR] ⏱️ Extracción Completada en ${((performance.now() - startTime) / 1000).toFixed(2)}s`);
+            
+            const extractedText = module.exports.extractJSONFromInference(text);
+            try {
+                return JSON.parse(extractedText);
+            } catch (err) {
+                console.warn("[AI Service - OCR] Error de parseo inicial, intentando reparar JSON truncado...");
+                let repaired = extractedText.trim();
+                
+                // Remover coma suelta al final si existe
+                repaired = repaired.replace(/,\s*$/, '');
+                
+                try { return JSON.parse(repaired + "]}"); } catch(e1) {}
+                try { return JSON.parse(repaired + "}]}"); } catch(e2) {}
+                try { return JSON.parse(repaired + '\"}]}'); } catch(e3) {}
+                
+                // Si fallaron los cierres simples, descartamos el último objeto incompleto
+                const lastValidBrace = repaired.lastIndexOf('}');
+                if (lastValidBrace !== -1) {
+                    repaired = repaired.substring(0, lastValidBrace + 1);
+                    try { return JSON.parse(repaired + "]}"); } catch(e4) {}
+                }
+                
+                console.error("[AI Service - OCR] JSON Crudo Irrecuperable:\n", extractedText);
+                throw new Error("El modelo retornó un JSON truncado que no pudo ser reparado automáticamente.");
+            }
+        } catch (e) {
+            console.error("[AI Service - OCR] ❌ Error en Inferencia:", e);
+            throw new Error("Fallo en la inferencia OCR: " + e.message);
+        }
     }
 };
 

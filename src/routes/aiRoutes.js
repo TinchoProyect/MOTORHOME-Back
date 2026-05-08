@@ -12,5 +12,7 @@ router.post('/categorize-rubros', aiController.categorizeRubros);
 // Librería de Prompts Contextual (Chofer IA History)
 router.get('/prompts/:masterFieldId', aiController.getPromptLibrary);
 router.post('/prompts', aiController.savePromptToLibrary);
+// Endpoint para Ingesta OCR de Listas de Precios
+router.post('/ocr-prices', aiController.executeOcrPrices);
 
 module.exports = router;

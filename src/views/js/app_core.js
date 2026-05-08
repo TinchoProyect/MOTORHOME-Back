@@ -567,12 +567,30 @@ window.uploadSelectedFile = async function(event, folderId) {
 
 async function handleFileClick(fileId, fileName, context = null) {
     console.log("Abriendo visor para:", fileName);
+
+    const providerId = window.currentActiveProviderId;
+    
+    // ==========================================
+    // INTERCEPTOR PARA OCR LISTAS DE PRECIOS (HITL)
+    // ==========================================
+    if (context === 'ingestion') {
+        const lowerFileName = fileName.toLowerCase();
+        const isImage = lowerFileName.endsWith('.jpg') || lowerFileName.endsWith('.jpeg') || lowerFileName.endsWith('.png') || lowerFileName.endsWith('.webp');
+        if (isImage) {
+            console.log("[Router] Redirigiendo imagen a Visor OCR Listas de Precios");
+            if (window.openVisorOcrListas) {
+                window.openVisorOcrListas(fileId, fileName, providerId);
+                return;
+            } else {
+                console.error("Módulo viewer_ocr_listas.js no cargado");
+            }
+        }
+    }
+
     if (!window.openFileViewer) {
         console.error("Módulo ViewerEngine no cargado");
         return;
     }
-
-    const providerId = window.currentActiveProviderId;
     
     // [FLUJOS] Interceptar apertura para consultar si existen plantillas
     try {

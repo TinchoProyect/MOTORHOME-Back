@@ -1,4 +1,5 @@
 const aiService = require('../services/aiService');
+const driveService = require('../services/driveService');
 const fs = require('fs');
 const path = require('path');
 
@@ -463,6 +464,42 @@ const aiController = {
         } catch (error) {
             console.error("❌ [AI Controller] Error guardando prompt:", error);
             res.status(500).json({ error: 'Error guardando prompt en librería' });
+        }
+    },
+
+    /**
+     * Endpoint: POST /api/ai/ocr-prices
+     * Extrae tablas de listas de precios desde imágenes vía LLM Vision
+     */
+    executeOcrPrices: async (req, res) => {
+        try {
+            const { fileId, fileName, providerId } = req.body;
+            if (!fileId || !fileName) {
+                return res.status(400).json({ error: "Faltan parámetros: fileId o fileName" });
+            }
+
+            console.log(`[AI Controller] 🚀 Iniciando Ingesta OCR para Lista de Precios: ${fileName}`);
+
+            // 1. Download binary from Drive
+            const buffer = await driveService.downloadFileToBuffer(fileId);
+            const base64Data = buffer.toString('base64');
+
+            // 2. Determine mimetype
+            let mimeType = 'image/jpeg';
+            const lowerFileName = fileName.toLowerCase();
+            if (lowerFileName.endsWith('.png')) mimeType = 'image/png';
+            else if (lowerFileName.endsWith('.webp')) mimeType = 'image/webp';
+            else if (lowerFileName.endsWith('.pdf')) mimeType = 'application/pdf';
+
+            const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+            // 3. Inference
+            const result = await aiService.executePriceListOCR(dataUrl, mimeType);
+
+            return res.status(200).json({ success: true, data: result });
+        } catch (error) {
+            console.error("❌ [AI Controller] Error OCR Prices:", error);
+            res.status(500).json({ error: error.message });
         }
     }
 };
