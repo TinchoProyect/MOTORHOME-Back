@@ -855,15 +855,16 @@
                                         <i data-lucide="calculator" class="w-4 h-4 text-purple-400"></i>
                                         <label class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Editor de Fórmula Matemática</label>
                                     </div>
-                                    <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.switchToStandardMode()" class="px-2 py-1 bg-red-900/20 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 rounded text-[10px] font-semibold transition-colors" title="Desactivar Editor Matemático y Limpiar Configuración Péndulo">
-                                        Desactivar Editor
+                                    <button onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.switchToStandardMode()" class="px-2 py-1 bg-red-900/20 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 rounded text-[10px] font-semibold transition-colors" title="Desactivar Fórmula Matemática">
+                                        Desactivar Fórmula
                                     </button>
                                 </div>
                                 
                                 <div class="space-y-1">
                                     <label class="text-[10px] font-bold text-slate-500 uppercase">Nombre de la Columna</label>
-                                    <input type="text" id="calcColName" value="Precio Final"
+                                    <select id="calcColName"
                                         class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500/50 shadow-inner">
+                                    </select>
                                 </div>
                 
                                 <div class="space-y-1">
@@ -1780,7 +1781,7 @@
     <!-- Viewer Modules -->
     <script type="module" src="./js/viewer_left_panel.js?v=4"></script>
     <script type="module" src="./js/viewer_mapper.js?v=3"></script>
-    <script type="module" src="./js/viewer_rule_workshop.js?v=3"></script>
+    <script type="module" src="./js/viewer_rule_workshop.js?v=6"></script>
     <script type="module" src="./js/viewer_etl_preview.js?v=2"></script>
     <script type="module" src="./js/viewer_ai_ui.js?v=7"></script>
 
@@ -1795,7 +1796,7 @@
     <script src="js/services/nomenclature_service.js"></script>
 
     <script src="js/viewer_mapping.js"></script>
-    <script src="js/viewer_computed.js"></script>
+    <script src="js/viewer_computed.js?v=6"></script>
     <script src="js/viewer_worker.js"></script>
     <script type="module" src="js/viewer_engine.js?v=103"></script>
     <script src="js/viewer_ingest.js?v=2"></script>
@@ -2160,6 +2161,7 @@
                                         
                                         if (effectiveToken === '[vacio]') {
                                             console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
                                             if (isNeg) {
                                                 if (cellValue === "") return false;
                                             } else {
@@ -2190,6 +2192,7 @@
                                         if (effectiveToken.length === 0) continue;
                                         
                                         if (effectiveToken === '[vacio]') {
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
                                             console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
                                             if (isNeg) {
                                                 if (cellValue === "") { match = false; break; }
@@ -2243,6 +2246,7 @@
                                         
                                         if (effectiveToken === '[vacio]') {
                                             console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
                                             if (isNeg) {
                                                 if (cellValue === "") return false;
                                             } else {
@@ -2273,6 +2277,7 @@
                                         if (effectiveToken.length === 0) continue;
                                         
                                         if (effectiveToken === '[vacio]') {
+                                            console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
                                             console.log('🛡️ [VIGÍA DE FILTRO - VACIO] Token Detonado. Negativo?: ' + isNeg + ' | Celda estaba vacia?: ' + (cellValue === ""));
                                             if (isNeg) {
                                                 if (cellValue === "") { match = false; break; }

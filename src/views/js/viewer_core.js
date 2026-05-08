@@ -1208,12 +1208,21 @@ window.loadSavedConfiguration = async function () {
                         processingRules[vColId] = rawRules[oldKey];
                     });
 
-                    // [V5] Hydrate Computed Columns from Backend
-                    if (resultV3.data.reglas_procesamiento.computedColumns) {
+                    // [V5/V8] Hydrate Computed Columns from Backend (Modern First, Legacy Fallback)
+                    if (resultV3.data.computedCols && Array.isArray(resultV3.data.computedCols)) {
+                        window.computedColumns = resultV3.data.computedCols;
+                        console.log("✅ [V8] Columnas Calculadas recuperadas (Modern Payload):", window.computedColumns.length);
+                    } else if (resultV3.data.reglas_procesamiento.computedColumns) {
                         window.computedColumns = Array.isArray(resultV3.data.reglas_procesamiento.computedColumns)
                             ? resultV3.data.reglas_procesamiento.computedColumns
                             : [];
-                        console.log("✅ [V5] Columnas Calculadas recuperadas:", window.computedColumns.length);
+                        console.log("✅ [V5] Columnas Calculadas recuperadas (Legacy):", window.computedColumns.length);
+                    }
+                    
+                    // [V8] Hydrate Draft Pipelines (AI Abstract Syntax Trees for Ghost/Virtual Columns)
+                    if (resultV3.data.draftPipelines) {
+                        window.draftPipelines = resultV3.data.draftPipelines;
+                        console.log("✅ [V8] Draft Pipelines (Reglas IA en RAM) recuperados:", Object.keys(window.draftPipelines).length);
                     }
                 }
 
@@ -1271,7 +1280,7 @@ window.loadSavedConfiguration = async function () {
                 console.log("✅ [V4] Motor ETL configurado desde DB:", resultV4);
 
                 try {
-                    window.draftPipelines = {};
+                    if (!window.draftPipelines) window.draftPipelines = {}; // [V8 HYBRID MERGE] Evitar aplastar el AST cargado en V3
 
                     // 3. RECONSTRUIR PIPELINES MULTI-HOJA
                     for (const m of resultV4.mapeos) {
@@ -1396,7 +1405,7 @@ window.GlobalSearchFilter = {
             <div class="flex items-center gap-2">
                 <div class="relative w-48">
                     <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"></i>
-                    <input type="text" id="${targetIdPrefix}SearchInput" placeholder="Filtrar datos..." oninput="${onSearchCallbackName}()" 
+                    <input type="text" id="${targetIdPrefix}SearchInput" placeholder="Filtrar datos..." oninput="if(window._searchT) clearTimeout(window._searchT); window._searchT = setTimeout(() => ${onSearchCallbackName}(), 400)" 
                         class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-8 py-1 text-[11px] text-white focus:border-emerald-500 outline-none shadow-inner">
                     <button onclick="document.getElementById('${targetIdPrefix}SearchInput').value=''; ${onSearchCallbackName}();" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors" title="Limpiar filtro">
                         <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>

@@ -2635,19 +2635,18 @@ window.handleColumnContextMenu = function(e, colId, colName) {
 };
 
 window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
-    // 1. Snapshot validación
-    if (!window.viewerState || !window.viewerState.data || window.viewerState.data.length === 0) {
-        if (typeof Swal !== 'undefined') {
-            Swal.fire({ title: 'Auditoría Abortada', text: 'No hay datos en memoria para auditar.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
-        }
-        return;
-    }
+    if (!window.viewerState || !window.viewerState.data) return;
     
-    const data = window.viewerState.data;
-    const valueMap = {}; // hashmap para agrupar rows
+    // 1. Obtener la data activa (ya filtrada por bsquedas pero sin purgar)
+    let data = window.viewerState.data;
+    if (window.currentSheetData) data = window.currentSheetData;
     
-    // 2. Extraemos el 'dataIdx' si existe en virtual columns, sino asumimos ID de computed object
-    let lookupKey = null;
+    // 2. Mapas de valores
+    const rawFreqMap = {}; // Frecuencia de los valores crudos
+    const rowInfoList = []; // Lista de info procesada de cada fila
+    
+    // 3. Determinar columna fsica o calculada
+    let lookupKey = colId;
     if (window.virtualColumns) {
         const vCol = window.virtualColumns.find(c => String(c.id) === String(colId));
         if (vCol) lookupKey = vCol.dataIdx;
@@ -2662,8 +2661,9 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
 
     let scannedCount = 0;
 
+    // Primer Pase: Construir RowInfo y Raw Freq
     data.forEach((row, rowIdx) => {
-        // Obviamos filas vacías virtualmente o sin código
+        // Obviamos filas vacas virtualmente o sin cdigo
         if (row._emptySilently || row._rejectedByCode) return;
         
         let cellVal = null;
@@ -2674,23 +2674,66 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
         }
         
         let rawStrVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
-        if (rawStrVal === '') return;
         
+        let isRejectedByPipeline = false;
         let processedStrVal = rawStrVal;
-        if (viewMode === 'processed' && pipeObj && pipeObj.length > 0 && window.viewerETL) {
+        
+        if (pipeObj && pipeObj.length > 0 && window.viewerETL) {
             const tr = window.viewerETL.transformCell(cellVal, pipeObj, row);
+            if (tr.rejected) {
+                isRejectedByPipeline = true;
+            }
             processedStrVal = String(tr.display || tr.result || "").trim();
         }
         
+        // FILTRO LÓGICO DE NULOS: Ignorar si es vacío de origen o vaciado/rechazado por el Pipeline
+        if (rawStrVal === '' || processedStrVal === '' || isRejectedByPipeline) return;
+        
+        rawFreqMap[rawStrVal] = (rawFreqMap[rawStrVal] || 0) + 1;
+        
         scannedCount++;
         
-        if (!valueMap[rawStrVal]) valueMap[rawStrVal] = [];
-        valueMap[rawStrVal].push({ index: rowIdx, rawData: row, rawStrVal: rawStrVal, processedStrVal: processedStrVal });
+        rowInfoList.push({
+            index: rowIdx,
+            rawData: row,
+            rawStrVal: rawStrVal,
+            processedStrVal: processedStrVal
+        });
     });
     
-    // 4. Analizar Conflicto (Agrupado siempre por Origen Crudo)
-    const duplicates = Object.entries(valueMap).filter(([val, occurrences]) => occurrences.length > 1);
+    // 4. Analizar Conflicto (Agrupamiento Dinmico)
+    const valueMap = {};
     
+    rowInfoList.forEach(info => {
+        // En cualquier modo, SOLO nos interesan las filas que ERAN duplicados originalmente.
+        if (rawFreqMap[info.rawStrVal] <= 1) return;
+        
+        if (info.rawData._rejectedSim === true) return; // Ignorar filas purgadas
+        
+        const groupKey = viewMode === 'processed' ? info.processedStrVal : info.rawStrVal;
+        if (!valueMap[groupKey]) valueMap[groupKey] = [];
+        valueMap[groupKey].push(info);
+    });
+    
+    // Filtramos para crear el array de duplicados a mostrar.
+    // En modo crudo, mostramos todo grupo > 1.
+    // En modo procesado, mostramos TODO grupo (incluso de tamao 1, para ver los verdes "Diferenciados").
+    let duplicates = Object.entries(valueMap);
+    if (viewMode === 'raw') {
+        duplicates = duplicates.filter(([val, occurrences]) => occurrences.length > 1);
+    }
+    
+    // ORDENAMIENTO PRIORITARIO:
+    // Los grupos con > 1 repeticiones (Rojos) van arriba.
+    // Los grupos con === 1 repeticiones (Verdes) van abajo.
+    duplicates.sort((a, b) => {
+        const lenA = a[1].length;
+        const lenB = b[1].length;
+        if (lenA > 1 && lenB === 1) return -1;
+        if (lenB > 1 && lenA === 1) return 1;
+        return 0; // mantener orden original si son iguales en este criterio
+    });
+
     const toggleHtml = `
         <div class="flex items-center justify-between bg-slate-900 border border-slate-700/50 p-2 rounded-lg mb-4">
             <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 focus:outline-none">
@@ -2702,16 +2745,16 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
                 <button onclick="window.runUniqueValueAudit('${colId}', '${colName}', 'processed')" class="flex-1 py-1.5 text-xs font-bold z-10 transition-colors ${viewMode === 'processed' ? 'text-blue-200' : 'text-slate-500 hover:text-slate-300'}">Procesado (ETL)</button>
             </div>
         </div>
-        ${viewMode === 'processed' && (!pipeObj || pipeObj.length === 0) ? '<div class="text-xs text-amber-400 bg-amber-900/20 py-2 px-3 rounded text-center mb-4 border border-amber-500/30"><i data-lucide="alert-triangle" class="inline w-3 h-3 mr-1 align-middle"></i>Mostrando estado inicial: Aún no hay reglas activas para alterar el flujo.</div>' : ''}
+        ${viewMode === 'processed' && (!pipeObj || pipeObj.length === 0) ? '<div class="text-xs text-amber-400 bg-amber-900/20 py-2 px-3 rounded text-center mb-4 border border-amber-500/30"><i data-lucide="alert-triangle" class="inline w-3 h-3 mr-1 align-middle"></i>Mostrando estado inicial: An no hay reglas activas para alterar el flujo.</div>' : ''}
     `;
 
     // 5. UX Escenarios
-    if (duplicates.length === 0) {
-        // ÉXITO
+    if (Object.keys(rawFreqMap).filter(k => rawFreqMap[k] > 1).length === 0) {
+        // XITO TOTAL INICIAL (Ni crudo tiene duplicados)
         if (typeof Swal !== 'undefined') {
             Swal.fire({
-                title: 'Auditoría Exitosa',
-                html: toggleHtml + `<div class="mt-4"><i data-lucide="check-circle" class="w-16 h-16 text-emerald-500 mx-auto mb-4"></i><br>Se escanearon <b>${scannedCount}</b> registros.<br>Todos los valores en <b>'${colName}'</b> son rigurosamente únicos.</div>`,
+                title: 'Auditora Exitosa',
+                html: toggleHtml + `<div class="mt-4"><i data-lucide="check-circle" class="w-16 h-16 text-emerald-500 mx-auto mb-4"></i><br>Se escanearon <b>${scannedCount}</b> registros.<br>Todos los valores en <b>'${colName}'</b> son rigurosamente nicos.</div>`,
                 background: '#0f172a',
                 color: '#10b981',
                 confirmButtonText: 'Genial',
@@ -2719,62 +2762,143 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
                 didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
             });
         } else {
-            alert(`Auditoría exitosa! Se escanearon ${scannedCount} registros. Todos los valores son únicos.`);
+            alert(`Auditora exitosa! Se escanearon ${scannedCount} registros. Todos los valores son nicos.`);
         }
     } else {
-        // CONFLICTO
-        console.warn("[Auditoria] Duplicados detectados: ", duplicates);
+        // CONFLICTO (Manejaremos tanto crudo como procesado dinmicamente)
+        console.warn("[Auditoria] Duplicados detectados o re-agrupados: ", duplicates);
         
-        // 5.1 Math Analítico de Frecuencias
+        // 5.1 Math Analtico de Frecuencias Dinmicas
         let f2 = 0, f3 = 0, f4 = 0, fM = 0;
+        let totalAffected = 0;
+        
         duplicates.forEach(([_, occ]) => {
             const l = occ.length;
             if (l === 2) f2++;
             else if (l === 3) f3++;
             else if (l === 4) f4++;
             else if (l > 4) fM++;
+            
+            if (l > 1) {
+                totalAffected += l;
+            }
         });
 
         const phrases = [];
-        if (f2 > 0) phrases.push(`${f2} caso${f2===1?'':'s'} de códigos duplicados`);
-        if (f3 > 0) phrases.push(`${f3} caso${f3===1?'':'s'} de código triplicado`);
-        if (f4 > 0) phrases.push(`${f4} caso${f4===1?'':'s'} de código cuadruplicado`);
+        if (f2 > 0) phrases.push(`${f2} caso${f2===1?'':'s'} de cdigos duplicados`);
+        if (f3 > 0) phrases.push(`${f3} caso${f3===1?'':'s'} de cdigo triplicado`);
+        if (f4 > 0) phrases.push(`${f4} caso${f4===1?'':'s'} de cdigo cuadruplicado`);
         if (fM > 0) phrases.push(`${fM} caso${fM===1?'':'s'} de repeticiones masivas (>4)`);
         
-        let freqSentence = "";
+        let freqSentence = "0 casos repetidos";
         if (phrases.length > 1) {
             const lastPhrase = phrases.pop();
             freqSentence = phrases.join(', ') + ' y ' + lastPhrase;
-        } else {
-            freqSentence = phrases[0] || 'casos repetidos';
+        } else if (phrases.length === 1) {
+            freqSentence = phrases[0];
         }
 
-        const totalAffected = duplicates.reduce((sum, [_, arr]) => sum + arr.length, 0);
-
         // Build conflict UI HTML
+        let colOptions = '';
+        if (window.virtualColumns) {
+            const getHumanName = (idOrName) => {
+                if (!idOrName || idOrName === 'Ignorar Columna') return idOrName;
+                if (window.masterDictionary && Array.isArray(window.masterDictionary)) {
+                    const match = window.masterDictionary.find(m => String(m.id) === String(idOrName) || String(m.nombre_campo) === String(idOrName));
+                    if (match) return match.nombre_campo;
+                }
+                return idOrName;
+            };
+
+            const headerRow = window.currentSheetData && window.currentSheetData.length > 0 ? window.currentSheetData[0] : [];
+            
+            window.virtualColumns.forEach(v => {
+                if (String(v.id) !== String(colId)) {
+                    let originalVal = headerRow[v.dataIdx] || `Col ${v.dataIdx + 1}`;
+                    let mappedType = window.columnMapping ? window.columnMapping[v.id] : null;
+                    
+                    let label = `${originalVal}`;
+                    if (mappedType && mappedType !== 'Ignorar Columna') {
+                        label += ` / ${mappedType}`;
+                        let humanName = getHumanName(mappedType);
+                        if (humanName && humanName !== mappedType) {
+                            label += ` / ${humanName}`;
+                        }
+                    }
+                    let selected = (v.id === window._lastDuplicateCombineColId) ? 'selected' : '';
+                    colOptions += `<option value="${v.id}" ${selected}>${label}</option>`;
+                }
+            });
+        }
+        
         let conflictHtml = toggleHtml + `
             <div class="mb-5 bg-amber-900/40 border border-amber-500/40 shadow-lg shadow-amber-900/20 rounded-lg p-4 text-left relative">
-                <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center justify-between mb-2 pb-2 border-b border-amber-500/20">
                     <div class="flex items-center gap-2 text-amber-400 font-bold text-[11px] uppercase tracking-wider">
-                        <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Resumen Analítico
+                        <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Resumen Analtico
                     </div>
-                    <button onclick="window.unifyDuplicates('${colId}', '${viewMode}')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold text-xs shadow-lg shadow-rose-900/50 transition-transform active:scale-95 flex items-center gap-2">
-                        <i data-lucide="scissors" class="w-3.5 h-3.5"></i> Purificar Duplicados (Conservar Únicos)
+                    <button onclick="window.unifyDuplicates('${colId}', '${viewMode}')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold text-[10px] shadow-lg shadow-rose-900/50 transition-transform active:scale-95 flex items-center gap-2 opacity-80 hover:opacity-100">
+                        <i data-lucide="scissors" class="w-3 h-3"></i> Tachar Duplicados
                     </button>
                 </div>
+                
+                <div class="mb-3 bg-slate-900/50 border border-slate-700/50 p-2.5 rounded">
+                    <div class="text-blue-300 font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                        <i data-lucide="link" class="w-3.5 h-3.5"></i> Salvataje de Datos (Clave Compuesta)
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400">Concatenar con:</span>
+                        <select id="duplicateCombineCol" class="flex-1 bg-slate-950 text-slate-300 text-xs px-2 py-1.5 rounded border border-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer">
+                            ${colOptions}
+                        </select>
+                        <button onclick="window.injectCombineNumeric('${colId}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-xs shadow transition-transform active:scale-95 flex items-center gap-1.5" title="Extrae únicamente los números">
+                            <i data-lucide="asterisk" class="w-3.5 h-3.5"></i> Extraer Nros
+                        </button>
+                        <button onclick="window.injectCombineHash('${colId}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs shadow transition-transform active:scale-95 flex items-center gap-1.5" title="Convierte todo el texto en un Hash único determinista">
+                            <i data-lucide="fingerprint" class="w-3.5 h-3.5"></i> Generar Hash Determinista
+                        </button>
+                    </div>
+                </div>
                 <div class="text-amber-200/90 text-[13px] leading-relaxed">
-                    Se encontraron ${freqSentence}. Total de filas afectadas: <b class="text-amber-400 text-sm bg-amber-500/10 px-1 rounded">${totalAffected}</b>.
+                    ${totalAffected > 0 
+                        ? `Se encontraron ${freqSentence}. Total de filas afectadas: <b class="text-amber-400 text-sm bg-amber-500/10 px-1 rounded">${totalAffected}</b>.`
+                        : `<span class="text-emerald-400"><i data-lucide="check" class="inline w-4 h-4 mr-1"></i> Todos los conflictos iniciales han sido resueltos o tachados exitosamente.</span>`
+                    }
                 </div>
             </div>
             <div class="flex flex-col gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
         `;
         
         duplicates.forEach(([val, reqs]) => {
+            // Evaluar si el grupo est resuelto (Neutral/Verde) o persiste el conflicto (Rojo)
+            // Dado que ya agrupamos por valor final, si el arreglo tiene tamao 1, significa que es NICO en la matriz actual (Resuelto).
+            // Si el arreglo tiene tamao > 1, es que persiste un duplicado en el valor final (Rojo).
+            let isGroupResolved = (reqs.length === 1);
+            let theme = {
+                bg: "bg-slate-900 border border-slate-700/50 border-l-4 border-l-rose-500",
+                text: "text-rose-400",
+                badgeBg: "bg-rose-500/10 border-rose-500/20",
+                badgeText: "text-rose-500",
+                valBg: "text-rose-300"
+            };
+            
+            if (isGroupResolved) {
+                theme = {
+                    bg: "bg-slate-900/50 border border-slate-700/50 border-l-4 border-l-emerald-500 opacity-80",
+                    text: "text-emerald-400",
+                    badgeBg: "bg-emerald-500/10 border-emerald-500/20",
+                    badgeText: "text-emerald-500",
+                    valBg: "text-emerald-300"
+                };
+            }
+
             conflictHtml += `
-            <div class="bg-slate-900 border-l-4 border-l-rose-500 border border-slate-700/50 rounded p-3">
-                <div class="font-bold text-rose-400 font-mono text-sm mb-2 break-all flex items-center justify-between">
-                    <span>📌 Valor: <span class="bg-slate-950 px-2 py-0.5 rounded ml-1 text-rose-300 select-all">${val}</span></span>
-                    <span class="text-xs bg-rose-500/10 text-rose-500 px-2 rounded-full py-0.5 border border-rose-500/20">${reqs.length} repeticiones</span>
+            <div class="mb-3 rounded p-3 transition-all ${theme.bg}">
+                <div class="font-bold ${theme.text} font-mono text-sm mb-2 break-all flex items-center justify-between">
+                    <span>📌 Valor: <span class="bg-slate-950 px-2 py-0.5 rounded ml-1 ${theme.valBg} select-all">${val}</span></span>
+                    <span class="text-xs ${theme.badgeBg} ${theme.badgeText} px-2 rounded-full py-0.5 border flex items-center gap-1">
+                        ${isGroupResolved ? '<i data-lucide="check" class="w-3 h-3"></i> Resuelto' : `${reqs.length} repeticiones`}
+                    </span>
                 </div>
                 <div class="flex flex-col gap-1.5 mt-2">
             `;
@@ -2790,51 +2914,236 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
                          return `<span class="opacity-50">[${k}]:</span> <span class="text-slate-200">${rawVal}</span>`;
                      })
                      .join(' <span class="text-slate-700 mx-1">&bull;</span> ');
-                     
-                let isRejected = false;
-                let valDisplay = occ.rawStrVal;
-                let styleStr = '';
-                let tagStr = '';
-                
-                if (viewMode === 'processed') {
-                    isRejected = occ.rawData._rejectedSim === true;
-                    if (isRejected) {
-                        styleStr = 'opacity: 0.4; text-decoration: line-through;';
-                        tagStr = '<span class="ml-2 text-[9px] bg-red-900/50 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-red-500/30">[DESCARTADO]</span>';
-                    } else if (occ.processedStrVal !== occ.rawStrVal) {
-                        valDisplay = `<span class="text-slate-500 line-through mr-1">${occ.rawStrVal}</span> <span class="text-emerald-400 font-bold">&#8594; ${occ.processedStrVal}</span>`;
-                        tagStr = '<span class="ml-2 text-[9px] bg-emerald-900/50 text-emerald-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border border-emerald-500/30">[DIFERENCIADO]</span>';
-                    }
+
+                const previousVal = isComputed ? (occ.rawData[colId] || "") : (occ.rawData[lookupKey] || "");
+                let valTrans = "";
+                if (viewMode === 'processed' && previousVal !== occ.processedStrVal) {
+                    valTrans = `<div class="mt-1.5 flex items-center gap-2 bg-slate-950 p-1.5 rounded border border-slate-700/50">
+                        <span class="text-slate-500 line-through text-xs">${previousVal}</span>
+                        <i data-lucide="arrow-right" class="w-3 h-3 text-emerald-500"></i>
+                        <span class="text-emerald-400 font-bold text-xs">${occ.processedStrVal}</span>
+                        <span class="ml-auto text-[9px] uppercase tracking-wider bg-emerald-900/40 text-emerald-500 border border-emerald-500/20 px-1 rounded">[DIFERENCIADO]</span>
+                    </div>`;
                 }
-                     
-                conflictHtml += `<div class="bg-slate-950 px-2 py-1.5 text-[11px] font-mono rounded overflow-hidden text-ellipsis whitespace-nowrap hover:whitespace-normal transition-all border border-slate-800 shadow-inner" style="word-break: break-all; ${styleStr}">
-                    <div class="mb-1"><span class="text-slate-500 mr-2 font-bold bg-slate-900 px-1 rounded">#${occ.index}</span> ${displayRow || 'Fila Vacia'}</div>
-                    ${viewMode === 'processed' ? `<div class="font-bold text-blue-300 mt-1">Valor Final: ${valDisplay} ${tagStr}</div>` : ''}
+
+                // Sub-estado si fue descartado
+                let extraOpacity = "";
+                let rejectionBadge = "";
+                if (occ.rawData._rejectedSim === true) {
+                     extraOpacity = "opacity-50";
+                     rejectionBadge = `<span class="ml-auto text-[9px] uppercase tracking-wider bg-rose-900/40 text-rose-500 border border-rose-500/20 px-1 rounded">[DESCARTADO]</span>`;
+                }
+
+                conflictHtml += `
+                <div class="bg-slate-950/50 border border-slate-800 rounded px-2 py-1.5 text-[11px] font-mono leading-tight ${extraOpacity}">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-blue-400/70 font-bold">#${occ.index + 1}</span>
+                        ${rejectionBadge}
+                    </div>
+                    <div class="text-slate-400 break-all">${displayRow}</div>
+                    ${valTrans}
                 </div>`;
             });
-            
             if (reqs.length > 50) {
-               conflictHtml += `<div class="text-xs text-slate-500 text-center italic mt-1">+ ${reqs.length - 50} filas adicionales omitidas de la visualización...</div>`;
+                conflictHtml += `<div class="text-xs text-slate-500 italic mt-1">+ ${reqs.length - 50} incidencias omitidas por rendimiento</div>`;
             }
-            
-            conflictHtml += `</div></div>`;
+            conflictHtml += `
+                </div>
+            </div>`;
         });
         
-        conflictHtml += `</div></div>`;
-        
+        conflictHtml += `</div>`;
+
         if (typeof Swal !== 'undefined') {
             Swal.fire({
-                title: '⚠️ Alerta de Duplicidad',
+                title: 'Alerta de Duplicidad',
                 html: conflictHtml,
                 width: '850px',
                 background: '#0f172a',
                 color: '#f8fafc',
-                confirmButtonText: 'Entendido',
-                confirmButtonColor: '#3b82f6',
+                showCancelButton: true,
+                confirmButtonText: '<i data-lucide="save" class="inline w-4 h-4 mr-1"></i> Confirmar y Aplicar Reglas',
+                cancelButtonText: 'Seguir Auditando',
+                confirmButtonColor: '#10b981',
+                cancelButtonColor: '#334155',
                 didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
+                        window.viewerRuleWorkshop.syncToGlobalState();
+                    }
+                    if (typeof window.triggerSafeRender === 'function') {
+                        window.triggerSafeRender();
+                    }
+                    Swal.fire({
+                        title: 'Guardado Exitóso',
+                        text: 'Las reglas de resolución han sido inyectadas en el pipeline.',
+                        icon: 'success',
+                        background: '#0f172a', color: '#10b981',
+                        confirmButtonColor: '#3b82f6',
+                        timer: 2000
+                    });
+                }
             });
         }
     }
+};
+
+window.ensureEmptyFilterRule = function(colId) {
+    if (!window.draftPipelines) window.draftPipelines = {};
+    if (!window.draftPipelines[colId]) window.draftPipelines[colId] = { rules: [] };
+    
+    const existingEmpty = window.draftPipelines[colId].rules.find(r => r.tipo === 'reject_if' && r.tipo_regex === 'CLEAR_EMPTY_VALUES');
+    if (!existingEmpty) {
+        window.draftPipelines[colId].rules.unshift({
+            type: 'reject_if',
+            tipo: 'reject_if',
+            tipo_regex: 'CLEAR_EMPTY_VALUES',
+            nombre_regla: 'Purgar Filas Vacías',
+            descripcion: 'Descarta automáticamente las filas que no contengan código.',
+            disabled: false
+        });
+    }
+};
+
+window.injectCombineNumeric = function(colId) {
+    if (!window.viewerState || !window.viewerState.data) return;
+    
+    const selectEl = document.getElementById('duplicateCombineCol');
+    if (!selectEl) return;
+    const targetColId = selectEl.value;
+    const targetColName = selectEl.options[selectEl.selectedIndex].text;
+    window._lastDuplicateCombineColId = targetColId; // Persistencia de UI
+    
+    Swal.fire({
+        title: '¿Confirmar Clave Compuesta?',
+        html: `<div class="text-[13px] text-slate-300">Se buscarán coincidencias múltiples en esta columna y se concatenarán con los dígitos extraídos de <b>${targetColName}</b> para diferenciarlas.</div>`,
+        icon: 'question',
+        background: '#0f172a', color: '#f8fafc',
+        showCancelButton: true,
+        confirmButtonColor: '#3b82f6',
+        cancelButtonColor: '#334155',
+        confirmButtonText: '<i data-lucide="link" class="inline w-4 h-4 mr-1 mt-[-2px]"></i> Inyectar Regla',
+        cancelButtonText: 'Cancelar',
+        didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if (!window.draftPipelines) window.draftPipelines = {};
+            if (!window.draftPipelines[colId]) {
+                 window.draftPipelines[colId] = { rules: [] };
+            }
+            
+            const existingDupl = window.draftPipelines[colId].rules.find(r => r.type === 'combine_numeric' && r.source_col_id === targetColId);
+            if (existingDupl) {
+                Swal.fire({ title: 'Atención', text: 'Esta combinación numérica ya existe.', icon: 'info', background: '#0f172a', color: '#f8fafc' });
+                return;
+            }
+            
+            window.ensureEmptyFilterRule(colId);
+            window.draftPipelines[colId].rules.push({
+                type: 'combine_numeric',
+                tipo: 'combine_numeric',
+                nombre_regla: `Clave Compuesta (${targetColName})`,
+                descripcion: `Extrae números de ${targetColName} y los concatena a los repetidos de esta columna.`,
+                disabled: false,
+                source_col_id: colId,
+                target_col_id: targetColId
+            });
+            
+            Swal.fire({
+                title: 'Regla Inyectada',
+                text: 'Se aplicó la regla de concatenación.',
+                icon: 'success',
+                background: '#0f172a', color: '#10b981',
+                confirmButtonColor: '#3b82f6',
+                timer: 2000,
+                showConfirmButton: false
+            });
+            
+            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
+                window.viewerRuleWorkshop.syncToGlobalState();
+            } else if (typeof window.triggerSafeRender === 'function') {
+                window.triggerSafeRender();
+            } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+                window.renderVirtualTable(window.currentSheetData);
+            }
+            
+            // Reopen modal to show processed results
+            const vCol = window.virtualColumns && window.virtualColumns.find(c => String(c.id) === String(colId));
+            const cName = vCol ? vCol.name : colId;
+            setTimeout(() => {
+                 window.runUniqueValueAudit(colId, cName, 'processed');
+            }, 2100); 
+        }
+    });
+};
+
+window.injectCombineHash = function(colId) {
+    if (!window.viewerState || !window.viewerState.data) return;
+    
+    const selectEl = document.getElementById('duplicateCombineCol');
+    if (!selectEl) return;
+    const targetColId = selectEl.value;
+    const targetColName = selectEl.options[selectEl.selectedIndex].text;
+    window._lastDuplicateCombineColId = targetColId; // Persistencia de UI
+    
+    Swal.fire({
+        title: '¿Confirmar Clave Hash?',
+        html: `<div class="text-[13px] text-slate-300">Se buscarán coincidencias múltiples en esta columna y se concatenarán con un Hash determinista generado a partir del texto íntegro de <b>${targetColName}</b> para forzar su diferenciación única.</div>`,
+        icon: 'question',
+        background: '#0f172a', color: '#f8fafc',
+        showCancelButton: true,
+        confirmButtonColor: '#4f46e5', // indigo
+        cancelButtonColor: '#334155',
+        confirmButtonText: '<i data-lucide="fingerprint" class="inline w-4 h-4 mr-1 mt-[-2px]"></i> Inyectar Hash',
+        cancelButtonText: 'Cancelar',
+        didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if (!window.draftPipelines) window.draftPipelines = {};
+            if (!window.draftPipelines[colId]) window.draftPipelines[colId] = { rules: [] };
+            
+            const existingDupl = window.draftPipelines[colId].rules.find(r => r.tipo === 'combine_hash' && r.target_col_id === targetColId);
+            if (existingDupl) {
+                Swal.fire({ title: 'Atención', text: 'Esta combinación hash ya existe.', icon: 'info', background: '#0f172a', color: '#f8fafc' });
+                return;
+            }
+            
+            window.ensureEmptyFilterRule(colId);
+            window.draftPipelines[colId].rules.push({
+                type: 'combine_hash',
+                tipo: 'combine_hash',
+                nombre_regla: `Clave Hash (${targetColName})`,
+                descripcion: `Convierte el texto de ${targetColName} en un Hash numérico determinista y lo concatena a los repetidos.`,
+                disabled: false,
+                source_col_id: colId,
+                target_col_id: targetColId
+            });
+            
+            Swal.fire({
+                title: 'Hash Inyectado',
+                text: 'Se aplicó la regla de Conversión Determinista.',
+                icon: 'success',
+                background: '#0f172a', color: '#10b981',
+                confirmButtonColor: '#3b82f6',
+                timer: 3000
+            });
+            
+            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
+                window.viewerRuleWorkshop.syncToGlobalState();
+            } else if (typeof window.triggerSafeRender === 'function') {
+                window.triggerSafeRender();
+            } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+                window.renderVirtualTable(window.currentSheetData);
+            }
+            
+            const vCol = window.virtualColumns && window.virtualColumns.find(c => String(c.id) === String(colId));
+            const cName = vCol ? vCol.name : colId;
+            setTimeout(() => {
+                window.runUniqueValueAudit(colId, cName, 'processed');
+            }, 3500);
+        }
+    });
 };
 
 window.unifyDuplicates = function(colId, viewMode) {
@@ -2882,9 +3191,6 @@ window.unifyDuplicates = function(colId, viewMode) {
                 timer: 3000
             });
             
-            if (typeof window.generatePreview === 'function') {
-                window.generatePreview();
-            }
             if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
                 window.viewerRuleWorkshop.syncToGlobalState();
             } else if (typeof window.triggerSafeRender === 'function') {

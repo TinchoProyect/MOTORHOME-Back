@@ -17,10 +17,12 @@ async function openCalculationModal(fromRuleWorkshop = false) {
 
     const selectA = document.getElementById('calcFieldA');
     const selectB = document.getElementById('calcFieldB');
+    const selectColName = document.getElementById('calcColName');
 
     // Limpiar opciones previas
-    selectA.innerHTML = '';
-    selectB.innerHTML = '';
+    if (selectA) selectA.innerHTML = '';
+    if (selectB) selectB.innerHTML = '';
+    if (selectColName) selectColName.innerHTML = '';
     
     // Purga de multiclonados anteriores
     document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
@@ -28,13 +30,28 @@ async function openCalculationModal(fromRuleWorkshop = false) {
     // V5: Obtener columnas procesadas visual y estructuralmente (Fase 1 completada)
     let hasOptions = false;
 
+    let columnsToProcess = [];
     if (window.virtualColumns) {
-        window.virtualColumns.forEach((vCol) => {
+        columnsToProcess = columnsToProcess.concat(window.virtualColumns);
+    }
+    if (window.computedColumns) {
+        columnsToProcess = columnsToProcess.concat(window.computedColumns);
+    }
+
+    if (columnsToProcess.length > 0) {
+        columnsToProcess.forEach((vCol) => {
             const vColId = vCol.id;
             let termName = null;
 
+            // Para columnas calculadas (que ya fueron mapeadas/procesadas)
+            if (vCol.masterField && vCol.masterField.nombre_campo) {
+                termName = vCol.masterField.nombre_campo;
+            }
+
             // 1. Obtener el Mapeo Primario como fuente principal prioritaria (Materia Prima)
-            termName = window.columnMapping ? window.columnMapping[vColId] : null;
+            if (!termName) {
+                termName = window.columnMapping ? window.columnMapping[vColId] : null;
+            }
             
             // 2. Resguardo: Si la columna no está en columnMapping global, buscar el nombre mapeado nativo en el draft
             if (!termName && window.draftPipelines && window.draftPipelines[vColId]) {
@@ -47,11 +64,6 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 if (realField) termName = realField.nombre_campo;
             }
 
-            // Validar que no sea ignorada ni sea ella misma una columna calculada ya resuelta (evitar recursión inf.)
-            if (termName && termName !== 'Ignorar Columna' && !vCol.isCalculated) {
-                const optionA = document.createElement('option');
-                optionA.value = vColId; // Usamos la ID virtual
-
                 // --- Trazabilidad Triple ---
                 let origenTexto = vColId;
                 if (vColId.startsWith('ghost_')) {
@@ -62,32 +74,52 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                     const baseIdStr = vColId.split('__')[0];
                     const baseName = window.rawHeaders && window.rawHeaders[baseIdStr] ? window.rawHeaders[baseIdStr] : baseIdStr;
                     origenTexto = baseName + " (Clonado)";
+                } else if (vColId.startsWith('col_ph_')) {
+                    origenTexto = "FANTASMA/CALCULADA";
                 } else {
                     origenTexto = window.rawHeaders && window.rawHeaders[vColId] ? window.rawHeaders[vColId] : vColId;
                 }
 
                 let maestroTexto = "SIN MAESTRO";
-                if (window.draftPipelines && window.draftPipelines[vColId] && window.draftPipelines[vColId].masterField) {
+                if (vCol.masterField && vCol.masterField.nombre_campo) {
+                    maestroTexto = vCol.masterField.nombre_campo;
+                } else if (window.draftPipelines && window.draftPipelines[vColId] && window.draftPipelines[vColId].masterField) {
                     maestroTexto = window.draftPipelines[vColId].masterField.nombre_campo || "SIN MAESTRO";
                 }
 
-                const traceString = `[${origenTexto}] ➜ [${termName}] ➜ [${maestroTexto}]`;
+                // Nombre efectivo de respaldo (cubre fantasmas vírgenes sin mapeo)
+                const effectiveTermName = termName || (vColId.startsWith('col_ph_') ? vColId.replace('col_ph_', '') : (vColId.startsWith('ghost_') ? vColId.replace('ghost_', '') : vColId));
+                const traceString = `[${origenTexto}] ➜ [${effectiveTermName}] ➜ [${maestroTexto}]`;
 
-                optionA.text = traceString;
-                optionA.className = "text-[10px] sm:text-[11px] font-mono leading-tight truncate";
+                // 1. SELECTOR DESTINO (Nombre de Columna): Siempre visible, incluye la columna activa y fantasmas absolutas
+                if (selectColName) {
+                    const optionName = document.createElement('option');
+                    optionName.text = traceString;
+                    optionName.className = "text-[10px] sm:text-[11px] font-mono leading-tight truncate";
+                    optionName.value = maestroTexto !== "SIN MAESTRO" ? maestroTexto : effectiveTermName;
+                    selectColName.appendChild(optionName);
+                }
 
-                const optionB = optionA.cloneNode(true);
-                const optionSemantic = optionA.cloneNode(true);
+                // 2. SELECTORES DE OPERANDOS (A, B, Semántico): Omiten la columna actual y las ignoradas
+                const isMathComputed = window._activeComputedContext && window._activeComputedContext.colIndex === vColId;
+                if (termName && termName !== 'Ignorar Columna' && !isMathComputed) {
+                    const optionA = document.createElement('option');
+                    optionA.value = vColId; // ID virtual (operando técnico)
+                    optionA.text = traceString;
+                    optionA.className = "text-[10px] sm:text-[11px] font-mono leading-tight truncate";
 
-                selectA.appendChild(optionA);
-                selectB.appendChild(optionB);
-                
-                const selectSemantic = document.getElementById('calcFieldSemanticKey');
-                if (selectSemantic) selectSemantic.appendChild(optionSemantic);
-                
-                hasOptions = true;
-            }
-        });
+                    const optionB = optionA.cloneNode(true);
+                    const optionSemantic = optionA.cloneNode(true);
+
+                    if (selectA) selectA.appendChild(optionA);
+                    if (selectB) selectB.appendChild(optionB);
+                    
+                    const selectSemantic = document.getElementById('calcFieldSemanticKey');
+                    if (selectSemantic) selectSemantic.appendChild(optionSemantic);
+                    
+                    hasOptions = true;
+                }
+            });
     }
 
     if (!hasOptions) {
@@ -135,8 +167,19 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
             }
         };
-        // Limpiamos la basura visual del estado anterior forzándolo al disparar el trigger
-        setTimeout(() => { selOp.onchange(); if (window.lucide) window.lucide.createIcons(); }, 50);
+        // Limpiamos la basura visual del estado anterior forzándolo al disparar el trigger síncronamente
+        selOp.onchange();
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    // [UX FIX] Escuchar cualquier cambio dentro de la configuración para activar el botón de guardado
+    const computedPanel = document.getElementById('vrwComputedMode');
+    if (computedPanel) {
+        computedPanel.addEventListener('change', () => {
+            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.enableSaveButton === 'function') {
+                window.viewerRuleWorkshop.enableSaveButton();
+            }
+        });
     }
 }
 
@@ -170,7 +213,11 @@ window.addCloneSourceUI = function() {
 
 // --- GUARDAR LA NUEVA COLUMNA ---
 function saveComputedColumn(closeModal = true) {
-    if (!window._activeComputedContext) return;
+    if (!window._activeComputedContext) return false;
+
+    // Capturar el ID original de la columna en edición antes de que el modal cierre y borre el contexto
+    const activeCompId = window._activeComputedContext.originalCompId || window._activeComputedContext.colIndex;
+    let finalCompId = activeCompId;
 
     const op = document.getElementById('calcOperation').value;
     const nameInput = document.getElementById('calcColName') ? document.getElementById('calcColName').value.trim() : null;
@@ -192,7 +239,7 @@ function saveComputedColumn(closeModal = true) {
         if (operandsList.length === 0) {
             if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Por favor completá al menos una Columna Origen a Clonar.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
             else alert("Por favor completá al menos una Columna Origen a Clonar.");
-            return;
+            return false;
         }
     } else {
         const vColIdA = document.getElementById('calcFieldA') ? document.getElementById('calcFieldA').value : null;
@@ -201,12 +248,12 @@ function saveComputedColumn(closeModal = true) {
         if (!vColIdA || !vColIdB) {
             if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Por favor completá todos los operandos.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
             else alert("Por favor completá todos los operandos.");
-            return;
+            return false;
         }
         if (vColIdA === vColIdB) {
             if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Elegí columnas distintas para el cálculo.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
             else alert("Elegí columnas distintas para el cálculo.");
-            return;
+            return false;
         }
         operandsList = [vColIdA, vColIdB];
     }
@@ -271,8 +318,10 @@ function saveComputedColumn(closeModal = true) {
         }
     } else {
         // Ajouter en memoria
+        const id = 'comp_' + Date.now();
+        finalCompId = id;
         window.computedColumns.push({
-            id: 'comp_' + Date.now(),
+            id: id,
             masterField: targetMasterField, // Destination
             macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT', // V5 Rule constant for now (hardcoded map to UI Operation)
             operands: operandsList,
@@ -294,31 +343,41 @@ function saveComputedColumn(closeModal = true) {
 
     // [QA BUGFIX DEFINITIVO] Limpiar el draftPipeline huérfano del ghost DESPUÉS de que
     // applyMapping()/close() lo re-crearon.
-    if (window._activeComputedContext === null && window.draftPipelines) {
-        const lastCompConfig = window.computedColumns && window.computedColumns.length > 0
-            ? window.computedColumns[window.computedColumns.length - 1]
-            : null;
+    if (window.draftPipelines && window.computedColumns) {
+        // En lugar de buscar el último elemento ciegamente, buscamos el que acabamos de editar o crear
+        const targetId = activeCompId || (window.computedColumns.length > 0 ? window.computedColumns[window.computedColumns.length - 1].id : null);
+        const savedCompConfig = window.computedColumns.find(c => c.id === targetId);
         
-        if (lastCompConfig && lastCompConfig.id.startsWith('col_ph_')) {
-            const isTextMacro = (lastCompConfig.macro === 'CLONE' || lastCompConfig.macro === 'CLONE_SEMANTIC');
+        if (savedCompConfig && savedCompConfig.id.startsWith('col_ph_')) {
+            const isTextMacro = (savedCompConfig.macro === 'CLONE' || savedCompConfig.macro === 'CLONE_SEMANTIC');
             // FIX QA AMNESIA: Si es un texto o fusión semántica, la regla de transformación 
             // (el diccionario generado por AST) DEBE vivir en draftPipelines. Solo eliminamos para cálculo duro.
-            if (!isTextMacro && window.draftPipelines[lastCompConfig.id]) {
-                delete window.draftPipelines[lastCompConfig.id];
-                console.log(`🧹 [COMPUTED] Pipeline huérfano matemático post-close '${lastCompConfig.id}' eliminado de draftPipelines`);
+            if (!isTextMacro && window.draftPipelines[savedCompConfig.id]) {
+                delete window.draftPipelines[savedCompConfig.id];
+                console.log(`🧹 [COMPUTED] Pipeline huérfano matemático post-close '${savedCompConfig.id}' eliminado de draftPipelines`);
             }
         }
     }
 
     // Disparar Render Phase 1 & Phase 2 in-place (V5 Canvas)
-    if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
-        window.renderVirtualTable(window.currentSheetData);
+    // [BUGFIX AMNESIA] Solo renderizar si closeModal es true (cuando no viene desde applyMapping).
+    // Si viene desde applyMapping, delegamos el render final a él para evitar que el AG-Grid lea 
+    // pipelines que todavía no fueron guardados en memoria y borre visualmente los datos.
+    if (closeModal && (!window.viewerRuleWorkshop || typeof window.viewerRuleWorkshop.applyMapping !== 'function')) {
+        if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+            window.renderVirtualTable(window.currentSheetData);
+        }
     }
 
-    // Disparar Autoguardado silencioso de estado (Engine V5)
-    if (typeof window.saveSimulationConfig === 'function') {
-        window.saveSimulationConfig(null, false);
+    // Notify User explicitly when saving locally without modal close
+    if (!closeModal && window.Toast) {
+        window.Toast.fire({
+            icon: 'success',
+            title: 'Fórmula guardada'
+        });
     }
+
+    return finalCompId;
 }
 
 // --- BORRAR COLUMNA ---
@@ -336,6 +395,8 @@ function deleteComputedColumn(indexStr) {
             window.saveSimulationConfig(null, false); // Autoguardado silencioso
         }
     }
+
+    return true;
 }
 
 function editComputedColumn(vColId) {

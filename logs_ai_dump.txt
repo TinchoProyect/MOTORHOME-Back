@@ -3194,3 +3194,17 @@ TEXT: {
   "Harinas Especiales": [181, 182, 183, 184, 185, 186, 187, 198],
   "Especias": [189, 190, 191, 192, 193, 194, 195, 196, 197, 199]
 }
+
+--- INTENTO 1 CHUNK 14 ---
+MSG: Excepción en JSON.parse. Revisa logs_ai_dump.txt. TRACE: Time=7712.00ms, Reason=STOP
+TEXT: {
+  "paquete": [2    60, 263, 264, 268, 269],
+  "": [261, 262, 270, 271, 272],
+  "lata": [265, 266, 267],
+  "unidad": [273, 274, 275, 276],
+  "frasco": [277, 278, 279]
+}
+
+--- INTENTO 1 CHUNK 3 ---
+MSG: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent: [503 Service Unavailable] The request timed out. Please try again.
+TEXT: NO_TEXT

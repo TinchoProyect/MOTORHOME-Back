@@ -315,6 +315,12 @@ async function openColumnMenu_v2(vColId, buttonElement) {
             } else if (term.reglas_procesamiento) {
                 targetRules = Array.isArray(term.reglas_procesamiento) ? term.reglas_procesamiento : [term.reglas_procesamiento];
                 console.log(`[HERD IMMUNITY] Auto-inyectando ${targetRules.length} reglas históricas AST para ${term.termino}`);
+            } else {
+                // [BUGFIX AMNESIA] Si el término maestro no tiene reglas globales todavía, y estamos re-seleccionando el término, 
+                // asegurar de no planchar las reglas locales generadas por Chofer IA que podrían estar persistidas en draftPipelines.
+                if (window.draftPipelines && window.draftPipelines[vColId] && window.draftPipelines[vColId].rules) {
+                     targetRules = window.draftPipelines[vColId].rules;
+                }
             }
 
             window.draftPipelines[vColId] = {

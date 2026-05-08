@@ -348,10 +348,8 @@ class ViewerAiUi {
             }
         }
 
-        // [TICKET #028] VIGÍA EXTREMO PARA DIAGNOSTICAR TAMAÑO DE LA MATRIZ
-        console.error("🚨 [VIGÍA EXTREMO] _buildUniqueSet invocado.");
-        console.error(`🚨 [VIGÍA EXTREMO] window.currentSheetData length: ${window.currentSheetData ? window.currentSheetData.length : 'undefined'}`);
-        console.error(`🚨 [VIGÍA EXTREMO] window.currentSimData length: ${window.currentSimData ? window.currentSimData.length : 'undefined'}`);
+        // [TICKET #028] VIGÍA EXTREMO PARA DIAGNOSTICAR TAMAÑO DE LA MATRIZ (Silenciado en Producción)
+        // console.error("🚨 [VIGÍA EXTREMO] _buildUniqueSet invocado.");
         
         return new Promise((resolve) => {
             let rawRows = [];
@@ -449,10 +447,7 @@ class ViewerAiUi {
             // [VIGÍA DE ESTADÍSTICAS TICKET #021]
             let stats = { totalRows: total, skippedBySku: 0, skippedByMaster: 0, skippedByEmpty: 0, skippedByRegex: 0, added: 0 };
             
-            console.error("🚨 [VIGÍA EXTREMO] extractionDataIdx:", extractionDataIdx);
-            console.error("🚨 [VIGÍA EXTREMO] codigoColId:", codigoColId);
-            console.error("🚨 [VIGÍA EXTREMO] masterKeyDataIdx:", masterKeyDataIdx);
-            console.error("🚨 [VIGÍA EXTREMO] rawRows[0] (Tipo y Valor):", typeof rawRows[0], rawRows.length > 0 ? JSON.stringify(rawRows[0]) : 'vacío');
+            // console.error("🚨 [VIGÍA EXTREMO] extractionDataIdx:", extractionDataIdx);
 
             const processChunk = () => {
                 const end = Math.min(i + chunkSize, total);
@@ -508,7 +503,9 @@ class ViewerAiUi {
                         val = localCompDefOperands.map(opId => {
                              const op = rawRows[i]._richContext[opId];
                              if (!op) return "";
-                             const candidates = [op.clean, op.raw, op.display];
+                             // [FIX TICKET] Priorizar el valor CRUDO original (raw) en extracciones semánticas. 
+                             // Si usamos 'clean', el Chofer IA no ve la unidad de medida que pudo haber sido limpiada por una regla de "Solo Números" en el origen.
+                             const candidates = [op.raw, op.display, op.clean];
                              for (let c of candidates) {
                                   if (c !== undefined && c !== null && String(c).trim() !== '') {
                                       const s = String(c).trim();
@@ -810,8 +807,9 @@ class ViewerAiUi {
             const combinedPrompt = this.selectedIntent ? `CONTEXTO DE LA TAREA: Operación estructurada del tipo "${this.selectedIntent}".\nINTRUCCIONES ESPECÍFICAS DEL USUARIO: ${promptText}` : promptText;
 
             // Restringir max de muestras generativas.
-            // Para AST bastan pocas líneas. Para CLUSTERING (HITL) o LITERAL, pasamos de 80 a 1200 para abarcar diccionarios
-            const limiteMuestras = (useClustering || forceLiteralMode) ? 1200 : 25;
+            // Para AST bastan pocas líneas. Para CLUSTERING (HITL) o LITERAL, elevamos masivamente a 5000 para soportar
+            // combinaciones multiorigen (ej. 4 columnas) sin requerir re-procesamientos manuales cíclicos del operador.
+            const limiteMuestras = (useClustering || forceLiteralMode) ? 5000 : 25;
             const dictLimitado = uniqueDictionary.slice(0, limiteMuestras);
             
             if (uniqueDictionary.length > limiteMuestras && useClustering) {
@@ -823,57 +821,84 @@ class ViewerAiUi {
                  });
             }
 
-            const payload = {
-                column_name: targetColName,
-                prompt: combinedPrompt,
-                samples: dictLimitado, 
-                require_ast: !useClustering && !forceLiteralMode,
-                literal_mode: forceLiteralMode
-            };
-
-            console.warn(`🚨 VIGÍA DE ALERTA ROJA - TICKET #021: Payload exacto inyectado a la IA:`, payload);
+            // [OPTIMIZACIÓN DE LATENCIA] - Implementación de Chunking en lotes de 100
+            const chunkSize = 100;
+            const totalChunks = Math.ceil(dictLimitado.length / chunkSize);
+            let finalClusterData = {};
+            let finalAstRules = [];
             
-            this._setStatus('IA Analizando...', 'working');
+            for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+                const startIdx = chunkIdx * chunkSize;
+                const chunkSamples = dictLimitado.slice(startIdx, startIdx + chunkSize);
+                
+                const payload = {
+                    column_name: targetColName,
+                    prompt: combinedPrompt,
+                    samples: chunkSamples, 
+                    require_ast: !useClustering && !forceLiteralMode,
+                    literal_mode: forceLiteralMode
+                };
+
+                console.warn(`🚨 VIGÍA DE ALERTA ROJA - TICKET #021: Payload exacto inyectado a la IA (Chunk ${chunkIdx+1}/${totalChunks}):`, payload);
+
+                if (totalChunks > 1) {
+                    this._setStatus(`IA Analizando Lote ${chunkIdx + 1}/${totalChunks}...`, 'working');
+                    if (window.Swal) Swal.update({ title: `Analizando Lote ${chunkIdx + 1}/${totalChunks}...` });
+                } else {
+                    this._setStatus('IA Analizando...', 'working');
+                }
+
+                if (forceLiteralMode) {
+                    const responseData = await aiService.discoverEntities(payload);
+                    if (responseData && responseData.cluster && typeof responseData.cluster === 'object' && !Array.isArray(responseData.cluster)) {
+                        Object.assign(finalClusterData, responseData.cluster);
+                    }
+                } else if (useClustering) {
+                    const isCazaRubros = this.selectedRoute === 'caza-rubros' || /CLONE_SEMANTIC/i.test(promptText);
+                    let responseData;
+                    if (isCazaRubros) {
+                        responseData = await aiService.categorizeRubros(payload);
+                    } else {
+                        responseData = await aiService.discoverEntities(payload);
+                    }
+                    if (responseData && responseData.cluster && typeof responseData.cluster === 'object' && !Array.isArray(responseData.cluster)) {
+                        if (isCazaRubros) {
+                            Object.assign(finalClusterData, responseData.cluster);
+                        } else {
+                            // Merge arr of strings
+                            const c = responseData.cluster;
+                            for (let cleanKey in c) {
+                                if (!finalClusterData[cleanKey]) finalClusterData[cleanKey] = [];
+                                finalClusterData[cleanKey].push(...c[cleanKey]);
+                            }
+                        }
+                    }
+                } else {
+                    const responseData = await aiService.generateETLRule(payload);
+                    if (responseData && responseData.rules && Array.isArray(responseData.rules)) {
+                        finalAstRules.push(...responseData.rules);
+                    }
+                }
+            }
+            
+            if (window.Swal && Swal.isVisible()) Swal.close();
             
             if (forceLiteralMode) {
                 // === RUTA LENTA 2: LITERAL TRANSLATION (1-A-1) ===
-                const responseData = await aiService.discoverEntities(payload);
-                if (window.Swal && Swal.isVisible()) Swal.close();
-                
-                if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
-                    throw new Error("El modelo retornó formato de traducción literal inválido.");
-                }
-                
-                const translationMap = responseData.cluster;
-                if (Object.keys(translationMap).length === 0) throw new Error("La IA no devolvió traducciones.");
-                
-                await this._displayLiteralModal(translationMap, promptText, vCol);
+                if (Object.keys(finalClusterData).length === 0) throw new Error("La IA no devolvió traducciones.");
+                await this._displayLiteralModal(finalClusterData, promptText, vCol);
 
             } else if (useClustering) {
                 // === DISCOVER ENTITIES O CATEGORIZACIÓN MAESTRA ===
+                if (Object.keys(finalClusterData).length === 0) throw new Error("La IA no detectó ninguna coincidencia.");
                 const isCazaRubros = this.selectedRoute === 'caza-rubros' || /CLONE_SEMANTIC/i.test(promptText);
-                
-                let responseData;
-                if (isCazaRubros) {
-                    responseData = await aiService.categorizeRubros(payload);
-                } else {
-                    responseData = await aiService.discoverEntities(payload);
-                }
-                
-                if (window.Swal && Swal.isVisible()) Swal.close();
-                
-                if (!responseData || !responseData.cluster || typeof responseData.cluster !== 'object' || Array.isArray(responseData.cluster)) {
-                    throw new Error("El modelo retornó formato de cluster inválido.");
-                }
-                
-                if (Object.keys(responseData.cluster).length === 0) throw new Error("La IA no detectó ninguna coincidencia.");
                 
                 if (isCazaRubros) {
                     // Caza Rubros devuelve translationMap { "sku": "Rubro|ARGUMENTO|Razón" }
                     // Preservamos clusterMap como arreglo de Strings y guardamos el argumento en un mapa global.
                     const clusterMap = {};
                     this.argumentationMap = {};
-                    for (const [rawKey, valString] of Object.entries(responseData.cluster)) {
+                    for (const [rawKey, valString] of Object.entries(finalClusterData)) {
                         const parts = String(valString).split('|ARGUMENTO|');
                         const rubro = parts[0];
                         const arg = parts.length > 1 ? parts[1] : '';
@@ -884,20 +909,13 @@ class ViewerAiUi {
                     }
                     await this._displaySemanticAuditTray(clusterMap, promptText, vCol);
                 } else {
-                    await this._displayConsensusModal(responseData.cluster, promptText, vCol);
+                    await this._displayConsensusModal(finalClusterData, promptText, vCol);
                 }
 
             } else {
                 // === RUTA RÁPIDA: GENERATE ETL RULE (AST TRANSLATION) ===
-                // Usada para operaciones regex puras y diccionarios gigantes. Evita un OOM en el Motor IA.
-                const responseData = await aiService.generateETLRule(payload);
-                if (window.Swal && Swal.isVisible()) Swal.close();
-
-                if (!responseData || !responseData.rules || !Array.isArray(responseData.rules)) {
-                     throw new Error("El modelo retornó reglas de mutación inválidas o la falló la traducción de AST.");
-                }
-                
-                if (responseData.rules.length === 0) throw new Error("La IA no pudo derivar una regla determinista a partir del prompt.");
+                if (finalAstRules.length === 0) throw new Error("La IA no pudo derivar una regla determinista a partir del prompt.");
+                const responseData = { rules: finalAstRules };
                 
                 if (typeof window.viewerRuleWorkshop === 'object' && typeof window.viewerRuleWorkshop.createLocalRuleDirect === 'function') {
                      

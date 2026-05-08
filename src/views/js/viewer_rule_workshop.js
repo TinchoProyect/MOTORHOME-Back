@@ -165,6 +165,22 @@ function renderRuleSelector() {
     }
 }
 
+export function disableSaveButton() {
+    const applyBtn = document.getElementById('vrwBtnApply');
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.classList.add('opacity-50', 'saturate-50', 'pointer-events-none');
+    }
+}
+
+export function enableSaveButton() {
+    const applyBtn = document.getElementById('vrwBtnApply');
+    if (applyBtn) {
+        applyBtn.disabled = false;
+        applyBtn.classList.remove('opacity-50', 'saturate-50', 'pointer-events-none');
+    }
+}
+
 // OPEN PANEL
 export async function open(masterField, vColId, colName) {
     if (window.checkFlujoMutationGuard) {
@@ -575,10 +591,13 @@ export async function open(masterField, vColId, colName) {
     }
 
     if (!isMathOptOut && (isComputedConfig || (window._activeComputedContext && window._activeComputedContext.colIndex === activeVColId))) {
-        switchToComputedMode();
+        await switchToComputedMode();
     } else {
         switchToStandardMode(false);
     }
+
+    // [UX FIX] Desactivar el botón Guardar por defecto hasta que detectemos cambios
+    disableSaveButton();
     
     // [V5.x FIX] Repintar combobox filtrado por Scope (campo_maestro_id) para el campo abierto
     renderRuleSelector();
@@ -603,11 +622,22 @@ export async function open(masterField, vColId, colName) {
 /**
  * Switches the Workshop Panel visual state to Computed Editor 
  */
-export function switchToComputedMode(forceUserActivate = false) {
+export async function switchToComputedMode(forceUserActivate = false) {
     if (forceUserActivate && activeContext && activeContext.colIndex) {
         if (window.m_optOutComputed) {
             window.m_optOutComputed.delete(activeContext.colIndex);
         }
+    }
+
+    // [FIX FATAL PERSISTENCIA] Crear contexto matemático si no existe para columnas nuevas
+    if (!window._activeComputedContext && typeof activeContext !== 'undefined' && activeContext && activeContext.colIndex) {
+        window._activeComputedContext = {
+            masterField: activeContext.masterField || { id: "0", nombre_campo: "Nueva Columna Calculada" },
+            colName: activeContext.colName || activeContext.colIndex,
+            colIndex: activeContext.colIndex,
+            originalCompId: activeContext.colIndex
+        };
+        console.log("🛠️ [COMPUTED] Contexto Matemático Inicializado desde cero:", window._activeComputedContext);
     }
 
     // BUG FIX Nº3: Mantenemos visible el modo estándar de reglas por debajo del panel matemático
@@ -625,70 +655,76 @@ export function switchToComputedMode(forceUserActivate = false) {
 
     const applyBtn = document.getElementById('vrwBtnApply');
     if (applyBtn) {
-        applyBtn.onclick = () => { if(window.saveComputedColumn) window.saveComputedColumn(); };
+        applyBtn.disabled = false;
+        applyBtn.classList.remove('opacity-50', 'saturate-50', 'pointer-events-none');
+        applyBtn.onclick = () => { if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.applyMapping(); };
         applyBtn.className = "flex-grow py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(168,85,247,0.3)] border border-purple-400/20 flex items-center justify-center gap-2";
     }
 
     // Purgar / Configurar contexto
+    let isNewCalc = false;
     if (!window._activeComputedContext) {
         window._activeComputedContext = {
             masterField: activeContext.masterField,
             colName: activeContext.colName || "Columna Fantasma",
             colIndex: activeContext.colIndex,
-            originalCompId: (activeContext.colIndex && activeContext.colIndex.startsWith('col_ph_')) ? activeContext.colIndex : null
+            originalCompId: activeContext.colIndex // [QA FIX] Capturamos cualquier ID sin restricción de prefijo
         };
-        // Reset inputs since it's a new calc
-        if (document.getElementById('calcColName')) document.getElementById('calcColName').value = activeContext.masterField?.nombre_campo || "Descuento";
+        isNewCalc = true;
     }
 
-    // Poblar options
-    if (window.openCalculationModal) window.openCalculationModal(true);
+    // Poblar options esperando a la API asíncrona del Mutaton Guard
+    if (window.openCalculationModal) await window.openCalculationModal(true);
+    
+    if (isNewCalc) {
+        // Asignar después de poblar las opciones
+        if (document.getElementById('calcColName')) document.getElementById('calcColName').value = activeContext.masterField?.nombre_campo || activeContext.colName || "Descuento";
+    }
     
     // BUG FIX Nº1: Rehidratar el estado guardado si estamos editando
     if (window._activeComputedContext && window._activeComputedContext.originalCompId) {
-        setTimeout(() => {
-            const cId = window._activeComputedContext.originalCompId;
-            const compConfig = window.computedColumns ? window.computedColumns.find(c => c.id === cId) : null;
-            if (compConfig && compConfig.operands && compConfig.operands.length >= 1) {
-                const elA = document.getElementById('calcFieldA');
-                const elB = document.getElementById('calcFieldB');
-                const elOp = document.getElementById('calcOperation');
-                const elColName = document.getElementById('calcColName');
-                const elTol = document.getElementById('calcTolerateEmpty');
-                
-                if (elOp) {
-                    elOp.value = compConfig.macro;
-                    // [V7] Forzar actualización de Interfaz (Dynamic UI) luego de hidratar el valor
-                    if (typeof elOp.onchange === 'function') elOp.onchange();
-                    else elOp.dispatchEvent(new Event('change'));
-                }
-                
-                // Op A es la primera de cualquier tipo (CLONE o Normal)
-                if (elA && compConfig.operands[0]) elA.value = compConfig.operands[0];
-                
-                if (compConfig.macro === 'CLONE' || compConfig.macro === 'CLONE_SEMANTIC') {
-                    // Si hay multiples origenes, recrear dropdowns y valorizarlos
-                    for (let i = 1; i < compConfig.operands.length; i++) {
-                        if (compConfig.macro === 'CLONE_SEMANTIC' && i === compConfig.operands.length - 1) {
-                            const elSemanticKey = document.getElementById('calcFieldSemanticKey');
-                            if (elSemanticKey) elSemanticKey.value = compConfig.operands[i];
-                        } else {
-                            if (window.addCloneSourceUI) window.addCloneSourceUI();
-                            // Al re-queryear tomará las dinamicas
-                            const allSelects = document.querySelectorAll('.calc-source-dyn');
-                            if (allSelects[i]) {
-                                allSelects[i].value = compConfig.operands[i];
-                            }
+        const cId = window._activeComputedContext.originalCompId;
+        const compConfig = window.computedColumns ? window.computedColumns.find(c => c.id === cId) : null;
+        console.log("🚨 [VIGÍA DIAGNÓSTICO] Rehidratando editor matemático. cId:", cId, " | Encontrado:", compConfig, " | Total en memoria:", window.computedColumns ? window.computedColumns.length : 0);
+        if (compConfig && compConfig.operands && compConfig.operands.length >= 1) {
+            const elA = document.getElementById('calcFieldA');
+            const elB = document.getElementById('calcFieldB');
+            const elOp = document.getElementById('calcOperation');
+            const elColName = document.getElementById('calcColName');
+            const elTol = document.getElementById('calcTolerateEmpty');
+            
+            if (elOp) {
+                elOp.value = compConfig.macro;
+                // [V7] Forzar actualización de Interfaz (Dynamic UI) luego de hidratar el valor
+                if (typeof elOp.onchange === 'function') elOp.onchange();
+                else elOp.dispatchEvent(new Event('change'));
+            }
+            
+            // Op A es la primera de cualquier tipo (CLONE o Normal)
+            if (elA && compConfig.operands[0]) elA.value = compConfig.operands[0];
+            
+            if (compConfig.macro === 'CLONE' || compConfig.macro === 'CLONE_SEMANTIC') {
+                // Si hay multiples origenes, recrear dropdowns y valorizarlos
+                for (let i = 1; i < compConfig.operands.length; i++) {
+                    if (compConfig.macro === 'CLONE_SEMANTIC' && i === compConfig.operands.length - 1) {
+                        const elSemanticKey = document.getElementById('calcFieldSemanticKey');
+                        if (elSemanticKey) elSemanticKey.value = compConfig.operands[i];
+                    } else {
+                        if (window.addCloneSourceUI) window.addCloneSourceUI();
+                        // Al re-queryear tomará las dinamicas
+                        const allSelects = document.querySelectorAll('.calc-source-dyn');
+                        if (allSelects[i]) {
+                            allSelects[i].value = compConfig.operands[i];
                         }
                     }
-                } else if (compConfig.operands.length === 2 && elB) {
-                    elB.value = compConfig.operands[1];
                 }
-
-                if (elColName) elColName.value = compConfig.masterField?.nombre_campo || "";
-                if (elTol) elTol.checked = compConfig.tolerateEmpty !== false;
+            } else if (compConfig.operands.length === 2 && elB) {
+                elB.value = compConfig.operands[1];
             }
-        }, 100); // 100ms offset para garantizar que openCalculationModal ya insertó el DOM base.
+
+            if (elColName) elColName.value = compConfig.masterField?.nombre_campo || "";
+            if (elTol) elTol.checked = compConfig.tolerateEmpty !== false;
+        }
     }
 }
 
@@ -700,7 +736,23 @@ export function switchToStandardMode(userOptOut = true) {
 
     // [QA BUGFIX] Limpieza profunda del estado matemático si el usuario desactiva el editor
     if (window.computedColumns && activeContext && activeContext.colIndex) {
-        window.computedColumns = window.computedColumns.filter(c => c.id !== activeContext.colIndex);
+        const idx = window.computedColumns.findIndex(c => c.id === activeContext.colIndex);
+        if (idx !== -1) {
+            const cc = window.computedColumns[idx];
+            window.computedColumns.splice(idx, 1);
+            
+            // [QA BUGFIX CRÍTICO] Restaurar a virtualColumns si era un Ghost Column para que no desaparezca del Visor Universal
+            if (cc.id.startsWith('col_ph_') && window.virtualColumns) {
+                if (!window.virtualColumns.find(v => v.id === cc.id)) {
+                    window.virtualColumns.push({
+                        id: cc.id,
+                        dataIdx: cc._consumedDataIdx !== undefined ? cc._consumedDataIdx : window.virtualColumns.length,
+                        isGhostPlaceholder: true
+                    });
+                    console.log(`🪄 [WORKSHOP] Ghost Column ${cc.id} restaurada a virtualColumns tras desactivar el Editor Matemático.`);
+                }
+            }
+        }
     }
 
     // Guardar preferencia del usuario en esta sesión si lo apagó manualmente
@@ -1721,8 +1773,37 @@ export async function auditResidues() {
 }
 
 // APPLY MAPPING (SAVE to Memory Drafts)
-export function applyMapping() {
+export async function applyMapping() {
+    console.log("🚀 [WORKSHOP] Iniciando applyMapping...");
+    try {
+        const applyBtn = document.getElementById('vrwBtnApply');
+        const originalText = applyBtn ? applyBtn.innerHTML : null;
+        
+        if (applyBtn) {
+            applyBtn.disabled = true;
+            applyBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
+            if (window.lucide) window.lucide.createIcons();
+            console.log("⏳ [WORKSHOP] UI del botón actualizada a Guardando...");
+        }
     if (!window.draftPipelines) window.draftPipelines = {};
+
+    // [NUEVO FIX QA: PERSISTENCIA MULTIORIGEN]
+    // Si el modo matemático/columna calculada está visible, y el operador
+    // presionó "Guardar cambios" (botón maestro) en vez del botón local,
+    // debemos forzar la extracción de la UI antes de persistir.
+    const computedModeDiv = document.getElementById('vrwComputedMode');
+    if (computedModeDiv && !computedModeDiv.classList.contains('hidden')) {
+        if (typeof window.saveComputedColumn === 'function') {
+            const success = window.saveComputedColumn(false); // param: closeModal = false
+            if (!success) {
+                console.warn("🛑 [WORKSHOP] Guardado abortado por validación de Operandos.");
+                return; // Cortamos el flujo general, dejando el panel abierto para corrección.
+            }
+            if (typeof success === 'string' && success.startsWith('comp_')) {
+                activeContext.colIndex = success;
+            }
+        }
+    }
 
     window.draftPipelines[activeContext.colIndex] = {
         masterField: activeContext.masterField,
@@ -1763,12 +1844,17 @@ export function applyMapping() {
         }).catch(err => console.error("Error perpetuando AST global manualmente:", err));
     }
 
-    close();
-
     // [V9 FIX] Sincronizar Caché Maestro Local ANTES de disparar guardados al backend o simulaciones
     // Previene el bug donde el Simulador no ve las nuevas reglas porque lee un sheetConfigStore desfasado
     if (typeof window.saveSheetState === 'function' && window.currentSheetName) {
         window.saveSheetState(window.currentSheetName);
+    }
+
+    // [BUGFIX AMNESIA] Renderizar la tabla principal RECIÉN AHORA, cuando el draftPipeline 
+    // y el masterField ya están 100% asegurados en RAM, evitando que la grilla lea pipelines vacíos
+    // y desaparezcan los datos temporalmente.
+    if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+        window.renderVirtualTable(window.currentSheetData);
     }
 
     console.log('🛑 [VIGÍA] Botón Enlazar clickeado');
@@ -1783,16 +1869,38 @@ export function applyMapping() {
                 headerName = selectEl.options[selectEl.selectedIndex].text;
             }
             if (typeof window._executeFlujoSave === 'function') {
-                window._executeFlujoSave(window.globalContext.flujoId, headerName);
+                await window._executeFlujoSave(window.globalContext.flujoId, headerName);
             }
         } else if (typeof window.saveSimulationConfig === 'function') {
-            window.saveSimulationConfig(null, false);
+            await window.saveSimulationConfig(null, false);
             console.log('🛑 [VIGÍA] Llamada a saveSimulationConfig ejecutada correctamente');
         } else {
             console.error('🛑 [VIGÍA FATAL] window.saveSimulationConfig NO EXISTE en el entorno global');
         }
     } catch (error) {
         console.error('🛑 [VIGÍA FATAL] Error en guardado: ', error);
+    }
+
+    if (applyBtn) {
+        // [UX FIX] Feedback visual inmersivo dentro del modal antes del cierre
+        applyBtn.classList.remove('bg-purple-600', 'hover:bg-purple-500');
+        applyBtn.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500');
+        applyBtn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4 text-white"></i> ¡Guardado Exitoso!`;
+        if (window.lucide) window.lucide.createIcons();
+        
+        await new Promise(r => setTimeout(r, 800)); // Pausa dramática confirmacional
+
+        applyBtn.classList.remove('bg-emerald-600', 'border-emerald-500');
+        applyBtn.classList.add('bg-purple-600', 'hover:bg-purple-500');
+        applyBtn.disabled = false;
+        applyBtn.innerHTML = originalText;
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    close(); // Cerrar el panel sólo tras haber completado y restaurado la UI
+    } catch (err) {
+        console.error("🛑 [WORKSHOP FATAL] Error en applyMapping:", err);
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Error', text: err.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
     }
 }
 
@@ -2101,6 +2209,9 @@ export async function createLocalRuleDirect(ruleObj, clearFirst = false) {
     renderPipeline();
     triggerPreview();
     
+    // [FIX BOTÓN INERTE] La IA actúa de forma headless. Debemos avisar a la UI que su estado se ensució.
+    if (typeof enableSaveButton === 'function') enableSaveButton();
+    
     // Si la consola está abierta, se ve visualmente. Si estuviese cerrada (modal inyección rápida), se forzaría guardado
     if (!isPanelOpen && activeContext && activeContext.colIndex) {
         if (!window.draftPipelines) window.draftPipelines = {};
@@ -2110,6 +2221,8 @@ export async function createLocalRuleDirect(ruleObj, clearFirst = false) {
             rules: [...currentDraftPipeline]
         };
         if (typeof window.triggerSafeRender === 'function') window.triggerSafeRender();
+        // [FIX ARCH] Asegurar que el pipeline se guarda en el backend en modo headless
+        if (typeof window.saveSimulationConfig === 'function') window.saveSimulationConfig(null, false);
     }
     return true;
 }
@@ -2163,6 +2276,9 @@ export async function updateLocalRuleDictionary(ruleIdx, newDictionary, logicaAp
 
     renderPipeline();
     triggerPreview();
+    
+    // [FIX BOTÓN INERTE] La IA actúa de forma headless. Debemos avisar a la UI que su estado se ensució.
+    if (typeof enableSaveButton === 'function') enableSaveButton();
     
     if (!isPanelOpen && activeContext && activeContext.colIndex) {
         if (!window.draftPipelines) window.draftPipelines = {};

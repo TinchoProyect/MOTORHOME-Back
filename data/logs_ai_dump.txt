@@ -1,0 +1,46 @@
+
+
+=== DIAGNOSTICO LIMIT ROOTO [CHUNK 14] ====
+- TIEMPO DE RESPUESTA: 7712.00 ms
+- FINISH_REASON DE GOOGLE: STOP
+- RAW STRING (Extraido):
+{
+  "paquete": [2    60, 263, 264, 268, 269],
+  "": [261, 262, 270, 271, 272],
+  "lata": [265, 266, 267],
+  "unidad": [273, 274, 275, 276],
+  "frasco": [277, 278, 279]
+}
+- RAW STRING (Respuesta Completa Gemini):
+{
+  "paquete": [2    60, 263, 264, 268, 269],
+  "": [261, 262, 270, 271, 272],
+  "lata": [265, 266, 267],
+  "unidad": [273, 274, 275, 276],
+  "frasco": [277, 278, 279]
+}
+- CRITERIO DEL CHUNK 14 (Registro Crudo):
+{
+  "260": "Panko  24x200grs Paquete",
+  "261": "Panko  x 1 Kg Kg.",
+  "262": "Panko  x 10 Kg Kg.",
+  "263": "Fideos de Arroz  Spaghetti 20x200grs Paquete",
+  "264": "Papel de Arroz  \"Rice Paper\" 20x300 grs Paquete",
+  "265": "Tomate Perita Pelado Entero  24x400gr Lata",
+  "266": "Tomate Perita Pelado Entero  6x2,5Kg Lata",
+  "267": "Passata di Pomodoro( Pure de Tomate) ETIQUETA DAÑADA 1 x 680 grs Lata",
+  "268": "Fideos Linguine ( cintas)  20x500grs Paquete",
+  "269": "Harina Para Pizza Clasica  10 x 1 Kg Paquete",
+  "270": "Harina Para Pizza Clasica  x 5 Kg Kg.",
+  "271": "Harina Para Pizza  Italiana Tipo Integral x 5 Kg Kg.",
+  "272": "Harina Para Pizza Clasica  x 25 Kg Kg.",
+  "273": "Pan de Hamburguesa 2 U  10 x 130 Gr Unidad",
+  "274": "Pan Blanco  10 x 230 Gr Unidad",
+  "275": "Galletita de Chocolate  10 x 130 Gr Unidad",
+  "276": "Galletita  Chocolate Sin Azúcar 10 x 110 Gr Unidad",
+  "277": "Mostaza de Dijon  12x210 grs Frasco",
+  "278": "Mostaza de Dijon  6x850 grs Frasco",
+  "279": "Mostaza de Dijon en grano al Vino Blanco  12x205 grs Frasco"
+}
+========================================================
+
