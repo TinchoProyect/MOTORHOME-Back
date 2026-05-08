@@ -489,11 +489,33 @@ module.exports = {
                 return null;
             };
 
-            const { data: previousSnapshot, error: snapErr } = await supabase
-                .from('tabla_maestra_operativa')
-                .select('id, datos_maestros, timestamp_extraccion, rubro_id, bloqueo_edicion_manual')
-                .eq('proveedor_id', proveedor_id)
-                .order('timestamp_extraccion', { ascending: false });
+            // [BUGFIX] Paginación obligatoria (Evita límite 1000 de Supabase JS)
+            let previousSnapshot = [];
+            let snapFrom = 0;
+            const snapLimit = 1000;
+            let snapHasMore = true;
+            let snapErr = null;
+
+            while (snapHasMore) {
+                const { data: snapPage, error: pageErr } = await supabase
+                    .from('tabla_maestra_operativa')
+                    .select('id, datos_maestros, timestamp_extraccion, rubro_id, bloqueo_edicion_manual')
+                    .eq('proveedor_id', proveedor_id)
+                    .order('timestamp_extraccion', { ascending: false })
+                    .range(snapFrom, snapFrom + snapLimit - 1);
+                
+                if (pageErr) {
+                    snapErr = pageErr;
+                    break;
+                }
+                
+                previousSnapshot = previousSnapshot.concat(snapPage || []);
+                if (snapPage && snapPage.length === snapLimit) {
+                    snapFrom += snapLimit;
+                } else {
+                    snapHasMore = false;
+                }
+            }
                 
             if (!snapErr && previousSnapshot && previousSnapshot.length > 0) {
                 for (const row of previousSnapshot) {
@@ -830,17 +852,34 @@ module.exports = {
             const supabase = require('../config/supabaseClient');
             
             // [VINCULACIÓN ESTRUCTURAL] Ahora hacemos query incluyendo maestro_rubros y categorias_proveedores
-            const { data, error } = await supabase
-                .from('tabla_maestra_operativa')
-                .select('id, proveedor_id, archivo_origen_id, nombre_proveedor, timestamp_extraccion, datos_maestros, es_delta, rubro_id, bloqueo_edicion_manual, maestro_rubros(id, nombre_rubro), proveedores(categorias_proveedores(nombre))')
-                .order('timestamp_extraccion', { ascending: false });
-            
-            if (error) {
-                 if (error.code === '42P01') {
-                     return res.json({ success: true, data: [] });
-                 }
-                 throw error;
+            // [BUGFIX CRÍTICO] Implementación de paginación exhaustiva para sobrepasar límite de 1000 registros de Supabase JS.
+            let allData = [];
+            let from = 0;
+            const limit = 1000;
+            let hasMore = true;
+
+            while (hasMore) {
+                const { data: pageData, error: pageErr } = await supabase
+                    .from('tabla_maestra_operativa')
+                    .select('id, proveedor_id, archivo_origen_id, nombre_proveedor, timestamp_extraccion, datos_maestros, es_delta, rubro_id, bloqueo_edicion_manual, maestro_rubros(id, nombre_rubro), proveedores(categorias_proveedores(nombre))')
+                    .order('timestamp_extraccion', { ascending: false })
+                    .range(from, from + limit - 1);
+
+                if (pageErr) {
+                    if (pageErr.code === '42P01') {
+                        return res.json({ success: true, data: [] });
+                    }
+                    throw pageErr;
+                }
+
+                allData = allData.concat(pageData || []);
+                if (pageData && pageData.length === limit) {
+                    from += limit;
+                } else {
+                    hasMore = false;
+                }
             }
+            const data = allData;
             
             // Re-inyección semántica (Transversalidad en FrontEnd)
             // Aseguramos que la llave "Rubro" de datos_maestros tenga el nombre actual desde maestro_rubros

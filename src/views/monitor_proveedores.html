@@ -1900,16 +1900,27 @@
                 
                 // [FIX] Persistent Provider Skeleton
                 // Ensure all active providers are always represented in the UI (Switches/Filters)
-                if (window.currentSuppliers && Array.isArray(window.currentSuppliers)) {
-                    window.currentSuppliers.forEach(supplier => {
-                        if (supplier.activo) {
-                             providersSet.set(supplier.id, supplier.nombre);
+                // Fetch fresh from backend to avoid race conditions with app_core.js
+                try {
+                    const provRes = await fetch(`${backendUrl}/api/master-table/proveedores`);
+                    if (provRes.ok) {
+                        const provJson = await provRes.json();
+                        if (provJson && provJson.data) {
+                            provJson.data.forEach(supplier => {
+                                providersSet.set(supplier.id, supplier.razon_social || supplier.nombre);
+                            });
                         }
-                    });
+                    }
+                } catch(e) {
+                    console.warn("Fallo fetching proveedores en Master Table", e);
                 }
                 
                 opJson.data.forEach(op => {
-                    providersSet.set(op.proveedor_id, op.nombre_proveedor);
+                    if (!providersSet.has(op.proveedor_id)) {
+                        providersSet.set(op.proveedor_id, op.nombre_proveedor);
+                    }
+                    // Forzamos el nombre correcto para la row
+                    op.nombre_proveedor = providersSet.get(op.proveedor_id);
                 });
                 
                 // Build Provider Dropdown
@@ -1919,12 +1930,29 @@
                     
                     // Restore from localStorage or default to all ON
                     let savedProviders = localStorage.getItem('lamda_v4_providers_state');
-                    if (savedProviders) {
-                        try { window.activeProviderFilters = new Set(JSON.parse(savedProviders)); }
-                        catch(e) { window.activeProviderFilters = new Set(providersSet.keys()); }
-                    } else {
-                        window.activeProviderFilters = new Set(providersSet.keys());
+                    let knownProviders = localStorage.getItem('lamda_v4_known_providers');
+                    let savedSet = new Set();
+                    let knownSet = new Set();
+                    
+                    if (savedProviders && knownProviders) {
+                        try {
+                            savedSet = new Set(JSON.parse(savedProviders));
+                            knownSet = new Set(JSON.parse(knownProviders));
+                        } catch(e) {}
                     }
+                    
+                    window.activeProviderFilters = new Set();
+                    providersSet.forEach((name, id) => {
+                        // Si no estaba en el radar antes (NUEVO), lo activamos por defecto.
+                        // Si ya lo conociamos, respetamos si estaba guardado en savedSet.
+                        if (!knownSet.has(id) || savedSet.has(id)) {
+                            window.activeProviderFilters.add(id);
+                        }
+                    });
+                    
+                    // Guardamos la firma de proveedores conocidos para futuro
+                    localStorage.setItem('lamda_v4_known_providers', JSON.stringify(Array.from(providersSet.keys())));
+                    localStorage.setItem('lamda_v4_providers_state', JSON.stringify(Array.from(window.activeProviderFilters)));
 
                     window.toggleProviderFilter = function(provId, isChecked) {
                          if (isChecked) {
@@ -2168,10 +2196,21 @@
                                                 if (cellValue !== "") return false;
                                             }
                                         } else {
-                                            if (isNeg) {
-                                                if (cellValue.includes(effectiveToken)) return false;
+                                            let matchFound = false;
+                                            if (effectiveToken.includes('%')) {
+                                                // Escapar caracteres regex excepto el comodín %
+                                                let escapedToken = effectiveToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                // Convertir % en límite de palabra (inicio, fin, o espacio)
+                                                let regexStr = escapedToken.replace(/%/g, '(?:^|\\s|$)');
+                                                let regex = new RegExp(regexStr);
+                                                matchFound = regex.test(cellValue);
                                             } else {
-                                                if (!cellValue.includes(effectiveToken)) return false;
+                                                matchFound = cellValue.includes(effectiveToken);
+                                            }
+                                            if (isNeg) {
+                                                if (matchFound) return false;
+                                            } else {
+                                                if (!matchFound) return false;
                                             }
                                         }
                                     }
@@ -2200,10 +2239,21 @@
                                                 if (cellValue !== "") { match = false; break; }
                                             }
                                         } else {
-                                            if (isNeg) {
-                                                if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                            let matchFound = false;
+                                            if (effectiveToken.includes('%')) {
+                                                // Escapar caracteres regex excepto el comodín %
+                                                let escapedToken = effectiveToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                // Convertir % en límite de palabra (inicio, fin, o espacio)
+                                                let regexStr = escapedToken.replace(/%/g, '(?:^|\\s|$)');
+                                                let regex = new RegExp(regexStr);
+                                                matchFound = regex.test(cellValue);
                                             } else {
-                                                if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                                matchFound = cellValue.includes(effectiveToken);
+                                            }
+                                            if (isNeg) {
+                                                if (matchFound) { match = false; break; }
+                                            } else {
+                                                if (!matchFound) { match = false; break; }
                                             }
                                         }
                                     }
@@ -2253,10 +2303,21 @@
                                                 if (cellValue !== "") return false;
                                             }
                                         } else {
-                                            if (isNeg) {
-                                                if (cellValue.includes(effectiveToken)) return false;
+                                            let matchFound = false;
+                                            if (effectiveToken.includes('%')) {
+                                                // Escapar caracteres regex excepto el comodín %
+                                                let escapedToken = effectiveToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                // Convertir % en límite de palabra (inicio, fin, o espacio)
+                                                let regexStr = escapedToken.replace(/%/g, '(?:^|\\s|$)');
+                                                let regex = new RegExp(regexStr);
+                                                matchFound = regex.test(cellValue);
                                             } else {
-                                                if (!cellValue.includes(effectiveToken)) return false;
+                                                matchFound = cellValue.includes(effectiveToken);
+                                            }
+                                            if (isNeg) {
+                                                if (matchFound) return false;
+                                            } else {
+                                                if (!matchFound) return false;
                                             }
                                         }
                                     }
@@ -2285,10 +2346,21 @@
                                                 if (cellValue !== "") { match = false; break; }
                                             }
                                         } else {
-                                            if (isNeg) {
-                                                if (cellValue.includes(effectiveToken)) { match = false; break; }
+                                            let matchFound = false;
+                                            if (effectiveToken.includes('%')) {
+                                                // Escapar caracteres regex excepto el comodín %
+                                                let escapedToken = effectiveToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                // Convertir % en límite de palabra (inicio, fin, o espacio)
+                                                let regexStr = escapedToken.replace(/%/g, '(?:^|\\s|$)');
+                                                let regex = new RegExp(regexStr);
+                                                matchFound = regex.test(cellValue);
                                             } else {
-                                                if (!cellValue.includes(effectiveToken)) { match = false; break; }
+                                                matchFound = cellValue.includes(effectiveToken);
+                                            }
+                                            if (isNeg) {
+                                                if (matchFound) { match = false; break; }
+                                            } else {
+                                                if (!matchFound) { match = false; break; }
                                             }
                                         }
                                     }
