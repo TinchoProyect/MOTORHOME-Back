@@ -64,6 +64,13 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
     }
     document.getElementById('ocr_grid_container').innerHTML = '';
 
+    // Resetear Botón de Secuencia
+    const seqBtn = document.querySelector('button[onclick="window.processFullOcrSequence()"]');
+    if (seqBtn) {
+        seqBtn.disabled = false;
+        seqBtn.innerHTML = '<i data-lucide="play" class="w-3 h-3"></i> Ejecutar Secuencia';
+    }
+
     // Cargar UI
     sub.textContent = `${fileName} - Procesando...`;
     img.style.display = 'none';
@@ -182,7 +189,7 @@ function renderOcrIndex(secciones) {
                 <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">${sec.nombre || 'Desconocido'}</span>
                 <span class="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">${sec.filas_estimadas || '?'} filas</span>
             </div>
-            <button onclick="window.extractOcrSection('${sec.nombre || ''}', this)" class="w-full mt-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2">
+            <button data-section="${sec.nombre || ''}" onclick="window.extractOcrSection('${sec.nombre || ''}', this)" class="w-full mt-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2 extract-section-btn">
                 <i data-lucide="scan-text" class="w-3 h-3"></i> Extraer Sección
             </button>
         `;
@@ -190,6 +197,59 @@ function renderOcrIndex(secciones) {
     });
     if (window.lucide) lucide.createIcons();
 }
+
+window.processFullOcrSequence = async function() {
+    const buttons = document.querySelectorAll('.extract-section-btn');
+    const total = buttons.length;
+    let count = 0;
+    
+    if (total === 0) return;
+
+    // Deshabilitar temporalmente el botón de secuencia
+    const seqBtn = document.querySelector('button[onclick="window.processFullOcrSequence()"]');
+    if (seqBtn) {
+        seqBtn.disabled = true;
+        seqBtn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Ejecutando Secuencia...';
+        if (window.lucide) lucide.createIcons();
+    }
+
+    // Iterar secuencialmente usando for...of (procesa solo pendientes)
+    for (let btn of buttons) {
+        // Verifica que siga siendo el botón de "Extraer Sección" (no "Reprocesar")
+        if (btn.innerHTML.includes('Extraer Sección') && !btn.disabled) {
+            const sectionName = btn.getAttribute('data-section');
+            if (sectionName) {
+                // Hacer scroll hasta el botón actual
+                btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Extraer de forma sincrónica esperando al modelo
+                await window.extractOcrSection(sectionName, btn);
+                count++;
+            }
+        }
+    }
+
+    if (seqBtn) {
+        seqBtn.disabled = false;
+        seqBtn.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-400"></i> Secuencia Finalizada';
+        setTimeout(() => {
+            seqBtn.innerHTML = '<i data-lucide="play" class="w-3 h-3"></i> Ejecutar Secuencia';
+            if (window.lucide) lucide.createIcons();
+        }, 3000);
+        if (window.lucide) lucide.createIcons();
+    }
+    
+    if (count > 0 && window.Swal) {
+        Swal.fire({
+            toast: true,
+            position: 'bottom-end',
+            icon: 'success',
+            title: `Se procesaron automáticamente ${count} bloques pendientes.`,
+            showConfirmButton: false,
+            timer: 3000,
+            background: '#1e293b', color: '#f8fafc'
+        });
+    }
+};
 
 window.extractOcrSection = async function(sectionName, btnEl) {
     if (!sectionName) return;
@@ -289,7 +349,7 @@ function initOcrGrid(rowData) {
             sortable: true,
             filter: true
         },
-        theme: "ag-theme-alpine-dark",
+        theme: "legacy",
         animateRows: true,
         stopEditingWhenCellsLoseFocus: true
     };
@@ -374,13 +434,13 @@ window.saveOcrListas = async function() {
     if (!window.Swal) return;
     
     const result = await Swal.fire({
-        title: '¿Consolidar a Excel?',
+        title: '¿Ingestar Datos?',
         text: "Se generará un archivo .xlsx físico en la misma carpeta del proveedor y se ingesará automáticamente al Visor Universal.",
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#4f46e5',
         cancelButtonColor: '#334155',
-        confirmButtonText: 'Consolidar',
+        confirmButtonText: 'Ingestar',
         cancelButtonText: 'Cancelar',
         background: '#1e293b', color: '#f8fafc'
     });
@@ -388,7 +448,7 @@ window.saveOcrListas = async function() {
     if (!result.isConfirmed) return;
 
     Swal.fire({
-        title: 'Generando...',
+        title: 'Ingestando...',
         background: '#0f172a', color: '#f8fafc',
         allowOutsideClick: false,
         didOpen: () => { Swal.showLoading(); }
@@ -436,7 +496,7 @@ window.saveOcrListas = async function() {
         window.closeVisorOcrListas();
         
         Swal.fire({
-            icon: 'success', title: 'Archivo Consolidado',
+            icon: 'success', title: 'Ingesta Completa',
             text: 'La tabla ha sido guardada en Drive y procesada.',
             timer: 2500, showConfirmButton: false,
             background: '#1e293b', color: '#f8fafc'
@@ -448,8 +508,8 @@ window.saveOcrListas = async function() {
         }
 
     } catch (e) {
-        console.error("Error al consolidar OCR:", e);
-        Swal.fire('Error', 'No se pudo consolidar el archivo: ' + e.message, 'error');
+        console.error("Error al ingestar OCR:", e);
+        Swal.fire('Error', 'No se pudo ingestar el archivo: ' + e.message, 'error');
     }
 };
 
