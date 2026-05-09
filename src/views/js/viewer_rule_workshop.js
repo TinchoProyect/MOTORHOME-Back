@@ -1123,7 +1123,7 @@ async function renderCacheMissGatillo(container) {
     let uniqueMisses = [...new Set(misses)].filter(x => x);
     let uniqueTotal = [...new Set(totalAuditable)].filter(x => x);
     
-    if (uniqueMisses.length >= 0) {
+    if (uniqueMisses.length > 0) {
         const btnHtml = `
             <button id="vrwCacheMissBtn" onclick="if(window.viewerRuleWorkshop) window.viewerRuleWorkshop.promptScopeModal('${encodeURIComponent(libretaPrompt).replace(/'/g, '%27')}', ${libretaRuleIdx}, ${uniqueMisses.length}, ${uniqueTotal.length})" class="px-3 py-1.5 ${uniqueMisses.length > 0 ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.2)] hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse hover:animate-none cursor-pointer' : 'bg-slate-800/80 text-slate-500 border-slate-700/50 cursor-pointer hover:bg-slate-700 transition'} border rounded text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 shrink-0">
                 <i data-lucide="${uniqueMisses.length > 0 ? 'rocket' : 'check-circle'}" class="w-3.5 h-3.5"></i> Procesar Pendientes (${uniqueMisses.length})

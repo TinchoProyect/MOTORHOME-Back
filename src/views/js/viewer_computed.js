@@ -139,6 +139,7 @@ async function openCalculationModal(fromRuleWorkshop = false) {
             if (opValue === 'CLONE' || opValue === 'CLONE_SEMANTIC') {
                 if(labelA) labelA.innerText = opValue === 'CLONE_SEMANTIC' ? "Semántica Origen (Principal)" : "Columna Origen (Clonada)";
                 if(containerB) containerB.style.display = 'none'; // Se devuelve el campo secundario a la normalidad
+                document.getElementById('calcFieldA').style.display = 'block';
                 
                 const masterKeyContainer = document.getElementById('calcMasterKeyContainer');
                 if (masterKeyContainer) {
@@ -151,8 +152,35 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 
                 if(containerTol) containerTol.style.display = 'none';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'block';
+                
+                const formulaBtn = document.getElementById('btnOpenFormulaModal');
+                if (formulaBtn) formulaBtn.style.display = 'none';
+            } else if (opValue === 'CUSTOM_FORMULA') {
+                if(labelA) labelA.innerText = "Fórmula Aritmética";
+                document.getElementById('calcFieldA').style.display = 'none';
+                if(containerB) containerB.style.display = 'none';
+                
+                let formulaBtn = document.getElementById('btnOpenFormulaModal');
+                if (!formulaBtn) {
+                    formulaBtn = document.createElement('button');
+                    formulaBtn.id = 'btnOpenFormulaModal';
+                    formulaBtn.type = 'button';
+                    formulaBtn.className = "w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors mt-1 flex items-center justify-center gap-2";
+                    formulaBtn.innerHTML = '<i data-lucide="function-square" class="w-4 h-4"></i> Construir Fórmula';
+                    formulaBtn.onclick = () => window.openCustomFormulaModal && window.openCustomFormulaModal();
+                    document.getElementById('calcFieldA').parentElement.appendChild(formulaBtn);
+                    if (window.lucide) window.lucide.createIcons();
+                }
+                formulaBtn.style.display = 'flex';
+                
+                const masterKeyContainer = document.getElementById('calcMasterKeyContainer');
+                if (masterKeyContainer) masterKeyContainer.style.display = 'none';
+                if(containerTol) containerTol.style.display = 'none';
+                if(cloneAddBtn) cloneAddBtn.style.display = 'none';
+                document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
             } else {
                 if(labelA) labelA.innerText = "Precio Base (A)";
+                document.getElementById('calcFieldA').style.display = 'block';
                 if(containerB) {
                     containerB.style.display = 'block';
                     const labelB = containerB.querySelector('label');
@@ -163,6 +191,10 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 
                 if(containerTol) containerTol.style.display = 'flex';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'none';
+                
+                const formulaBtn = document.getElementById('btnOpenFormulaModal');
+                if (formulaBtn) formulaBtn.style.display = 'none';
+                
                 // Reset clones on math operation
                 document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
             }
@@ -241,6 +273,14 @@ function saveComputedColumn(closeModal = true) {
             else alert("Por favor completá al menos una Columna Origen a Clonar.");
             return false;
         }
+    } else if (op === 'CUSTOM_FORMULA') {
+        const finalFormula = window._tempCustomFormula ? window._tempCustomFormula : document.getElementById('customFormulaInput')?.value;
+        if (!finalFormula || finalFormula.trim() === '') {
+            if (typeof Swal !== 'undefined') Swal.fire({ title: 'Atención', text: 'Debes construir una fórmula válida primero.', icon: 'warning', background: '#0f172a', color: '#f8fafc' });
+            else alert("Debes construir una fórmula válida primero.");
+            return false;
+        }
+        operandsList = [finalFormula.trim()];
     } else {
         const vColIdA = document.getElementById('calcFieldA') ? document.getElementById('calcFieldA').value : null;
         const vColIdB = document.getElementById('calcFieldB') ? document.getElementById('calcFieldB').value : null;
@@ -423,7 +463,115 @@ function editComputedColumn(vColId) {
     }
 }
 
-// --- EXPOSICIÓN GLOBAL ---
+// --- [NUEVO V9] EDITOR DE FÓRMULAS DINÁMICAS ---
+window.openCustomFormulaModal = async function() {
+    if (typeof Swal === 'undefined') return alert("SweetAlert2 no está disponible.");
+
+    // Recolectar las columnas mapeadas para mostrar como tokens
+    const columnsToProcess = [];
+    if (window.virtualColumns) columnsToProcess.push(...window.virtualColumns);
+    if (window.computedColumns) columnsToProcess.push(...window.computedColumns);
+
+    let tokenButtons = '';
+    const availableTokens = [];
+    
+    columnsToProcess.forEach(vCol => {
+        const vColId = vCol.id;
+        // Evitamos referenciarnos a nosotros mismos si ya estamos en una columna calculada guardada
+        if (window._activeComputedContext && window._activeComputedContext.colIndex === vColId) return;
+
+        let termName = vCol.masterField?.nombre_campo || 
+                       (window.columnMapping ? window.columnMapping[vColId] : null) || 
+                       (window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].colName : null);
+        
+        if (termName && termName !== 'Ignorar Columna') {
+            const tokenStr = `{${vColId}}`;
+            availableTokens.push({ id: vColId, name: termName });
+            tokenButtons += `<button type="button" onclick="document.getElementById('customFormulaInput').value += ' ${tokenStr} '" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-[10px] text-slate-300 transition-colors truncate max-w-[150px]" title="${termName}">${termName}</button>`;
+        }
+    });
+
+    if (availableTokens.length === 0) {
+        return Swal.fire('Atención', 'No hay otras columnas mapeadas para construir una fórmula.', 'warning');
+    }
+
+    // Si ya existe una fórmula guardada, la recuperamos
+    let existingFormula = '';
+    if (window._activeComputedContext && window._activeComputedContext.originalCompId) {
+        const compConfig = window.computedColumns.find(c => c.id === window._activeComputedContext.originalCompId);
+        if (compConfig && compConfig.macro === 'CUSTOM_FORMULA' && compConfig.operands && compConfig.operands[0]) {
+            existingFormula = compConfig.operands[0];
+        }
+    }
+
+    const { value: formula } = await Swal.fire({
+        title: '<div class="text-indigo-400 font-bold"><i data-lucide="function-square" class="inline w-5 h-5 mr-2"></i>Constructor de Fórmulas</div>',
+        html: `
+            <div class="text-left space-y-4 font-sans text-sm mt-4">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-slate-500 uppercase">Expresión Aritmética</label>
+                    <textarea id="customFormulaInput" rows="3" class="w-full bg-slate-950 border border-indigo-500/50 rounded-lg p-3 text-white font-mono text-sm outline-none focus:border-indigo-400 focus:shadow-[0_0_15px_rgba(99,102,241,0.2)]" placeholder="Ej: ({col_1} * 1.07) / 1.21">${existingFormula}</textarea>
+                </div>
+                
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold text-slate-500 uppercase">Operadores</label>
+                    <div class="flex flex-wrap gap-2">
+                        ${['+', '-', '*', '/', '(', ')'].map(op => `<button type="button" onclick="document.getElementById('customFormulaInput').value += ' ${op} '" class="w-8 h-8 flex items-center justify-center bg-indigo-900/40 hover:bg-indigo-600 border border-indigo-500/30 text-indigo-300 hover:text-white rounded font-bold transition-colors">${op}</button>`).join('')}
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold text-slate-500 uppercase">Variables Disponibles</label>
+                    <div class="flex flex-wrap gap-2 max-h-[120px] overflow-y-auto custom-scrollbar p-2 bg-slate-900/50 rounded border border-slate-700/50">
+                        ${tokenButtons}
+                    </div>
+                </div>
+            </div>
+        `,
+        background: '#0f172a', color: '#f8fafc',
+        showCancelButton: true,
+        confirmButtonText: 'Aplicar Fórmula',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#4f46e5',
+        cancelButtonColor: '#334155',
+        width: '600px',
+        didOpen: () => {
+            if (window.lucide) window.lucide.createIcons({ root: Swal.getPopup() });
+        },
+        preConfirm: () => {
+            const inputVal = document.getElementById('customFormulaInput').value.trim();
+            if (!inputVal) {
+                Swal.showValidationMessage('La fórmula no puede estar vacía');
+                return false;
+            }
+            // Sanitización básica: solo permitir math chars y tokens como {col_1}
+            const cleanStr = inputVal.replace(/{[^}]+}/g, ''); // remove tokens temporarily
+            if (/[^\d\.\s\+\-\*\/\(\)]/.test(cleanStr)) {
+                Swal.showValidationMessage('La fórmula contiene caracteres inválidos. Usa solo números y operadores básicos.');
+                return false;
+            }
+            return inputVal;
+        }
+    });
+
+    if (formula) {
+        // Guardamos la fórmula temporalmente en un atributo del modal parent o una variable global para el saveComputedColumn
+        window._tempCustomFormula = formula;
+        
+        // Habilitamos el guardado en el Workshop
+        if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.enableSaveButton === 'function') {
+            window.viewerRuleWorkshop.enableSaveButton();
+        }
+        
+        // Alerta leve para indicar que está lista
+        Swal.fire({
+            toast: true, position: 'bottom-end',
+            icon: 'success', title: 'Fórmula asignada. Haz clic en Guardar Cambios.',
+            showConfirmButton: false, timer: 3000, background: '#1e293b', color: '#f8fafc'
+        });
+    }
+};
+
 window.ViewerUI = window.ViewerUI || {};
 window.ViewerUI.deleteComputedColumn = deleteComputedColumn;
 

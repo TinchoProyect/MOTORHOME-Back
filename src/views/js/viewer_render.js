@@ -110,7 +110,35 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
     if (isNaN(mathA)) mathA = 0;
     if (isNaN(mathB)) mathB = 0;
 
-    if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
+    if (calcConfig.macro === "CUSTOM_FORMULA") {
+        let formulaStr = calcConfig.operands?.[0] || "";
+        if (!formulaStr) return { resultDisplay: "", mathResult: 0, rejected: false };
+        
+        let parsedFormula = formulaStr;
+        let tokens = formulaStr.match(/{[^}]+}/g) || [];
+        
+        tokens.forEach(token => {
+            const vColId = token.slice(1, -1);
+            let valStr = "";
+            if (contextRow && contextRow._richContext && contextRow._richContext[vColId]) {
+                const op = contextRow._richContext[vColId];
+                valStr = extractNumericSource(op);
+            }
+            let mathVal = safeParseFn(valStr);
+            if (isNaN(mathVal)) mathVal = 0;
+            // Replace token with mathVal
+            parsedFormula = parsedFormula.split(token).join(mathVal);
+        });
+        
+        try {
+            const fn = new Function('return ' + parsedFormula);
+            mathResult = fn();
+        } catch (e) {
+            console.error("Error executing CUSTOM_FORMULA", parsedFormula, e);
+            mathResult = 0;
+        }
+        if (isNaN(mathResult) || !isFinite(mathResult)) mathResult = 0;
+    } else if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
         const discountPercent = Math.abs(mathB);
         if (discountPercent === 0) mathResult = mathA;
         else {
