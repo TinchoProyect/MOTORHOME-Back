@@ -656,10 +656,10 @@ ESTRUCTURA JSON REQUERIDA:
         }
     },
 
-    executePriceListOCR: async (base64Data, mimeType) => {
+    executePriceListOCRIndex: async (base64Data, mimeType) => {
         if (!genAI) throw new Error("Gemini API no inicializada");
 
-        console.log(`[AI Service - OCR] ⏱️ Ejecutando Motor Chofer en Lista de Precios...`);
+        console.log(`[AI Service - OCR] ⏱️ Ejecutando Fase 1: Extracción de Índice (Sectores)...`);
 
         if (base64Data.startsWith('data:')) {
             base64Data = base64Data.split(',')[1];
@@ -667,34 +667,100 @@ ESTRUCTURA JSON REQUERIDA:
 
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-flash", 
-            generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
+            generationConfig: { temperature: 0.1, maxOutputTokens: 2048 } 
         });
 
-        let systemInstruction = `Eres un extractor de datos de altísima precisión ("Chofer OCR").
-Se te provee una imagen de una lista de precios de un proveedor. Tu tarea es tabular la información de la imagen en formato JSON.
+        let systemInstruction = `Eres un extractor de estructura de documentos ("Chofer OCR Indexador").
+Se te provee una imagen de una lista de precios. Tu ÚNICA tarea es identificar los bloques, categorías o secciones principales de la lista (por ejemplo: "PASAS", "NUECES", "ALMENDRAS", etc.) y estimar la cantidad de renglones que tiene cada sección.
+NO DEBES EXTRAER LOS PRODUCTOS. Solo devuelve el índice estructural.
 
-REGLAS DE EXTRACCIÓN:
-1. Identifica la tabla o matriz donde se listan los artículos/productos con sus precios y características.
-2. Extrae una lista de objetos JSON bajo la clave "productos".
-3. Intenta extraer para cada producto:
-   - "codigo": Código interno o SKU (si no hay, string vacío "").
-   - "descripcion": El nombre o descripción del artículo.
-   - "precio_unitario": El importe unitario como flotante. Si no hay, 0.0.
-   - "presentacion": String con detalles de empaque (ej: "Caja x 12", "500g"). Si no hay, "".
-   - "marca": Marca del producto si está explícita. Si no, "".
-
-ESTRUCTURA JSON REQUERIDA:
+ESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN CON EL JSON, SIN EXPLICACIONES ADICIONALES):
+\`\`\`json
 {
-  "productos": [
+  "secciones": [
     {
-      "codigo": "...",
-      "descripcion": "...",
-      "precio_unitario": 0.0,
-      "presentacion": "...",
-      "marca": "..."
+      "nombre": "PASAS",
+      "filas_estimadas": 15
+    },
+    {
+      "nombre": "NUECES CHANDLER",
+      "filas_estimadas": 8
     }
   ]
-}`;
+}
+\`\`\``;
+
+        const prompt = [
+            systemInstruction,
+            { inlineData: { data: base64Data, mimeType: mimeType || "image/jpeg" } }
+        ];
+
+        try {
+            const startTime = performance.now();
+            const result = await model.generateContent(prompt);
+            const text = result.response.text();
+            console.log(`[AI Service - OCR Index] ⏱️ Completado en ${((performance.now() - startTime) / 1000).toFixed(2)}s`);
+            console.log(`[AI Service - OCR Index] Texto Crudo:\n`, text);
+            
+            let extractedText = module.exports.extractJSONFromInference(text);
+            if (!extractedText) extractedText = text.trim(); // Fallback si no hay markdown block
+            
+            try {
+                return JSON.parse(extractedText);
+            } catch (err) {
+                console.warn("[AI Service - OCR Index] Error de parseo inicial, intentando reparar JSON truncado...");
+                let repaired = extractedText.replace(/```json/i, '').replace(/```/i, '').trim();
+                
+                try { return JSON.parse(repaired + "]}"); } catch(e1) {}
+                try { return JSON.parse(repaired + "}]}"); } catch(e2) {}
+                
+                throw new Error("El modelo retornó un JSON truncado irreparable: " + err.message);
+            }
+        } catch (e) {
+            console.error("[AI Service - OCR Index] ❌ Error en Inferencia:", e);
+            throw new Error("Fallo en la inferencia OCR Index: " + e.message);
+        }
+    },
+
+    executePriceListOCRSection: async (base64Data, mimeType, targetSection, customPrompt = null) => {
+        if (!genAI) throw new Error("Gemini API no inicializada");
+
+        console.log(`[AI Service - OCR] ⏱️ Ejecutando Fase 2: Extracción de Sección [${targetSection}]...`);
+
+        if (base64Data.startsWith('data:')) {
+            base64Data = base64Data.split(',')[1];
+        }
+
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash", 
+            generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } 
+        });
+
+        let systemInstruction = `Eres un extractor de datos de altísima precisión ("Chofer OCR Quirúrgico").
+Se te provee una imagen de una lista de precios de un proveedor.
+Tu tarea es ubicar visualmente el bloque correspondiente a la sección o categoría "${targetSection}" y tabular ÚNICAMENTE los productos que pertenecen a esa sección.
+
+REGLAS ESTRICTAS DE EXTRACCIÓN (INNEGOCIABLES):
+1. ENFOQUE QUIRÚRGICO: Ignora todos los productos de otras secciones. Concéntrate exclusivamente en extraer TODOS los renglones debajo del título "${targetSection}" hasta llegar al siguiente título de sección.
+2. TRANSCRIPCIÓN EXHAUSTIVA DE LA SECCIÓN: Dentro de "${targetSection}", tienes ESTRICTAMENTE PROHIBIDO omitir filas. Extrae el bloque completo.
+3. FIDELIDAD NUMÉRICA (FORMATO ARGENTINO): Los precios pueden tener formato argentino (ej. "37.500,00" o "37.500").
+   - Si ves "37.500", significa treinta y siete mil quinientos. DEBES transformarlo al flotante: 37500.0.
+   - NO asumas que el punto es decimal si lógicamente es un separador de miles.
+4. MAPEADO DE COLUMNAS: Ajusta las columnas visuales a las siguientes 6 claves:
+   - "sector": Debes forzar que el valor de esta clave sea SIEMPRE "${targetSection}" para todos los productos de esta extracción.
+   - "codigo": Código interno o SKU (si no hay, string vacío "").
+   - "descripcion": El nombre o descripción del artículo.
+   - "presentacion": Todo detalle de peso, empaque o caja (ej: "10 KG"). Búscalo en columnas anexas como 'PESO'.
+   - "precio_kilo": El precio unitario por cada kilo o unidad mínima (Float limpio, sin símbolos).
+   - "precio_unitario": El precio final total de la presentación o bulto cerrado (Float limpio, sin símbolos).
+   
+   IMPORTANTE: Si la lista muestra dos columnas de precios, deduce lógicamente cuál es el precio por kilo y cuál es el precio final del bulto (precio_kilo * cantidad = precio_unitario). Si solo hay un precio, asígnalo a precio_unitario y deja precio_kilo en 0.0.`;
+
+        if (customPrompt) {
+            systemInstruction += `\n\nDIRECTIVAS EXCLUSIVAS DEL PROVEEDOR (PRIORIDAD MÁXIMA):\n${customPrompt}\n`;
+        }
+
+        systemInstruction += `\n\nESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN CON EL JSON, SIN EXPLICACIONES ADICIONALES):\n\`\`\`json\n{\n  "productos": [\n    {\n      "sector": "${targetSection}",\n      "codigo": "...",\n      "descripcion": "...",\n      "presentacion": "...",\n      "precio_kilo": 0.0,\n      "precio_unitario": 0.0\n    }\n  ]\n}\n\`\`\``;
 
         const prompt = [
             systemInstruction,

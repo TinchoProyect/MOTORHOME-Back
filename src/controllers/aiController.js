@@ -2,6 +2,9 @@ const aiService = require('../services/aiService');
 const driveService = require('../services/driveService');
 const fs = require('fs');
 const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
+
+const supabase = process.env.SUPABASE_URL ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY) : null;
 
 const PROMPT_LIB_PATH = path.join(__dirname, '../../data', 'ai_prompt_library.json');
 
@@ -469,16 +472,16 @@ const aiController = {
 
     /**
      * Endpoint: POST /api/ai/ocr-prices
-     * Extrae tablas de listas de precios desde imágenes vía LLM Vision
+     * Extrae tablas de listas de precios desde imágenes vía LLM Vision (Fase 1 y Fase 2)
      */
     executeOcrPrices: async (req, res) => {
         try {
-            const { fileId, fileName, providerId } = req.body;
-            if (!fileId || !fileName) {
-                return res.status(400).json({ error: "Faltan parámetros: fileId o fileName" });
+            const { fileId, fileName, providerId, action, targetSection } = req.body;
+            if (!fileId || !fileName || !action) {
+                return res.status(400).json({ error: "Faltan parámetros: fileId, fileName o action" });
             }
 
-            console.log(`[AI Controller] 🚀 Iniciando Ingesta OCR para Lista de Precios: ${fileName}`);
+            console.log(`[AI Controller] 🚀 Iniciando OCR [${action}] para: ${fileName}`);
 
             // 1. Download binary from Drive
             const buffer = await driveService.downloadFileToBuffer(fileId);
@@ -493,10 +496,39 @@ const aiController = {
 
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
-            // 3. Inference
-            const result = await aiService.executePriceListOCR(dataUrl, mimeType);
+            if (action === 'index') {
+                // Fase 1: Indexado de Secciones
+                const result = await aiService.executePriceListOCRIndex(dataUrl, mimeType);
+                return res.status(200).json({ success: true, data: result });
+            } 
+            else if (action === 'section') {
+                if (!targetSection) return res.status(400).json({ error: "Falta targetSection" });
+                
+                // Obtener el Custom Prompt del proveedor (si existe)
+                let customPrompt = null;
+                if (providerId && supabase) {
+                    try {
+                        const { data: provInfo, error } = await supabase
+                            .from('proveedores')
+                            .select('mapa_ocr_listas')
+                            .eq('id', providerId)
+                            .single();
+                        if (!error && provInfo && provInfo.mapa_ocr_listas) {
+                            customPrompt = provInfo.mapa_ocr_listas;
+                        }
+                    } catch (e) {
+                        console.warn("[AI Controller] No se pudo obtener mapa_ocr_listas", e.message);
+                    }
+                }
 
-            return res.status(200).json({ success: true, data: result });
+                // Fase 2: Extracción Quirúrgica
+                const result = await aiService.executePriceListOCRSection(dataUrl, mimeType, targetSection, customPrompt);
+                return res.status(200).json({ success: true, data: result });
+            } 
+            else {
+                return res.status(400).json({ error: "Acción inválida" });
+            }
+
         } catch (error) {
             console.error("❌ [AI Controller] Error OCR Prices:", error);
             res.status(500).json({ error: error.message });

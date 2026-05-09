@@ -119,31 +119,34 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
         window.zoomVisorOcr(e.deltaY > 0 ? -0.1 : 0.1);
     };
 
-    // 2. Extraer datos con el nuevo endpoint
+    // 2. Extraer Índice Estructural con el nuevo endpoint
     try {
         const res = await fetch(`${backendUrl}/api/ai/ocr-prices`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ providerId, fileId, fileName })
+            body: JSON.stringify({ providerId, fileId, fileName, action: 'index' })
         });
         
         const json = await res.json();
-        if (!res.ok) throw new Error(json.error || "Fallo en extracción OCR IA");
+        if (!res.ok) throw new Error(json.error || "Fallo en extracción OCR IA (Fase 1)");
         
-        const data = json.data; // { productos: [...] }
-        const rowData = data.productos || [];
+        const data = json.data; // { secciones: [...] }
+        const secciones = data.secciones || [];
 
         if (window.Swal) Swal.close();
-        sub.textContent = `${fileName} - Revisión HITL Pendiente`;
+        sub.textContent = `${fileName} - Mapeo Completado`;
         
         badge.className = 'px-2 py-1 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
-        badge.textContent = `LISTO (${rowData.length} ÍTEMS)`;
+        badge.textContent = `LISTO (${secciones.length} SECTORES)`;
         
         btnSave.disabled = false;
         btnSave.classList.remove('cursor-not-allowed');
 
-        // Inicializar AG Grid
-        initOcrGrid(rowData);
+        // Inicializar AG Grid Vacía
+        initOcrGrid([]);
+        
+        // Renderizar Sectores
+        renderOcrIndex(secciones);
 
     } catch (e) {
         console.error(e);
@@ -158,7 +161,92 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
         }
         badge.className = 'px-2 py-1 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30';
         badge.textContent = 'FALLÓ';
+        document.getElementById('ocr_sections_list').innerHTML = '<div class="text-[10px] text-red-500 text-center mt-10">Error de mapeo estructural.</div>';
     }
+};
+
+function renderOcrIndex(secciones) {
+    const container = document.getElementById('ocr_sections_list');
+    container.innerHTML = '';
+    
+    if (secciones.length === 0) {
+        container.innerHTML = '<div class="text-[10px] text-slate-500 text-center mt-10">No se detectaron sectores.</div>';
+        return;
+    }
+
+    secciones.forEach((sec, idx) => {
+        const div = document.createElement('div');
+        div.className = 'bg-slate-900 border border-slate-800 rounded-lg p-3 flex flex-col gap-2 transition-all hover:border-indigo-500/50 group';
+        div.innerHTML = `
+            <div class="flex justify-between items-start">
+                <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">${sec.nombre || 'Desconocido'}</span>
+                <span class="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">${sec.filas_estimadas || '?'} filas</span>
+            </div>
+            <button onclick="window.extractOcrSection('${sec.nombre || ''}', this)" class="w-full mt-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2">
+                <i data-lucide="scan-text" class="w-3 h-3"></i> Extraer Sección
+            </button>
+        `;
+        container.appendChild(div);
+    });
+    if (window.lucide) lucide.createIcons();
+}
+
+window.extractOcrSection = async function(sectionName, btnEl) {
+    if (!sectionName) return;
+    
+    // UI Feedback
+    const originalHtml = btnEl.innerHTML;
+    btnEl.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Extrayendo...';
+    btnEl.disabled = true;
+    btnEl.classList.add('opacity-50', 'cursor-not-allowed');
+    if (window.lucide) lucide.createIcons();
+
+    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+    
+    try {
+        const res = await fetch(`${backendUrl}/api/ai/ocr-prices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                providerId: window.currentOcrProviderId, 
+                fileId: window.currentOcrFileId, 
+                fileName: window.currentOcrFileName, 
+                action: 'section',
+                targetSection: sectionName
+            })
+        });
+        
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Fallo en extracción quirúrgica");
+        
+        const data = json.data; // { productos: [...] }
+        const newRows = data.productos || [];
+
+        if (window.ocrGridInstance) {
+            window.ocrGridInstance.applyTransaction({ add: newRows });
+            
+            // Actualizar badge con el total de filas
+            const totalRows = window.ocrGridInstance.getDisplayedRowCount();
+            const badge = document.getElementById('ocr_status_badge');
+            if (badge) {
+                badge.textContent = `TOTAL: ${totalRows} ÍTEMS`;
+            }
+        }
+
+        // Marcar como extraído
+        btnEl.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i> Extraído';
+        btnEl.classList.replace('bg-indigo-600/20', 'bg-emerald-600/20');
+        btnEl.classList.replace('text-indigo-400', 'text-emerald-400');
+        btnEl.classList.replace('border-indigo-500/30', 'border-emerald-500/30');
+
+    } catch (e) {
+        console.error(e);
+        alert(`Error al extraer la sección ${sectionName}: ` + e.message);
+        btnEl.innerHTML = originalHtml;
+        btnEl.disabled = false;
+        btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+    if (window.lucide) lucide.createIcons();
 };
 
 // ==========================
@@ -168,11 +256,14 @@ function initOcrGrid(rowData) {
     const gridOptions = {
         rowData: rowData,
         columnDefs: [
+            { field: 'sector', headerName: 'Sector', editable: true, flex: 1 },
             { field: 'codigo', headerName: 'Código', editable: true, flex: 1, cellEditor: 'agTextCellEditor' },
             { field: 'descripcion', headerName: 'Descripción', editable: true, flex: 2, cellEditor: 'agLargeTextCellEditor' },
             { field: 'presentacion', headerName: 'Presentación', editable: true, flex: 1 },
-            { field: 'marca', headerName: 'Marca', editable: true, flex: 1 },
-            { field: 'precio_unitario', headerName: 'Precio Unitario', editable: true, flex: 1,
+            { field: 'precio_kilo', headerName: 'Precio x KG', editable: true, flex: 1,
+              valueParser: params => Number(params.newValue),
+              valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' },
+            { field: 'precio_unitario', headerName: 'Precio Final', editable: true, flex: 1,
               valueParser: params => Number(params.newValue),
               valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' }
         ],
@@ -277,3 +368,66 @@ window.saveOcrListas = async function() {
         Swal.fire('Error', 'No se pudo consolidar el archivo: ' + e.message, 'error');
     }
 };
+
+// ==========================
+// Lógica de Redimensionamiento (Splitters)
+// ==========================
+function initOcrSplitters() {
+    const layout = document.getElementById('visorOcrLayoutContainer');
+    const panelLeft = document.getElementById('visorOcrPanelLeft');
+    const panelMiddle = document.getElementById('visorOcrPanelMiddle');
+    const panelRight = document.getElementById('visorOcrPanelRight');
+    const splitter1 = document.getElementById('visorOcrSplitter1');
+    const splitter2 = document.getElementById('visorOcrSplitter2');
+    
+    if (!layout || !splitter1 || !splitter2) return;
+
+    let isDragging1 = false;
+    let isDragging2 = false;
+
+    splitter1.addEventListener('mousedown', (e) => {
+        isDragging1 = true;
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
+    });
+
+    splitter2.addEventListener('mousedown', (e) => {
+        isDragging2 = true;
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging1 && !isDragging2) return;
+        
+        const containerWidth = layout.getBoundingClientRect().width;
+        
+        if (isDragging1) {
+            // Calcula el nuevo porcentaje para el panel izquierdo
+            let newLeftPct = (e.clientX / containerWidth) * 100;
+            if (newLeftPct < 15) newLeftPct = 15;
+            if (newLeftPct > 60) newLeftPct = 60;
+            panelLeft.style.width = `${newLeftPct}%`;
+        }
+        
+        if (isDragging2) {
+            // Calcula el porcentaje para el panel del medio basándose en la posición del splitter2
+            const leftWidth = panelLeft.getBoundingClientRect().width;
+            let newMiddlePct = ((e.clientX - leftWidth) / containerWidth) * 100;
+            if (newMiddlePct < 10) newMiddlePct = 10;
+            if (newMiddlePct > 40) newMiddlePct = 40;
+            panelMiddle.style.width = `${newMiddlePct}%`;
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging1 = false;
+        isDragging2 = false;
+        document.body.style.cursor = '';
+    });
+}
+
+// Inicializar splitters una vez cargado el DOM o la función
+document.addEventListener("DOMContentLoaded", initOcrSplitters);
+// Llama directo por si se inyecta dinámicamente
+initOcrSplitters();
