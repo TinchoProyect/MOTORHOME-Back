@@ -76,7 +76,19 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
     img.style.display = 'none';
     img.src = ''; // Clear prev
     btnSave.disabled = true;
-    btnSave.classList.add('cursor-not-allowed');
+    btnSave.classList.add('cursor-not-allowed', 'opacity-50', 'grayscale');
+    
+    // Inject Spinner in Blocks Panel
+    const listContainer = document.getElementById('ocr_sections_list');
+    if (listContainer) {
+        listContainer.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full py-10 text-indigo-500/50 animate-pulse">
+                <i data-lucide="loader-2" class="w-8 h-8 animate-spin mb-3"></i>
+                <p class="text-xs font-bold uppercase tracking-widest text-center">Detectando<br>Sectores Visuales...</p>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+    }
     badge.className = 'px-2 py-1 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
     badge.textContent = 'EXTRAYENDO IA...';
     modal.classList.remove('hidden');
@@ -88,7 +100,10 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
             allowOutsideClick: false,
             background: '#0f172a',
             color: '#f8fafc',
-            customClass: { popup: 'border border-indigo-500/50 shadow-[0_0_40px_rgba(79,70,229,0.2)] rounded-2xl' },
+            customClass: { 
+                popup: 'border border-indigo-500/50 shadow-[0_0_40px_rgba(79,70,229,0.2)] rounded-2xl',
+                container: 'z-[9999]'
+            },
             didOpen: () => { Swal.showLoading() }
         });
     }
@@ -147,7 +162,7 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
         badge.textContent = `LISTO (${secciones.length} SECTORES)`;
         
         btnSave.disabled = false;
-        btnSave.classList.remove('cursor-not-allowed');
+        btnSave.classList.remove('cursor-not-allowed', 'opacity-50', 'grayscale');
 
         // Inicializar AG Grid Vacía
         initOcrGrid([]);
@@ -440,7 +455,7 @@ window.saveOcrListas = async function() {
     
     const result = await Swal.fire({
         title: '¿Ingestar Datos?',
-        text: "Se generará un archivo .xlsx físico en la misma carpeta del proveedor y se ingesará automáticamente al Visor Universal.",
+        text: "Los datos validados serán ingresados directamente en la base de datos central, y el documento origen pasará a Procesados.",
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#4f46e5',
@@ -466,46 +481,16 @@ window.saveOcrListas = async function() {
         const rowData = [];
         window.ocrGridInstance.forEachNode(node => rowData.push(node.data));
 
-        // 2. Crear Workbook en Memoria con SheetJS
-        const ws = XLSX.utils.json_to_sheet(rowData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Lista OCR");
-
-        // 3. Generar Blob
-        const wopts = { bookType: 'xlsx', type: 'array' };
-        const wbout = XLSX.write(wb, wopts);
-        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        
-        // 4. Nombre del nuevo archivo
-        const cleanName = window.currentOcrFileName.replace(/\.[^/.]+$/, "");
-        const newFileName = `${cleanName}_TABULADO_OCR.xlsx`;
-
-        // 5. Preparar FormData para subir a Drive (usando endpoint existente)
-        const folderId = window.currentDriveFolderId; // from app_core
-        if (!folderId) throw new Error("No hay folderId en contexto");
-
-        const formData = new FormData();
-        formData.append('file', blob, newFileName);
-        formData.append('folderId', folderId);
-
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const uploadRes = await fetch(`${backendUrl}/api/files/upload`, {
-            method: 'POST',
-            body: formData
-        });
 
-        const uploadData = await uploadRes.json();
-        if (!uploadRes.ok || !uploadData.success) {
-            throw new Error(uploadData.error || "Fallo en la comunicación con la API.");
-        }
-
-        // 6. Ingestar Inmediatamente en Tabla Maestra y Mover a Procesados
-        // Preparamos el payload en el formato de Ingesta
+        // 2. Ingestar Inmediatamente en Tabla Maestra y Mover a Procesados (Usando imagen original)
+        // Eliminamos el paso intermedio de crear un archivo Excel basura. 
+        // Pasamos directamente el ID de la imagen escaneada para mantener la trazabilidad.
         const confirmRes = await fetch(`${backendUrl}/api/files/confirm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                fileId: uploadData.file.id,
+                fileId: window.currentOcrFileId, // Enviamos directamente el ID de la imagen original
                 providerId: window.currentOcrProviderId,
                 dataSnapshot: rowData
             })

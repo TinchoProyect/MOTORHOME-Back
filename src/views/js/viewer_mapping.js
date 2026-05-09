@@ -378,6 +378,19 @@ async function openColumnMenu_v2(vColId, buttonElement) {
         scrollArea.appendChild(item);
     });
 
+    const searchGlobalBtn = document.createElement('button');
+    searchGlobalBtn.className = 'w-full px-4 py-3 text-left border-t border-slate-700/50 text-[10px] text-slate-400 hover:text-white hover:bg-slate-800/50 transition-colors flex items-center gap-2 font-bold tracking-wide';
+    searchGlobalBtn.innerHTML = '<i data-lucide="search" class="w-3 h-3 text-indigo-400"></i> Buscar en otros proveedores...';
+    searchGlobalBtn.onclick = () => {
+        menu.remove();
+        if (typeof window.openGlobalColumnSearchModal === 'function') {
+            window.openGlobalColumnSearchModal(vColId);
+        } else {
+            alert("Función no implementada aún.");
+        }
+    };
+    menu.appendChild(searchGlobalBtn);
+
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'w-full px-4 py-3 text-left border-t border-red-900/50 text-[10px] text-red-500 hover:text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2';
     deleteBtn.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3"></i> Eliminar Mapeo';
@@ -633,6 +646,154 @@ function toggleProcessingRule(vColId) {
 window.resetMappingCache = function () {
     console.log("🧹 [ViewerMapping] Limpiando caché de nomenclaturas...");
     nomenclatureCache = [];
+};
+
+// ============================================================================
+// [NEW V9] GLOBAL COLUMN PROMOTION (CROSS-PROVIDER SEARCH)
+// ============================================================================
+window.openGlobalColumnSearchModal = async function(vColId) {
+    if (typeof Swal === 'undefined') return alert("SweetAlert2 no está disponible.");
+
+    const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+    
+    Swal.fire({
+        title: 'Buscando Columnas Globales...',
+        background: '#0f172a', color: '#f8fafc',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+
+    try {
+        // Obtenemos ABSOLUTAMENTE TODAS las columnas (Cross-Provider)
+        const response = await fetch(`${backendUrl}/api/files/dictionary?fetchAll=true`);
+        if (!response.ok) throw new Error("Error al obtener catálogo global.");
+        const allTerms = await response.json();
+
+        // Filtramos las que ya tenemos en nuestro caché local
+        const localIds = new Set(nomenclatureCache.map(t => t.id));
+        const foreignTerms = allTerms.filter(t => !localIds.has(t.id));
+
+        if (foreignTerms.length === 0) {
+            return Swal.fire({
+                icon: 'info', title: 'Sin Resultados',
+                text: 'No hay columnas ocultas o ajenas disponibles para promover.',
+                background: '#0f172a', color: '#f8fafc'
+            });
+        }
+
+        // Construir HTML para el listado interactivo
+        let htmlContent = `<div class="max-h-[300px] overflow-y-auto custom-scrollbar text-left mt-4 border border-slate-700 rounded bg-slate-900 p-2">`;
+        foreignTerms.forEach(term => {
+            const isGlobal = term.proveedor_id === null;
+            const badge = isGlobal ? `<span class="bg-blue-900 text-blue-300 px-2 py-0.5 rounded text-[8px] uppercase tracking-wider">Ya es Global</span>` : `<span class="bg-indigo-900 text-indigo-300 px-2 py-0.5 rounded text-[8px] uppercase tracking-wider">Aislada (Privada)</span>`;
+            
+            htmlContent += `
+                <div class="flex items-center justify-between p-2 hover:bg-slate-800 border-b border-slate-800 transition-colors rounded cursor-pointer group" onclick="window.promoteGlobalTerm('${term.id}', '${term.termino}', '${vColId}')">
+                    <div class="flex flex-col">
+                        <span class="text-[12px] font-bold text-slate-200 font-mono group-hover:text-blue-400 transition-colors">${term.termino}</span>
+                        <span class="text-[9px] text-slate-500">${term.descripcion_uso || 'Sin descripción'}</span>
+                    </div>
+                    <div>${badge}</div>
+                </div>
+            `;
+        });
+        htmlContent += `</div>`;
+
+        Swal.fire({
+            title: 'Explorador Transversal',
+            html: `<p class="text-sm text-slate-400">Selecciona una columna pre-existente en otro proveedor para promoverla y utilizarla en este flujo.</p>${htmlContent}`,
+            showConfirmButton: false,
+            showCloseButton: true,
+            background: '#1e293b', color: '#f8fafc',
+            width: '600px',
+            customClass: { container: 'z-[9999]' }
+        });
+
+    } catch (error) {
+        console.error("[ViewerMapping] Error global search:", error);
+        Swal.fire('Error', error.message, 'error');
+    }
+};
+
+window.promoteGlobalTerm = async function(termId, termName, vColId) {
+    if (typeof Swal === 'undefined') return;
+
+    const result = await Swal.fire({
+        title: '¿Promover a Global?',
+        html: `Al promover <b>${termName}</b>, esta columna estará disponible permanentemente para todos los proveedores de LAMDA.<br><br>¿Deseas promoverla y asignarla inmediatamente?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#4f46e5',
+        cancelButtonColor: '#334155',
+        confirmButtonText: 'Sí, Promover y Asignar',
+        cancelButtonText: 'Cancelar',
+        background: '#1e293b', color: '#f8fafc',
+        customClass: { container: 'z-[9999]' }
+    });
+
+    if (!result.isConfirmed) return;
+
+    Swal.fire({
+        title: 'Promoviendo...',
+        background: '#0f172a', color: '#f8fafc',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+        customClass: { container: 'z-[9999]' }
+    });
+
+    try {
+        if (!window.NomenclatureService || !window.NomenclatureService.update) {
+            throw new Error("Servicio de Nomenclatura no disponible.");
+        }
+
+        // Llamamos a Update forzando isGlobal = true.
+        // El término ya existe, solo le cambiamos el scope.
+        await window.NomenclatureService.update(termId, { 
+            termino: termName,
+            isGlobal: true 
+        });
+
+        // Refrescar caché local
+        await loadNomenclature();
+
+        // Asignar al vColId activo
+        window.columnMapping[vColId] = termName;
+
+        // Inyectamos las reglas históricas si las hubiera
+        const termObj = nomenclatureCache.find(t => t.id === termId);
+        if (!window.draftPipelines) window.draftPipelines = {};
+        
+        let targetRules = [];
+        if (termObj && termObj.reglas_procesamiento) {
+            targetRules = Array.isArray(termObj.reglas_procesamiento) ? termObj.reglas_procesamiento : [termObj.reglas_procesamiento];
+            window.processingRules[vColId] = targetRules;
+        } else {
+             if (window.processingRules && window.processingRules[vColId]) delete window.processingRules[vColId];
+        }
+
+        window.draftPipelines[vColId] = {
+            colName: termName,
+            masterField: { id: termId, nombre_campo: termName },
+            rules: targetRules
+        };
+
+        // Renderizado final
+        window.renderVirtualTable(window.currentSheetData);
+        window.saveSheetState(window.currentSheetName);
+        window.renderSheetTabs();
+
+        Swal.fire({
+            icon: 'success', title: 'Columna Promovida',
+            text: `La columna ${termName} ahora es global y ha sido asignada con éxito.`,
+            timer: 2500, showConfirmButton: false,
+            background: '#1e293b', color: '#f8fafc',
+            customClass: { container: 'z-[9999]' }
+        });
+
+    } catch (e) {
+        console.error("Error al promover término:", e);
+        Swal.fire('Error', 'No se pudo promover la columna: ' + e.message, 'error');
+    }
 };
 
 console.log("🗺️ [ViewerMapping] Herramientas de Mapeo Cargadas (Global Support).");

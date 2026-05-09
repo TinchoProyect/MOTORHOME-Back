@@ -309,9 +309,9 @@ async function confirmExtraction(req, res) {
 // =============================================================================
 async function getDictionaryTerms(req, res) {
     try {
-        const { providerId } = req.query;
+        const { providerId, fetchAll } = req.query;
 
-        console.log(`[Dictionary] 🔍 Solicitando términos. Contexto: ${providerId || 'GLOBAL'}`);
+        console.log(`[Dictionary] 🔍 Solicitando términos. Contexto: ${providerId || 'GLOBAL'} (FetchAll: ${fetchAll})`);
 
         let query = supabase
             .from('user_diccionario_nomenclatura')
@@ -319,13 +319,16 @@ async function getDictionaryTerms(req, res) {
             .order('termino', { ascending: true });
 
         // LÓGICA BLINDADA DE FILTRADO
-        if (providerId && providerId !== 'null' && providerId !== 'undefined') {
+        if (fetchAll === 'true') {
+            console.log("   🛡️ Modo Exploración Transversal activado: Devolviendo TODO el catálogo.");
+            // No aplicamos filtros de proveedor, traemos todo
+        } else if (providerId && providerId !== 'null' && providerId !== 'undefined') {
             // Sintaxis explícita de Supabase para evitar fugas en el OR
             // "Traeme filas donde proveedor_id sea NULL, O donde sea IGUAL al ID solicitado"
             query = query.or(`proveedor_id.is.null,proveedor_id.eq.${providerId}`);
         } else {
             // Si no hay proveedor, SOLO mostrar globales. (Modo Seguro)
-            console.log("   🛡️ Modo Seguro activado: Solo globales.");
+            console.log("   🛡️ Modo Seguro activado: Solo globales.");
             query = query.is('proveedor_id', null);
         }
 
@@ -334,20 +337,23 @@ async function getDictionaryTerms(req, res) {
         if (error) throw error;
 
         // --- 🕵️‍♂️ VIGÍA DEPURADOR DE FUGAS ---
-        // Verificamos en JS si se coló algún intruso
-        const sanitizedData = data.filter(term => {
-            const isGlobal = term.proveedor_id === null;
-            const isMine = providerId && term.proveedor_id === providerId;
+        // Verificamos en JS si se coló algún intruso, a menos que estemos en modo Exploración Transversal
+        let sanitizedData = data;
+        if (fetchAll !== 'true') {
+            sanitizedData = data.filter(term => {
+                const isGlobal = term.proveedor_id === null;
+                const isMine = providerId && term.proveedor_id === providerId;
 
-            // Si NO es global Y NO es mío, es un intruso.
-            if (!isGlobal && !isMine) {
-                console.warn(`🚨 [LEAK DETECTED] Se filtró término ajeno: "${term.termino}" (Pertenece a: ${term.proveedor_id})`);
-                return false; // Lo borramos de la respuesta
-            }
-            return true;
-        });
+                // Si NO es global Y NO es mío, es un intruso.
+                if (!isGlobal && !isMine) {
+                    console.warn(`🚨 [LEAK DETECTED] Se filtró término ajeno: "${term.termino}" (Pertenece a: ${term.proveedor_id})`);
+                    return false; // Lo borramos de la respuesta
+                }
+                return true;
+            });
+        }
 
-        console.log(`   ✅ Resultados: ${sanitizedData.length} (Originales: ${data.length})`);
+        console.log(`   ✅ Resultados: ${sanitizedData.length} (Originales: ${data.length})`);
 
         res.json(sanitizedData);
 
