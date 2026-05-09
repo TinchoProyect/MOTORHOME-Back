@@ -742,7 +742,7 @@ Tu tarea es ubicar visualmente el bloque correspondiente a la sección o categor
 
 REGLAS ESTRICTAS DE EXTRACCIÓN (INNEGOCIABLES):
 1. ENFOQUE QUIRÚRGICO: Ignora todos los productos de otras secciones. Concéntrate exclusivamente en extraer TODOS los renglones debajo del título "${targetSection}" hasta llegar al siguiente título de sección.
-2. TRANSCRIPCIÓN EXHAUSTIVA DE LA SECCIÓN: Dentro de "${targetSection}", tienes ESTRICTAMENTE PROHIBIDO omitir filas. Extrae el bloque completo.
+2. DIRECTIVA ANTI-PEREZA (INNEGOCIABLE): Tienes ESTRICTAMENTE PROHIBIDO truncar o abortar la transcripción de forma prematura. Debes recorrer visualmente el bloque renglón por renglón hasta el final del mismo. Si omites un solo artículo visible en la sección "${targetSection}", la extracción será invalidada. Extrae el bloque completo, cueste lo que cueste.
 3. FIDELIDAD NUMÉRICA (FORMATO ARGENTINO): Los precios pueden tener formato argentino (ej. "37.500,00" o "37.500").
    - Si ves "37.500", significa treinta y siete mil quinientos. DEBES transformarlo al flotante: 37500.0.
    - NO asumas que el punto es decimal si lógicamente es un separador de miles.

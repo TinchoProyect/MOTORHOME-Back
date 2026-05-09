@@ -201,6 +201,20 @@ window.extractOcrSection = async function(sectionName, btnEl) {
     btnEl.classList.add('opacity-50', 'cursor-not-allowed');
     if (window.lucide) lucide.createIcons();
 
+    // Lógica de Reprocesamiento: Purgar filas anteriores del sector
+    if (window.ocrGridInstance) {
+        window.ocrGridInstance.showLoadingOverlay();
+        const rowsToRemove = [];
+        window.ocrGridInstance.forEachNode(node => {
+            if (node.data && node.data.sector === sectionName) {
+                rowsToRemove.push(node.data);
+            }
+        });
+        if (rowsToRemove.length > 0) {
+            window.ocrGridInstance.applyTransaction({ remove: rowsToRemove });
+        }
+    }
+
     const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
     
     try {
@@ -223,6 +237,7 @@ window.extractOcrSection = async function(sectionName, btnEl) {
         const newRows = data.productos || [];
 
         if (window.ocrGridInstance) {
+            window.ocrGridInstance.hideOverlay();
             window.ocrGridInstance.applyTransaction({ add: newRows });
             
             // Actualizar badge con el total de filas
@@ -233,11 +248,10 @@ window.extractOcrSection = async function(sectionName, btnEl) {
             }
         }
 
-        // Marcar como extraído
-        btnEl.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i> Extraído';
-        btnEl.classList.replace('bg-indigo-600/20', 'bg-emerald-600/20');
-        btnEl.classList.replace('text-indigo-400', 'text-emerald-400');
-        btnEl.classList.replace('border-indigo-500/30', 'border-emerald-500/30');
+        // Transformar en botón de "Reprocesar"
+        btnEl.innerHTML = '<i data-lucide="refresh-cw" class="w-3 h-3"></i> Reprocesar';
+        btnEl.disabled = false;
+        btnEl.className = 'w-full mt-1 bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white border border-amber-500/30 hover:border-amber-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2';
 
     } catch (e) {
         console.error(e);
@@ -245,6 +259,9 @@ window.extractOcrSection = async function(sectionName, btnEl) {
         btnEl.innerHTML = originalHtml;
         btnEl.disabled = false;
         btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
+        if (window.ocrGridInstance) {
+            window.ocrGridInstance.hideOverlay();
+        }
     }
     if (window.lucide) lucide.createIcons();
 };
@@ -280,6 +297,73 @@ function initOcrGrid(rowData) {
     const eGridDiv = document.querySelector('#ocr_grid_container');
     window.ocrGridInstance = agGrid.createGrid(eGridDiv, gridOptions);
 }
+
+// ==========================
+// Generador de Códigos Determinista
+// ==========================
+window.generateOcrCodes = function() {
+    if (!window.ocrGridInstance) return;
+
+    // Función de Hash cyrb53 (rápida, determinista y bajo índice de colisión)
+    const cyrb53 = (str, seed = 0) => {
+        let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+        for(let i = 0, ch; i < str.length; i++) {
+            ch = str.charCodeAt(i);
+            h1 = Math.imul(h1 ^ ch, 2654435761);
+            h2 = Math.imul(h2 ^ ch, 1597334677);
+        }
+        h1  = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+        h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2  = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+        h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+    };
+
+    const rowUpdates = [];
+    window.ocrGridInstance.forEachNode(node => {
+        const data = node.data;
+        // Solo generamos si no tiene código (o si queremos forzarlo, lo pisamos)
+        if (!data.codigo || data.codigo.trim() === '') {
+            // Usamos descripción y presentación como base semántica para el hash
+            const baseStr = `${data.descripcion || ''}_${data.presentacion || ''}`.toUpperCase().trim();
+            if (baseStr.length > 1) {
+                // Generar hash numérico y convertirlo a string base36 para hacerlo alfanumérico corto
+                const hashNum = cyrb53(baseStr);
+                data.codigo = `OCR-${hashNum.toString(36).toUpperCase()}`;
+                rowUpdates.push(data);
+            }
+        }
+    });
+
+    if (rowUpdates.length > 0) {
+        window.ocrGridInstance.applyTransaction({ update: rowUpdates });
+        
+        if (window.Swal) {
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                icon: 'success',
+                title: `Se generaron ${rowUpdates.length} códigos únicos.`,
+                showConfirmButton: false,
+                timer: 2000,
+                background: '#1e293b', color: '#f8fafc'
+            });
+        }
+    } else {
+        if (window.Swal) {
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                icon: 'info',
+                title: `No hay filas sin código para procesar.`,
+                showConfirmButton: false,
+                timer: 2000,
+                background: '#1e293b', color: '#f8fafc'
+            });
+        }
+    }
+};
+
 
 // ==========================
 // Consolidación a Excel
