@@ -315,7 +315,12 @@ window.extractOcrSection = async function(sectionName, btnEl) {
 
     } catch (e) {
         console.error(e);
-        alert(`Error al extraer la sección ${sectionName}: ` + e.message);
+        Swal.fire({
+            icon: 'error', title: 'Error',
+            text: e.message,
+            background: '#0f172a', color: '#f8fafc',
+            customClass: { container: 'z-[9999]' }
+        });
         btnEl.innerHTML = originalHtml;
         btnEl.disabled = false;
         btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -442,7 +447,8 @@ window.saveOcrListas = async function() {
         cancelButtonColor: '#334155',
         confirmButtonText: 'Ingestar',
         cancelButtonText: 'Cancelar',
-        background: '#1e293b', color: '#f8fafc'
+        background: '#1e293b', color: '#f8fafc',
+        customClass: { container: 'z-[9999]' }
     });
 
     if (!result.isConfirmed) return;
@@ -451,7 +457,8 @@ window.saveOcrListas = async function() {
         title: 'Ingestando...',
         background: '#0f172a', color: '#f8fafc',
         allowOutsideClick: false,
-        didOpen: () => { Swal.showLoading(); }
+        didOpen: () => { Swal.showLoading(); },
+        customClass: { container: 'z-[9999]' }
     });
 
     try {
@@ -492,19 +499,37 @@ window.saveOcrListas = async function() {
             throw new Error(uploadData.error || "Fallo en la comunicación con la API.");
         }
 
-        // 6. Finalizar
+        // 6. Ingestar Inmediatamente en Tabla Maestra y Mover a Procesados
+        // Preparamos el payload en el formato de Ingesta
+        const confirmRes = await fetch(`${backendUrl}/api/files/confirm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fileId: uploadData.file.id,
+                providerId: window.currentOcrProviderId,
+                dataSnapshot: rowData
+            })
+        });
+
+        const confirmData = await confirmRes.json();
+        if (!confirmRes.ok || !confirmData.success) {
+            throw new Error(confirmData.error || "Error durante la Ingesta de Datos en la Base de Datos.");
+        }
+
+        // 7. Finalizar
         window.closeVisorOcrListas();
         
         Swal.fire({
             icon: 'success', title: 'Ingesta Completa',
-            text: 'La tabla ha sido guardada en Drive y procesada.',
-            timer: 2500, showConfirmButton: false,
-            background: '#1e293b', color: '#f8fafc'
+            text: 'La tabla ha sido guardada en Drive y Procesada.',
+            background: '#1e293b', color: '#f8fafc',
+            timer: 3000, showConfirmButton: false,
+            customClass: { container: 'z-[9999]' }
         });
-
-        // Refrescar el Drive Viewer para que aparezca el nuevo archivo Excel
-        if (window.exploreSupplierFiles) {
-            window.exploreSupplierFiles(folderId, 'listas');
+        
+        // Refrescar el explorador de archivos para mostrar cambios (si está en la UI actual)
+        if (window.exploreSupplierFiles && typeof window.loadProcessedFiles === 'function') {
+            window.loadProcessedFiles(); // Refresca pestaña Procesados
         }
 
     } catch (e) {
