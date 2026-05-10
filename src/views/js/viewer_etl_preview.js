@@ -118,12 +118,8 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
             }
 
             // GUARDIA ARQUITECTÓNICA & DIAGNÓSTICO: Prevenir mutación de celdas vacías
-            if (currentValue.trim() === "") {
-                if (!skipTransform) {
-                    console.warn(`[ETL DIAGNOSTIC] 🛡️ Regla 'combine_numeric' abortada. La celda estaba vacía (Posible remanente de limpieza previa).`);
-                }
-                skipTransform = true;
-            }
+            // [MODIFICADO]: Permitimos procesar Ghost Columns, así que no abortamos ciegamente si currentValue está vacío.
+            // Solo abortaremos más adelante si TAMBIÉN la columna de origen está vacía.
 
             if (!skipTransform && tgtColId !== undefined && contextRow) {
                 const beforeEnrich = currentValue;
@@ -135,6 +131,11 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                     else targetRawVal = contextRow[tgtColId];
                 } else {
                     targetRawVal = contextRow[tgtColId];
+                }
+                
+                // Si origen también está vacío, abortamos para no ensuciar.
+                if (!targetRawVal || String(targetRawVal).trim() === "") {
+                     skipTransform = true;
                 }
                 
                 const numbersOnly = String(targetRawVal || "").replace(/[^0-9]/g, '');
@@ -202,12 +203,8 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
             }
 
             // GUARDIA ARQUITECTÓNICA & DIAGNÓSTICO: Prevenir mutación de celdas vacías
-            if (currentValue.trim() === "") {
-                if (!skipTransform) {
-                    console.warn(`[ETL DIAGNOSTIC] 🛡️ Regla 'combine_hash' abortada. La celda estaba vacía (Posible remanente de limpieza previa).`);
-                }
-                skipTransform = true;
-            }
+            // [MODIFICADO]: Permitimos procesar Ghost Columns, así que no abortamos ciegamente si currentValue está vacío.
+            // Solo abortaremos más adelante si TAMBIÉN la columna de origen está vacía.
 
             if (!skipTransform && tgtColId !== undefined && contextRow) {
                 const beforeEnrich = currentValue;
@@ -218,6 +215,11 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                     else targetRawVal = contextRow[tgtColId];
                 } else {
                     targetRawVal = contextRow[tgtColId];
+                }
+                
+                // Si origen también está vacío, abortamos para no ensuciar.
+                if (!targetRawVal || String(targetRawVal).trim() === "") {
+                     skipTransform = true;
                 }
                 
                 // Algoritmo DJB2 Hash para convertir texto a un numero determinista pseudo-unico

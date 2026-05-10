@@ -725,6 +725,36 @@ export async function switchToComputedMode(forceUserActivate = false) {
 
             if (elColName) elColName.value = compConfig.masterField?.nombre_campo || "";
             if (elTol) elTol.checked = compConfig.tolerateEmpty !== false;
+        } else {
+            // [QA BUGFIX CRÍTICO] Limpiar residuos del DOM (Stale State) de columnas editadas previamente
+            const elA = document.getElementById('calcFieldA');
+            const elB = document.getElementById('calcFieldB');
+            const elOp = document.getElementById('calcOperation');
+            const elColName = document.getElementById('calcColName');
+            const elTol = document.getElementById('calcTolerateEmpty');
+            const elSemanticKey = document.getElementById('calcFieldSemanticKey');
+            
+            if (elOp) {
+                // Por defecto a MULTIPLY o dejamos lo que ponga el select original, pero disparamos el evento para limpiar la UI
+                elOp.value = 'MULTIPLY';
+                if (typeof elOp.onchange === 'function') elOp.onchange();
+                else elOp.dispatchEvent(new Event('change'));
+            }
+            if (elA) elA.value = '';
+            if (elB) elB.value = '';
+            if (elSemanticKey) elSemanticKey.value = '';
+            if (elColName) elColName.value = activeContext.masterField?.nombre_campo || activeContext.colName || "Nueva Columna";
+            if (elTol) elTol.checked = true;
+            
+            // Limpiar fuentes de clon múltiple dinámicas generadas anteriormente
+            const extraSources = document.querySelectorAll('.calc-source-dyn');
+            if (extraSources && extraSources.length > 0) {
+                extraSources.forEach((node, i) => {
+                    if (i > 0 && node.parentElement) {
+                        node.parentElement.remove();
+                    }
+                });
+            }
         }
     }
 }

@@ -223,6 +223,15 @@ class ViewerAiUi {
         this.btnEl.onclick = () => this.handleGenerate({ onlyAnomalous: false });
         if (this.btnAnomaliesEl) this.btnAnomaliesEl.onclick = () => this.handleGenerate({ onlyAnomalous: true });
         
+        const clearBtn = document.getElementById('vaiBtnClearReg');
+        if (clearBtn) {
+            clearBtn.onclick = async () => {
+                if (window.viewerRuleWorkshop) {
+                    await window.viewerRuleWorkshop.clearPipeline();
+                }
+            };
+        }
+        
         // [BUGFIX] Habilitar botón instantáneamente si el usuario escribe o pega texto (siempre que el vigía haya dado OK previo)
         this.promptEl.addEventListener('input', () => {
             if (this.btnEl.disabled && this.promptEl.value.trim() !== '' && this.statusEl.innerText === 'Conectado') {

@@ -17,15 +17,27 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
             // Lógica de Fallback (COALESCE): Tomar la primera columna origen que posea un valor válido.
             // Opcional: Si el usuario deseaba concatenar, se puede hacer join(" "). Para Fallback estricto usamos filter + shift:
             const valids = allOps.map(op => {
-                const txt = op?.raw !== undefined ? op.raw : (op?.display !== undefined ? op.display : (op?.clean !== undefined && op?.clean !== null ? op.clean : ""));
-                return String(txt).trim();
+                const candidates = [op?.clean, op?.raw, op?.display];
+                for (let c of candidates) {
+                    if (c !== undefined && c !== null && String(c).trim() !== '') {
+                        const s = String(c).trim();
+                        if (!s.startsWith('<')) return s;
+                    }
+                }
+                return "";
             }).filter(v => v !== "");
             
             rawStringA = valids.length > 0 ? valids.join(" ") : ""; // join(" ") cumple ambos propósitos: Si solo hay uno, es él mismo. Si hay dos, es string1 + string2.
         } else {
-            // [HOTFIX V5.22] Extraer dato crudo (raw) para CLONE
-            const txtA = opA?.raw !== undefined ? opA.raw : (opA?.display !== undefined ? opA.display : (opA?.clean !== undefined && opA?.clean !== null ? opA.clean : ""));
-            rawStringA = String(txtA).trim();
+            const candidates = [opA?.clean, opA?.raw, opA?.display];
+            let txtA = "";
+            for (let c of candidates) {
+                if (c !== undefined && c !== null && String(c).trim() !== '') {
+                    const s = String(c).trim();
+                    if (!s.startsWith('<')) { txtA = s; break; }
+                }
+            }
+            rawStringA = txtA;
         }
         
         const savedPipeline = draftPipelinesVar && draftPipelinesVar[calcConfig.id] ? draftPipelinesVar[calcConfig.id].rules : null;
@@ -863,7 +875,7 @@ function renderVirtualTable(originalData) {
                                     
                                     // [Ticket #018] QA Fix: Out-Of-Bounds Guard para Columnas Procesadas.
                                     // Si la ingesta descartó la base A, el motor matemático ya no tiene datos para calcular.
-                                    if ((opA && typeof opA === 'object' && ('raw' in opA || 'clean' in opA)) || calcConfig.macro === "CUSTOM_FORMULA") {
+                                    if ((opA && typeof opA === 'object' && ('raw' in opA || 'clean' in opA)) || calcConfig.macro === "CUSTOM_FORMULA" || isCloneOp) {
                                         try {
                                             evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps, row);
                                         } catch(e) {
