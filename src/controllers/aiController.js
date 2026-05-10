@@ -496,33 +496,40 @@ const aiController = {
 
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
+            // Obtener el Custom Schema del proveedor (si existe)
+            let customSchema = null;
+            if (providerId && supabase) {
+                try {
+                    const { data: provInfo, error } = await supabase
+                        .from('proveedores')
+                        .select('mapa_ocr_listas')
+                        .eq('id', providerId)
+                        .single();
+                    if (!error && provInfo && provInfo.mapa_ocr_listas) {
+                        try {
+                            customSchema = JSON.parse(provInfo.mapa_ocr_listas);
+                        } catch (e) {
+                            // Fallback retrocompatibilidad: si no es JSON, es solo el prompt
+                            customSchema = { prompt: provInfo.mapa_ocr_listas };
+                        }
+                    }
+                } catch (e) {
+                    console.warn("[AI Controller] No se pudo obtener mapa_ocr_listas", e.message);
+                }
+            }
+
             if (action === 'index') {
                 // Fase 1: Indexado de Secciones
                 const result = await aiService.executePriceListOCRIndex(dataUrl, mimeType);
+                // Adjuntamos el customSchema a la respuesta para que la grilla frontal lo adapte
+                result.customSchema = customSchema;
                 return res.status(200).json({ success: true, data: result });
             } 
             else if (action === 'section') {
                 if (!targetSection) return res.status(400).json({ error: "Falta targetSection" });
                 
-                // Obtener el Custom Prompt del proveedor (si existe)
-                let customPrompt = null;
-                if (providerId && supabase) {
-                    try {
-                        const { data: provInfo, error } = await supabase
-                            .from('proveedores')
-                            .select('mapa_ocr_listas')
-                            .eq('id', providerId)
-                            .single();
-                        if (!error && provInfo && provInfo.mapa_ocr_listas) {
-                            customPrompt = provInfo.mapa_ocr_listas;
-                        }
-                    } catch (e) {
-                        console.warn("[AI Controller] No se pudo obtener mapa_ocr_listas", e.message);
-                    }
-                }
-
                 // Fase 2: Extracción Quirúrgica
-                const result = await aiService.executePriceListOCRSection(dataUrl, mimeType, targetSection, customPrompt);
+                const result = await aiService.executePriceListOCRSection(dataUrl, mimeType, targetSection, customSchema);
                 return res.status(200).json({ success: true, data: result });
             } 
             else {

@@ -164,8 +164,9 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
         btnSave.disabled = false;
         btnSave.classList.remove('cursor-not-allowed', 'opacity-50', 'grayscale');
 
-        // Inicializar AG Grid Vacía
-        initOcrGrid([]);
+        // Inicializar AG Grid Vacía y pasar el esquema custom (si existe)
+        const customSchema = data.customSchema || null;
+        initOcrGrid([], customSchema);
         
         // Renderizar Sectores
         renderOcrIndex(secciones);
@@ -197,14 +198,17 @@ function renderOcrIndex(secciones) {
     }
 
     secciones.forEach((sec, idx) => {
+        const secName = sec.nombre || '';
+        const safeName = secName.replace(/'/g, "\\'");
+        
         const div = document.createElement('div');
         div.className = 'bg-slate-900 border border-slate-800 rounded-lg p-3 flex flex-col gap-2 transition-all hover:border-indigo-500/50 group';
         div.innerHTML = `
             <div class="flex justify-between items-start">
-                <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">${sec.nombre || 'Desconocido'}</span>
+                <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">${secName || 'Desconocido'}</span>
                 <span class="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">${sec.filas_estimadas || '?'} filas</span>
             </div>
-            <button data-section="${sec.nombre || ''}" onclick="window.extractOcrSection('${sec.nombre || ''}', this)" class="w-full mt-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2 extract-section-btn">
+            <button data-section="${secName}" onclick="window.extractOcrSection('${safeName}', this)" class="w-full mt-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2 extract-section-btn">
                 <i data-lucide="scan-text" class="w-3 h-3"></i> Extraer Sección
             </button>
         `;
@@ -349,7 +353,28 @@ window.extractOcrSection = async function(sectionName, btnEl) {
 // ==========================
 // Lógica AG-Grid
 // ==========================
-function initOcrGrid(rowData) {
+function initOcrGrid(rowData, customSchema = null) {
+    let priceColumns = [
+        { field: 'precio_kilo', headerName: 'Precio x KG', editable: true, flex: 1,
+          valueParser: params => Number(params.newValue),
+          valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' },
+        { field: 'precio_unitario', headerName: 'Precio Final', editable: true, flex: 1,
+          valueParser: params => Number(params.newValue),
+          valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' }
+    ];
+
+    // Mapeo Dinámico si el proveedor definió columnas customizadas
+    if (customSchema && customSchema.columns && Array.isArray(customSchema.columns)) {
+        priceColumns = customSchema.columns.map(c => ({
+            field: c.field,
+            headerName: c.headerName || c.field,
+            editable: true,
+            flex: 1,
+            valueParser: params => Number(params.newValue),
+            valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00'
+        }));
+    }
+
     const gridOptions = {
         rowData: rowData,
         columnDefs: [
@@ -357,12 +382,7 @@ function initOcrGrid(rowData) {
             { field: 'codigo', headerName: 'Código', editable: true, flex: 1, cellEditor: 'agTextCellEditor' },
             { field: 'descripcion', headerName: 'Descripción', editable: true, flex: 2, cellEditor: 'agLargeTextCellEditor' },
             { field: 'presentacion', headerName: 'Presentación', editable: true, flex: 1 },
-            { field: 'precio_kilo', headerName: 'Precio x KG', editable: true, flex: 1,
-              valueParser: params => Number(params.newValue),
-              valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' },
-            { field: 'precio_unitario', headerName: 'Precio Final', editable: true, flex: 1,
-              valueParser: params => Number(params.newValue),
-              valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' }
+            ...priceColumns
         ],
         defaultColDef: {
             resizable: true,

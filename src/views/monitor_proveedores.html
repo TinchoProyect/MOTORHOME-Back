@@ -2050,7 +2050,7 @@
                              };
                              return parseAsNum(valueA) - parseAsNum(valueB);
                          } : undefined,
-                         filter: isRubro ? 'agSetColumnFilter' : 'agTextColumnFilter',
+                         filter: 'agTextColumnFilter',
                          resizable: true,
                          width: isPrice ? 240 : undefined,
                          rowDrag: index === 0 ? true : false,
@@ -2097,7 +2097,7 @@
                      headerName: 'Tipo Proveedor',
                      field: 'tipo_proveedor',
                      sortable: true,
-                     filter: 'agSetColumnFilter',
+                     filter: 'agTextColumnFilter',
                      floatingFilter: true,
                      width: 150
                 });

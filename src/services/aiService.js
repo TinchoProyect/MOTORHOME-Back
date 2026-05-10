@@ -672,7 +672,11 @@ ESTRUCTURA JSON REQUERIDA:
 
         let systemInstruction = `Eres un extractor de estructura de documentos ("Chofer OCR Indexador").
 Se te provee una imagen de una lista de precios. Tu ÚNICA tarea es identificar los bloques, categorías o secciones principales de la lista (por ejemplo: "PASAS", "NUECES", "ALMENDRAS", etc.) y estimar la cantidad de renglones que tiene cada sección.
-NO DEBES EXTRAER LOS PRODUCTOS. Solo devuelve el índice estructural.
+
+DIRECTIVAS ANTI-PEREZA (INNEGOCIABLES):
+1. Tienes ESTRICTAMENTE PROHIBIDO detenerte o abortar la lectura de forma prematura. Debes escanear visualmente TODA la imagen o documento, desde el margen superior hasta el margen inferior final.
+2. Debes extraer ABSOLUTAMENTE TODOS los bloques/secciones presentes. Si hay 20 sectores, debes listar los 20. La omisión por pereza o truncamiento será severamente penalizada.
+3. NO EXTRAIGAS LOS PRODUCTOS INDIVIDUALES. Solo extrae los títulos de categoría/sección.
 
 ESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN CON EL JSON, SIN EXPLICACIONES ADICIONALES):
 \`\`\`json
@@ -722,7 +726,7 @@ ESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN 
         }
     },
 
-    executePriceListOCRSection: async (base64Data, mimeType, targetSection, customPrompt = null) => {
+    executePriceListOCRSection: async (base64Data, mimeType, targetSection, customSchema = null) => {
         if (!genAI) throw new Error("Gemini API no inicializada");
 
         console.log(`[AI Service - OCR] ⏱️ Ejecutando Fase 2: Extracción de Sección [${targetSection}]...`);
@@ -736,6 +740,19 @@ ESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN 
             generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } 
         });
 
+        // Configuración de Mapeo Dinámico (Retrocompatibilidad o Custom Schema)
+        let priceMappingInstructions = `   - "precio_kilo": El precio unitario por cada kilo o unidad mínima (Float limpio, sin símbolos).
+   - "precio_unitario": El precio final total de la presentación o bulto cerrado (Float limpio, sin símbolos).
+   
+   IMPORTANTE: Si la lista muestra dos columnas de precios, deduce lógicamente cuál es el precio por kilo y cuál es el precio final del bulto (precio_kilo * cantidad = precio_unitario). Si solo hay un precio, asígnalo a precio_unitario y deja precio_kilo en 0.0.`;
+
+        let jsonFields = `      "precio_kilo": 0.0,\n      "precio_unitario": 0.0`;
+
+        if (customSchema && customSchema.columns && Array.isArray(customSchema.columns)) {
+            priceMappingInstructions = customSchema.columns.map(c => `   - "${c.field}": (Float limpio, sin símbolos).`).join('\n');
+            jsonFields = customSchema.columns.map(c => `      "${c.field}": 0.0`).join(',\n');
+        }
+
         let systemInstruction = `Eres un extractor de datos de altísima precisión ("Chofer OCR Quirúrgico").
 Se te provee una imagen de una lista de precios de un proveedor.
 Tu tarea es ubicar visualmente el bloque correspondiente a la sección o categoría "${targetSection}" y tabular ÚNICAMENTE los productos que pertenecen a esa sección.
@@ -747,21 +764,18 @@ REGLAS ESTRICTAS DE EXTRACCIÓN (INNEGOCIABLES):
 3. FIDELIDAD NUMÉRICA (FORMATO ARGENTINO): Los precios pueden tener formato argentino (ej. "37.500,00" o "37.500").
    - Si ves "37.500", significa treinta y siete mil quinientos. DEBES transformarlo al flotante: 37500.0.
    - NO asumas que el punto es decimal si lógicamente es un separador de miles.
-4. MAPEADO DE COLUMNAS: Ajusta las columnas visuales a las siguientes 6 claves:
+4. MAPEADO DE COLUMNAS: Ajusta las columnas visuales a las siguientes claves:
    - "sector": Debes forzar que el valor de esta clave sea SIEMPRE "${targetSection}" para todos los productos de esta extracción.
    - "codigo": Código interno o SKU (si no hay, string vacío "").
    - "descripcion": El nombre o descripción del artículo.
    - "presentacion": Todo detalle de peso, empaque o caja (ej: "10 KG"). Búscalo en columnas anexas como 'PESO'.
-   - "precio_kilo": El precio unitario por cada kilo o unidad mínima (Float limpio, sin símbolos).
-   - "precio_unitario": El precio final total de la presentación o bulto cerrado (Float limpio, sin símbolos).
-   
-   IMPORTANTE: Si la lista muestra dos columnas de precios, deduce lógicamente cuál es el precio por kilo y cuál es el precio final del bulto (precio_kilo * cantidad = precio_unitario). Si solo hay un precio, asígnalo a precio_unitario y deja precio_kilo en 0.0.`;
+${priceMappingInstructions}`;
 
-        if (customPrompt) {
-            systemInstruction += `\n\nDIRECTIVAS EXCLUSIVAS DEL PROVEEDOR (PRIORIDAD MÁXIMA):\n${customPrompt}\n`;
+        if (customSchema && customSchema.prompt) {
+            systemInstruction += `\n\nDIRECTIVAS EXCLUSIVAS DEL PROVEEDOR (PRIORIDAD MÁXIMA):\n${customSchema.prompt}\n`;
         }
 
-        systemInstruction += `\n\nESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN CON EL JSON, SIN EXPLICACIONES ADICIONALES):\n\`\`\`json\n{\n  "productos": [\n    {\n      "sector": "${targetSection}",\n      "codigo": "...",\n      "descripcion": "...",\n      "presentacion": "...",\n      "precio_kilo": 0.0,\n      "precio_unitario": 0.0\n    }\n  ]\n}\n\`\`\``;
+        systemInstruction += `\n\nESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN CON EL JSON, SIN EXPLICACIONES ADICIONALES):\n\`\`\`json\n{\n  "productos": [\n    {\n      "sector": "${targetSection}",\n      "codigo": "...",\n      "descripcion": "...",\n      "presentacion": "...",\n${jsonFields}\n    }\n  ]\n}\n\`\`\``;
 
         const prompt = [
             systemInstruction,
