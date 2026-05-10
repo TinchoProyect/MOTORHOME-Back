@@ -120,24 +120,67 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         tokens.forEach(token => {
             const vColId = token.slice(1, -1);
             let valStr = "";
+            let foundCtx = false;
             if (contextRow && contextRow._richContext && contextRow._richContext[vColId]) {
                 const op = contextRow._richContext[vColId];
                 valStr = extractNumericSource(op);
+                foundCtx = true;
+            } else if (contextRow && contextRow._richContext) {
+                // Not found. Dump keys
+                if (!window._vigiaKeysDumped) {
+                    console.log("Keys available in _richContext:", Object.keys(contextRow._richContext));
+                    window._vigiaKeysDumped = Object.keys(contextRow._richContext).join(',');
+                }
             }
             let mathVal = safeParseFn(valStr);
             if (isNaN(mathVal)) mathVal = 0;
             // Replace token with mathVal
             parsedFormula = parsedFormula.split(token).join(mathVal);
+            if (!window._vigiaFormulaDebug) {
+                console.log("VIGIA FORMULA:", { token, vColId, foundCtx, valStr, mathVal, parsedFormula });
+            }
         });
+        window._vigiaFormulaDebug = true; // only log first row
         
+        let debugInfo = "";
         try {
             const fn = new Function('return ' + parsedFormula);
             mathResult = fn();
         } catch (e) {
             console.error("Error executing CUSTOM_FORMULA", parsedFormula, e);
+            debugInfo = "ERR_FN_" + window._vigiaKeysDumped;
             mathResult = 0;
         }
-        if (isNaN(mathResult) || !isFinite(mathResult)) mathResult = 0;
+        if (isNaN(mathResult) || !isFinite(mathResult)) {
+            debugInfo = debugInfo || ("ERR_NAN_Keys:" + window._vigiaKeysDumped);
+            mathResult = 0;
+        }
+        
+        // [VIGIA AUTOMÁTICO] Forzar log si el resultado colapsa a 0, para que el usuario pueda copiarlo de la consola
+        if (mathResult === 0) {
+            window._tempDebugStr = parsedFormula + " | " + debugInfo;
+            if (!window._vigiaMathZeroLogged) {
+                const debugObj = {
+                    formulaCruda: formulaStr,
+                    formulaParseada: parsedFormula,
+                    debugStr: window._tempDebugStr,
+                    contextKeys: window._vigiaKeysDumped
+                };
+                console.error("🚨 VIGÍA MATH - Fórmula colapsó a 0 (Err): \n" + JSON.stringify(debugObj, null, 2));
+                window._vigiaMathZeroLogged = true; // Solo loguear la primera fila para no spamear
+                
+                // Forzar un Swal para que el usuario no tenga que ir a la consola si es difícil copiar
+                if (typeof Swal !== 'undefined') {
+                    setTimeout(() => {
+                        Swal.fire({
+                            title: 'Error de Parseo Matemático',
+                            html: `<div class="text-left text-xs bg-slate-900 text-green-400 p-2 rounded whitespace-pre-wrap">${JSON.stringify(debugObj, null, 2)}</div>`,
+                            icon: 'error'
+                        });
+                    }, 1000);
+                }
+            }
+        }
     } else if (calcConfig.macro === "PRICE_MINUS_DISCOUNT_PERCENT") {
         const discountPercent = Math.abs(mathB);
         if (discountPercent === 0) mathResult = mathA;
@@ -163,6 +206,10 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         resultDisplay = result;
     } else {
         resultDisplay = rawFormatted;
+    }
+    
+    if (calcConfig.macro === "CUSTOM_FORMULA" && mathResult === 0 && window._tempDebugStr) {
+        resultDisplay = `<span class="text-red-500 text-[10px]" title="Parsed: ${window._tempDebugStr}">0 (Err)</span>`;
     }
     
     return { resultDisplay, mathResult, rejected };
@@ -754,8 +801,20 @@ function renderVirtualTable(originalData) {
                     // On-the-fly calculation: Si falta ALGÚN operando en el contexto rápido, lo cargamos (Lazy Load)
                     if (window.viewerETL) {
                         let rCtx = row._richContext || {};
-                        if (calcConfig.operands && calcConfig.operands.length >= 1) {
-                            calcConfig.operands.forEach(opColId => {
+                        let requiredOps = [];
+                        if (calcConfig.macro === "CUSTOM_FORMULA") {
+                            const formulaStr = calcConfig.operands[0] || "";
+                            const tokens = formulaStr.match(/{[^}]+}/g) || [];
+                            tokens.forEach(t => {
+                                const opColId = t.slice(1, -1);
+                                if (!requiredOps.includes(opColId)) requiredOps.push(opColId);
+                            });
+                        } else if (calcConfig.operands) {
+                            requiredOps = [...calcConfig.operands];
+                        }
+
+                        if (requiredOps.length >= 1) {
+                            requiredOps.forEach(opColId => {
                                 if (!opColId) return; // Ignore empty operand B in CLONE mode
                                 // Lazy Evaluate solo si no existe
                                 if (rCtx[opColId] === undefined) {
@@ -789,14 +848,14 @@ function renderVirtualTable(originalData) {
                             const allOps = calcConfig.operands.map(opIdx => rCtxFinal[opIdx]);
 
                             // Allow processing if at least opA exists
-                            if (opA) {
+                            if (opA || calcConfig.macro === "CUSTOM_FORMULA") {
                                 // Bug Fix N°2 & QA FIX: Check strict conditionals depending on Macro Type.
                                 const isCloneOp = (calcConfig.macro === "CLONE" || calcConfig.macro === "CLONE_SEMANTIC");
                                 const isOpAEmpty = isCloneOp 
-                                      ? (opA.raw === null || opA.raw === undefined || String(opA.raw).trim() === "")
-                                      : (opA.clean === null || opA.clean === undefined || String(opA.clean).trim() === "");
+                                      ? (opA?.raw === null || opA?.raw === undefined || String(opA?.raw).trim() === "")
+                                      : (opA?.clean === null || opA?.clean === undefined || String(opA?.clean).trim() === "");
                                 
-                                if (isOpAEmpty && !isCloneOp) {
+                                if (isOpAEmpty && !isCloneOp && calcConfig.macro !== "CUSTOM_FORMULA") {
                                     resultDisplay = "<span class='text-fuchsia-500/50 italic text-[10px]'>Sin Base A</span>";
                                     cellClass += ' text-center';
                                 } else {
@@ -1447,7 +1506,19 @@ async function generatePreview(skipModal = false) {
                                 // [NEW] Lazy load para Simulador si la columna operando no fue mapeada oficialmente
                                 let rCtx = row._richContext || {};
                                 if (window.viewerETL) {
-                                    calcConfig.operands.forEach(opColId => {
+                                    let requiredOps = [];
+                                    if (calcConfig.macro === "CUSTOM_FORMULA") {
+                                        const formulaStr = calcConfig.operands[0] || "";
+                                        const tokens = formulaStr.match(/{[^}]+}/g) || [];
+                                        tokens.forEach(t => {
+                                            const opColId = t.slice(1, -1);
+                                            if (!requiredOps.includes(opColId)) requiredOps.push(opColId);
+                                        });
+                                    } else {
+                                        requiredOps = [...calcConfig.operands];
+                                    }
+
+                                    requiredOps.forEach(opColId => {
                                         if (!opColId) return;
                                         if (rCtx[opColId] === undefined) {
                                             if (window.VigiaLogger) window.VigiaLogger.log("SIMULATOR", `Inyectando Lazy Context para Preview: ${opColId}`);
@@ -1470,8 +1541,8 @@ async function generatePreview(skipModal = false) {
                                 const cB = calcConfig.operands[1] ? rCtx[calcConfig.operands[1]] : null;
                                 const allOps = calcConfig.operands.map(opIdx => rCtx[opIdx]);
                                 
-                                // Permite calcular si al menos cA existe (necesario para CLONE)
-                                if (cA) {
+                                // Permite calcular si al menos cA existe (o si es formula)
+                                if (cA || calcConfig.macro === "CUSTOM_FORMULA") {
                                     // Utilizar la función unificada de matemáticas / clonación
                                     const res = evaluateComputedColumnMath(calcConfig, cA, cB, masterPipelines, null, allOps, row);
                                     resultDisplay = res.resultDisplay;
@@ -1640,7 +1711,20 @@ async function generatePreview(skipModal = false) {
                                 if (calcConfig.operands && calcConfig.operands.length >= 1) {
                                     let rCtx = row._richContext || {};
                                     // [FIX V8.10] Resolver operandos con lookups robustos
-                                    calcConfig.operands.forEach(opColId => {
+                                    
+                                    let requiredOps = [];
+                                    if (calcConfig.macro === "CUSTOM_FORMULA") {
+                                        const formulaStr = calcConfig.operands[0] || "";
+                                        const tokens = formulaStr.match(/{[^}]+}/g) || [];
+                                        tokens.forEach(t => {
+                                            const opColId = t.slice(1, -1);
+                                            if (!requiredOps.includes(opColId)) requiredOps.push(opColId);
+                                        });
+                                    } else {
+                                        requiredOps = [...calcConfig.operands];
+                                    }
+
+                                    requiredOps.forEach(opColId => {
                                         if (!opColId) return;
                                         // Si ya fue resuelto con un valor no-vacío, no reescribir
                                         if (rCtx[opColId] !== undefined && String(rCtx[opColId].raw || '').trim() !== '') return;
@@ -1681,7 +1765,7 @@ async function generatePreview(skipModal = false) {
                                     const cB = calcConfig.operands[1] ? rCtx[calcConfig.operands[1]] : null;
                                     const allOps = calcConfig.operands.map(opIdx => rCtx[opIdx]);
                                     
-                                    if (cA) {
+                                    if (cA || calcConfig.macro === "CUSTOM_FORMULA") {
                                         const res = evaluateComputedColumnMath(calcConfig, cA, cB, localPipelines, null, allOps, row);
                                         resultDisplay = res.resultDisplay;
                                         if (resultDisplay === "" && calcConfig.macro === "CLONE_SEMANTIC" && !window._vigiaTripleGate3) {

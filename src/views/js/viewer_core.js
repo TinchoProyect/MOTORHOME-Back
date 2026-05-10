@@ -401,10 +401,27 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
 
                 if (isNaN(dataIdx)) dataIdx = 0;
                 
-                // Evitar colisión de restricción Not Null en backend Supabase
                 if (!config.masterField || !config.masterField.id) {
                     console.log(`[V4] Omitiendo columna origen ${dataIdx} - No posee campo_maestro_id (mapping) y Supabase lo rechaza.`);
                     continue;
+                }
+                
+                // [DEBUG VIGIA] Inspect the masterField
+                console.log(`[VIGÍA MAPPING] Pre-Save - Columna: ${vColId}, MasterField ID: ${config.masterField.id}, Name: ${config.masterField.nombre_campo}`);
+                
+                // [QA FIX] Ensure the masterField.id exists in the masterDictionary before sending to API
+                const isValidId = window.masterDictionary && Array.isArray(window.masterDictionary) && window.masterDictionary.some(m => String(m.id) === String(config.masterField.id));
+                if (!isValidId && window.masterDictionary) {
+                    console.error(`[VIGÍA MAPPING] ❌ ALERTA: El campo_maestro_id '${config.masterField.id}' (asignado a ${vColId}) NO EXISTE en el diccionario maestro local. Omitiendo para evitar Crash 500.`);
+                    // Fallback to searching by name if ID is corrupt
+                    const correctField = window.masterDictionary.find(m => m.nombre_campo && config.masterField.nombre_campo && m.nombre_campo.toUpperCase() === config.masterField.nombre_campo.toUpperCase());
+                    if (correctField) {
+                        console.warn(`[VIGÍA MAPPING] 🔄 Auto-Corrigiendo ID de ${config.masterField.nombre_campo} a ${correctField.id}`);
+                        config.masterField.id = correctField.id;
+                    } else {
+                        // Skip this payload item to prevent 500 error
+                        continue;
+                    }
                 }
 
                 mapeosPayload.push({

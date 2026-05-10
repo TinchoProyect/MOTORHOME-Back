@@ -510,7 +510,7 @@ window.openCustomFormulaModal = async function() {
             <div class="text-left space-y-4 font-sans text-sm mt-4">
                 <div class="space-y-1">
                     <label class="text-[10px] font-bold text-slate-500 uppercase">Expresión Aritmética</label>
-                    <textarea id="customFormulaInput" rows="3" class="w-full bg-slate-950 border border-indigo-500/50 rounded-lg p-3 text-white font-mono text-sm outline-none focus:border-indigo-400 focus:shadow-[0_0_15px_rgba(99,102,241,0.2)]" placeholder="Ej: ({col_1} * 1.07) / 1.21">${existingFormula}</textarea>
+                    <textarea id="customFormulaInput" rows="3" class="w-full bg-slate-950 border border-indigo-500/50 rounded-lg p-3 text-white font-mono text-sm outline-none focus:border-indigo-400 focus:shadow-[0_0_15px_rgba(99,102,241,0.2)]" placeholder="Ej: ({col_1} * 1.07) / 1.21" oninput="if(this.value.includes('%')){ this.value = this.value.replace(/%/g, ''); Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: 'Uso de Porcentajes', text: 'Para aplicar porcentajes, utilice multiplicadores decimales (ej: para sumar 7%, multiplique por 1.07)', showConfirmButton: false, timer: 5000, background: '#1e293b', color: '#f8fafc'}); }">${existingFormula}</textarea>
                 </div>
                 
                 <div class="space-y-2">
@@ -539,11 +539,16 @@ window.openCustomFormulaModal = async function() {
             if (window.lucide) window.lucide.createIcons({ root: Swal.getPopup() });
         },
         preConfirm: () => {
-            const inputVal = document.getElementById('customFormulaInput').value.trim();
+            let inputVal = document.getElementById('customFormulaInput').value.trim();
             if (!inputVal) {
                 Swal.showValidationMessage('La fórmula no puede estar vacía');
                 return false;
             }
+            
+            // Sanitización silenciosa: reemplazar comas decimales por puntos para JS nativo
+            inputVal = inputVal.replace(/,/g, '.');
+            document.getElementById('customFormulaInput').value = inputVal;
+
             // Sanitización básica: solo permitir math chars y tokens como {col_1}
             const cleanStr = inputVal.replace(/{[^}]+}/g, ''); // remove tokens temporarily
             if (/[^\d\.\s\+\-\*\/\(\)]/.test(cleanStr)) {
