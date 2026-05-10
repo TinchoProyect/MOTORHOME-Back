@@ -3,6 +3,70 @@
  * Extracted from viewer_engine_rescatado.js
  */
 
+window._topoSortComputedCols = function(computedCols) {
+    if (!computedCols || !Array.isArray(computedCols) || computedCols.length <= 1) return computedCols || [];
+    
+    const adj = new Map();
+    const inDegree = new Map();
+    const colMap = new Map();
+    
+    computedCols.forEach(col => {
+        colMap.set(col.id, col);
+        adj.set(col.id, []);
+        inDegree.set(col.id, 0);
+    });
+    
+    computedCols.forEach(col => {
+        let deps = [];
+        if (col.macro === "CUSTOM_FORMULA") {
+            const tokens = (col.operands?.[0] || "").match(/{[^}]+}/g) || [];
+            tokens.forEach(t => {
+                const inner = t.slice(1, -1).split('|')[0];
+                if (inner && colMap.has(inner)) deps.push(inner);
+            });
+        } else if (col.operands && Array.isArray(col.operands)) {
+            col.operands.forEach(op => {
+                if (op && colMap.has(op)) deps.push(op);
+            });
+        }
+        
+        deps.forEach(dep => {
+            if (col.id !== dep) {
+                adj.get(dep).push(col.id);
+                inDegree.set(col.id, inDegree.get(col.id) + 1);
+            }
+        });
+    });
+    
+    const queue = [];
+    const sorted = [];
+    
+    for (let [id, deg] of inDegree.entries()) {
+        if (deg === 0) queue.push(id);
+    }
+    
+    while (queue.length > 0) {
+        const current = queue.shift();
+        sorted.push(colMap.get(current));
+        
+        const neighbors = adj.get(current) || [];
+        for (let next of neighbors) {
+            inDegree.set(next, inDegree.get(next) - 1);
+            if (inDegree.get(next) === 0) {
+                queue.push(next);
+            }
+        }
+    }
+    
+    if (sorted.length !== computedCols.length) {
+        computedCols.forEach(col => {
+            if (!sorted.includes(col)) sorted.push(col);
+        });
+    }
+    
+    return sorted;
+};
+
 function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, activeEtlStateVar, allOps = null, contextRow = null) {
     let resultDisplay = "";
     let rejected = false;
@@ -139,12 +203,28 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         let tokens = formulaStr.match(/{[^}]+}/g) || [];
         
         tokens.forEach(token => {
-            const vColId = token.slice(1, -1);
+            const tokenInner = token.slice(1, -1);
+            const parts = tokenInner.split('|');
+            const vColId = parts[0];
+            const depth = parts[1] || 'display'; // Default to processed data
+            
             let valStr = "";
             let foundCtx = false;
             if (contextRow && contextRow._richContext && contextRow._richContext[vColId]) {
                 const op = contextRow._richContext[vColId];
-                valStr = extractNumericSource(op);
+                
+                // Extraer según la profundidad solicitada (Crudo vs Final)
+                if (depth === 'raw') {
+                    valStr = String(op.raw || '');
+                } else if (depth === 'clean') {
+                    valStr = String(op.clean || op.raw || '');
+                } else { // display o fallback
+                    valStr = String(op.display !== undefined ? op.display : (op.clean || op.raw || ''));
+                }
+                
+                // Fallback seguro si está vacío y no estamos tolerando vacíos estrictos
+                if (valStr.trim() === '') valStr = String(op.raw || '');
+                
                 foundCtx = true;
             } else if (contextRow && contextRow._richContext) {
                 // Not found. Dump keys
@@ -813,7 +893,7 @@ function renderVirtualTable(originalData) {
 
             // [V5.6] Fase 2 - Cálculo al vuelo en Virtual Scroller (Columnas Calculadas)
             if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
-                window.computedColumns.forEach(calcConfig => {
+                window._topoSortComputedCols(window.computedColumns).forEach(calcConfig => {
                     // [V6] Control de Visibilidad en Celdas Calculadas
                     if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(calcConfig.id)) return;
                     
@@ -827,7 +907,9 @@ function renderVirtualTable(originalData) {
                             const formulaStr = calcConfig.operands[0] || "";
                             const tokens = formulaStr.match(/{[^}]+}/g) || [];
                             tokens.forEach(t => {
-                                const opColId = t.slice(1, -1);
+                                const tokenInner = t.slice(1, -1);
+                                const parts = tokenInner.split('|');
+                                const opColId = parts[0];
                                 if (!requiredOps.includes(opColId)) requiredOps.push(opColId);
                             });
                         } else if (calcConfig.operands) {
@@ -960,6 +1042,12 @@ function renderVirtualTable(originalData) {
 
                     // EXCEPCIONES: Binding click derecho también para columnas generadas matemáticamente en el vuelo
                     let safeResultDisplay = String(resultDisplay).replace(/<[^>]*>?/gm, ''); // Quitar etiquetas html de advertencia si las hay
+                    
+                    // [FIX] Inyectar el resultado de la columna computada en el contexto para dependencias secuenciales
+                    // IMPORTANTE: Utilizar safeResultDisplay para que el parseo matemático de fórmulas posteriores no colapse a NaN por inyección de etiquetas HTML
+                    if (!row._richContext) row._richContext = {};
+                    row._richContext[calcConfig.id] = { clean: String(mathResult), display: String(safeResultDisplay).trim(), raw: String(mathResult) };
+
                     safeResultDisplay = safeResultDisplay
                         .replace(/\\/g, "\\\\")
                         .replace(/'/g, "\\'")
@@ -1532,7 +1620,9 @@ async function generatePreview(skipModal = false) {
                                         const formulaStr = calcConfig.operands[0] || "";
                                         const tokens = formulaStr.match(/{[^}]+}/g) || [];
                                         tokens.forEach(t => {
-                                            const opColId = t.slice(1, -1);
+                                            const tokenInner = t.slice(1, -1);
+                                            const parts = tokenInner.split('|');
+                                            const opColId = parts[0];
                                             if (!requiredOps.includes(opColId)) requiredOps.push(opColId);
                                         });
                                     } else {
@@ -1721,7 +1811,7 @@ async function generatePreview(skipModal = false) {
             
             // Computadas Locales
             if (localComputedCols && Array.isArray(localComputedCols)) {
-                localComputedCols.forEach(calcConfig => {
+                window._topoSortComputedCols(localComputedCols).forEach(calcConfig => {
                     let calcId = calcConfig.masterField?.id || calcConfig.id;
                     localConfig.push({
                         termId: String(resolveToMasterId(calcId)).toLowerCase().trim(),
@@ -1738,7 +1828,9 @@ async function generatePreview(skipModal = false) {
                                         const formulaStr = calcConfig.operands[0] || "";
                                         const tokens = formulaStr.match(/{[^}]+}/g) || [];
                                         tokens.forEach(t => {
-                                            const opColId = t.slice(1, -1);
+                                            const tokenInner = t.slice(1, -1);
+                                            const parts = tokenInner.split('|');
+                                            const opColId = parts[0];
                                             if (!requiredOps.includes(opColId)) requiredOps.push(opColId);
                                         });
                                     } else {
@@ -1763,9 +1855,18 @@ async function generatePreview(skipModal = false) {
                                             });
                                         }
                                         
+                                        let resolvedTermId = String(opColId).toLowerCase().trim();
+                                        if (localComputedCols) {
+                                            const cCol = localComputedCols.find(c => c.id === opColId);
+                                            if (cCol) {
+                                                const cCalcId = cCol.masterField?.id || cCol.id;
+                                                resolvedTermId = String(resolveToMasterId(cCalcId)).toLowerCase().trim();
+                                            }
+                                        }
+                                        
                                         // Lookup 3: Buscar en _unifiedOutput por si ya fue resuelto por otra cfg
-                                        if (!vColOp && row._unifiedOutput && row._unifiedOutput[String(opColId).toLowerCase().trim()] !== undefined) {
-                                            const cached = String(row._unifiedOutput[String(opColId).toLowerCase().trim()] || '').trim();
+                                        if (!vColOp && row._unifiedOutput && row._unifiedOutput[resolvedTermId] !== undefined) {
+                                            const cached = String(row._unifiedOutput[resolvedTermId] || '').trim();
                                             rCtx[opColId] = { clean: cached, display: cached, raw: cached };
                                             return;
                                         }

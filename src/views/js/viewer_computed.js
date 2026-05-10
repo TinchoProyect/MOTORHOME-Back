@@ -510,9 +510,8 @@ window.openCustomFormulaModal = async function() {
                        (window.draftPipelines && window.draftPipelines[vColId] ? window.draftPipelines[vColId].colName : null);
         
         if (termName && termName !== 'Ignorar Columna') {
-            const tokenStr = `{${vColId}}`;
             availableTokens.push({ id: vColId, name: termName });
-            tokenButtons += `<button type="button" onclick="document.getElementById('customFormulaInput').value += ' ${tokenStr} '" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-[10px] text-slate-300 transition-colors truncate max-w-[150px]" title="${termName}">${termName}</button>`;
+            tokenButtons += `<button type="button" onclick="const depth = document.getElementById('formulaGlobalDepth').value; document.getElementById('customFormulaInput').value += ' {' + '${vColId}' + '|' + depth + '} '" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-[10px] text-slate-300 transition-colors truncate max-w-[150px] shadow-sm hover:shadow-indigo-900/50" title="${termName}">${termName}</button>`;
         }
     });
 
@@ -539,7 +538,7 @@ window.openCustomFormulaModal = async function() {
             <div class="text-left space-y-4 font-sans text-sm mt-4">
                 <div class="space-y-1">
                     <label class="text-[10px] font-bold text-slate-500 uppercase">Expresión Aritmética</label>
-                    <textarea id="customFormulaInput" rows="3" class="w-full bg-slate-950 border border-indigo-500/50 rounded-lg p-3 text-white font-mono text-sm outline-none focus:border-indigo-400 focus:shadow-[0_0_15px_rgba(99,102,241,0.2)]" placeholder="Ej: ({col_1} * 1.07) / 1.21" oninput="if(this.value.includes('%')){ this.value = this.value.replace(/%/g, ''); Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: 'Uso de Porcentajes', text: 'Para aplicar porcentajes, utilice multiplicadores decimales (ej: para sumar 7%, multiplique por 1.07)', showConfirmButton: false, timer: 5000, background: '#1e293b', color: '#f8fafc'}); }">${existingFormula}</textarea>
+                    <textarea id="customFormulaInput" rows="3" class="w-full bg-slate-950 border border-indigo-500/50 rounded-lg p-3 text-white font-mono text-sm outline-none focus:border-indigo-400 focus:shadow-[0_0_15px_rgba(99,102,241,0.2)]" placeholder="Ej: ({col_1|display} * 1.07) / 1.21" oninput="if(this.value.includes('%')){ this.value = this.value.replace(/%/g, ''); Swal.fire({toast: true, position: 'top-end', icon: 'warning', title: 'Uso de Porcentajes', text: 'Para aplicar porcentajes, utilice multiplicadores decimales (ej: para sumar 7%, multiplique por 1.07)', showConfirmButton: false, timer: 5000, background: '#1e293b', color: '#f8fafc'}); }">${existingFormula}</textarea>
                 </div>
                 
                 <div class="space-y-2">
@@ -549,9 +548,15 @@ window.openCustomFormulaModal = async function() {
                     </div>
                 </div>
 
-                <div class="space-y-2">
-                    <label class="text-[10px] font-bold text-slate-500 uppercase">Variables Disponibles</label>
-                    <div class="flex flex-wrap gap-2 max-h-[120px] overflow-y-auto custom-scrollbar p-2 bg-slate-900/50 rounded border border-slate-700/50">
+                <div class="space-y-2 mt-4 p-3 bg-slate-800/30 border border-slate-700/50 rounded-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><i data-lucide="variable" class="w-3 h-3"></i> Variables Disponibles</label>
+                        <select id="formulaGlobalDepth" class="bg-slate-900 border border-indigo-500/30 text-[10px] font-bold text-indigo-300 px-2 py-1 rounded outline-none focus:border-indigo-400">
+                            <option value="display">Dato Final / Procesado</option>
+                            <option value="raw">Dato Crudo / Original</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-wrap gap-2 max-h-[120px] overflow-y-auto custom-scrollbar pt-1">
                         ${tokenButtons}
                     </div>
                 </div>
