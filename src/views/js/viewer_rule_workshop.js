@@ -947,7 +947,10 @@ function renderPipeline() {
 
     const auditContainer = document.getElementById('vrwAuditContainer');
 
-    if (currentDraftPipeline.length === 0) {
+    const activeCompId = activeContext && (activeContext.originalCompId || activeContext.colIndex);
+    const computedCfg = window.computedColumns && activeCompId ? window.computedColumns.find(c => c.id === activeCompId) : null;
+
+    if (currentDraftPipeline.length === 0 && !computedCfg) {
         if (emptyState) emptyState.classList.remove('hidden');
         if (flowLine) flowLine.classList.add('hidden');
         if (auditContainer) auditContainer.classList.add('hidden');
@@ -995,6 +998,34 @@ function renderPipeline() {
         `;
         container.appendChild(chip);
     });
+
+    if (computedCfg) {
+        const chip = document.createElement('div');
+        chip.className = "vrw-rule-chip bg-indigo-950/40 border border-indigo-500/50 p-2.5 rounded-lg flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-right-4 mt-2";
+        
+        let desc = 'Operación calculada dinámicamente.';
+        if (computedCfg.macro === 'CUSTOM_FORMULA') {
+            desc = `Expresión: <span class="font-mono text-fuchsia-400 bg-fuchsia-900/30 px-1 rounded">${computedCfg.operands[0]}</span>`;
+        } else if (computedCfg.macro === 'PRICE_MINUS_DISCOUNT_PERCENT') {
+            desc = `Aplicar descuento: ${computedCfg.operands[1]}%`;
+        } else if (computedCfg.macro === 'CLONE_SEMANTIC') {
+            desc = `Semántica inteligente sobre columna origen.`;
+        }
+
+        chip.innerHTML = `
+            <div class="flex items-center gap-3">
+                <div class="bg-indigo-900 text-indigo-300 font-mono text-[9px] w-5 h-5 flex items-center justify-center rounded-full border border-indigo-500/50 flex-shrink-0">ƒx</div>
+                <div class="min-w-0 pr-2">
+                    <h4 class="text-xs font-bold text-indigo-400 flex items-center break-words whitespace-normal">Operación Matemática <span class="ml-2 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30 uppercase flex-shrink-0">JIT</span></h4>
+                    <p class="text-[10px] text-slate-400 mt-0.5 leading-snug break-words whitespace-normal">${desc}</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-1">
+                <!-- Se audita dinámicamente, la desactivación sucede en el control principal -->
+            </div>
+        `;
+        container.appendChild(chip);
+    }
 
     if (window.lucide) window.lucide.createIcons();
 }

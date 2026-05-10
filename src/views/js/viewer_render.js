@@ -863,7 +863,7 @@ function renderVirtualTable(originalData) {
                                     
                                     // [Ticket #018] QA Fix: Out-Of-Bounds Guard para Columnas Procesadas.
                                     // Si la ingesta descartó la base A, el motor matemático ya no tiene datos para calcular.
-                                    if (opA && typeof opA === 'object' && ('raw' in opA || 'clean' in opA)) {
+                                    if ((opA && typeof opA === 'object' && ('raw' in opA || 'clean' in opA)) || calcConfig.macro === "CUSTOM_FORMULA") {
                                         try {
                                             evalres = evaluateComputedColumnMath(calcConfig, opA, opB, window.draftPipelines, activeEtlState, allOps, row);
                                         } catch(e) {
