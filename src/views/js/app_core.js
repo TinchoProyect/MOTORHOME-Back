@@ -1962,6 +1962,24 @@ window.buildManualEntryForm = async function(prefillData = null) {
     container.innerHTML = '<div class="p-8 text-center text-slate-500"><i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto mb-2 text-blue-500"></i><span class="text-xs">Cargando esquema...</span></div>';
     if(window.lucide) lucide.createIcons();
 
+    // Precarga de memoria para Rubros Maestros
+    if (!window.categoriasMaestras || window.categoriasMaestras.length === 0) {
+        if (typeof window.loadCategorias === 'function') {
+            await window.loadCategorias();
+        }
+    }
+
+    // [FIX TICKET] Cargar Gestión Semántica de Rubros Maestros
+    let rubrosMaestros = [];
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const resRubros = await fetch(`${backendUrl}/api/rubros`);
+        const jsonRubros = await resRubros.json();
+        if (jsonRubros.success) rubrosMaestros = jsonRubros.data || [];
+    } catch (e) {
+        console.error("Error cargando Gestión Semántica de Rubros:", e);
+    }
+
     // REMOVED CACHE: Fetch dynamically every time to ensure reactivity to new fields (Incidencia B)
     let dict = [];
     try {
@@ -1984,12 +2002,40 @@ window.buildManualEntryForm = async function(prefillData = null) {
         const value = prefillData && prefillData[slug] ? prefillData[slug] : '';
         const reqStr = f.es_requerido ? 'required' : '';
 
-        html += `<div>
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">${f.nombre_campo}</label>
+        let inputHtml = '';
+
+        if (slug === 'rubro') {
+            let options = '<option value="" class="bg-slate-900">Seleccionar Rubro Maestro...</option>';
+            rubrosMaestros.forEach(cat => {
+                const nombreRubro = cat.nombre_rubro || '';
+                const isSelected = (String(value).trim().toUpperCase() === String(nombreRubro).trim().toUpperCase()) ? 'selected' : '';
+                options += `<option value="${nombreRubro}" class="bg-slate-900" ${isSelected}>${nombreRubro}</option>`;
+            });
+            inputHtml = `<select ${reqStr} id="dyn_${slug}" name="${slug}" class="w-full form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/50">${options}</select>`;
+        } else if (slug === 'unidad') {
+            let options = '<option value="" class="bg-slate-900">Seleccionar Unidad Validad...</option>';
+            if (window.lamdaUnidadesValidadas) {
+                // Normalizar valor precargado para evitar desajustes visuales y duplicados funcionales
+                let normalValue = value ? String(value).trim() : '';
+                if (normalValue) normalValue = normalValue.charAt(0).toUpperCase() + normalValue.slice(1).toLowerCase();
+
+                Array.from(window.lamdaUnidadesValidadas).sort().forEach(u => {
+                    const sel = (normalValue === u) ? 'selected' : '';
+                    options += `<option value="${u}" class="bg-slate-900" ${sel}>${u}</option>`;
+                });
+            }
+            inputHtml = `<select ${reqStr} id="dyn_${slug}" name="${slug}" class="w-full form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/50">${options}</select>`;
+        } else {
+            inputHtml = `
             <div class="flex gap-2">
                 <input ${typeStr} ${reqStr} id="dyn_${slug}" name="${slug}" class="w-full form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white placeholder:text-slate-600 focus:border-blue-500/50" value="${value}" placeholder="Ingrese ${f.nombre_campo}">
                 ${isCode ? `<button type="button" onclick="window.generateFrontendSku && window.generateFrontendSku('dyn_${slug}')" class="bg-blue-900/30 hover:bg-blue-800/50 text-blue-400 border border-blue-500/30 px-3 rounded-xl transition-colors flex items-center justify-center shrink-0" title="Generar código automático"><i data-lucide="wand-2" class="w-4 h-4"></i></button>` : ''}
-            </div>
+            </div>`;
+        }
+
+        html += `<div>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">${f.nombre_campo}</label>
+            ${inputHtml}
         </div>`;
     });
 
@@ -2042,6 +2088,15 @@ window.loadSupplierArticles = async function(providerId) {
         if (res.ok) {
             const json = await res.json();
             const data = json.data || [];
+            
+            // [V6.1 FIX] Extracción dinámica de unidades gestionadas en la Tabla Maestra
+            if (!window.lamdaUnidadesValidadas) window.lamdaUnidadesValidadas = new Set(['Unidad', 'Kilogramo', 'Litro', 'Gramo']);
+            data.forEach(r => {
+                const dm = r.datos_maestros || {};
+                const u = dm.Unidad || dm.unidad || dm.UNIDAD;
+                if (u && String(u).trim()) window.lamdaUnidadesValidadas.add(String(u).trim());
+            });
+
             const localData = data.filter(r => r.proveedor_id === providerId);
             
             if (localData.length === 0) {
@@ -2157,7 +2212,7 @@ window.handleManualEntrySubmit = async function(e) {
     const recordId = document.getElementById('manualEntryRecordId').value;
     // TICKET #013: Recolección Data-Driven dinámica
     const container = document.getElementById('manualEntryDynamicContainer');
-    const inputs = container.querySelectorAll('input');
+    const inputs = container.querySelectorAll('input, select');
     const datos_maestros = {};
     inputs.forEach(inp => {
         if(inp.name) {
