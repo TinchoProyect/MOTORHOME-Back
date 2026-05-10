@@ -644,7 +644,7 @@ function renderVirtualTable(originalData) {
 
     // [V5.6] Fase 2 - Encabezados Computed en Virtual Scroller
     if (Array.isArray(window.computedColumns) && window.computedColumns.length > 0) {
-        window.computedColumns.forEach((comp, idx) => {
+        window._topoSortComputedCols(window.computedColumns).forEach((comp, idx) => {
             // [V6] Control de Visibilidad para Columnas Calculadas
             if (window.ViewerVisibilityManager && window.ViewerVisibilityManager.isHidden(comp.id)) return;
 
