@@ -316,6 +316,13 @@ window.saveSimulationConfig = async function (config = null, silent = false) {
         return;
     }
 
+    // [BUGFIX AMNESIA] Si el taller está abierto en Modo Matemático, forzar volcado de la fórmula primero
+    const computedModeDiv = document.getElementById('vrwComputedMode');
+    if (computedModeDiv && !computedModeDiv.classList.contains('hidden') && typeof window.saveComputedColumn === 'function') {
+        console.log("🛡️ [WORKSHOP-SYNC] Autoguardando fórmula matemática antes del Commit de Simulación...");
+        window.saveComputedColumn(false);
+    }
+
     // 2. UI Feedback (Loading)
     const btn = document.querySelector('button[onclick="saveSimulationConfig()"]');
     if (btn) {
@@ -699,6 +706,13 @@ window._executeFlujoSave = async function (id_flujo, nombreFlujo) {
 
     // 0. Capturar estado activo del Chofer IA si el modal quedó abierto (Evitar amnesia al tocar Guardar General)
     if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
+        // [BUGFIX AMNESIA] Si el taller está abierto en Modo Matemático, forzar volcado de la fórmula primero
+        const computedModeDiv = document.getElementById('vrwComputedMode');
+        if (computedModeDiv && !computedModeDiv.classList.contains('hidden') && typeof window.saveComputedColumn === 'function') {
+            console.log("🛡️ [WORKSHOP-SYNC] Autoguardando fórmula matemática antes del Commit Global...");
+            window.saveComputedColumn(false);
+        }
+
         const wsState = window.viewerRuleWorkshop.getActiveState();
         if (wsState.isOpen && wsState.colIndex && wsState.masterField) {
             console.log("🛡️ [WORKSHOP-SYNC] Autoguardando progreso del Chofer IA activo antes del Commit Global...");

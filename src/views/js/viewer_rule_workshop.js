@@ -544,6 +544,7 @@ export async function open(masterField, vColId, colName) {
     // [Garbage Collection Inicial] Si existe un contexto ajeno/sucio remanente, limpiarlo.
     if (window._activeComputedContext && window._activeComputedContext.colIndex !== activeVColId) {
         window._activeComputedContext = null;
+        window._tempCustomFormula = null;
     }
 
     // BUG FIX UI/UX: Inicialización Estricta de Estado del Toggle Matemático
@@ -687,6 +688,7 @@ export async function switchToComputedMode(forceUserActivate = false) {
         const cId = window._activeComputedContext.originalCompId;
         const compConfig = window.computedColumns ? window.computedColumns.find(c => c.id === cId) : null;
         console.log("🚨 [VIGÍA DIAGNÓSTICO] Rehidratando editor matemático. cId:", cId, " | Encontrado:", compConfig, " | Total en memoria:", window.computedColumns ? window.computedColumns.length : 0);
+        console.error("🛑 [LAMDA VIGÍA 4 - HIDRATACIÓN] String matemático devuelto por la API / RAM antes de pintar UI:", compConfig && compConfig.macro === 'CUSTOM_FORMULA' ? JSON.stringify(compConfig.operands) : "Ninguno / Otro macro");
         if (compConfig && compConfig.operands && compConfig.operands.length >= 1) {
             const elA = document.getElementById('calcFieldA');
             const elB = document.getElementById('calcFieldB');
@@ -700,8 +702,13 @@ export async function switchToComputedMode(forceUserActivate = false) {
                 else elOp.dispatchEvent(new Event('change'));
             }
             
-            // Op A es la primera de cualquier tipo (CLONE o Normal)
-            if (elA && compConfig.operands[0]) elA.value = compConfig.operands[0];
+            // [QA BUGFIX CRÍTICO] Bloquear inyección literal de Strings Matemáticos en Selects Físicos
+            // Evitamos que {col_N} - ({col_N}...) intente asignarse a <select id="calcFieldA">
+            // Esto causaba un fallback silencioso a "col_2" y la consiguiente mutación destructiva del token.
+            if (compConfig.macro !== 'CUSTOM_FORMULA') {
+                // Op A es la primera de cualquier tipo (CLONE o Normal)
+                if (elA && compConfig.operands[0]) elA.value = compConfig.operands[0];
+            }
             
             if (compConfig.macro === 'CLONE' || compConfig.macro === 'CLONE_SEMANTIC') {
                 // Si hay multiples origenes, recrear dropdowns y valorizarlos
@@ -718,7 +725,7 @@ export async function switchToComputedMode(forceUserActivate = false) {
                         }
                     }
                 }
-            } else if (compConfig.operands.length === 2 && elB) {
+            } else if (compConfig.operands.length === 2 && elB && compConfig.macro !== 'CUSTOM_FORMULA') {
                 elB.value = compConfig.operands[1];
             }
 
@@ -773,6 +780,7 @@ export async function switchToComputedMode(forceUserActivate = false) {
  */
 export function switchToStandardMode(userOptOut = true) {
     window._activeComputedContext = null;
+    window._tempCustomFormula = null;
 
     // [QA BUGFIX] Limpieza profunda del estado matemático si el usuario desactiva el editor
     if (window.computedColumns && activeContext && activeContext.colIndex) {
@@ -853,6 +861,7 @@ export function close() {
     currentDraftPipeline = [];
     activeContext = { masterField: null, colIndex: null, colName: null };
     window._activeComputedContext = null; // Bug Fix N°1: Resetear contexto de calculadora para no contaminar próximos clicks
+    window._tempCustomFormula = null;
 
     const panel = document.getElementById('viewerRightPanel');
     if (panel) {
@@ -1897,6 +1906,8 @@ export async function applyMapping() {
     }
 
     console.log(`✅ [WORKSHOP] Mapeo guardado en RAM: Columna ${activeContext.colIndex} -> ${activeContext.masterField.nombre_campo}`);
+    const mathCfgVigia = window.computedColumns ? window.computedColumns.find(c => c.id === activeContext.colIndex) : null;
+    console.error("🛑 [LAMDA VIGÍA 2 - SERIALIZACIÓN] Se ha guardado el estado en RAM (draftPipelines/computed). Regla Matemática:", mathCfgVigia ? JSON.stringify(mathCfgVigia.operands) : "Ninguna");
 
     // Commit visual changes in the main Table (Header naming)
     if (window.viewerETL && typeof window.viewerETL.commitColumnMapping === 'function') {

@@ -300,6 +300,9 @@ function saveComputedColumn(closeModal = true) {
             return false;
         }
         operandsList = [finalFormula.trim()];
+        
+        // [QA BUGFIX CRÍTICO] Garbage Collection para evitar fuga de estado hacia otras columnas
+        window._tempCustomFormula = null;
     } else {
         const vColIdA = document.getElementById('calcFieldA') ? document.getElementById('calcFieldA').value : null;
         const vColIdB = document.getElementById('calcFieldB') ? document.getElementById('calcFieldB').value : null;
@@ -519,7 +522,11 @@ window.openCustomFormulaModal = async function() {
 
     // Si ya existe una fórmula guardada, la recuperamos
     let existingFormula = '';
-    if (window._activeComputedContext && window._activeComputedContext.originalCompId) {
+    
+    // [QA BUGFIX CRÍTICO] Priorizar el buffer temporal no guardado si el usuario re-abre el modal en la misma sesión
+    if (window._tempCustomFormula !== undefined && window._tempCustomFormula !== null) {
+        existingFormula = window._tempCustomFormula;
+    } else if (window._activeComputedContext && window._activeComputedContext.originalCompId) {
         const compConfig = window.computedColumns.find(c => c.id === window._activeComputedContext.originalCompId);
         if (compConfig && compConfig.macro === 'CUSTOM_FORMULA' && compConfig.operands && compConfig.operands[0]) {
             existingFormula = compConfig.operands[0];
@@ -577,6 +584,7 @@ window.openCustomFormulaModal = async function() {
                 Swal.showValidationMessage('La fórmula contiene caracteres inválidos. Usa solo números y operadores básicos.');
                 return false;
             }
+            console.error("🛑 [LAMDA VIGÍA 1 - CAPTURA] String saliente del Modal:", inputVal);
             return inputVal;
         }
     });

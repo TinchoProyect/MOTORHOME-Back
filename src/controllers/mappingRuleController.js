@@ -61,6 +61,21 @@ exports.saveMapping = async (req, res) => {
             return res.status(400).json({ error: "Falta proveedor_id requerido para guardar configuración ETL." });
         }
 
+        // [LAMDA VIGÍA 3 - PERSISTENCIA DB] Rastrear mutación de fórmula en tránsito
+        let vigiaString = "Ninguna fórmula encontrada en tránsito";
+        if (mapeos) {
+            mapeos.forEach(m => {
+                if (m.reglas_obj) {
+                    m.reglas_obj.forEach(r => {
+                        if (r.tipo_regex && r.tipo_regex.includes('{col_')) {
+                            vigiaString = r.tipo_regex;
+                        }
+                    });
+                }
+            });
+        }
+        console.error("🛑 [LAMDA VIGÍA 3 - PERSISTENCIA DB] String detectado en el payload para guardar:", vigiaString);
+
         // Buscar Formato Guía (El puente principal del archivo)
         const hojaBusqueda = nombre_hoja || 'Sheet1';
         let { data: formato, error: formatoError } = await supabase
