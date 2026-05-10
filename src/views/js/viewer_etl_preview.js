@@ -34,6 +34,7 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
         if (isRejected) break;
 
         const isCustomReplace = rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_REPLACE:');
+        const isCustomSetValue = rule.tipo_regex && rule.tipo_regex.startsWith('CUSTOM_SET_VALUE:');
 
         if (rule.tipo === 'ast_conditional') {
             // Evaluador JSON AST (Zero RCE)
@@ -371,6 +372,11 @@ export function transformCell(rawValue, pipeline, contextRow = null) {
                 currentValue = replaceStr === '|||SPLIT|||' ? '' : replaceStr;
                 console.log(`[ETL PREVIEW] ⚡ Override Local aplicado en Fila [UID:${targetRowUid}] -> Salida: '${currentValue}'`);
             }
+        }
+        else if (isCustomSetValue) {
+            const payload = rule.tipo_regex.replace('CUSTOM_SET_VALUE:', '');
+            currentValue = payload;
+            console.log(`[ETL PREVIEW] ⚡ Set Value estático aplicado -> Salida: '${currentValue}'`);
         }
         else if (isCustomReplace) {
             try {

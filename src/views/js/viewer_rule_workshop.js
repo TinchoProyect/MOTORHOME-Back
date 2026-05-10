@@ -149,6 +149,12 @@ function renderRuleSelector() {
     discountOption.className = 'font-bold text-cyan-400 bg-cyan-900/20';
     selector.appendChild(discountOption);
 
+    const injectStaticOption = document.createElement('option');
+    injectStaticOption.value = 'BESPOKE_INJECT_STATIC';
+    injectStaticOption.textContent = '⚡ Inyectar valor estático a la columna';
+    injectStaticOption.className = 'font-bold text-pink-400 bg-pink-900/20';
+    selector.appendChild(injectStaticOption);
+
     // [REQ QA] Inyección de Regla de Limpieza Local (Scoping Exclusivo)
     // Sólo debe existir y ser visible si la columna destino es "código"
     if (currentMasterId || activeContext.masterField) {
@@ -869,6 +875,12 @@ export function addSelectedRule() {
         renderPipeline();
         selector.value = "";
         triggerPreview();
+        return;
+    }
+
+    if (ruleId === 'BESPOKE_INJECT_STATIC') {
+        promptInjectStaticRule();
+        selector.value = "";
         return;
     }
 
@@ -2030,6 +2042,59 @@ export async function createLocalRule(searchStr, replaceStr, isRegex = false, co
         console.error("Error creando regla local:", err);
         return false;
     }
+}
+
+// [NUEVA REGLA UI] Inyección de Valor Estático
+async function promptInjectStaticRule() {
+    if (typeof Swal === 'undefined') {
+        const val = prompt('Ingresa el valor numérico o texto fijo que reemplazará todas las celdas de esta columna:');
+        if (val !== null && val.trim() !== '') {
+            _commitStaticRule(val.trim());
+        }
+        return;
+    }
+
+    const { value: staticValue } = await Swal.fire({
+        title: 'Inyectar Valor Estático',
+        text: 'Ingresa el valor numérico o texto fijo que reemplazará todas las celdas de esta columna.',
+        input: 'text',
+        inputPlaceholder: 'Ejemplo: 21, 10.5, "Sin dato"',
+        showCancelButton: true,
+        confirmButtonText: 'Inyectar',
+        cancelButtonText: 'Cancelar',
+        background: '#0f172a',
+        color: '#f8fafc',
+        customClass: {
+            input: 'bg-slate-900 border border-slate-700 text-white rounded focus:ring-emerald-500 focus:border-emerald-500',
+            confirmButton: 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded',
+            cancelButton: 'bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded',
+            popup: 'border border-slate-800'
+        },
+        inputValidator: (value) => {
+            if (!value || value.trim() === '') {
+                return 'Debes ingresar un valor válido.';
+            }
+        }
+    });
+
+    if (staticValue !== undefined && staticValue.trim() !== '') {
+        _commitStaticRule(staticValue.trim());
+    }
+}
+
+function _commitStaticRule(val) {
+    const strictRule = {
+        id: `local_static_${Date.now()}`,
+        tipo: 'custom_static',
+        tipo_regex: `CUSTOM_SET_VALUE:${val}`,
+        nombre_regla: 'Inyección Estática',
+        descripcion: `Reemplazo total estático: '${val}'`,
+        campo_maestro_id: activeContext.masterField ? activeContext.masterField.id : null
+    };
+    console.log(`➕ [WORKSHOP] Añadiendo Regla Dinámica (Static Value): ${strictRule.nombre_regla}`);
+    currentDraftPipeline.push(strictRule);
+    renderPipeline();
+    triggerPreview();
 }
 
 // [V5.30 UX] Bespoke Rule: Combine Numeric (Inter-Column)
