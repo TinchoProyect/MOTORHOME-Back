@@ -189,11 +189,6 @@ export function enableSaveButton() {
 
 // OPEN PANEL
 export async function open(masterField, vColId, colName) {
-    if (window.checkFlujoMutationGuard) {
-        const isSafeToEdit = await window.checkFlujoMutationGuard();
-        if (!isSafeToEdit) return; // User cancelled or aborted
-    }
-
     // Normalización Urgente (Bug Mapeo Duplicado)
     if (vColId !== null && vColId !== undefined) {
         let strId = String(vColId);
@@ -1893,9 +1888,20 @@ export async function applyMapping() {
         window.saveSheetState(window.currentSheetName);
     }
 
+    // [FIX HUERFANOS - QA] Recalcular la Fase 3 del ETL (Sincronización Auditoría y Columnas Fantasmas)
+    // Tras guardar, la Matriz de Extracción (currentSimData) debe absorber el AST para que las
+    // Columnas Computadas Fantasmas obtengan sus valores y la Auditoría apague los semáforos marrones.
+    if (typeof window.generatePreview === 'function') {
+        try {
+            await window.generatePreview(true);
+        } catch(e) {
+            console.error("Error al regenerar Preview post-guardado:", e);
+        }
+    }
+
     // [BUGFIX AMNESIA] Renderizar la tabla principal RECIÉN AHORA, cuando el draftPipeline 
-    // y el masterField ya están 100% asegurados en RAM, evitando que la grilla lea pipelines vacíos
-    // y desaparezcan los datos temporalmente.
+    // y la Matriz Simulada de Extracción (richContext) ya están 100% asegurados en RAM, evitando que la grilla lea 
+    // contextos vacíos para las columnas fantasma.
     if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
         window.renderVirtualTable(window.currentSheetData);
     }

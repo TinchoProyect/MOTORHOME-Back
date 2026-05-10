@@ -10,11 +10,6 @@ window.computedColumns = [];
 
 // --- ABRIR MODAL Y CARGAR OPCIONES ---
 async function openCalculationModal(fromRuleWorkshop = false) {
-    if (window.checkFlujoMutationGuard) {
-        const isSafeToEdit = await window.checkFlujoMutationGuard();
-        if (!isSafeToEdit) return; // User cancelled or aborted
-    }
-
     const selectA = document.getElementById('calcFieldA');
     const selectB = document.getElementById('calcFieldB');
     const selectColName = document.getElementById('calcColName');

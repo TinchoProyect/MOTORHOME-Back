@@ -2458,11 +2458,6 @@ window.ViewerUI.handleDrop = function(e, dropColIndex) {
         // Guardar el estado unificado maestramente en LayoutManager (array de id dict)
         window.LayoutManager.recordOrder(unifiedOrderList.map(id => ({ id })));
         
-        // Guardar estado master hacia el servidor si es posible
-        if (typeof window.saveSimulationConfig === 'function') {
-            window.saveSimulationConfig(null, true);
-        }
-        
         // Efectuar Desplazamiento Transaccional Físico en Memoria UI
         if (window.currentDisplayConfig) {
              const elementObj = window.currentDisplayConfig.splice(dragColIndex, 1)[0];
@@ -2592,11 +2587,6 @@ function onSimColMouseUp(e) {
         if (window.LayoutManager) {
             window.LayoutManager.recordWidth(simResizeColVirtualId, pixelVal);
         }
-        
-        // Guardar estado master hacia el servidor si es posible
-        if (typeof window.saveSimulationConfig === 'function') {
-            window.saveSimulationConfig(null, true);
-        }
     }
     
     isSimResizing = false;
@@ -2694,11 +2684,6 @@ function onColMouseUp(e) {
             container.scrollLeft = scrollLeft;
             container.dispatchEvent(new Event('scroll'));
         });
-    }
-
-    // Silent auto-save to backend
-    if (typeof window.saveSimulationConfig === 'function') {
-        window.saveSimulationConfig(null, true);
     }
 }
 
