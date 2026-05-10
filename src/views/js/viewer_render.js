@@ -12,12 +12,16 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
     // Aceptamos CLONE_SEMANTIC para que el Módulo Caza-rubros (Chofer IA) no termine fundiéndose en 0,00 al parsear texto
     if (calcConfig.macro === "CLONE" || calcConfig.macro === "CLONE_SEMANTIC") {
         let rawStringA = "";
+        const depthsArray = calcConfig.dataDepths || [];
         
         if (allOps && Array.isArray(allOps) && allOps.length > 0) {
-            // Lógica de Fallback (COALESCE): Tomar la primera columna origen que posea un valor válido.
-            // Opcional: Si el usuario deseaba concatenar, se puede hacer join(" "). Para Fallback estricto usamos filter + shift:
-            const valids = allOps.map(op => {
-                const candidates = [op?.clean, op?.raw, op?.display];
+            const valids = allOps.map((op, idx) => {
+                const targetDepth = depthsArray[idx] || calcConfig.dataDepth || "clean";
+                let candidates = [];
+                if (targetDepth === 'raw') candidates = [op?.raw];
+                else if (targetDepth === 'display') candidates = [op?.display];
+                else candidates = [op?.clean, op?.raw, op?.display]; // default clean fallback
+                
                 for (let c of candidates) {
                     if (c !== undefined && c !== null && String(c).trim() !== '') {
                         const s = String(c).trim();
@@ -27,9 +31,14 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
                 return "";
             }).filter(v => v !== "");
             
-            rawStringA = valids.length > 0 ? valids.join(" ") : ""; // join(" ") cumple ambos propósitos: Si solo hay uno, es él mismo. Si hay dos, es string1 + string2.
+            rawStringA = valids.length > 0 ? valids.join(" ") : "";
         } else {
-            const candidates = [opA?.clean, opA?.raw, opA?.display];
+            const targetDepth = depthsArray[0] || calcConfig.dataDepth || "clean";
+            let candidates = [];
+            if (targetDepth === 'raw') candidates = [opA?.raw];
+            else if (targetDepth === 'display') candidates = [opA?.display];
+            else candidates = [opA?.clean, opA?.raw, opA?.display]; // default clean fallback
+            
             let txtA = "";
             for (let c of candidates) {
                 if (c !== undefined && c !== null && String(c).trim() !== '') {

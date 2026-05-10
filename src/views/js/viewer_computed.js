@@ -130,6 +130,7 @@ async function openCalculationModal(fromRuleWorkshop = false) {
             const containerB = document.getElementById('calcFieldB_container') || document.getElementById('calcFieldB').parentElement;
             const containerTol = document.getElementById('calcTolerateEmpty') ? document.getElementById('calcTolerateEmpty').parentElement : null;
             const cloneAddBtn = document.getElementById('cloneAddBtnContainer');
+            const dataDepthContainer = document.getElementById('calcDataDepthContainer');
             
             if (opValue === 'CLONE' || opValue === 'CLONE_SEMANTIC') {
                 if(labelA) labelA.innerText = opValue === 'CLONE_SEMANTIC' ? "Semántica Origen (Principal)" : "Columna Origen (Clonada)";
@@ -147,6 +148,8 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 
                 if(containerTol) containerTol.style.display = 'none';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'block';
+                
+                document.querySelectorAll('.calc-source-depth').forEach(el => el.classList.remove('hidden'));
                 
                 const formulaBtn = document.getElementById('btnOpenFormulaModal');
                 if (formulaBtn) formulaBtn.style.display = 'none';
@@ -172,7 +175,8 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 if (masterKeyContainer) masterKeyContainer.style.display = 'none';
                 if(containerTol) containerTol.style.display = 'none';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'none';
-                document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
+                document.querySelectorAll('.calc-source-depth').forEach(el => el.classList.add('hidden'));
+                document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.parentElement.remove(); });
             } else {
                 if(labelA) labelA.innerText = "Precio Base (A)";
                 document.getElementById('calcFieldA').style.display = 'block';
@@ -187,11 +191,13 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 if(containerTol) containerTol.style.display = 'flex';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'none';
                 
+                document.querySelectorAll('.calc-source-depth').forEach(el => el.classList.add('hidden'));
+                
                 const formulaBtn = document.getElementById('btnOpenFormulaModal');
                 if (formulaBtn) formulaBtn.style.display = 'none';
                 
                 // Reset clones on math operation
-                document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.remove(); });
+                document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.parentElement.remove(); });
             }
         };
         // Limpiamos la basura visual del estado anterior forzándolo al disparar el trigger síncronamente
@@ -232,8 +238,18 @@ window.addCloneSourceUI = function() {
     sel.innerHTML = baseSel.innerHTML; // Copy options
     sel.value = "";
     
+    const depthSel = document.createElement('select');
+    depthSel.className = "calc-source-depth bg-slate-900 border border-slate-700/50 rounded-lg px-1 py-2 text-[10px] font-bold text-purple-300 outline-none cursor-pointer text-center w-24 shrink-0";
+    depthSel.innerHTML = '<option value="clean">LIMPIO</option><option value="raw">CRUDO</option><option value="display">FINAL</option>';
+    depthSel.title = "Profundidad de Extracción";
+    
+    const flexWrap = document.createElement('div');
+    flexWrap.className = "flex gap-1 items-center";
+    flexWrap.appendChild(sel);
+    flexWrap.appendChild(depthSel);
+    
     wrapper.appendChild(label);
-    wrapper.appendChild(sel);
+    wrapper.appendChild(flexWrap);
     container.appendChild(wrapper);
     if(window.lucide) lucide.createIcons();
 };
@@ -251,16 +267,24 @@ function saveComputedColumn(closeModal = true) {
     const tolerateEmpty = document.getElementById('calcTolerateEmpty') ? document.getElementById('calcTolerateEmpty').checked : true;
     
     let operandsList = [];
+    let operandsDepth = [];
 
     if (op === 'CLONE' || op === 'CLONE_SEMANTIC') {
         const selects = document.querySelectorAll('.calc-source-dyn');
-        selects.forEach(s => {
-            if(s.value && s.value.trim() !== '') operandsList.push(s.value);
+        const depths = document.querySelectorAll('.calc-source-depth');
+        selects.forEach((s, idx) => {
+            if(s.value && s.value.trim() !== '') {
+                 operandsList.push(s.value);
+                 operandsDepth.push(depths[idx] ? depths[idx].value : 'clean');
+            }
         });
         
         if (op === 'CLONE_SEMANTIC') {
             const vColIdSemanticKey = document.getElementById('calcFieldSemanticKey') ? document.getElementById('calcFieldSemanticKey').value : null;
-            if (vColIdSemanticKey && vColIdSemanticKey.trim() !== '') operandsList.push(vColIdSemanticKey);
+            if (vColIdSemanticKey && vColIdSemanticKey.trim() !== '') {
+                 operandsList.push(vColIdSemanticKey);
+                 operandsDepth.push('display'); // Semantic key always uses display
+            }
         }
 
         if (operandsList.length === 0) {
@@ -309,6 +333,7 @@ function saveComputedColumn(closeModal = true) {
             window.computedColumns[idx].macro = op || 'PRICE_MINUS_DISCOUNT_PERCENT';
             window.computedColumns[idx].operands = operandsList;
             window.computedColumns[idx].tolerateEmpty = tolerateEmpty;
+            window.computedColumns[idx].dataDepths = operandsDepth;
             console.log("✅ Columna Calculada Actualizada:", window.computedColumns[idx]);
         } else if (id.startsWith('col_ph_')) {
             // [V5.20 FIX UX] Convert Ghost Placeholder natively into a Computed Column
@@ -347,6 +372,7 @@ function saveComputedColumn(closeModal = true) {
                 macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT',
                 operands: operandsList,
                 tolerateEmpty: tolerateEmpty,
+                dataDepths: operandsDepth,
                 _consumedDataIdx: ghostDataIdx // Marca de posición consumida para Schema Merge guard
             });
             console.log("✅ Ghost Column convertido exitosamente a Columna Calculada!");
@@ -360,7 +386,8 @@ function saveComputedColumn(closeModal = true) {
             masterField: targetMasterField, // Destination
             macro: op || 'PRICE_MINUS_DISCOUNT_PERCENT', // V5 Rule constant for now (hardcoded map to UI Operation)
             operands: operandsList,
-            tolerateEmpty: tolerateEmpty
+            tolerateEmpty: tolerateEmpty,
+            dataDepths: operandsDepth
         });
         console.log("✅ Columna Calculada Añadida al V5 Engine:", window.computedColumns);
     }

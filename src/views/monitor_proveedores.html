@@ -887,7 +887,14 @@
                                 <div id="calcOperandsContainer" class="grid grid-cols-2 gap-3 mt-2">
                                     <div class="space-y-1">
                                         <label id="calcLabelA" class="text-[10px] font-bold text-slate-500 uppercase">Precio Base (A)</label>
-                                        <select id="calcFieldA" class="calc-source-dyn w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none"></select>
+                                        <div class="flex gap-1 items-center">
+                                            <select id="calcFieldA" class="calc-source-dyn w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none"></select>
+                                            <select class="calc-source-depth hidden bg-slate-900 border border-slate-700/50 rounded-lg px-1 py-2 text-[10px] font-bold text-purple-300 outline-none cursor-pointer text-center w-24 shrink-0" title="Profundidad de Extracción">
+                                                <option value="clean">LIMPIO</option>
+                                                <option value="raw">CRUDO</option>
+                                                <option value="display">FINAL</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     <div class="space-y-1" id="calcFieldB_container">
                                         <label class="text-[10px] font-bold text-slate-500 uppercase">Descuento (B)</label>

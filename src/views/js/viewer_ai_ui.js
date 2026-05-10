@@ -498,23 +498,52 @@ class ViewerAiUi {
                     // el Chofer arrojará un Falso Positivo (Cache Miss) porque el string no coincide case-sensitively con la Libreta.
                     
                     let localCompDefOperands = null;
+                    let localCompDefDepths = null;
                     if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.getActiveState === 'function') {
                         const localState = window.viewerRuleWorkshop.getActiveState();
-                        if (localState && localState.colIndex && window.computedColumns) {
+                        
+                        if (localState && localState.isOpen) {
+                            // Si los operandos cambiaron en el DOM, también los leemos
+                            const opValue = document.getElementById('calcOperation') ? document.getElementById('calcOperation').value : '';
+                            if (opValue === 'CLONE' || opValue === 'CLONE_SEMANTIC') {
+                                localCompDefOperands = [];
+                                localCompDefDepths = [];
+                                const depths = document.querySelectorAll('.calc-source-depth');
+                                document.querySelectorAll('.calc-source-dyn').forEach((s, idx) => {
+                                    if(s.value && s.value.trim() !== '') {
+                                        localCompDefOperands.push(s.value);
+                                        localCompDefDepths.push(depths[idx] ? depths[idx].value : 'clean');
+                                    }
+                                });
+                            }
+                        }
+                        
+                        if ((!localCompDefOperands || localCompDefOperands.length === 0) && localState && localState.colIndex && window.computedColumns) {
                             const cDef = window.computedColumns.find(c => c.id === localState.colIndex);
                             if (cDef && cDef.operands && cDef.operands.length > 0) {
                                 localCompDefOperands = cDef.operands;
+                                if (!localState.isOpen) {
+                                    localCompDefDepths = cDef.dataDepths || [];
+                                    // Si no hay depths, usar el legacy global
+                                    if (localCompDefDepths.length === 0) {
+                                        localCompDefDepths = localCompDefOperands.map(() => cDef.dataDepth || "clean");
+                                    }
+                                }
                             }
                         }
                     }
 
                     if (localCompDefOperands && rawRows[i]._richContext) {
-                        val = localCompDefOperands.map(opId => {
+                        val = localCompDefOperands.map((opId, index) => {
                              const op = rawRows[i]._richContext[opId];
                              if (!op) return "";
-                             // [FIX TICKET] Priorizar el valor CRUDO original (raw) en extracciones semánticas. 
-                             // Si usamos 'clean', el Chofer IA no ve la unidad de medida que pudo haber sido limpiada por una regla de "Solo Números" en el origen.
-                             const candidates = [op.raw, op.display, op.clean];
+                             
+                             let targetDataDepth = localCompDefDepths && localCompDefDepths[index] ? localCompDefDepths[index] : "clean";
+                             let candidates = [];
+                             if (targetDataDepth === 'raw') candidates = [op.raw];
+                             else if (targetDataDepth === 'display') candidates = [op.display];
+                             else candidates = [op.clean, op.raw, op.display];
+                             
                              for (let c of candidates) {
                                   if (c !== undefined && c !== null && String(c).trim() !== '') {
                                       const s = String(c).trim();
