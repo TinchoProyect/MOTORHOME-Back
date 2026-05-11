@@ -45,6 +45,8 @@ const bancosParserService = {
                         if (colName.includes('movimiento') || colName.includes('concepto') || colName.includes('descrip') || colName.includes('detalle')) headerMap['movimiento'] = idx;
                         if (colName.includes('debito') || colName.includes('débito') || colName.includes('salida') || colName.includes('importe') || colName.includes('cargo')) headerMap['debito'] = idx;
                         if (colName.includes('comentario') || colName.includes('observacion')) headerMap['comentario'] = idx;
+                        if (colName.includes('saldo')) headerMap['saldo'] = idx;
+                        if (colName.includes('referencia') || colName.includes('ref') || colName.includes('comprobante')) headerMap['referencia'] = idx;
                     });
                     break;
                 }
@@ -115,7 +117,10 @@ const bancosParserService = {
                 }
                 if (!fechaIso) fechaIso = new Date().toISOString().split('T')[0];
 
-                const strForHash = `${fechaIso}_${debito.toFixed(2)}_${movimientoStr.replace(/\s+/g, '').toLowerCase()}`;
+                let saldoStr = headerMap['saldo'] !== undefined ? String(row[headerMap['saldo']] || '').replace(/\s+/g, '').toLowerCase() : '';
+                let refStr = headerMap['referencia'] !== undefined ? String(row[headerMap['referencia']] || '').replace(/\s+/g, '').toLowerCase() : '';
+
+                const strForHash = `${fechaIso}_${debito.toFixed(2)}_${movimientoStr.replace(/\s+/g, '').toLowerCase()}_${saldoStr}_${refStr}`;
                 const hash_id = crypto.createHash('md5').update(strForHash).digest('hex');
 
                 let estado = 'PENDIENTE';

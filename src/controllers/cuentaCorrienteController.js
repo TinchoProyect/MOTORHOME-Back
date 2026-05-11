@@ -62,6 +62,34 @@ const cuentaCorrienteController = {
             console.error("Error toggleOmitir CC:", error);
             res.status(500).json({ error: error.message });
         }
+    },
+
+    registrarPagoEfectivo: async (req, res) => {
+        const { proveedor_id, fecha_pago, monto_pago, observaciones } = req.body;
+        
+        try {
+            if (!proveedor_id || !fecha_pago || monto_pago === undefined) {
+                throw new Error("Faltan datos obligatorios para registrar el pago en efectivo.");
+            }
+
+            // Inyectamos en la tabla cruda. El trigger se encarga de impactar en la cuenta corriente.
+            const { data, error } = await supabase
+                .from('pagos_efectivo_raw')
+                .insert([{
+                    proveedor_id,
+                    fecha_pago,
+                    monto_pago: parseFloat(monto_pago),
+                    observaciones
+                }])
+                .select()
+                .single();
+
+            if (error) throw error;
+            res.json({ success: true, data });
+        } catch (error) {
+            console.error("Error registrarPagoEfectivo:", error);
+            res.status(500).json({ error: error.message });
+        }
     }
 };
 

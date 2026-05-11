@@ -104,13 +104,25 @@ const bancosController = {
             console.log(`[BancosController] Iniciando inyección a BD de ${pagosCrudos.length} movimientos...`);
 
             for (const pago of pagosCrudos) {
+                // Validación explícita de idempotencia (Ticket: Fallo de Deduplicación)
+                const { data: existente } = await supabase
+                    .from('pagos_bancarios_raw')
+                    .select('hash_id')
+                    .eq('hash_id', pago.hash_id)
+                    .maybeSingle();
+
+                if (existente) {
+                    omitidosPorDuplicado++;
+                    continue; // Blindaje Anti-Duplicados Activo
+                }
+
                 // Insertamos uno a uno para manejar colisiones limpiamente
                 const { error: errInsert } = await supabase
                     .from('pagos_bancarios_raw')
                     .insert([pago]);
 
                 if (errInsert) {
-                    // 23505 = Unique Violation en PostgreSQL
+                    // 23505 = Unique Violation en PostgreSQL (Fallback safety)
                     if (errInsert.code === '23505' || errInsert.message.includes('duplicate key value') || errInsert.message.includes('already exists')) {
                         omitidosPorDuplicado++;
                     } else {

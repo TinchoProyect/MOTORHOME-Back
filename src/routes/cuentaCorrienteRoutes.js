@@ -4,5 +4,6 @@ const ccController = require('../controllers/cuentaCorrienteController');
 
 router.get('/proveedor/:providerId', ccController.getByProvider);
 router.patch('/:id/omitir', ccController.toggleOmitir);
+router.post('/efectivo', ccController.registrarPagoEfectivo);
 
 module.exports = router;

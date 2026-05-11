@@ -11,8 +11,13 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                         <p class="text-xs text-slate-400 font-mono tracking-widest uppercase">Saldo Deudor Total</p>
                         <h3 id="cc_saldo_total" class="text-4xl font-bold text-amber-500 font-mono">Cargando...</h3>
                     </div>
-                    <div class="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center">
-                        <i data-lucide="landmark" class="w-6 h-6 text-amber-500"></i>
+                    <div class="flex flex-col items-end gap-2">
+                        <div class="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                            <i data-lucide="landmark" class="w-5 h-5 text-amber-500"></i>
+                        </div>
+                        <button onclick="window.abrirModalPagoEfectivo('${providerId}', '${providerName.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1">
+                            <i data-lucide="banknote" class="w-3 h-3"></i> Pago Efectivo
+                        </button>
                     </div>
                 </div>
 
@@ -183,5 +188,81 @@ window.toggleOmitirMovimiento = async function(movId, currentState, providerId, 
     } catch(err) {
         console.error('Error al cambiar estado de omision:', err);
         Swal.fire({ icon: 'error', title: 'Error', text: err.message, background: '#0f172a', color: '#f8fafc' });
+    }
+};
+
+window.abrirModalPagoEfectivo = async function(providerId, providerName) {
+    const today = new Date().toISOString().split('T')[0];
+    const { value: formValues } = await Swal.fire({
+        title: 'Registrar Pago en Efectivo',
+        html: `
+            <div class="flex flex-col gap-4 text-left">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Fecha del Pago</label>
+                    <input type="date" id="pago_efectivo_fecha" class="w-full form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-white" value="${today}">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Monto Abonado ($)</label>
+                    <input type="number" step="0.01" id="pago_efectivo_monto" class="w-full form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-white" placeholder="0.00">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Observaciones / Ref.</label>
+                    <input type="text" id="pago_efectivo_obs" class="w-full form-input bg-slate-900/40 border border-slate-700 rounded-xl px-4 py-2 text-white" placeholder="Ej. Pago a fletero, recibo N°...">
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Registrar Pago',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#059669',
+        background: '#0f172a',
+        color: '#f8fafc',
+        preConfirm: () => {
+            const fecha = document.getElementById('pago_efectivo_fecha').value;
+            const monto = document.getElementById('pago_efectivo_monto').value;
+            const obs = document.getElementById('pago_efectivo_obs').value;
+            if (!fecha || !monto || parseFloat(monto) <= 0) {
+                Swal.showValidationMessage('Debe ingresar una fecha y un monto mayor a 0');
+                return false;
+            }
+            return { fecha, monto, obs };
+        }
+    });
+
+    if (formValues) {
+        try {
+            const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+            
+            Swal.fire({
+                title: 'Registrando...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); },
+                background: '#0f172a', color: '#f8fafc'
+            });
+
+            const res = await fetch(backendBaseUrl + '/api/cuenta-corriente/efectivo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    proveedor_id: providerId,
+                    fecha_pago: formValues.fecha,
+                    monto_pago: formValues.monto,
+                    observaciones: formValues.obs
+                })
+            });
+            
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            Swal.fire({ icon: 'success', title: 'Pago Registrado', timer: 1500, showConfirmButton: false, background: '#0f172a', color: '#f8fafc' });
+            
+            setTimeout(() => {
+                window.openCuentaCorriente(providerId, providerName);
+            }, 1500);
+
+        } catch (error) {
+            Swal.fire({ icon: 'error', title: 'Error', text: error.message, background: '#0f172a', color: '#f8fafc' });
+        }
     }
 };
