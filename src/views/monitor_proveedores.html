@@ -2066,20 +2066,32 @@
                                   let arrowIcon = '';
                                   let deltaClass = 'bg-amber-500/20 border-amber-500/50 text-amber-400';
                                   let deltaText = 'Δ DELTA';
+                                  let deltaNumericStr = '';
                                   
                                   if (!isNaN(numCurrent) && !isNaN(numOld)) {
+                                      const deltaVal = numCurrent - numOld;
+                                      const deltaSign = deltaVal > 0 ? '+' : '';
+                                      // Formato básico amigable, ej: +789,56 o -789,56
+                                      deltaNumericStr = ` ${deltaSign}${deltaVal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
                                       if (numCurrent > numOld) {
                                           arrowIcon = '↑';
                                           deltaClass = 'bg-rose-500/20 border-rose-500/50 text-rose-400';
-                                          deltaText = 'AUMENTO';
+                                          deltaText = 'AUMENTO' + deltaNumericStr;
                                       } else if (numCurrent < numOld) {
                                           arrowIcon = '↓';
                                           deltaClass = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400';
-                                          deltaText = 'BAJA';
+                                          deltaText = 'BAJA' + deltaNumericStr;
                                       }
                                   }
                                   
-                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 line-through text-[9px] mr-1">${oldP}</span> <span class="text-amber-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] flex items-center gap-0.5 rounded border ${deltaClass} text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración paramétrica respecto a su base histórica.">${arrowIcon} ${deltaText}</div></div>`;
+                                  return `<div class="flex items-center gap-2">
+                                              <div class="flex flex-col leading-none justify-center">
+                                                  <span class="text-slate-500 line-through text-[8px] opacity-70 mb-0.5">${oldP}</span>
+                                                  <span class="text-slate-100 font-bold">${v}</span>
+                                              </div>
+                                              <div class="px-1.5 py-[1px] flex items-center gap-0.5 rounded border ${deltaClass} text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración respecto a su base histórica.">${arrowIcon} ${deltaText}</div>
+                                          </div>`;
                               }
                               if (isPrice && st === 'ALTA') {
                                   return `<div class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Apareció en esta ingesta por primera vez">NUEVO</div></div>`;
