@@ -577,6 +577,31 @@ const aiController = {
                             result.productos = result.productos.slice(0, maxFilas);
                         }
                     }
+                    // --- MOTOR MATEMÁTICO (Columnas Calculadas) ---
+                    if (customSchema && customSchema.calculated_columns && Array.isArray(customSchema.calculated_columns)) {
+                        result.productos.forEach(prod => {
+                            customSchema.calculated_columns.forEach(calc => {
+                                if (calc.formula) {
+                                    const parts = calc.formula.trim().split(/\s+/);
+                                    if (parts.length === 3) {
+                                        const valA = parseFloat(prod[parts[0]]);
+                                        const operator = parts[1];
+                                        const valB = parseFloat(prod[parts[2]]);
+                                        
+                                        if (!isNaN(valA) && !isNaN(valB)) {
+                                            let res = 0;
+                                            if (operator === '/') res = valB !== 0 ? valA / valB : 0;
+                                            else if (operator === '*') res = valA * valB;
+                                            else if (operator === '+') res = valA + valB;
+                                            else if (operator === '-') res = valA - valB;
+                                            prod[calc.field] = res;
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                        console.log(`[AI Controller - Motor Matemático] Se ejecutaron cálculos para ${customSchema.calculated_columns.length} columna(s) en ${result.productos.length} fila(s).`);
+                    }
                 }
                 // --- FIN FILTRO DE EXCLUSIÓN ---
 

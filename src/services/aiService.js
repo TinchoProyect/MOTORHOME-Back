@@ -740,8 +740,9 @@ ESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN 
         let priceMappingInstructions = `   - "precio_kilo": El precio unitario por cada kilo o unidad mínima (Float limpio, sin símbolos).\n   - "precio_unitario": El precio final total de la presentación o bulto cerrado (Float limpio, sin símbolos).\n   IMPORTANTE: Si la lista muestra dos columnas de precios, deduce lógicamente cuál es el precio por kilo y cuál es el precio final del bulto. Si solo hay un precio, asígnalo a precio_unitario y deja precio_kilo nulo.`;
 
         if (customSchema && customSchema.columns && Array.isArray(customSchema.columns)) {
-            priceMappingInstructions = customSchema.columns.map(c => `   - "${c.field}": (Float limpio, sin símbolos).`).join('\n');
-            customSchema.columns.forEach(c => {
+            const aiColumns = customSchema.columns.filter(c => !c.is_calculated);
+            priceMappingInstructions = aiColumns.map(c => `   - "${c.field}": (Float limpio, sin símbolos).`).join('\n');
+            aiColumns.forEach(c => {
                 productSchemaProperties[c.field] = { type: SchemaType.NUMBER, nullable: true, description: `(Float limpio, sin símbolos) ${c.field}` };
             });
         } else {

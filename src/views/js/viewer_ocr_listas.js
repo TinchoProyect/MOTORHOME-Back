@@ -360,22 +360,54 @@ function initOcrGrid(rowData, customSchema = null) {
     let priceColumns = [
         { field: 'precio_kilo', headerName: 'Precio x KG', editable: true, flex: 1,
           valueParser: params => Number(params.newValue),
-          valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' },
+          valueFormatter: params => params.value ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(Number(params.value)) : '$ 0,00' },
         { field: 'precio_unitario', headerName: 'Precio Final', editable: true, flex: 1,
           valueParser: params => Number(params.newValue),
-          valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00' }
+          valueFormatter: params => params.value ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(Number(params.value)) : '$ 0,00' }
     ];
 
     // Mapeo Dinámico si el proveedor definió columnas customizadas
     if (customSchema && customSchema.columns && Array.isArray(customSchema.columns)) {
-        priceColumns = customSchema.columns.map(c => ({
-            field: c.field,
-            headerName: c.headerName || c.field,
-            editable: true,
-            flex: 1,
-            valueParser: params => Number(params.newValue),
-            valueFormatter: params => params.value ? `$ ${Number(params.value).toFixed(2)}` : '$ 0.00'
-        }));
+        priceColumns = customSchema.columns.map(c => {
+            const isPrice = c.field.toLowerCase().includes('precio');
+            
+            return {
+                field: c.field,
+                headerName: c.headerName || c.field,
+                editable: true,
+                flex: 1,
+                valueParser: params => {
+                    const val = String(params.newValue).replace(/[^\d.,-]/g, '');
+                    if (!val) return 0;
+                    const lastDot = val.lastIndexOf('.');
+                    const lastComma = val.lastIndexOf(',');
+                    let floatVal = 0;
+                    if (lastDot > lastComma && lastComma !== -1) floatVal = parseFloat(val.replace(/,/g, ''));
+                    else if (lastComma > lastDot && lastDot !== -1) floatVal = parseFloat(val.replace(/\./g, '').replace(',', '.'));
+                    else floatVal = parseFloat(val.replace(/,/g, '.'));
+                    return isNaN(floatVal) ? 0 : floatVal;
+                },
+                valueFormatter: params => {
+                    const num = Number(params.value);
+                    if (isNaN(num) || num === 0 && !params.value) return isPrice ? '$ 0,00' : '0';
+                    
+                    if (isPrice) {
+                        return new Intl.NumberFormat('es-AR', { 
+                            style: 'currency', 
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        }).format(num);
+                    } else {
+                        // Magnitud física limpia
+                        return new Intl.NumberFormat('es-AR', { 
+                            minimumFractionDigits: 0, 
+                            maximumFractionDigits: 4 
+                        }).format(num);
+                    }
+                }
+            };
+        });
     }
 
     const gridOptions = {
