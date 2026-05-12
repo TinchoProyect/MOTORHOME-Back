@@ -640,3 +640,139 @@ function initOcrSplitters() {
 document.addEventListener("DOMContentLoaded", initOcrSplitters);
 // Llama directo por si se inyecta dinámicamente
 initOcrSplitters();
+
+// ==========================
+// MOTOR DE FÓRMULAS DINÁMICAS (JIT MATH ENGINE)
+// ==========================
+
+window.openCalculatedFieldModal = function() {
+    if (!window.ocrGridInstance) {
+        if (window.Swal) Swal.fire({ icon: 'warning', title: 'Grilla Vacía', text: 'No hay datos extraídos para aplicar fórmulas.', background: '#0f172a', color: '#fff' });
+        return;
+    }
+
+    // Poblar el Select de Columnas Base
+    const select = document.getElementById('calcFieldBase');
+    select.innerHTML = '<option value="">-- Seleccione Columna --</option>';
+    
+    // Obtenemos las columnas actuales de la grilla (evitando las de sistema)
+    const cols = window.ocrGridInstance.getColumnDefs();
+    cols.forEach(c => {
+        if (!['sector', 'codigo', 'descripcion', 'presentacion'].includes(c.field)) {
+            const option = document.createElement('option');
+            option.value = c.field;
+            option.textContent = c.headerName || c.field;
+            select.appendChild(option);
+        }
+    });
+
+    document.getElementById('calcFieldName').value = '';
+    document.getElementById('calcFieldFormula').value = '';
+    document.getElementById('ocrCalcFieldModal').classList.remove('hidden');
+};
+
+window.closeCalculatedFieldModal = function() {
+    document.getElementById('ocrCalcFieldModal').classList.add('hidden');
+};
+
+window.applyCalculatedField = function() {
+    const name = document.getElementById('calcFieldName').value.trim();
+    const baseCol = document.getElementById('calcFieldBase').value;
+    const formulaStr = document.getElementById('calcFieldFormula').value.trim();
+
+    if (!name || !baseCol || !formulaStr) {
+        if (window.Swal) Swal.fire({ icon: 'error', title: 'Faltan Datos', text: 'Debe completar todos los campos.', background: '#0f172a', color: '#fff' });
+        return;
+    }
+
+    // Sanitización y creación segura del evaluador (JIT)
+    let safeFormula;
+    try {
+        // Reemplazamos BASE por la variable para la evaluación.
+        // Validamos que la fórmula solo contenga caracteres matemáticos y la palabra BASE.
+        const cleanFormula = formulaStr.replace(/BASE/g, 'BASE').replace(/[^\d\.\+\-\*\/\(\)\sBASE]/g, '');
+        safeFormula = new Function('BASE', `return ${cleanFormula};`);
+        
+        // Test rápido de sanidad
+        safeFormula(10);
+    } catch (e) {
+        if (window.Swal) Swal.fire({ icon: 'error', title: 'Fórmula Inválida', text: 'La sintaxis matemática es incorrecta.', background: '#0f172a', color: '#fff' });
+        return;
+    }
+
+    // 1. Añadir nueva Columna Dinámica a la configuración de la grilla
+    const fieldId = name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now();
+    let currentCols = window.ocrGridInstance.getColumnDefs();
+    
+    const isPrice = name.toLowerCase().includes('precio');
+    
+    currentCols.push({
+        field: fieldId,
+        headerName: name + ' (Calc)',
+        editable: true,
+        flex: 1,
+        valueParser: params => {
+            const val = String(params.newValue).replace(/[^\d.,-]/g, '');
+            if (!val) return 0;
+            const lastDot = val.lastIndexOf('.');
+            const lastComma = val.lastIndexOf(',');
+            let floatVal = 0;
+            if (lastDot > lastComma && lastComma !== -1) floatVal = parseFloat(val.replace(/,/g, ''));
+            else if (lastComma > lastDot && lastDot !== -1) floatVal = parseFloat(val.replace(/\./g, '').replace(',', '.'));
+            else floatVal = parseFloat(val.replace(/,/g, '.'));
+            return isNaN(floatVal) ? 0 : floatVal;
+        },
+        valueFormatter: params => {
+            const num = Number(params.value);
+            if (isNaN(num) || num === 0 && !params.value) return isPrice ? '$ 0,00' : '0';
+            
+            if (isPrice) {
+                return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+            } else {
+                return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 4 }).format(num);
+            }
+        }
+    });
+    
+    if (typeof window.ocrGridInstance.setGridOption === 'function') {
+        window.ocrGridInstance.setGridOption('columnDefs', currentCols);
+    } else if (typeof window.ocrGridInstance.updateGridOptions === 'function') {
+        window.ocrGridInstance.updateGridOptions({ columnDefs: currentCols });
+    } else if (typeof window.ocrGridInstance.setColumnDefs === 'function') {
+        window.ocrGridInstance.setColumnDefs(currentCols);
+    } else if (window.ocrGridInstance.api && typeof window.ocrGridInstance.api.setColumnDefs === 'function') {
+        window.ocrGridInstance.api.setColumnDefs(currentCols);
+    } else {
+        console.warn('LAMDA [AG-Grid] fallback total: reinicializando grilla para aplicar columnas');
+    }
+
+    // 2. Aplicar la fórmula a todas las filas
+    let rowData = [];
+    window.ocrGridInstance.forEachNode(node => {
+        let baseValue = parseFloat(node.data[baseCol]);
+        if (isNaN(baseValue)) baseValue = 0;
+        
+        let calcValue = 0;
+        try {
+            calcValue = safeFormula(baseValue);
+            if (isNaN(calcValue) || !isFinite(calcValue)) calcValue = 0;
+        } catch(e) { calcValue = 0; }
+        
+        node.data[fieldId] = calcValue;
+        rowData.push(node.data);
+    });
+
+    if (typeof window.ocrGridInstance.setGridOption === 'function') {
+        window.ocrGridInstance.setGridOption('rowData', rowData);
+    } else if (typeof window.ocrGridInstance.updateGridOptions === 'function') {
+        window.ocrGridInstance.updateGridOptions({ rowData: rowData });
+    } else if (typeof window.ocrGridInstance.setRowData === 'function') {
+        window.ocrGridInstance.setRowData(rowData);
+    } else if (window.ocrGridInstance.api && typeof window.ocrGridInstance.api.setRowData === 'function') {
+        window.ocrGridInstance.api.setRowData(rowData);
+    }
+    
+    window.closeCalculatedFieldModal();
+    
+    if (window.Swal) Swal.fire({ icon: 'success', title: 'Fórmula Inyectada', toast: true, position: 'bottom-end', showConfirmButton: false, timer: 2000, background: '#0f172a', color: '#fff' });
+};
