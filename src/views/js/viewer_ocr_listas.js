@@ -208,7 +208,7 @@ function renderOcrIndex(secciones) {
                 <span class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">${secName || 'Desconocido'}</span>
                 <span class="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">${sec.filas_estimadas || '?'} filas</span>
             </div>
-            <button data-section="${secName}" onclick="window.extractOcrSection('${safeName}', this)" class="w-full mt-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2 extract-section-btn">
+            <button data-section="${secName}" data-filas="${sec.filas_estimadas || 0}" onclick="window.extractOcrSection('${safeName}', this)" class="w-full mt-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded transition-all text-[10px] font-bold flex items-center justify-center gap-2 extract-section-btn">
                 <i data-lucide="scan-text" class="w-3 h-3"></i> Extraer Sección
             </button>
         `;
@@ -273,6 +273,8 @@ window.processFullOcrSequence = async function() {
 window.extractOcrSection = async function(sectionName, btnEl) {
     if (!sectionName) return;
     
+    const filasEstimadas = btnEl ? parseInt(btnEl.getAttribute('data-filas')) || 0 : 0;
+    
     // UI Feedback
     const originalHtml = btnEl.innerHTML;
     btnEl.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Extrayendo...';
@@ -305,7 +307,8 @@ window.extractOcrSection = async function(sectionName, btnEl) {
                 fileId: window.currentOcrFileId, 
                 fileName: window.currentOcrFileName, 
                 action: 'section',
-                targetSection: sectionName
+                targetSection: sectionName,
+                filasEstimadas: filasEstimadas
             })
         });
         

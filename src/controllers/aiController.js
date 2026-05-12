@@ -476,7 +476,7 @@ const aiController = {
      */
     executeOcrPrices: async (req, res) => {
         try {
-            const { fileId, fileName, providerId, action, targetSection } = req.body;
+            const { fileId, fileName, providerId, action, targetSection, filasEstimadas } = req.body;
             if (!fileId || !fileName || !action) {
                 return res.status(400).json({ error: "Faltan parámetros: fileId, fileName o action" });
             }
@@ -529,7 +529,57 @@ const aiController = {
                 if (!targetSection) return res.status(400).json({ error: "Falta targetSection" });
                 
                 // Fase 2: Extracción Quirúrgica
-                const result = await aiService.executePriceListOCRSection(dataUrl, mimeType, targetSection, customSchema);
+                const result = await aiService.executePriceListOCRSection(dataUrl, mimeType, targetSection, customSchema, filasEstimadas);
+                
+                // --- INICIO FILTRO DE EXCLUSIÓN TEMPRANA (ROLLBACK PREVENTIVO) ---
+                if (result && result.productos && Array.isArray(result.productos)) {
+                    const originalCount = result.productos.length;
+                    
+                    result.productos = result.productos.filter(prod => {
+                        let hasValidPrice = false;
+                        
+                        // Recorremos todas las claves buscando indicadores de precio
+                        for (const key in prod) {
+                            if (key.startsWith('precio_') || key.toLowerCase().includes('precio')) {
+                                // Sanitizamos y parseamos para evitar floats falsos o ceros ("0", "$0", "")
+                                const valStr = String(prod[key]).replace(/[^\d.,-]/g, '');
+                                let floatVal = 0;
+                                
+                                if (valStr) {
+                                    const lastDot = valStr.lastIndexOf('.');
+                                    const lastComma = valStr.lastIndexOf(',');
+                                    
+                                    if (lastDot > lastComma && lastComma !== -1) {
+                                        floatVal = parseFloat(valStr.replace(/,/g, ''));
+                                    } else if (lastComma > lastDot && lastDot !== -1) {
+                                        floatVal = parseFloat(valStr.replace(/\./g, '').replace(',', '.'));
+                                    } else {
+                                        floatVal = parseFloat(valStr.replace(/,/g, '.'));
+                                    }
+                                }
+                                
+                                if (!isNaN(floatVal) && floatVal > 0) {
+                                    hasValidPrice = true;
+                                    break;
+                                }
+                            }
+                        }
+                        return hasValidPrice;
+                    });
+                    
+                    console.log(`[AI Controller - Vigilancia OCR] Filas originales: ${originalCount} | Filas purgadas (Sin Precio): ${originalCount - result.productos.length} | Filas viables: ${result.productos.length}`);
+                    
+                    // --- BARRERA DE CONTENCIÓN (Límite Estricto) ---
+                    const maxFilas = parseInt(filasEstimadas, 10);
+                    if (!isNaN(maxFilas) && maxFilas > 0) {
+                        if (result.productos.length > maxFilas) {
+                            console.warn(`[AI Controller - Vigilancia OCR] ⚠️ ALERTA DE FUGA SEMÁNTICA: El modelo devolvió ${result.productos.length} filas pero el límite de la Fase 1 es ${maxFilas}. Truncando excedente para evitar contaminación cruzada.`);
+                            result.productos = result.productos.slice(0, maxFilas);
+                        }
+                    }
+                }
+                // --- FIN FILTRO DE EXCLUSIÓN ---
+
                 return res.status(200).json({ success: true, data: result });
             } 
             else {

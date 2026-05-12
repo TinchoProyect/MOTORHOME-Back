@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
 
 // Inicializar Google Generative AI con el modelo preferido
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
@@ -667,7 +667,7 @@ ESTRUCTURA JSON REQUERIDA:
 
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-flash", 
-            generationConfig: { temperature: 0.1, maxOutputTokens: 2048 } 
+            generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } 
         });
 
         let systemInstruction = `Eres un extractor de estructura de documentos ("Chofer OCR Indexador").
@@ -726,7 +726,7 @@ ESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN 
         }
     },
 
-    executePriceListOCRSection: async (base64Data, mimeType, targetSection, customSchema = null) => {
+    executePriceListOCRSection: async (base64Data, mimeType, targetSection, customSchema = null, filasEstimadas = 0) => {
         if (!genAI) throw new Error("Gemini API no inicializada");
 
         console.log(`[AI Service - OCR] ⏱️ Ejecutando Fase 2: Extracción de Sección [${targetSection}]...`);
@@ -735,23 +735,51 @@ ESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN 
             base64Data = base64Data.split(',')[1];
         }
 
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash", 
-            generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } 
-        });
-
-        // Configuración de Mapeo Dinámico (Retrocompatibilidad o Custom Schema)
-        let priceMappingInstructions = `   - "precio_kilo": El precio unitario por cada kilo o unidad mínima (Float limpio, sin símbolos).
-   - "precio_unitario": El precio final total de la presentación o bulto cerrado (Float limpio, sin símbolos).
-   
-   IMPORTANTE: Si la lista muestra dos columnas de precios, deduce lógicamente cuál es el precio por kilo y cuál es el precio final del bulto (precio_kilo * cantidad = precio_unitario). Si solo hay un precio, asígnalo a precio_unitario y deja precio_kilo en 0.0.`;
-
-        let jsonFields = `      "precio_kilo": 0.0,\n      "precio_unitario": 0.0`;
+        // Configuración de Mapeo Dinámico e Inyección de Esquema (Schema-Injection)
+        let productSchemaProperties = {};
+        let priceMappingInstructions = `   - "precio_kilo": El precio unitario por cada kilo o unidad mínima (Float limpio, sin símbolos).\n   - "precio_unitario": El precio final total de la presentación o bulto cerrado (Float limpio, sin símbolos).\n   IMPORTANTE: Si la lista muestra dos columnas de precios, deduce lógicamente cuál es el precio por kilo y cuál es el precio final del bulto. Si solo hay un precio, asígnalo a precio_unitario y deja precio_kilo nulo.`;
 
         if (customSchema && customSchema.columns && Array.isArray(customSchema.columns)) {
             priceMappingInstructions = customSchema.columns.map(c => `   - "${c.field}": (Float limpio, sin símbolos).`).join('\n');
-            jsonFields = customSchema.columns.map(c => `      "${c.field}": 0.0`).join(',\n');
+            customSchema.columns.forEach(c => {
+                productSchemaProperties[c.field] = { type: SchemaType.NUMBER, nullable: true, description: `(Float limpio, sin símbolos) ${c.field}` };
+            });
+        } else {
+            productSchemaProperties['precio_kilo'] = { type: SchemaType.NUMBER, nullable: true, description: "Precio por kilo" };
+            productSchemaProperties['precio_unitario'] = { type: SchemaType.NUMBER, nullable: true, description: "Precio final" };
         }
+
+        const responseSchema = {
+            type: SchemaType.OBJECT,
+            properties: {
+                productos: {
+                    type: SchemaType.ARRAY,
+                    description: "Lista de productos extraídos",
+                    items: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                            sector: { type: SchemaType.STRING, description: `Debe ser SIEMPRE "${targetSection}"` },
+                            codigo: { type: SchemaType.STRING, nullable: true, description: "Código interno o SKU" },
+                            descripcion: { type: SchemaType.STRING, description: "Nombre o descripción del artículo" },
+                            presentacion: { type: SchemaType.STRING, nullable: true, description: "Detalle de peso, empaque o caja" },
+                            ...productSchemaProperties
+                        },
+                        required: ["sector", "descripcion"]
+                    }
+                }
+            },
+            required: ["productos"]
+        };
+
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-pro", 
+            generationConfig: { 
+                temperature: 0.1, 
+                maxOutputTokens: 8192,
+                responseMimeType: "application/json",
+                responseSchema: responseSchema
+            } 
+        });
 
         let systemInstruction = `Eres un extractor de datos de altísima precisión ("Chofer OCR Quirúrgico").
 Se te provee una imagen de una lista de precios de un proveedor.
@@ -759,23 +787,29 @@ Tu tarea es ubicar visualmente el bloque correspondiente a la sección o categor
 
 REGLAS ESTRICTAS DE EXTRACCIÓN (INNEGOCIABLES):
 1. ENFOQUE QUIRÚRGICO: Ignora todos los productos de otras secciones. Concéntrate exclusivamente en extraer TODOS los renglones debajo del título "${targetSection}" hasta llegar al siguiente título de sección.
-2. DIRECTIVA ANTI-PEREZA (INNEGOCIABLE): Tienes ESTRICTAMENTE PROHIBIDO truncar o abortar la transcripción de forma prematura. Debes recorrer visualmente el bloque renglón por renglón hasta el final del mismo.
-3. EXTRACCIÓN EXHAUSTIVA DE PRECIOS: INSTRUCCIÓN CRÍTICA: Debes extraer ABSOLUTAMENTE TODOS los renglones que contengan un precio numérico, incluso si la descripción parece incompleta o si hay baches/espacios en blanco entre renglones. La omisión de una sola fila válida con precio será penalizada. NO agrupes ni resumas. Extrae el bloque completo, cueste lo que cueste.
-3. FIDELIDAD NUMÉRICA (FORMATO ARGENTINO): Los precios pueden tener formato argentino (ej. "37.500,00" o "37.500").
+2. LÍMITE DE CORTE ESTRICTO (¡MUY IMPORTANTE!): Detén la extracción inmediatamente apenas encuentres el próximo título de sección, categoría o un bloque visualmente distinto. NO invadas ni transcribas renglones que pertenezcan a los sectores que siguen a "${targetSection}". Tienes terminantemente prohibido arrastrar productos de otras categorías.
+3. DIRECTIVA ANTI-PEREZA (INNEGOCIABLE): Tienes ESTRICTAMENTE PROHIBIDO truncar o abortar la transcripción de forma prematura MIENTRAS estés dentro de la sección "${targetSection}". Debes recorrer visualmente el bloque renglón por renglón hasta el final del mismo.
+4. EXTRACCIÓN TOTAL (ANTI-OMISIÓN): Extrae TODOS los renglones del bloque, tengan o no tengan precio. No omitas ningún artículo.
+5. DETERMINISMO NUMÉRICO (ANTI-ALUCINACIÓN): Si un artículo NO posee un precio explícito impreso en la imagen, TIENES ESTRICTAMENTE PROHIBIDO inventarlo, inferirlo o deducirlo. Debes devolver OBLIGATORIAMENTE el valor null en los campos de precio. ¡Nunca inventes un dato numérico!
+6. FIDELIDAD NUMÉRICA (FORMATO ARGENTINO): Los precios pueden tener formato argentino (ej. "37.500,00" o "37.500").
    - Si ves "37.500", significa treinta y siete mil quinientos. DEBES transformarlo al flotante: 37500.0.
    - NO asumas que el punto es decimal si lógicamente es un separador de miles.
-4. MAPEADO DE COLUMNAS: Ajusta las columnas visuales a las siguientes claves:
+7. MAPEADO DE COLUMNAS: Ajusta las columnas visuales a las siguientes claves:
    - "sector": Debes forzar que el valor de esta clave sea SIEMPRE "${targetSection}" para todos los productos de esta extracción.
    - "codigo": Código interno o SKU (si no hay, string vacío "").
    - "descripcion": El nombre o descripción del artículo.
    - "presentacion": Todo detalle de peso, empaque o caja (ej: "10 KG"). Búscalo en columnas anexas como 'PESO'.
+8. CONCIENCIA DE FIN DE LIENZO (ANTI-AGOTAMIENTO): Mantén el rigor de evaluación sin importar la ubicación del bloque en la imagen. Si el bloque está al final del documento, NO relajes las reglas. Extrae estrictamente la realidad visual y aplica null si no hay precio.
 ${priceMappingInstructions}`;
 
         if (customSchema && customSchema.prompt) {
             systemInstruction += `\n\nDIRECTIVAS EXCLUSIVAS DEL PROVEEDOR (PRIORIDAD MÁXIMA):\n${customSchema.prompt}\n`;
         }
 
-        systemInstruction += `\n\nESTRUCTURA JSON REQUERIDA (DEVUELVE ESTRICTAMENTE UN BLOQUE DE CÓDIGO MARKDOWN CON EL JSON, SIN EXPLICACIONES ADICIONALES):\n\`\`\`json\n{\n  "productos": [\n    {\n      "sector": "${targetSection}",\n      "codigo": "...",\n      "descripcion": "...",\n      "presentacion": "...",\n${jsonFields}\n    }\n  ]\n}\n\`\`\``;
+        const maxFilas = parseInt(filasEstimadas, 10);
+        if (!isNaN(maxFilas) && maxFilas > 0) {
+            systemInstruction += `\n\n8. BARRERA DE CONTENCIÓN VINCULANTE (INNEGOCIABLE): El Selector de Bloques ha determinado que la sección "${targetSection}" posee un TOPE MÁXIMO de ${maxFilas} renglones. Extrae hasta ${maxFilas} productos y luego detente. Tienes ESTRICTAMENTE PROHIBIDO devolver más de ${maxFilas} productos.\n`;
+        }
 
         const prompt = [
             systemInstruction,
