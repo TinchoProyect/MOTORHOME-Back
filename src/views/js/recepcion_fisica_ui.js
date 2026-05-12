@@ -176,7 +176,7 @@ const renderRecItems = () => {
     tbody.innerHTML = '';
     
     if (recActiveOrderItems.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No hay ítems en este pedido.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-500">No hay ítems en este pedido.</td></tr>';
         document.getElementById('recBottomBar').style.display = 'none';
         return;
     }
@@ -199,9 +199,14 @@ const renderRecItems = () => {
             statusBadge = '<span class="ml-2 text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">COMPLETO</span>';
         }
 
+        const formatMoney = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val);
+
         tr.innerHTML = `
             <td class="p-3 font-mono text-slate-400">${item.producto_codigo}</td>
             <td class="p-3 font-medium text-slate-300">${item.producto_descripcion} ${statusBadge}</td>
+            <td class="p-3 text-center text-slate-400 text-xs uppercase tracking-wider">${item.unidad_ref || '-'}</td>
+            <td class="p-3 text-center text-slate-400 font-mono text-xs">${item.factor_conversion > 1 ? `x${item.factor_conversion} KG` : '1.00'}</td>
+            <td class="p-3 text-center text-emerald-400 font-mono text-xs">${formatMoney(item.valor_unitario_ref || 0)}</td>
             <td class="p-3 text-center text-slate-300">${pedida}</td>
             <td class="p-3 text-center text-emerald-400 font-mono">${previa}</td>
             <td class="p-3 text-center">

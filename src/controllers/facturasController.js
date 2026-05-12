@@ -26,24 +26,34 @@ function levenshtein(a, b) {
 
 function areWordsSimilar(w1, w2) {
     if (w1 === w2) return true;
-    if (w1.length <= 2 || w2.length <= 2) {
-        if (w1.length === 1 && w2.startsWith(w1)) return true;
-        if (w2.length === 1 && w1.startsWith(w2)) return true;
-        return false;
+    
+    // Quick check for abbreviation
+    if (w1.length === 1 && w2.startsWith(w1)) return true;
+    if (w2.length === 1 && w1.startsWith(w2)) return true;
+    
+    // Solo permitir match por subcadena si ambas palabras tienen 3 o más letras
+    // Esto evita que letras sueltas (ej. "a", "s", "r") actúen como comodines salvajes
+    if (w1.length >= 3 && w2.length >= 3) {
+        if (w1.includes(w2) || w2.includes(w1)) return true;
     }
-    if (w1.includes(w2) || w2.includes(w1)) return true;
     
     const dist = levenshtein(w1, w2);
     const maxLen = Math.max(w1.length, w2.length);
-    if (dist <= 1 && maxLen <= 5) return true;
-    if (dist <= 2 && maxLen > 5) return true;
+    
+    if (maxLen <= 3 && dist <= 1) return true; // Permitir ws y w3s
+    if (maxLen > 3 && maxLen <= 5 && dist <= 1) return true;
+    if (maxLen > 5 && dist <= 2) return true;
     return false;
 }
 
 function calculateSimilarityScore(descFactura, descPedido) {
     if (!descFactura || !descPedido) return 0;
-    const s1 = descFactura.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0);
-    const s2 = descPedido.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 0);
+    
+    // Stop words y unidades logísticas que generan ruido semántico
+    const STOP_WORDS = new Set(['de', 'sin', 'con', 'y', 'el', 'la', 'los', 'las', 'en', 'por', 'para', 'x', 'kg', 'gr', 'g', 'ml', 'l', 'cm', 'mm', 'un', 'una', 'caja', 'bulto', 'bultos', 'kilo', 'kilos', 'litro', 'litros']);
+
+    const s1 = descFactura.toLowerCase().replace(/[^a-záéíóúñ0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length > 0 && !STOP_WORDS.has(w));
+    const s2 = descPedido.toLowerCase().replace(/[^a-záéíóúñ0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length > 0 && !STOP_WORDS.has(w));
     
     if (s1.length === 0 || s2.length === 0) return 0;
 
@@ -486,13 +496,14 @@ const facturasController = {
 
                 // Find matching item in Pedido
                 // Strategy: exact match by code, or fallback to token overlap heuristic
-                let match = pedidoItems.find(pi => (pi.producto_codigo || '').toLowerCase().trim() === codigoF && codigoF !== '');
+                let match = pedidoItems.find(pi => !pi._matched && (pi.producto_codigo || '').toLowerCase().trim() === codigoF && codigoF !== '');
                 
                 if (!match) {
                     let bestScore = 0;
                     let bestCandidate = null;
                     
                     for (const pi of pedidoItems) {
+                        if (pi._matched) continue;
                         const piDesc = (pi.producto_descripcion || '').toLowerCase().trim();
                         if (piDesc === descF) {
                             bestCandidate = pi;
@@ -501,6 +512,9 @@ const facturasController = {
                         }
                         
                         const score = calculateSimilarityScore(descF, piDesc);
+                        
+                        console.log(`[VIGÍA MATCHMAKING] Comparando: [Factura] "${descF}" vs [Pedido] "${piDesc}" -> Score: ${score}`);
+                        
                         if (score > bestScore) {
                             bestScore = score;
                             bestCandidate = pi;
@@ -526,28 +540,64 @@ const facturasController = {
                     continue;
                 }
 
+                match._matched = true; // Sacar el ítem del pool para evitar robos de identidad
+
                 const cantR = recibidosMap[match.id] || 0;
                 let precioP = parseFloat(match.valor_unitario_ref || 0);
 
-                // 5b. Aplicar Factor de Conversión
+                // 5b. Normalización Matemática Inteligente
                 const matchCodigo = String(match.producto_codigo || '').trim().toLowerCase();
                 const factorConversion = masterCatalogMap.get(matchCodigo) || 1;
                 
-                // El precio pactado viene por Kilo/Unidad base, lo multiplicamos por la presentación de la caja
-                if (factorConversion !== 1) {
-                    precioP = parseFloat((precioP * factorConversion).toFixed(2));
+                let normalizedCantR = cantR;
+                let normalizedPrecioP = precioP;
+                let isAsymmetricUnit = false;
+
+                // Determinamos si hay asimetría empírica cruzando totales.
+                const ratioQty = cantR > 0 ? cantF / cantR : 0;
+                const ratioPrice = precioF > 0 ? precioP / precioF : 0;
+                
+                // Si la factura y el pedido tienen cantidades radicalmente distintas pero el total financiero cuadraría
+                if (ratioQty > 1.2 && ratioPrice > 1.2 && Math.abs(ratioQty - ratioPrice) / ratioPrice < 0.20) {
+                    isAsymmetricUnit = true;
+                } else if (factorConversion > 1.1 && ratioQty >= factorConversion * 0.8 && ratioQty <= factorConversion * 1.2) {
+                    isAsymmetricUnit = true;
                 }
 
+                if (isAsymmetricUnit) {
+                    // Normalizamos SOLO la cantidad del Pedido (ej. Bultos) a la unidad de Factura (ej. Kilos).
+                    // El precio base del Pedido (precioP) YA está guardado históricamente en la Unidad Base (Kilos),
+                    // por lo tanto, NO se debe dividir ni multiplicar.
+                    const factorToUse = factorConversion > 1.1 ? factorConversion : ratioPrice;
+                    normalizedCantR = cantR * factorToUse;
+                    // normalizedPrecioP se mantiene intacto = precioP
+                }
+
+                console.log(`\n======================================================`);
+                console.log(`[VIGÍA MATEMÁTICO] Estado Pre-Delta para Artículo: ${descF}`);
+                console.log(`- Factura: CantF=${cantF}, PrecioF=${precioF}`);
+                console.log(`- Pedido (Crudo): CantR=${cantR}, PrecioP=${precioP}, factorConversion=${factorConversion}`);
+                console.log(`- Asimetría Detectada: ${isAsymmetricUnit}`);
+                console.log(`- Pedido (Normalizado): normalizedCantR=${normalizedCantR}, normalizedPrecioP=${normalizedPrecioP}`);
+                console.log(`======================================================\n`);
+
                 // Cálculo de Deltas
-                const deltaMonto = parseFloat((precioF - precioP).toFixed(2));
+                const deltaMonto = parseFloat((precioF - normalizedPrecioP).toFixed(2));
                 let deltaPorcentaje = 0;
-                if (precioP > 0) {
-                    deltaPorcentaje = parseFloat(((deltaMonto / precioP) * 100).toFixed(2));
+                if (normalizedPrecioP > 0) {
+                    deltaPorcentaje = parseFloat(((deltaMonto / normalizedPrecioP) * 100).toFixed(2));
                 }
 
                 const desvios = [];
-                if (cantF > cantR) desvios.push(`Faltante Físico: Cobran ${cantF} pero se recibió ${cantR}`);
-                if (Math.abs(deltaMonto) > 25.0) desvios.push(`Desvío Precio: Facturado a $${precioF} (Pactado: $${precioP})`);
+                // Faltante Físico: Tolerancia de 3% para variaciones de peso (catch-weight)
+                if (cantF > normalizedCantR * 1.03) {
+                    desvios.push(`Faltante Físico: Cobran ${cantF.toFixed(2)} pero se recibió el equivalente a ${normalizedCantR.toFixed(2)}`);
+                }
+                
+                // Desvío Precio: Tolerancia financiera de $5.00
+                if (Math.abs(deltaMonto) > 5.0) {
+                    desvios.push(`Desvío Precio: Facturado a $${precioF.toFixed(2)} (Pactado Equiv: $${normalizedPrecioP.toFixed(2)})`);
+                }
 
                 if (desvios.length > 0) totalDesvios++;
 
@@ -559,9 +609,9 @@ const facturasController = {
                         descripcion: match.producto_descripcion,
                         precio_unitario_base: parseFloat(match.valor_unitario_ref || 0),
                         factor_conversion: factorConversion,
-                        precio_unitario: precioP // Ya convertido
+                        precio_unitario: normalizedPrecioP
                     },
-                    recibido: cantR,
+                    recibido: normalizedCantR, // Reportamos cantidad normalizada para no asustar en UI
                     delta_monto: deltaMonto,
                     delta_porcentaje: deltaPorcentaje,
                     desvios: desvios

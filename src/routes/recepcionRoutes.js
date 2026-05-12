@@ -53,11 +53,68 @@ router.get('/pedido/:pedidoId/items', async (req, res) => {
             historyMap[r.pedido_item_id] += Number(r.cantidad_recibida);
         });
 
+        // Obtenemos el proveedor del pedido para consultar la tabla maestra operativa
+        const { data: pedidoCb, error: errPed } = await supabase
+            .from('pedidos_b2b_cabecera')
+            .select('proveedor_id')
+            .eq('id', pedidoId)
+            .single();
+
+        let factorMap = {};
+        if (!errPed && pedidoCb) {
+            const { data: masterData, error: errMaster } = await supabase
+                .from('tabla_maestra_operativa')
+                .select('datos_maestros')
+                .eq('proveedor_id', pedidoCb.proveedor_id);
+
+            if (!errMaster && masterData) {
+                masterData.forEach(row => {
+                    const dm = row.datos_maestros || {};
+                    let codigo = dm.codigo || dm['código'] || dm.sku || dm.SKU;
+                    if (!codigo) {
+                        for (let k in dm) {
+                            if (k.toLowerCase().includes('codigo') || k.toLowerCase().includes('código')) {
+                                codigo = dm[k]; break;
+                            }
+                        }
+                    }
+                    if (codigo) {
+                        let factor = 1;
+                        let cantBult = 1;
+                        let cantValor = 1;
+
+                        const keyBult = Object.keys(dm).find(k => k.toLowerCase() === 'cant_bult' || k.toLowerCase() === 'cant_bulto');
+                        if (keyBult) cantBult = parseFloat(String(dm[keyBult]).replace(',', '.')) || 1;
+
+                        const keyValor = Object.keys(dm).find(k => k.toLowerCase() === 'cant_valor' || k.toLowerCase() === 'cant_unidad');
+                        if (keyValor) cantValor = parseFloat(String(dm[keyValor]).replace(',', '.')) || 1;
+
+                        factor = cantBult * cantValor;
+
+                        if (factor === 1) {
+                            for (let k in dm) {
+                                const kt = k.toLowerCase();
+                                if (kt.includes('presentacion') || kt.includes('presentación') || kt === 'peso') {
+                                    const val = parseFloat(String(dm[k]).replace(',', '.'));
+                                    if (!isNaN(val) && val > 0) { factor = val; break; }
+                                }
+                            }
+                        }
+                        factorMap[String(codigo).trim().toLowerCase()] = factor;
+                    }
+                });
+            }
+        }
+
         // Combinar datos
-        const enrichedItems = items.map(item => ({
-            ...item,
-            cantidad_previa_recibida: historyMap[item.id] || 0
-        }));
+        const enrichedItems = items.map(item => {
+            const cod = String(item.producto_codigo).trim().toLowerCase();
+            return {
+                ...item,
+                cantidad_previa_recibida: historyMap[item.id] || 0,
+                factor_conversion: factorMap[cod] || 1
+            };
+        });
 
         res.json({ success: true, data: enrichedItems });
     } catch (err) {
