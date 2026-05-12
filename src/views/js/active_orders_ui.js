@@ -621,17 +621,21 @@ window.purgeTestOrdersB2B = async function() {
     const idsToPurge = Array.from(checkboxes).map(cb => cb.value);
     
     const result = window.Swal ? await Swal.fire({
-        title: 'Purga Selectiva',
-        text: `¿Confirmás la destrucción absoluta de ${idsToPurge.length} pedido(s)? Sus ítems serán eliminados en cascada de la base maestra.`,
-        icon: 'warning',
+        title: 'Gestión de Pedidos Activos',
+        text: `Has seleccionado ${idsToPurge.length} pedido(s). ¿Qué acción deseas realizar?`,
+        icon: 'question',
         showCancelButton: true,
+        showDenyButton: true,
         confirmButtonColor: '#ef4444',
+        denyButtonColor: '#3b82f6',
         cancelButtonColor: '#334155',
-        confirmButtonText: 'Sí, Pulverizar Registros',
+        confirmButtonText: '<i data-lucide="trash-2" class="w-4 h-4 mr-1 inline"></i> Destrucción Total',
+        denyButtonText: '<i data-lucide="rotate-ccw" class="w-4 h-4 mr-1 inline"></i> Retorno a Gestión',
         cancelButtonText: 'Cancelar',
         background: '#0f172a',
-        color: '#f8fafc'
-    }) : { isConfirmed: confirm(`¿Purgar ${idsToPurge.length} elementos?`) };
+        color: '#f8fafc',
+        customClass: { denyButton: 'order-3', cancelButton: 'order-2', confirmButton: 'order-1' }
+    }) : { isConfirmed: confirm(`¿Destruir ${idsToPurge.length} elementos?`) };
     
     if (result.isConfirmed) {
         if(window.Swal) Swal.fire({ title: 'Aniquilando...', background: '#0f172a', color: '#f8fafc', didOpen: () => Swal.showLoading() });
@@ -664,6 +668,51 @@ window.purgeTestOrdersB2B = async function() {
                     background: '#0f172a', color: '#ef4444'
                 });
             } else { alert("Fallo purga: " + e.message); }
+        }
+    } else if (result.isDenied) {
+        // Lógica de Rollback: Retornar a Gestión
+        if(window.Swal) Swal.fire({ title: 'Retornando a Gestión...', background: '#0f172a', color: '#f8fafc', didOpen: () => Swal.showLoading() });
+        
+        try {
+            window.b2bData = window.b2bData || {};
+            let provId = null;
+            
+            idsToPurge.forEach(id => {
+                const order = window.activeOrdersCache.find(o => o.id === id);
+                if(order) {
+                    if(!provId) provId = order.proveedor_id;
+                    if(order.pedidos_b2b_items) {
+                        order.pedidos_b2b_items.forEach(item => {
+                            window.b2bData[item.producto_codigo] = (window.b2bData[item.producto_codigo] || 0) + item.cantidad;
+                        });
+                    }
+                }
+            });
+            
+            // Destruir los pedidos de la BD de forma silenciosa para completar el rollback
+            const response = await fetch('http://localhost:5655/api/b2b/pedidos/purga', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: idsToPurge })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'Fallo al purgar pedidos en rollback');
+            
+            if (provId) window.b2bProviderId = provId;
+            
+            if(window.Swal) Swal.close();
+            
+            window.loadActiveOrders();
+            
+            if (window.openB2BCatalog) {
+                window.openB2BCatalog();
+            } else {
+                Swal.fire('Rollback Exitoso', 'Los ítems han sido recuperados en memoria. Abre la ventana de pedidos para editarlos.', 'success');
+            }
+            
+        } catch(e) {
+            console.error("Fallo en rollback:", e);
+            if(window.Swal) Swal.fire({ icon: 'error', title: 'Error de Rollback', text: e.message, background: '#0f172a', color: '#ef4444' });
         }
     }
 };

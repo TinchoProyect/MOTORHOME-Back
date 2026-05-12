@@ -552,7 +552,7 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
         };
     },
 
-    executeInvoiceExtraction: async (base64Data, mimeType, mapaExtraccion = null) => {
+    executeInvoiceExtraction: async (base64Data, mimeType, mapaExtraccion = null, cuitProveedor = null) => {
         if (!genAI) throw new Error("Gemini API no inicializada");
 
         console.log(`[AI Service - Facturas] ⏱️ Ejecutando Motor Chofer en documento...`);
@@ -571,6 +571,7 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
 Se te provee un comprobante fiscal. Tu tarea es extraer la metadata y totales, y devolver estrictamente un objeto JSON plano.
 
 ${mapaExtraccion ? `[INSTRUCCIONES DE EXTRACCIÓN ESPECÍFICAS PARA ESTE PROVEEDOR (¡PRIORIDAD MÁXIMA!)]\n${mapaExtraccion}\n` : ''}
+${cuitProveedor ? `[ANCLA DE IDENTIDAD] El CUIT del proveedor (Emisor de la factura) que estamos procesando es: ${cuitProveedor}. Asegúrate de extraer este CUIT como "cuit_emisor" si está en el documento, evitando confundirlo con el CUIT del receptor.\n` : ''}
 REGLAS DE EXTRACCIÓN:
 1. "cuit_emisor": El CUIT del emisor (solo números o formato XX-XXXXXXXX-X).
 2. "tipo_comprobante": Factura A, Factura B, Factura C, Nota de Crédito A, etc.

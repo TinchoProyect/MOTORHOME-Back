@@ -128,17 +128,23 @@ const facturasController = {
             // Construimos el Data URI esperado por el Motor Chofer
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
             
-            // 3. Obtener el Mapa de Extracción IA específico del proveedor
+            // 3. Obtener el Mapa de Extracción IA y CUIT específico del proveedor
             let mapaExtraccion = null;
+            let cuitProveedor = null;
             const { data: proveedorInfo } = await supabase
                 .from('proveedores')
-                .select('mapa_extraccion_ia')
+                .select('mapa_extraccion_ia, cuit')
                 .eq('id', providerId)
                 .single();
             
-            if (proveedorInfo && proveedorInfo.mapa_extraccion_ia) {
-                mapaExtraccion = proveedorInfo.mapa_extraccion_ia;
-                console.log(`[FacturasController] Mapa de Extracción detectado para el proveedor. Inyectando directivas en IA.`);
+            if (proveedorInfo) {
+                if (proveedorInfo.mapa_extraccion_ia) {
+                    mapaExtraccion = proveedorInfo.mapa_extraccion_ia;
+                    console.log(`[FacturasController] Mapa de Extracción detectado para el proveedor. Inyectando directivas en IA.`);
+                }
+                if (proveedorInfo.cuit) {
+                    cuitProveedor = proveedorInfo.cuit;
+                }
             }
 
             let intentos = 0;
@@ -150,7 +156,7 @@ const facturasController = {
                 console.log(`[FacturasController] Extracción IA (Intento ${intentos}/${MAX_INTENTOS})...`);
                 
                 try {
-                    const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType, mapaExtraccion);
+                    const extractedJson = await aiService.executeInvoiceExtraction(dataUrl, mimeType, mapaExtraccion, cuitProveedor);
                     
                     // ==========================================
                     // MIDDLEWARE DE SANEAMIENTO Y CHECKSUM
