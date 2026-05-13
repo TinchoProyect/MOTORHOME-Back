@@ -8,9 +8,10 @@ const bancosParserService = {
      * @param {Array} proveedores Padrón de proveedores [{id, cuit}]
      * @param {Array} memoriaMapeo Diccionario de mapeos manuales [{patron_busqueda, proveedor_id}]
      * @param {String} archivoId ID de Google Drive
+     * @param {String} maxFecha Delta pointer (ISO YYYY-MM-DD) para skip de historia
      * @returns {Object} { pagosCrudos, estadisticas }
      */
-    parseExtracto: (fileBuffer, proveedores, memoriaMapeo, archivoId) => {
+    parseExtracto: (fileBuffer, proveedores, memoriaMapeo, archivoId, maxFecha = null) => {
         try {
             console.log(`[BancosParser] Iniciando parseo de Excel...`);
             const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
@@ -117,13 +118,38 @@ const bancosParserService = {
                 }
                 if (!fechaIso) fechaIso = new Date().toISOString().split('T')[0];
 
-                let saldoStr = headerMap['saldo'] !== undefined ? String(row[headerMap['saldo']] || '').replace(/\s+/g, '').toLowerCase() : '';
-                let refStr = headerMap['referencia'] !== undefined ? String(row[headerMap['referencia']] || '').replace(/\s+/g, '').toLowerCase() : '';
+                // Lógica Delta (Puntero): Saltear registros demasiado antiguos
+                if (maxFecha) {
+                    const dMax = new Date(maxFecha);
+                    dMax.setDate(dMax.getDate() - 3); // 3 días de superposición (Safety Window)
+                    const dCurr = new Date(fechaIso);
+                    if (dCurr < dMax) {
+                        stats.ignorados_historia = (stats.ignorados_historia || 0) + 1;
+                        continue;
+                    }
+                }
 
-                const strForHash = `${fechaIso}_${debito.toFixed(2)}_${movimientoStr.replace(/\s+/g, '').toLowerCase()}_${saldoStr}_${refStr}`;
+                let saldoRaw = row[headerMap['saldo']];
+                let saldoResultante = null;
+                if (saldoRaw) {
+                    if (typeof saldoRaw === 'number') {
+                        saldoResultante = saldoRaw;
+                    } else {
+                        let cSaldo = String(saldoRaw).replace(/[^0-9,\.-]/g, '');
+                        if (cSaldo.includes(',') && cSaldo.includes('.')) cSaldo = cSaldo.replace(/\./g, '').replace(',', '.');
+                        else if (cSaldo.includes(',')) cSaldo = cSaldo.replace(',', '.');
+                        saldoResultante = parseFloat(cSaldo) || 0;
+                    }
+                }
+
+                let refStr = headerMap['referencia'] !== undefined ? String(row[headerMap['referencia']] || '').trim() : '';
+
+                // Hash Idempotente Estructural: Fecha + Monto + Saldo + Referencia
+                // Ignoramos la descripcion_original para el hash, evitando falsos negativos por cambios de espacios
+                const strForHash = `${fechaIso}_${montoFinal.toFixed(2)}_${saldoResultante !== null ? saldoResultante.toFixed(2) : '0.00'}_${refStr.toLowerCase()}`;
                 const hash_id = crypto.createHash('md5').update(strForHash).digest('hex');
 
-                let estado = 'PENDIENTE';
+                let estado = 'PENDIENTE_HITL'; // Usar PENDIENTE_HITL asegura su visibilidad como "huérfano"
                 let proveedor_id = null;
                 let cuitPescado = null;
 
@@ -142,7 +168,7 @@ const bancosParserService = {
                 }
 
                 // 2. Matcheo por Memoria (Si no hubo CUIT o no se encontró)
-                if (estado === 'PENDIENTE' && memoriaMapeo && memoriaMapeo.length > 0) {
+                if (estado === 'PENDIENTE_HITL' && memoriaMapeo && memoriaMapeo.length > 0) {
                     const movimientoLower = movimientoStr.toLowerCase();
                     const hitMemoria = memoriaMapeo.find(m => movimientoLower.includes(m.patron_busqueda.toLowerCase()));
                     if (hitMemoria) {
@@ -152,7 +178,7 @@ const bancosParserService = {
                     }
                 }
 
-                if (estado === 'PENDIENTE') {
+                if (estado === 'PENDIENTE_HITL') {
                     stats.pendientes_hitl++;
                 }
 
@@ -162,6 +188,8 @@ const bancosParserService = {
                     proveedor_id,
                     fecha_pago: fechaIso,
                     monto_pago: montoFinal,
+                    saldo_resultante: saldoResultante,
+                    referencia: refStr,
                     descripcion_original: movimientoStr,
                     cuit_detectado: cuitPescado,
                     estado

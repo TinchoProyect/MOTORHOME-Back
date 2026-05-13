@@ -70,15 +70,24 @@ const bancosController = {
         try {
             console.log(`[BancosController] Iniciando ingesta de extracto bancario. Archivo ID: ${fileId}`);
 
-            // 1. Obtener Padrón de Proveedores y Memoria de Mapeo
-            const [provRes, memoriaRes] = await Promise.all([
+            // 1. Obtener Padrón, Memoria y Puntero Delta (Última Fecha)
+            const [provRes, memoriaRes, punteroRes] = await Promise.all([
                 supabase.from('proveedores').select('id, cuit, nombre, afip_razon_social').eq('activo', true),
-                supabase.from('bancos_memoria_mapeo').select('patron_busqueda, proveedor_id')
+                supabase.from('bancos_memoria_mapeo').select('patron_busqueda, proveedor_id'),
+                supabase.from('pagos_bancarios_raw').select('fecha_pago').order('fecha_pago', { ascending: false }).limit(1)
             ]);
 
             if (provRes.error) throw new Error("No se pudo obtener el padrón de proveedores: " + provRes.error.message);
             const proveedores = provRes.data || [];
             const memoriaMapeo = memoriaRes.data || [];
+            
+            let maxFecha = null;
+            if (punteroRes.data && punteroRes.data.length > 0) {
+                maxFecha = punteroRes.data[0].fecha_pago;
+                console.log(`[BancosController] Puntero Delta Encontrado: Última ingesta registrada el ${maxFecha}.`);
+            } else {
+                console.log(`[BancosController] No hay puntero previo. Ingesta full.`);
+            }
 
             // 2. Descargar Excel desde Google Drive
             console.log(`[BancosController] Descargando archivo desde Drive...`);
@@ -88,8 +97,8 @@ const bancosController = {
             const fileMetadata = await driveService.getFileMetadata(fileId);
             const fileName = fileMetadata.name || `extracto_${fileId}.xlsx`;
 
-            // 3. Procesar y parsear
-            const parserResult = bancosParserService.parseExtracto(fileBuffer, proveedores, memoriaMapeo, fileId);
+            // 3. Procesar y parsear (Aplicando Lectura Delta en el Parser)
+            const parserResult = bancosParserService.parseExtracto(fileBuffer, proveedores, memoriaMapeo, fileId, maxFecha);
 
             if (!parserResult.success) {
                 return res.status(500).json({ error: parserResult.error });
@@ -100,37 +109,27 @@ const bancosController = {
             let insertadosExitosos = 0;
             let omitidosPorDuplicado = 0;
 
-            // 4. Inyección en Base de Datos (con blindaje anti-duplicados)
-            console.log(`[BancosController] Iniciando inyección a BD de ${pagosCrudos.length} movimientos...`);
+            // 4. Inyección Masiva en Base de Datos (con blindaje anti-duplicados NATIVO de PostgreSQL)
+            console.log(`[BancosController] Iniciando inyección masiva (Bulk) a BD de ${pagosCrudos.length} movimientos...`);
 
-            for (const pago of pagosCrudos) {
-                // Validación explícita de idempotencia (Ticket: Fallo de Deduplicación)
-                const { data: existente } = await supabase
+            if (pagosCrudos.length > 0) {
+                // Bulk Upsert usando la restricción única (hash_id) que ahora es matemáticamente estable
+                const { data, error: errBulk } = await supabase
                     .from('pagos_bancarios_raw')
-                    .select('hash_id')
-                    .eq('hash_id', pago.hash_id)
-                    .maybeSingle();
+                    .upsert(pagosCrudos, { 
+                        onConflict: 'hash_id', 
+                        ignoreDuplicates: true 
+                    })
+                    .select('hash_id');
 
-                if (existente) {
-                    omitidosPorDuplicado++;
-                    continue; // Blindaje Anti-Duplicados Activo
+                if (errBulk) {
+                    console.error(`[BancosController] Error crítico en Bulk Upsert:`, errBulk);
+                    throw errBulk;
                 }
 
-                // Insertamos uno a uno para manejar colisiones limpiamente
-                const { error: errInsert } = await supabase
-                    .from('pagos_bancarios_raw')
-                    .insert([pago]);
-
-                if (errInsert) {
-                    // 23505 = Unique Violation en PostgreSQL (Fallback safety)
-                    if (errInsert.code === '23505' || errInsert.message.includes('duplicate key value') || errInsert.message.includes('already exists')) {
-                        omitidosPorDuplicado++;
-                    } else {
-                        console.error(`[BancosController] Error insertando pago ${pago.hash_id}:`, errInsert);
-                    }
-                } else {
-                    insertadosExitosos++;
-                }
+                // La base de datos ignora los repetidos. La cantidad de insertados reales es data.length.
+                insertadosExitosos = data ? data.length : 0;
+                omitidosPorDuplicado = pagosCrudos.length - insertadosExitosos;
             }
 
             // 5. Registrar el archivo como PROCESADO
@@ -144,7 +143,10 @@ const bancosController = {
 
             console.log(`[BancosController] Ingesta finalizada.`);
             console.log(`- Insertados (Nuevos): ${insertadosExitosos}`);
-            console.log(`- Duplicados Ignorados: ${omitidosPorDuplicado}`);
+            console.log(`- Duplicados Ignorados Nativo: ${omitidosPorDuplicado}`);
+            if (estadisticas.ignorados_historia) {
+                console.log(`- Registros Salteados (Puntero Delta): ${estadisticas.ignorados_historia}`);
+            }
 
             return res.json({
                 success: true,
@@ -153,7 +155,8 @@ const bancosController = {
                     insertados: insertadosExitosos,
                     duplicados_hash: omitidosPorDuplicado,
                     pendientes_hitl: estadisticas.pendientes_hitl,
-                    auto_vinculados: estadisticas.auto_vinculados_cuit + estadisticas.auto_vinculados_memoria
+                    auto_vinculados: estadisticas.auto_vinculados_cuit + estadisticas.auto_vinculados_memoria,
+                    ignorados_historia: estadisticas.ignorados_historia || 0
                 }
             });
 
