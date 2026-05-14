@@ -2,6 +2,39 @@ const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 const cuentaCorrienteController = {
+    getGlobalDeuda: async (req, res) => {
+        try {
+            const { data: movimientos, error } = await supabase
+                .from('cuenta_corriente_proveedores')
+                .select('monto_credito, monto_debito, proveedores(categorias_proveedores(nombre))')
+                .eq('es_omitido', false);
+
+            if (error) throw error;
+
+            let deudaTotal = 0;
+            const debtByCategory = {};
+
+            if (movimientos) {
+                movimientos.forEach(mov => {
+                    const diff = (parseFloat(mov.monto_credito) || 0) - (parseFloat(mov.monto_debito) || 0);
+                    deudaTotal += diff;
+                    
+                    let catName = 'Sin Categorizar';
+                    if (mov.proveedores && mov.proveedores.categorias_proveedores && mov.proveedores.categorias_proveedores.nombre) {
+                        catName = mov.proveedores.categorias_proveedores.nombre;
+                    }
+                    
+                    debtByCategory[catName] = (debtByCategory[catName] || 0) + diff;
+                });
+            }
+
+            res.json({ success: true, deudaTotal, debtByCategory });
+        } catch (error) {
+            console.error("Error getGlobalDeuda:", error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
     getByProvider: async (req, res) => {
         const { providerId } = req.params;
         try {

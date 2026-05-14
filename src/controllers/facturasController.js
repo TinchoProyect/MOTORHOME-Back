@@ -1,6 +1,7 @@
 const aiService = require('../services/aiService');
 const driveService = require('../services/driveService');
 const { applyBillingRule } = require('../services/billingRules');
+const { applyConciliationRule } = require('../services/conciliationRules');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -557,38 +558,59 @@ const facturasController = {
                 
                 let normalizedCantR = cantR;
                 let normalizedPrecioP = precioP;
-                let isAsymmetricUnit = false;
-
-                // Determinamos si hay asimetría empírica cruzando totales.
-                const ratioQty = cantR > 0 ? cantF / cantR : 0;
-                const ratioPrice = precioF > 0 ? precioP / precioF : 0;
                 
-                // Si la factura y el pedido tienen cantidades radicalmente distintas pero el total financiero cuadraría
-                if (ratioQty > 1.2 && ratioPrice > 1.2 && Math.abs(ratioQty - ratioPrice) / ratioPrice < 0.20) {
-                    isAsymmetricUnit = true;
-                } else if (factorConversion > 1.1 && ratioQty >= factorConversion * 0.8 && ratioQty <= factorConversion * 1.2) {
-                    isAsymmetricUnit = true;
-                }
+                // Variables que mutan si aplicamos una regla inversa para que la resta del Delta 1a1 tenga éxito
+                let finalCantF = cantF;
+                let finalPrecioF = precioF;
 
-                if (isAsymmetricUnit) {
-                    // Normalizamos SOLO la cantidad del Pedido (ej. Bultos) a la unidad de Factura (ej. Kilos).
-                    // El precio base del Pedido (precioP) YA está guardado históricamente en la Unidad Base (Kilos),
-                    // por lo tanto, NO se debe dividir ni multiplicar.
-                    const factorToUse = factorConversion > 1.1 ? factorConversion : ratioPrice;
-                    normalizedCantR = cantR * factorToUse;
-                    // normalizedPrecioP se mantiene intacto = precioP
+                // 1. INTENTO DE REGLA DETERMINISTA (AISLADA POR PROVEEDOR)
+                let isAsymmetricUnit = false;
+                
+                // Obtenemos un identificador del proveedor. Para este ejemplo, usamos su nombre si está disponible,
+                // o pasamos el provider_id. Aquí tenemos factura.proveedor_id, pero no tenemos el nombre cargado.
+                // Sin embargo, podemos usar el ID si lo registramos en las reglas, o pasar "PUEBLO VIEJO" manual si es el caso.
+                // Extraemos nombre del proveedor si vino del payload (ej. req.body no tiene nombre), o cruzamos.
+                // Como workaround, si `factura.proveedor_id` matchea, usamos ese ID. Pero para escalabilidad, el motor usa `proveedor_id`.
+                const ruleResult = applyConciliationRule(factura.proveedor_id, match, artFactura, factorConversion, cantR, precioP);
+                
+                if (ruleResult) {
+                    // La regla aislada aplicó con éxito (ej. PUEBLO_VIEJO)
+                    normalizedCantR = ruleResult.normalizedCantR;
+                    normalizedPrecioP = ruleResult.normalizedPrecioP;
+                    
+                    if (ruleResult.overrideCantF !== undefined) finalCantF = ruleResult.overrideCantF;
+                    if (ruleResult.overridePrecioF !== undefined) finalPrecioF = ruleResult.overridePrecioF;
+                    
+                    isAsymmetricUnit = true;
+                    console.log(`[VIGÍA MATEMÁTICO] Regla Aislada Aplicada: ${ruleResult.ruleName}`);
+                } else {
+                    // 2. FALLBACK A HEURÍSTICA GENERAL (Mantiene el sistema legado a salvo)
+                    const ratioQty = cantR > 0 ? cantF / cantR : 0;
+                    const ratioPrice = precioF > 0 ? precioP / precioF : 0;
+                    
+                    if (ratioQty > 1.2 && ratioPrice > 1.2 && Math.abs(ratioQty - ratioPrice) / ratioPrice < 0.20) {
+                        isAsymmetricUnit = true;
+                    } else if (factorConversion > 1.1 && ratioQty >= factorConversion * 0.8 && ratioQty <= factorConversion * 1.2) {
+                        isAsymmetricUnit = true;
+                    }
+
+                    if (isAsymmetricUnit) {
+                        const factorToUse = factorConversion > 1.1 ? factorConversion : ratioPrice;
+                        normalizedCantR = cantR * factorToUse;
+                        // normalizedPrecioP se mantiene intacto = precioP
+                    }
                 }
 
                 console.log(`\n======================================================`);
                 console.log(`[VIGÍA MATEMÁTICO] Estado Pre-Delta para Artículo: ${descF}`);
-                console.log(`- Factura: CantF=${cantF}, PrecioF=${precioF}`);
+                console.log(`- Factura: CantF=${finalCantF}, PrecioF=${finalPrecioF} (Originales: ${cantF}, ${precioF})`);
                 console.log(`- Pedido (Crudo): CantR=${cantR}, PrecioP=${precioP}, factorConversion=${factorConversion}`);
                 console.log(`- Asimetría Detectada: ${isAsymmetricUnit}`);
                 console.log(`- Pedido (Normalizado): normalizedCantR=${normalizedCantR}, normalizedPrecioP=${normalizedPrecioP}`);
                 console.log(`======================================================\n`);
 
                 // Cálculo de Deltas
-                const deltaMonto = parseFloat((precioF - normalizedPrecioP).toFixed(2));
+                const deltaMonto = parseFloat((finalPrecioF - normalizedPrecioP).toFixed(2));
                 let deltaPorcentaje = 0;
                 if (normalizedPrecioP > 0) {
                     deltaPorcentaje = parseFloat(((deltaMonto / normalizedPrecioP) * 100).toFixed(2));
@@ -596,13 +618,13 @@ const facturasController = {
 
                 const desvios = [];
                 // Faltante Físico: Tolerancia de 3% para variaciones de peso (catch-weight)
-                if (cantF > normalizedCantR * 1.03) {
-                    desvios.push(`Faltante Físico: Cobran ${cantF.toFixed(2)} pero se recibió el equivalente a ${normalizedCantR.toFixed(2)}`);
+                if (finalCantF > normalizedCantR * 1.03) {
+                    desvios.push(`Faltante Físico: Cobran ${finalCantF.toFixed(2)} pero se recibió el equivalente a ${normalizedCantR.toFixed(2)}`);
                 }
                 
                 // Desvío Precio: Tolerancia financiera de $5.00
                 if (Math.abs(deltaMonto) > 5.0) {
-                    desvios.push(`Desvío Precio: Facturado a $${precioF.toFixed(2)} (Pactado Equiv: $${normalizedPrecioP.toFixed(2)})`);
+                    desvios.push(`Desvío Precio: Facturado a $${finalPrecioF.toFixed(2)} (Pactado Equiv: $${normalizedPrecioP.toFixed(2)})`);
                 }
 
                 if (desvios.length > 0) totalDesvios++;
@@ -618,6 +640,7 @@ const facturasController = {
                         precio_unitario: normalizedPrecioP
                     },
                     recibido: normalizedCantR, // Reportamos cantidad normalizada para no asustar en UI
+
                     delta_monto: deltaMonto,
                     delta_porcentaje: deltaPorcentaje,
                     desvios: desvios

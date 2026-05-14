@@ -347,12 +347,11 @@
                             </div>
                             <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Deuda Total</span>
                         </div>
-                        <div class="mt-auto flex flex-col">
-                            <div class="flex items-baseline gap-1">
-                                <span class="text-sm text-slate-500 font-mono font-bold">$</span>
-                                <span class="text-3xl font-black text-amber-500 font-mono tracking-tighter drop-shadow-md">24.15M</span>
+                        <div class="mt-auto flex flex-col w-full h-full justify-end" id="widget-deuda-container">
+                            <div class="flex items-center gap-2 text-slate-500 animate-pulse">
+                                <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                                <span class="text-xs font-mono">Calculando...</span>
                             </div>
-                            <span class="text-[9px] text-slate-500 uppercase tracking-widest mt-1">Pendiente de pago</span>
                         </div>
                     </div>
                 </div>
@@ -3466,12 +3465,64 @@
             }
         }
 
+        async function loadGlobalDeudaTotal() {
+            try {
+                const container = document.getElementById('widget-deuda-container');
+                if (!container) return;
+                
+                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const res = await fetch(`${backendUrl}/api/cuenta-corriente/global-deuda`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.success) {
+                        const total = json.deudaTotal || 0;
+                        const breakdown = json.debtByCategory || {};
+                        
+                        let html = '<div class="flex flex-col gap-1 w-full max-h-[85px] overflow-y-auto custom-scrollbar pr-1">';
+                        
+                        for (const [cat, val] of Object.entries(breakdown)) {
+                            if (Math.abs(val) > 0.01) {
+                                html += `
+                                    <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono">
+                                        <span class="truncate pr-2">${cat}</span>
+                                        <span class="shrink-0">$${val.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                    </div>
+                                `;
+                            }
+                        }
+                        
+                        html += `
+                            </div>
+                            <div class="w-full h-px bg-slate-700/50 my-1.5 shrink-0"></div>
+                            <div class="flex justify-between items-baseline w-full shrink-0">
+                                <span class="text-[9px] text-slate-500 uppercase tracking-widest">Total</span>
+                                <span class="text-lg font-black text-amber-500 font-mono tracking-tighter drop-shadow-md">$${total.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                            </div>
+                        `;
+                        
+                        container.innerHTML = html;
+                        
+                    } else {
+                        container.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+                    }
+                } else {
+                    container.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+                }
+            } catch(e) {
+                console.error("Error loading global deuda total:", e);
+                const container = document.getElementById('widget-deuda-container');
+                if (container) container.innerHTML = '<span class="text-sm text-slate-500">--</span>';
+            }
+        }
+
         // Init on script load
         document.addEventListener('DOMContentLoaded', () => {
             loadActiveProvidersCount();
+            loadGlobalDeudaTotal();
         });
         // Also call now in case DOMContentLoaded already fired (common in SPA-like navigation)
         loadActiveProvidersCount();
+        loadGlobalDeudaTotal();
     </script>
     
     <!-- [NEW] MODAL GESTIÓN DE RUBROS IN-LINE (CHOFER IA) -->
