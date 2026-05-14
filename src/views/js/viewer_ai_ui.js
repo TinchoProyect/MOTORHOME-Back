@@ -510,9 +510,10 @@ class ViewerAiUi {
                     // [Ticket #020] Sanitización Estricta para AI Copilot
                     const sanitizeForAI = (rawVal) => {
                         let text = String(rawVal || "");
-                        text = text.replace(/\r\n|\n|\r/g, " "); // Saltos de línea a espacios
-                        text = text.replace(/[\x00-\x1F\x7F-\x9F]/g, ""); // Purga de control (nulos, etc)
-                        return text.trim().replace(/\s+/g, " "); // Colapsar espacios
+                        // [FIX DATADEPTH] No reemplazar saltos de línea ni colapsar espacios, 
+                        // porque rompería la coincidencia bit-a-bit del Motor ETL (AST) Post-Recarga.
+                        text = text.replace(/[\x00-\x09\x0B-\x1F\x7F-\x9F]/g, ""); // Purga de control (preservando \n)
+                        return text.trim(); 
                     };
 
                     let val = "";
@@ -1014,11 +1015,12 @@ class ViewerAiUi {
     async _displayConsensusModal(clusterMap, promptText, vCol, targetRuleIdx = null) {
         if (!window.Swal) return;
         
-        let totalCrudos = 0;
+        let uniqueCrudosSet = new Set();
         let accordionHtml = Object.keys(clusterMap).map((masterVal, gIdx) => {
              const rawValues = clusterMap[masterVal];
              if (!Array.isArray(rawValues)) return '';
-             totalCrudos += rawValues.length;
+             
+             rawValues.forEach(v => uniqueCrudosSet.add(v));
              
              let childrenHtml = rawValues.map((val, idx) => `
                 <div class="flex items-center gap-2 mb-1.5 pl-3 p-1.5 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
@@ -1041,7 +1043,9 @@ class ViewerAiUi {
                  </div>
              </div>
              `;
-        }).join('');
+         }).join('');
+        
+        const totalCrudos = uniqueCrudosSet.size;
         
         const { isConfirmed } = await Swal.fire({
             title: 'Mapeo Semántico Completado',
