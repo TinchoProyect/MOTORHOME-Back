@@ -13,10 +13,16 @@ export function resolveRawValueForRow(row, targetColId) {
             // [FIX TICKET #034] Recuperar la cadena combinada usando el _richContext (Post-ETL de operandos)
             // Esto es imperativo para que el Taller Semántico ("Procesar Pendientes") refleje la misma realidad que el Chofer IA.
             if (row._richContext) {
-                return comp.operands.map(opId => {
+                return comp.operands.map((opId, idx) => {
                     const op = row._richContext[opId];
                     if (!op) return resolveRawValueForRow(row, opId);
-                    const candidates = [op.clean, op.raw, op.display];
+                    
+                    let targetDepth = comp.dataDepths && comp.dataDepths[idx] ? comp.dataDepths[idx] : "clean";
+                    let candidates = [];
+                    if (targetDepth === 'raw') candidates = [op.raw, op.clean, op.display];
+                    else if (targetDepth === 'display') candidates = [op.display, op.clean, op.raw];
+                    else candidates = [op.clean, op.raw, op.display];
+                    
                     for (let c of candidates) {
                         if (c !== undefined && c !== null && String(c).trim() !== '') {
                             const s = String(c).trim();
@@ -1065,6 +1071,8 @@ function renderPipeline() {
             desc = `Aplicar descuento: ${computedCfg.operands[1]}%`;
         } else if (computedCfg.macro === 'CLONE_SEMANTIC') {
             desc = `Semántica inteligente sobre columna origen.`;
+        } else if (computedCfg.macro === 'MATH_PROMO_RULE') {
+            desc = `Regla Promocional Cruzada (Base: A, Regla: B).`;
         }
 
         chip.innerHTML = `

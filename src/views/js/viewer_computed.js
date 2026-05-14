@@ -177,6 +177,27 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 if(cloneAddBtn) cloneAddBtn.style.display = 'none';
                 document.querySelectorAll('.calc-source-depth').forEach(el => el.classList.add('hidden'));
                 document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.parentElement.remove(); });
+            } else if (opValue === 'MATH_PROMO_RULE') {
+                if(labelA) labelA.innerText = "Precio Base (A)";
+                document.getElementById('calcFieldA').style.display = 'block';
+                if(containerB) {
+                    containerB.style.display = 'block';
+                    const labelB = containerB.querySelector('label');
+                    if(labelB) labelB.innerText = "Regla Estructurada (B)";
+                }
+                const masterKeyContainer = document.getElementById('calcMasterKeyContainer');
+                if (masterKeyContainer) masterKeyContainer.style.display = 'none';
+                
+                if(containerTol) containerTol.style.display = 'none'; // Tolerancia estricta obligatoria: promo vacía = precio vacío (según req) o se saltea.
+                if(cloneAddBtn) cloneAddBtn.style.display = 'none';
+                
+                document.querySelectorAll('.calc-source-depth').forEach(el => el.classList.remove('hidden'));
+                
+                const formulaBtn = document.getElementById('btnOpenFormulaModal');
+                if (formulaBtn) formulaBtn.style.display = 'none';
+                
+                // Reset clones on math operation
+                document.querySelectorAll('.calc-source-dyn').forEach((el, i) => { if(i>0) el.parentElement.parentElement.remove(); });
             } else {
                 if(labelA) labelA.innerText = "Precio Base (A)";
                 document.getElementById('calcFieldA').style.display = 'block';
@@ -191,7 +212,7 @@ async function openCalculationModal(fromRuleWorkshop = false) {
                 if(containerTol) containerTol.style.display = 'flex';
                 if(cloneAddBtn) cloneAddBtn.style.display = 'none';
                 
-                document.querySelectorAll('.calc-source-depth').forEach(el => el.classList.add('hidden'));
+                document.querySelectorAll('.calc-source-depth').forEach(el => el.classList.remove('hidden'));
                 
                 const formulaBtn = document.getElementById('btnOpenFormulaModal');
                 if (formulaBtn) formulaBtn.style.display = 'none';
@@ -318,6 +339,10 @@ function saveComputedColumn(closeModal = true) {
             return false;
         }
         operandsList = [vColIdA, vColIdB];
+        
+        const depthA = document.getElementById('calcFieldA')?.nextElementSibling?.value || 'clean';
+        const depthB = document.getElementById('calcFieldBDepth')?.value || 'clean';
+        operandsDepth = [depthA, depthB];
     }
 
     const targetMasterField = { ...window._activeComputedContext.masterField };

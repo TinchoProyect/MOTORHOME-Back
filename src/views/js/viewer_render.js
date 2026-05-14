@@ -139,9 +139,20 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
     // [FIX V8.10 - DETERMINISTIC NUMERIC SANITIZER]
     // Extractor robusto con fallback en cascada: clean -> raw -> display
     // Nunca permite que una columna numérica llegue al motor como string vacío
-    const extractNumericSource = (op) => {
+    const extractNumericSource = (op, depthIdx) => {
         if (!op) return '';
-        // Cascada de candidatos: clean (valor post-ETL sin formato), raw (crudo original), display
+        
+        // Priority 1: Requested Depth from UI
+        const requestedDepth = (calcConfig.dataDepths && calcConfig.dataDepths[depthIdx]) ? calcConfig.dataDepths[depthIdx] : null;
+        if (requestedDepth) {
+            const val = op[requestedDepth];
+            if (val !== undefined && val !== null && String(val).trim() !== '') {
+                const s = String(val).trim();
+                if (!s.startsWith('<')) return s;
+            }
+        }
+        
+        // Priority 2: Fallback cascade
         const candidates = [
             op.clean,
             op.raw,
@@ -177,14 +188,18 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         return parseFloat(s);
     };
 
-    let rawA = extractNumericSource(opA);
+    let rawA = extractNumericSource(opA, 0);
+    
+    // Evaluate if OpB is strictly empty in all its forms
     let isOpBEmpty = (opB?.clean === null || opB?.clean === undefined || String(opB.clean).trim() === '') &&
-                     (opB?.raw === null || opB?.raw === undefined || String(opB.raw).trim() === '');
+                     (opB?.raw === null || opB?.raw === undefined || String(opB.raw).trim() === '') &&
+                     (opB?.display === null || opB?.display === undefined || String(opB.display).trim() === '');
+                     
     let rawB = '0';
 
     let shouldTolerateEmpty = calcConfig.tolerateEmpty !== false;
     if (!isOpBEmpty) {
-        rawB = extractNumericSource(opB);
+        rawB = extractNumericSource(opB, 1);
     } else if (!shouldTolerateEmpty) {
         return { resultDisplay: "<span class='text-slate-600 italic text-[10px]'>N/A</span>", rejected: true };
     }
@@ -288,6 +303,29 @@ function evaluateComputedColumnMath(calcConfig, opA, opB, draftPipelinesVar, act
         else {
             const actualPercentMultiplier = (discountPercent > 0 && discountPercent < 1) ? discountPercent : (discountPercent / 100);
             mathResult = mathA * (1 - actualPercentMultiplier);
+        }
+    } else if (calcConfig.macro === "MATH_PROMO_RULE") {
+        if (!rawB || rawB.trim() === "") {
+            // El artículo no tiene promoción, se devuelve la celda vacía por instrucción de negocio
+            return { resultDisplay: "", mathResult: 0, rejected: false };
+        }
+        
+        let discountStr = "";
+        const parts = rawB.split('|');
+        for (let part of parts) {
+            if (part.startsWith('DESCUENTO:')) {
+                discountStr = part.replace('DESCUENTO:', '').trim();
+                break;
+            }
+        }
+        
+        if (discountStr) {
+            const discountPercent = safeParseFn(discountStr);
+            const actualPercentMultiplier = (discountPercent > 0 && discountPercent < 1) ? discountPercent : (discountPercent / 100);
+            mathResult = mathA * (1 - actualPercentMultiplier);
+        } else {
+            // Regla malformada, no aplicar cálculo
+            return { resultDisplay: "", mathResult: 0, rejected: false };
         }
     } else if (calcConfig.macro === "MULTIPLY") {
         mathResult = mathA * mathB;

@@ -878,6 +878,7 @@
                                     <select id="calcOperation"
                                         class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none transition-colors">
                                         <option value="PRICE_MINUS_DISCOUNT_PERCENT">Descuento (A - B%)</option>
+                                        <option value="MATH_PROMO_RULE">Aplicar Regla Promocional Cruzada</option>
                                         <option value="CLONE">Obtener de otra columna/s (Clonar A)</option>
                                         <option value="CLONE_SEMANTIC">Fusión Semántica (IA / Caza-Rubros)</option>
                                         <option value="CUSTOM_FORMULA">Generar Fórmula...</option>
@@ -898,7 +899,14 @@
                                     </div>
                                     <div class="space-y-1" id="calcFieldB_container">
                                         <label class="text-[10px] font-bold text-slate-500 uppercase">Descuento (B)</label>
-                                        <select id="calcFieldB" class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none"></select>
+                                        <div class="flex gap-1 items-center">
+                                            <select id="calcFieldB" class="w-full bg-slate-950 border border-slate-700/50 rounded-lg px-2 py-2 text-xs text-slate-300 outline-none"></select>
+                                            <select id="calcFieldBDepth" class="calc-source-depth hidden bg-slate-900 border border-slate-700/50 rounded-lg px-1 py-2 text-[10px] font-bold text-purple-300 outline-none cursor-pointer text-center w-24 shrink-0" title="Profundidad de Extracción">
+                                                <option value="clean">LIMPIO</option>
+                                                <option value="raw">CRUDO</option>
+                                                <option value="display">FINAL</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                                 <div id="cloneAddBtnContainer" class="hidden mt-1 pb-2">

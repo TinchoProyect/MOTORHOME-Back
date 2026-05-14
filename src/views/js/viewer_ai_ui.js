@@ -510,9 +510,8 @@ class ViewerAiUi {
                     // [Ticket #020] Sanitización Estricta para AI Copilot
                     const sanitizeForAI = (rawVal) => {
                         let text = String(rawVal || "");
-                        // [FIX DATADEPTH] No reemplazar saltos de línea ni colapsar espacios, 
-                        // porque rompería la coincidencia bit-a-bit del Motor ETL (AST) Post-Recarga.
-                        text = text.replace(/[\x00-\x09\x0B-\x1F\x7F-\x9F]/g, ""); // Purga de control (preservando \n)
+                        // [FIX DATADEPTH] Removida purga de caracteres de control (\r, \t) para garantizar
+                        // sincronización bit-a-bit con la evaluación cruda del AST Engine post-recarga.
                         return text.trim(); 
                     };
 
@@ -1881,6 +1880,7 @@ class ViewerAiUi {
                     <div class="h-4 w-px bg-slate-700"></div>
                     <select id="satTransferSelect" class="bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1.5 focus:border-orange-500 outline-none max-w-[200px]">
                         <option value="">-- Mover SKUs a Maestro Oficial... --</option>
+                        <option value="[FORZAR_VACIO]">🚫 [FORZAR SIN RUBRO] (Intencional)</option>
                         ${rubrosOficiales.map(r => `<option value="${r.nombre_rubro.replace(/"/g, '&quot;')}" data-id="${r.id || ''}" data-narrative="${(r.descripcion_narrativa || '').replace(/"/g, '&quot;')}">${r.nombre_rubro}</option>`).join('')}
                     </select>
                     <button onclick="window.viewerAiUi._openCreateRubroModal()" class="px-2 py-1.5 bg-emerald-900/30 hover:bg-emerald-600 border border-emerald-500/30 text-emerald-400 hover:text-white rounded text-xs transition shadow-lg shadow-emerald-900/20" title="Crear Nuevo Rubro Maestro (In-Line)"><i data-lucide="plus" class="w-3 h-3"></i></button>
@@ -2032,8 +2032,8 @@ class ViewerAiUi {
              for(const m in this.confirmedState) {
                  if(this.confirmedState[m].items.length > 0) {
                      this.confirmedState[m].items.forEach(crudo => {
-                         finalMap[crudo] = m;
-                         masterSet.add(m);
+                         finalMap[crudo] = m === '[FORZAR_VACIO]' ? "" : m;
+                         masterSet.add(m === '[FORZAR_VACIO]' ? "Sin Rubro" : m);
                          mappedCount++;
                      });
                  }
