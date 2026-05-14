@@ -3,6 +3,7 @@ function sanitizeLatAmPrice(priceObj) {
     if(!priceObj) return 0;
     if(typeof priceObj === 'number') return priceObj;
     let s = String(priceObj);
+    s = s.replace(/[^0-9.,-]/g, '');
     if(s.includes(',') && s.includes('.')) {
         // e.g. 14.862,77 -> 14862.77
         s = s.replace(/\./g, '').replace(/,/g, '.');
@@ -28,12 +29,30 @@ function parseUnitScale(unitStr) {
 
 window.activeB2BProvider = null;
 
-window.openB2BCheckout = function() {
+window.openB2BCheckout = async function() {
     const modal = document.getElementById('b2bCheckoutModal');
     if(modal) {
         modal.classList.remove('hidden');
         if (window.lucide) window.lucide.createIcons();
         window.renderB2BProviders();
+        
+        // EVALUACIÓN ON-LOAD (Desacople de Catálogo): Carga maestra en background para alimentar Reactividad
+        if (!window._rawLamdaData) {
+            try {
+                const res = await fetch('/api/master-table/operativa');
+                if (res.ok) {
+                    const opJson = await res.json();
+                    window._rawLamdaData = opJson.data;
+                    // Forzar re-renderizado ahora que tenemos el scope global listo para curar la Amnesia Reactiva
+                    window.renderB2BActiveItems(); 
+                }
+            } catch(e) {
+                console.error("Error pre-cargando master data B2B:", e);
+            }
+        } else {
+            // Ya cargado, asegurarse de forzar evaluación reactiva inicial
+            window.renderB2BActiveItems();
+        }
     }
 }
 
@@ -160,19 +179,49 @@ window.renderB2BActiveItems = function() {
             const qty = parseInt(item.cantidad) || 1;
             let isPromoApplied = false;
             
+            // Remediación de Amnesia (Backward Compatibility para ítems oxidados en LocalStorage)
+            let reglaToUse = item.regla;
+            let promoToUse = item.promo;
+            if (reglaToUse === undefined && window._rawLamdaData) {
+                const masterRow = window._rawLamdaData.find(r => String(r.id) === String(item._system_id) || String(r._system_id) === String(item._system_id));
+                if (masterRow && masterRow.datos_maestros) {
+                    reglaToUse = masterRow.datos_maestros.regla || masterRow.regla || null;
+                    promoToUse = masterRow.datos_maestros.promo || masterRow.promo || null;
+                    // Auto-sanar el objeto temporalmente en memoria (se persistirá en la próxima modificación de cantidad)
+                    item.regla = reglaToUse;
+                    item.promo = promoToUse;
+                }
+            }
+            
             // Evaluador Reactivo Promocional
-            if (item.regla && String(item.regla).trim() !== '') {
-                const match = String(item.regla).match(/CANTIDAD:\s*(\d+)/i);
+            if (reglaToUse && String(reglaToUse).trim() !== '') {
+                console.log(`\n=======================================\n🛡️ [VIGÍA DEPURADOR B2B / GATILLO PROMOCIONAL]\n- SKU: ${item.codigo_producto}\n- Cantidad Tipeada: ${qty}\n- Regla Cruda (reglaToUse): "${reglaToUse}"\n- Promo Cruda (promoToUse): "${promoToUse}"`);
+                const match = String(reglaToUse).match(/CANTIDAD:\s*(\d+)/i);
                 if (match) {
                     const threshold = parseInt(match[1]);
-                    if (!isNaN(threshold) && qty >= threshold) {
-                        const promoPrice = sanitizeLatAmPrice(item.promo);
-                        if (promoPrice > 0) {
-                            priceRef = promoPrice;
-                            isPromoApplied = true;
+                    console.log(`- Regla Parseada Exitosamente. Umbral Exigido: ${threshold} unidades.`);
+                    if (!isNaN(threshold)) {
+                        if (qty >= threshold) {
+                            console.log(`- ✅ CONDICIÓN SUPERADA (Cantidad ${qty} >= Umbral ${threshold}). Intentando extraer Precio Promo...`);
+                            const promoPrice = sanitizeLatAmPrice(promoToUse);
+                            console.log(`- Precio Promo Saneado: ${promoPrice}`);
+                            if (promoPrice > 0) {
+                                priceRef = promoPrice;
+                                isPromoApplied = true;
+                                console.log(`- 🎯 GATILLO ACCIONADO: Precio de Referencia sustituido exitosamente a $${priceRef}`);
+                            } else {
+                                console.warn(`- ⚠️ FALLO DE GATILLO: El precio promo saneado es 0 o inválido. No se aplicará la promoción.`);
+                            }
+                        } else {
+                            console.log(`- ❌ CONDICIÓN NO SUPERADA (Cantidad ${qty} < Umbral ${threshold}). Se mantiene precio base.`);
                         }
+                    } else {
+                        console.warn(`- ⚠️ FALLO DE PARSEO: Umbral extraído no es un número válido (NaN).`);
                     }
+                } else {
+                    console.warn(`- ⚠️ FALLO DE REGEX: La regla no contiene el patrón esperado 'CANTIDAD:[numero]'.`);
                 }
+                console.log(`=======================================\n`);
             }
             
             const bult = sanitizeLatAmPrice(item.cant_bult) || 1;
@@ -461,8 +510,35 @@ window.generateB2BPdf = async function(forensicPid = null, forensicPName = null,
         
         let isKg = unitLabel === 'K' || unitLabel === 'L' || unitLabel === 'G' || rawUnit.includes('KG');
         
-        const price = sanitizeLatAmPrice(i.precio_unitario) || 0;
+        let price = sanitizeLatAmPrice(i.precio_unitario) || 0;
         const qty = parseInt(i.cantidad) || 1;
+        let isPromoApplied = false;
+        
+        let reglaToUse = i.regla;
+        let promoToUse = i.promo;
+        if (reglaToUse === undefined && window._rawLamdaData) {
+            const masterRow = window._rawLamdaData.find(r => String(r.id) === String(i._system_id) || String(r._system_id) === String(i._system_id));
+            if (masterRow && masterRow.datos_maestros) {
+                reglaToUse = masterRow.datos_maestros.regla || masterRow.regla || null;
+                promoToUse = masterRow.datos_maestros.promo || masterRow.promo || null;
+                i.regla = reglaToUse;
+                i.promo = promoToUse;
+            }
+        }
+        
+        if (reglaToUse && String(reglaToUse).trim() !== '') {
+            const match = String(reglaToUse).match(/CANTIDAD:\s*(\d+)/i);
+            if (match) {
+                const threshold = parseInt(match[1]);
+                if (!isNaN(threshold) && qty >= threshold) {
+                    const promoPrice = sanitizeLatAmPrice(promoToUse);
+                    if (promoPrice > 0) {
+                        price = promoPrice;
+                        isPromoApplied = true;
+                    }
+                }
+            }
+        }
         
         const totalKg = qty * kgMult;
         const totalPrc = totalKg * price;
@@ -742,7 +818,35 @@ window.sendB2BWhatsApp = async function() {
         
         if (isKg) sumKg += totalKg;
         
-        const price = sanitizeLatAmPrice(i.precio_unitario) || 0;
+        let price = sanitizeLatAmPrice(i.precio_unitario) || 0;
+        let isPromoApplied = false;
+        
+        let reglaToUse = i.regla;
+        let promoToUse = i.promo;
+        if (reglaToUse === undefined && window._rawLamdaData) {
+            const masterRow = window._rawLamdaData.find(r => String(r.id) === String(i._system_id) || String(r._system_id) === String(i._system_id));
+            if (masterRow && masterRow.datos_maestros) {
+                reglaToUse = masterRow.datos_maestros.regla || masterRow.regla || null;
+                promoToUse = masterRow.datos_maestros.promo || masterRow.promo || null;
+                i.regla = reglaToUse;
+                i.promo = promoToUse;
+            }
+        }
+        
+        if (reglaToUse && String(reglaToUse).trim() !== '') {
+            const match = String(reglaToUse).match(/CANTIDAD:\s*(\d+)/i);
+            if (match) {
+                const threshold = parseInt(match[1]);
+                if (!isNaN(threshold) && qty >= threshold) {
+                    const promoPrice = sanitizeLatAmPrice(promoToUse);
+                    if (promoPrice > 0) {
+                        price = promoPrice;
+                        isPromoApplied = true;
+                    }
+                }
+            }
+        }
+        
         sumPrice += (totalKg * price);
         
         let kgData = isKg ? ` - (${totalKg.toFixed(2)} Kg)` : '';
