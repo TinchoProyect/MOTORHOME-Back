@@ -2036,6 +2036,7 @@
                 const colDefs = fields.map((f, index) => {
                      const isPrice = f.nombre_campo.toLowerCase().includes('precio');
                      const isRubro = f.nombre_campo.toLowerCase().includes('rubro');
+                     const isCode = ['código', 'codigo', 'sku', 'artículo', 'articulo'].some(kw => f.nombre_campo.toLowerCase().includes(kw));
                      return {
                          headerName: f.nombre_campo,
                          field: f.nombre_campo.replace(/\s+/g, '_').toLowerCase(),
@@ -2068,6 +2069,7 @@
                          cellRenderer: (params) => {
                               const v = params.value || '';
                               const st = params.data?._estado_delta;
+                              let content = v;
                               
                               if (isPrice && st === 'MODIFICADO') {
                                   const oldP = params.data._precio_anterior || '';
@@ -2096,24 +2098,47 @@
                                       }
                                   }
                                   
-                                  return `<div class="flex items-center gap-2">
+                                  content = `<div class="flex items-center gap-2">
                                               <div class="flex flex-col leading-none justify-center">
                                                   <span class="text-slate-500 line-through text-[8px] opacity-70 mb-0.5">${oldP}</span>
                                                   <span class="text-slate-100 font-bold">${v}</span>
                                               </div>
                                               <div class="px-1.5 py-[1px] flex items-center gap-0.5 rounded border ${deltaClass} text-[8px] uppercase tracking-widest font-black shadow-sm" title="Esta celda sufrió una alteración respecto a su base histórica.">${arrowIcon} ${deltaText}</div>
                                           </div>`;
+                              } else if (isPrice && st === 'ALTA') {
+                                  content = `<div class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Apareció en esta ingesta por primera vez">NUEVO</div></div>`;
+                              } else if (isPrice && st === 'BAJA') {
+                                  content = `<div class="flex items-center gap-1.5"><span class="text-slate-500 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-red-500/20 border border-red-500/50 text-red-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Descontinuado u Omitido en la última extracción">BAJA</div></div>`;
                               }
-                              if (isPrice && st === 'ALTA') {
-                                  return `<div class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Apareció en esta ingesta por primera vez">NUEVO</div></div>`;
+
+                              // A: Indicador Visual
+                              if (isCode && params.data && params.data.regla && String(params.data.regla).trim() !== '') {
+                                  content = `<div class="flex items-center justify-between w-full">
+                                                <span class="truncate">${content}</span>
+                                                <span class="bg-fuchsia-600/20 border border-fuchsia-500/50 text-fuchsia-400 px-1.5 py-0.5 rounded shadow text-[9px] uppercase font-bold ml-2 shrink-0" title="Promo Vigente: ${params.data.regla}">⚡ PROMO</span>
+                                             </div>`;
                               }
-                              if (isPrice && st === 'BAJA') {
-                                  return `<div class="flex items-center gap-1.5"><span class="text-slate-500 font-bold">${v}</span> <div class="px-1.5 py-[1px] rounded bg-red-500/20 border border-red-500/50 text-red-300 text-[8px] uppercase tracking-widest font-black shadow-sm" title="Descontinuado u Omitido en la última extracción">BAJA</div></div>`;
+
+                              // B: Tooltip Interactivo
+                              if (isPrice && params.data && params.data.regla && String(params.data.regla).trim() !== '') {
+                                  const rawRegla = String(params.data.regla);
+                                  const match = rawRegla.match(/CANTIDAD:\s*(\d+)/i);
+                                  const cant = match ? match[1] : '?';
+                                  const promoVal = params.data.promo || 'N/A';
+                                  const tooltipText = `Promoción: Llevando ${cant} unidades o más -> Precio: $ ${promoVal}`;
+                                  
+                                  content = `<div class="group relative inline-block w-full cursor-help" title="${tooltipText}">
+                                                ${content}
+                                                <div class="absolute bottom-full left-0 mb-1 hidden group-hover:block w-max max-w-xs bg-indigo-950 border border-indigo-500/50 text-indigo-200 text-[10px] p-2 rounded shadow-xl z-50 whitespace-nowrap">
+                                                    <span class="text-fuchsia-400 font-bold">⚡ Promoción:</span> Llevando <span class="text-white font-bold">${cant}</span> unidades o más -> Precio: <span class="text-emerald-400 font-bold">$ ${promoVal}</span>
+                                                </div>
+                                             </div>`;
                               }
-                              return v;
+                              
+                              return content;
                          }
                      };
-                });
+                 });
                 
                 // TICKET #015: Inject Tipo Proveedor tracking column
                 colDefs.unshift({
