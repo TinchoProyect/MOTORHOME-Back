@@ -51,7 +51,7 @@
     {
       "prompt": "Eres un procesador de datos determinista de la plataforma LAMDA. Tu tarea es analizar la descripción de un artículo de inventario, identificar si existe una Marca Comercial, extraerla y normalizar su escritura para agruparla correctamente. Reglas lógicas de extracción y normalización: Detección de Marca: Busca el nombre comercial o marca del fabricante dentro del texto (ej: Cumaná, Bavosi, Arcor, Campagnola, Cañuelas). Usualmente es un nombre propio que acompaña a la descripción genérica. Normalización y Unificación: El nombre extraído debe escribirse siempre en formato \"Título\" (Primera letra en Mayúscula, el resto en minúsculas). Si detectas errores de tipeo menores o falta de tildes (ej: cumana, Cumana), debes unificarlos a la marca correcta (ej: Cumaná). Exclusión de Genéricos: No confundas el tipo de producto, el envase, o el origen con la marca. Ignora palabras como Nacional, Importado, Lata, Caja, Rodajas, Mitades. Ausencia de Marca: Si la descripción es puramente genérica y no contiene ninguna marca comercial identificable (ej: Almendra pelada 10kg), DEBES devolver la celda completamente vacía. Formato de Salida: Devuelve EXCLUSIVAMENTE el nombre de la marca normalizada. No devuelvas texto adicional, ni descripciones, ni puntuación. Ejemplos de procesamiento esperado: Entrada: Ananá en rodajas cumaná 6 * 3 kg -> Salida: Cumaná Entrada: Tomate perita Cumana lata -> Salida: Cumaná Entrada: Harina de trigo 0000 Blancaflor -> Salida: Blancaflor Entrada: Almendra repelada partida -> Salida: (vacío) Entrada: Dulce de leche repostero Ilolay 10kg -> Salida: Ilolay",
       "intent": "Mapeo y Agrupación de Texto",
-      "lastUsed": 1778690328827
+      "lastUsed": 1778718957698
     }
   ],
   "DESCRIPCIÓN": [

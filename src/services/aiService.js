@@ -241,10 +241,16 @@ Usa escape doble para JSON si emites Regex.`;
         
         let CHUNK_SIZE = 20; // Reducido a 20 para evitar Truncation de JSON (JSON Unexpected end) en resoluciones voluminosas
         let chunks = [];
+        let chunkMappings = [];
         for (let i = 0; i < dictionarySamples.length; i++) {
             let chunkIdx = Math.floor(i / CHUNK_SIZE);
-            if (!chunks[chunkIdx]) chunks[chunkIdx] = {};
-            chunks[chunkIdx][i] = dictionarySamples[i];
+            if (!chunks[chunkIdx]) {
+                 chunks[chunkIdx] = {};
+                 chunkMappings[chunkIdx] = {};
+            }
+            let localIdx = Object.keys(chunks[chunkIdx]).length;
+            chunks[chunkIdx][localIdx] = dictionarySamples[i];
+            chunkMappings[chunkIdx][localIdx] = i;
         }
 
         const model = genAI.getGenerativeModel({ 
@@ -319,7 +325,13 @@ ${JSON.stringify(chunkDict, null, 2)}
                     let parsedArray = [];
                     for (let pseudoKey in parsed) {
                          if (Array.isArray(parsed[pseudoKey])) {
-                              parsedArray.push({ maestro: pseudoKey, indices: parsed[pseudoKey] });
+                              let globalIndices = [];
+                              for (let localIdx of parsed[pseudoKey]) {
+                                   if (chunkMappings[chunkIndex][localIdx] !== undefined) {
+                                       globalIndices.push(chunkMappings[chunkIndex][localIdx]);
+                                   }
+                              }
+                              parsedArray.push({ maestro: pseudoKey, indices: globalIndices });
                          }
                     }
 
@@ -379,10 +391,16 @@ ${JSON.stringify(chunkDict, null, 2)}
         
         let CHUNK_SIZE = 20; // Reducido a 20 para prevenir Truncation de JSON en operaciones complejas
         let chunks = [];
+        let chunkMappings = [];
         for (let i = 0; i < dictionarySamples.length; i++) {
             let chunkIdx = Math.floor(i / CHUNK_SIZE);
-            if (!chunks[chunkIdx]) chunks[chunkIdx] = {};
-            chunks[chunkIdx][i] = dictionarySamples[i];
+            if (!chunks[chunkIdx]) {
+                 chunks[chunkIdx] = {};
+                 chunkMappings[chunkIdx] = {};
+            }
+            let localIdx = Object.keys(chunks[chunkIdx]).length;
+            chunks[chunkIdx][localIdx] = dictionarySamples[i];
+            chunkMappings[chunkIdx][localIdx] = i;
         }
 
         const model = genAI.getGenerativeModel({ 
@@ -426,9 +444,12 @@ Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcia
                     
                     // Mapear inmediatamente este chunk al mapa general de retornos
                     for (let key in parsedObj) {
-                        const numKey = parseInt(key);
-                        if (!isNaN(numKey) && dictionarySamples[numKey] !== undefined) {
-                            finalMap[dictionarySamples[numKey]] = String(parsedObj[key]);
+                        const localNumKey = parseInt(key);
+                        if (!isNaN(localNumKey) && chunkMappings[index][localNumKey] !== undefined) {
+                            const globalNumKey = chunkMappings[index][localNumKey];
+                            if (dictionarySamples[globalNumKey] !== undefined) {
+                                finalMap[dictionarySamples[globalNumKey]] = String(parsedObj[key]);
+                            }
                         }
                     }
                     success = true;
@@ -438,10 +459,13 @@ Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcia
                     if (retries > maxRetries) {
                         console.error(`[AI Service] ERROR CRÍTICO: Fallo permanente en el Chunk ${index + 1}. Se saltará para no abortar el lote masivo.`);
                         // Fallback de contingencia: si el chunk falla, devolver el string crudo intacto
-                        for (let k in chunkDict) {
-                            const numK = parseInt(k);
-                            if (!isNaN(numK) && dictionarySamples[numK] !== undefined) {
-                                finalMap[dictionarySamples[numK]] = String(dictionarySamples[numK]);
+                        for (let localK in chunkDict) {
+                            const localNumK = parseInt(localK);
+                            if (!isNaN(localNumK) && chunkMappings[index][localNumK] !== undefined) {
+                                const globalNumK = chunkMappings[index][localNumK];
+                                if (dictionarySamples[globalNumK] !== undefined) {
+                                    finalMap[dictionarySamples[globalNumK]] = String(dictionarySamples[globalNumK]);
+                                }
                             }
                         }
                         break; // Salir del while y continuar con el siguiente chunk
@@ -464,10 +488,16 @@ Tu objeto DEBE contener TODOS los índices numéricos de este diccionario parcia
         
         let CHUNK_SIZE = 25; 
         let chunks = [];
+        let chunkMappings = [];
         for (let i = 0; i < dictionarySamples.length; i++) {
             let chunkIdx = Math.floor(i / CHUNK_SIZE);
-            if (!chunks[chunkIdx]) chunks[chunkIdx] = {};
-            chunks[chunkIdx][i] = dictionarySamples[i];
+            if (!chunks[chunkIdx]) {
+                 chunks[chunkIdx] = {};
+                 chunkMappings[chunkIdx] = {};
+            }
+            let localIdx = Object.keys(chunks[chunkIdx]).length;
+            chunks[chunkIdx][localIdx] = dictionarySamples[i];
+            chunkMappings[chunkIdx][localIdx] = i;
         }
 
         const model = genAI.getGenerativeModel({ 
@@ -518,21 +548,24 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
                     
                     let parsedObj = JSON.parse(extractedText);
                     for (let key in parsedObj) {
-                        const numKey = parseInt(key);
-                        if (!isNaN(numKey) && dictionarySamples[numKey] !== undefined) {
-                            let obj = parsedObj[key];
-                            if (typeof obj === 'string') {
-                                finalMap[dictionarySamples[numKey]] = obj;
-                            } else if (obj && obj.rubro) {
-                                let valString = obj.rubro;
-                                if (obj.argumentacion_ia) {
-                                    valString += `|ARGUMENTO|${obj.argumentacion_ia}`;
-                                } else if (obj.narrativa) {
-                                    valString += `|ARGUMENTO|${obj.narrativa}`;
-                                } else {
-                                    valString += `|ARGUMENTO|No se especificó argumentación para este cruce.`;
+                        const localNumKey = parseInt(key);
+                        if (!isNaN(localNumKey) && chunkMappings[index][localNumKey] !== undefined) {
+                            const globalNumKey = chunkMappings[index][localNumKey];
+                            if (dictionarySamples[globalNumKey] !== undefined) {
+                                let obj = parsedObj[key];
+                                if (typeof obj === 'string') {
+                                    finalMap[dictionarySamples[globalNumKey]] = obj;
+                                } else if (obj && obj.rubro) {
+                                    let valString = obj.rubro;
+                                    if (obj.argumentacion_ia) {
+                                        valString += `|ARGUMENTO|${obj.argumentacion_ia}`;
+                                    } else if (obj.narrativa) {
+                                        valString += `|ARGUMENTO|${obj.narrativa}`;
+                                    } else {
+                                        valString += `|ARGUMENTO|No se especificó argumentación para este cruce.`;
+                                    }
+                                    finalMap[dictionarySamples[globalNumKey]] = valString;
                                 }
-                                finalMap[dictionarySamples[numKey]] = valString;
                             }
                         }
                     }

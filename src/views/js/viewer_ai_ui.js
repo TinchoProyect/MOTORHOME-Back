@@ -1014,9 +1014,11 @@ class ViewerAiUi {
     async _displayConsensusModal(clusterMap, promptText, vCol, targetRuleIdx = null) {
         if (!window.Swal) return;
         
+        let totalCrudos = 0;
         let accordionHtml = Object.keys(clusterMap).map((masterVal, gIdx) => {
              const rawValues = clusterMap[masterVal];
              if (!Array.isArray(rawValues)) return '';
+             totalCrudos += rawValues.length;
              
              let childrenHtml = rawValues.map((val, idx) => `
                 <div class="flex items-center gap-2 mb-1.5 pl-3 p-1.5 border-l-2 border-slate-700/50 hover:bg-slate-800/50 transition">
@@ -1043,7 +1045,9 @@ class ViewerAiUi {
         
         const { isConfirmed } = await Swal.fire({
             title: 'Mapeo Semántico Completado',
-            html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA ha agrupado los siguientes valores (Target Maestros) en base a tu petición <i>"${promptText}"</i>.<br>Desmarca las variaciones crudas incorrectas:</div>
+            html: `<div class="text-[11px] text-slate-400 mb-3 text-left">La IA ha agrupado los siguientes valores (Target Maestros) en base a tu petición <i>"${promptText}"</i>.<br>
+                   <span class="inline-block mt-2 mb-1 px-2 py-1 bg-indigo-500/20 text-indigo-300 font-bold rounded border border-indigo-500/30 text-[12px]">Total Procesados: ${totalCrudos} registros</span><br>
+                   Desmarca las variaciones crudas incorrectas:</div>
                    <div class="max-h-[350px] overflow-y-auto text-left custom-scrollbar pr-1" id="hitl_checkbox_container">
                       ${accordionHtml}
                    </div>`,
