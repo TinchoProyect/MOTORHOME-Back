@@ -156,8 +156,24 @@ window.renderB2BActiveItems = function() {
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-800/30 border-b border-slate-800/50";
             
-            const priceRef = sanitizeLatAmPrice(item.precio_unitario) || 0;
+            let priceRef = sanitizeLatAmPrice(item.precio_unitario) || 0;
             const qty = parseInt(item.cantidad) || 1;
+            let isPromoApplied = false;
+            
+            // Evaluador Reactivo Promocional
+            if (item.regla && String(item.regla).trim() !== '') {
+                const match = String(item.regla).match(/CANTIDAD:\s*(\d+)/i);
+                if (match) {
+                    const threshold = parseInt(match[1]);
+                    if (!isNaN(threshold) && qty >= threshold) {
+                        const promoPrice = sanitizeLatAmPrice(item.promo);
+                        if (promoPrice > 0) {
+                            priceRef = promoPrice;
+                            isPromoApplied = true;
+                        }
+                    }
+                }
+            }
             
             const bult = sanitizeLatAmPrice(item.cant_bult) || 1;
             const val = sanitizeLatAmPrice(item.cant_valor) || 1;
@@ -171,6 +187,24 @@ window.renderB2BActiveItems = function() {
             if(isKgOrLts) sumKg += totalItemKg;
             sumPrice += totalItemPrice;
             
+            let htmlPriceCol = '';
+            if (isPromoApplied) {
+                const oldPrice = sanitizeLatAmPrice(item.precio_unitario) || 0;
+                htmlPriceCol = `
+                    <div class="flex flex-col text-right">
+                        <span class="text-slate-500 line-through text-[8px] opacity-70 leading-none mb-0.5">$${oldPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                        <span class="text-emerald-400 font-bold leading-none">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                    </div>
+                    <span class="uppercase opacity-50 ml-1 whitespace-nowrap text-slate-400 flex items-end mb-0.5">${unitLabel}</span>
+                `;
+            } else {
+                htmlPriceCol = `<span class="text-slate-400">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span class="uppercase opacity-50 ml-1 whitespace-nowrap text-slate-400">${unitLabel}</span>`;
+            }
+
+            const htmlTotalPriceCol = isPromoApplied 
+                ? `<div class="flex items-center justify-end gap-1"><span class="bg-emerald-600/20 text-emerald-400 px-1 py-[1px] rounded text-[7px] uppercase font-bold border border-emerald-500/30">PROMO</span> <span class="text-emerald-400">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>`
+                : `<span class="text-purple-400">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>`;
+            
             tr.innerHTML = `
                 <td class="p-1 px-2 text-[10px] font-mono text-slate-400 border-r border-slate-800/30">
                     <div class="flex items-center gap-1">
@@ -179,7 +213,7 @@ window.renderB2BActiveItems = function() {
                     </div>
                 </td>
                 <td class="p-1 px-2 text-[10px] font-bold ${item.es_promo ? 'text-emerald-300' : 'text-slate-200'} whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title="${item.producto_descripcion}">${item.producto_descripcion}</td>
-                <td class="p-1 px-2 text-[10px] text-slate-400 text-right whitespace-nowrap">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})} <span class="uppercase opacity-50 ml-1 whitespace-nowrap">${unitLabel}</span></td>
+                <td class="p-1 px-2 text-[10px] text-right whitespace-nowrap"><div class="flex justify-end h-full items-center">${htmlPriceCol}</div></td>
                 <td class="p-1 bg-emerald-900/10 border-l border-r border-emerald-900/30">
                     <div class="flex items-center justify-center gap-1">
                         <button onclick="window.updateB2BQty('${item._system_id}', -1)" class="w-5 h-5 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">-</button>
@@ -191,7 +225,7 @@ window.renderB2BActiveItems = function() {
                     </div>
                 </td>
                 <td class="p-1 px-2 text-[10px] font-bold text-blue-400 text-center bg-blue-900/10 border-r border-slate-800/30">${isKgOrLts ? totalItemKg.toFixed(2) + ' Kg/Lt' : '--'}</td>
-                <td class="p-1 px-2 text-[11px] font-bold text-purple-400 text-right bg-purple-900/10">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                <td class="p-1 px-2 text-[11px] font-bold text-right bg-purple-900/10">${htmlTotalPriceCol}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -918,6 +952,9 @@ window.renderB2BCatalog = function(searchTerm = '') {
             const uni = p.unidad || p.unidad_medida || item.unidad || item.unidad_medida || 'Unidad';
             const prc = sanitizeLatAmPrice(p.precio || item.precio) || 0;
             
+            const regla = p.regla || item.regla || null;
+            const promo = p.promo || item.promo || null;
+            
             let actionHtml = '';
             if (isAdded) {
                 actionHtml = `<div class="flex items-center justify-center bg-slate-800/80 border border-slate-700/50 rounded px-1.5 py-1 gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500/50 animate-pulse"></span> <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate">En Pedido</span></div>`;
@@ -930,12 +967,34 @@ window.renderB2BCatalog = function(searchTerm = '') {
                 `;
             }
             
+            let finalCodHtml = cod;
+            if (regla && String(regla).trim() !== '') {
+                finalCodHtml = `<div class="flex items-center justify-between w-full">
+                                   <span class="truncate">${cod}</span>
+                                   <span class="bg-fuchsia-600/20 border border-fuchsia-500/50 text-fuchsia-400 px-1 py-0.5 rounded shadow text-[8px] uppercase font-bold ml-1 shrink-0" title="Promo Vigente: ${regla}">⚡ PROMO</span>
+                                </div>`;
+            }
+
+            let finalPriceHtml = `$${prc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}`;
+            if (regla && String(regla).trim() !== '') {
+                const match = String(regla).match(/CANTIDAD:\s*(\d+)/i);
+                const cant = match ? match[1] : '?';
+                const promoVal = promo || 'N/A';
+                const tooltipText = `Promoción: Llevando ${cant} unidades o más -> Precio: $ ${promoVal}`;
+                finalPriceHtml = `<div class="group relative inline-block w-full cursor-help text-right" title="${tooltipText}">
+                                      ${finalPriceHtml}
+                                      <div class="absolute bottom-full right-0 mb-1 hidden group-hover:block w-max max-w-xs bg-indigo-950 border border-indigo-500/50 text-indigo-200 text-[9px] p-1.5 rounded shadow-xl z-50 whitespace-nowrap text-left">
+                                          <span class="text-fuchsia-400 font-bold">⚡ Promo:</span> \u2265 <span class="text-white font-bold">${cant}</span> u. -> Precio: <span class="text-emerald-400 font-bold">$ ${promoVal}</span>
+                                      </div>
+                                  </div>`;
+            }
+            
             tr.innerHTML = `
                 <td class="p-1.5 border-b border-slate-800/50 w-28">
                     ${actionHtml}
                 </td>
                 <td class="p-1.5 text-[10px] font-mono text-slate-400 border-b border-slate-800/50">
-                    ${cod}
+                    ${finalCodHtml}
                 </td>
                 <td class="p-1.5 text-[10px] font-bold text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px] border-b border-slate-800/50" title="${desc}">
                     ${desc}
@@ -950,7 +1009,7 @@ window.renderB2BCatalog = function(searchTerm = '') {
                     ${item.datos_maestros?.cant_valor || item.cant_valor || 1}
                 </td>
                 <td class="p-1.5 text-[10px] font-bold text-emerald-400 text-right border-b border-slate-800/50 bg-emerald-900/5">
-                    $${prc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}
+                    ${finalPriceHtml}
                 </td>
             `;
             tbody.appendChild(tr);
@@ -993,7 +1052,9 @@ window.addB2BCatalogItem = function(sysId, initQty = 1) {
         unidad_medida: p.unidad || p.unidad_medida || row.unidad || 'Unidad',
         cant_bult: p.cant_bult || row.cant_bult || 1,
         cant_valor: p.cant_valor || row.cant_valor || 1,
-        es_promo: !!(p.precio_promo || row.precio_promo || p.condicion_promo || row.condicion_promo)
+        es_promo: !!(p.precio_promo || row.precio_promo || p.condicion_promo || row.condicion_promo),
+        regla: p.regla || row.regla || null,
+        promo: p.promo || row.promo || null
     });
     
     saveB2BCart(cart);
