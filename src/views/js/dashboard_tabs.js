@@ -11,9 +11,9 @@ let dashboardTabState = 'DRIVE'; // 'DRIVE' | 'DB'
 window.selectedFiles = new Map(); // Selection State (Context Aware Map)
 
 // Selection Logic
-window.toggleSelection = function (id, el, isExtraido = false) {
+window.toggleSelection = function (id, el, isExtraido = false, fileName = "") {
     if (el.checked) {
-        window.selectedFiles.set(id, { isExtraido: !!isExtraido });
+        window.selectedFiles.set(id, { isExtraido: !!isExtraido, fileName: fileName });
     } else {
         window.selectedFiles.delete(id);
     }
@@ -81,7 +81,7 @@ window.switchDashboardTab = function (mode, contextMode = 'listas', processedDB 
         // Contextual UI Reactivity (Render Upload Feature ONLY in DRIVE mode)
         if (uploadBtnContainer && window.currentDriveFolderId) {
             uploadBtnContainer.innerHTML = `
-                <input type="file" id="nativeFileUpload_${window.currentDriveFolderId}" accept=".xlsx,.xls,.csv" class="hidden" onchange="window.uploadSelectedFile(event, '${window.currentDriveFolderId}')">
+                <input type="file" id="nativeFileUpload_${window.currentDriveFolderId}" accept=".xlsx,.xls,.csv" class="hidden" multiple onchange="window.uploadSelectedFile(event, '${window.currentDriveFolderId}')">
                 <button onclick="document.getElementById('nativeFileUpload_${window.currentDriveFolderId}').click()" 
                     class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 border border-blue-500/50 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0" 
                     id="btnNativeUpload_${window.currentDriveFolderId}">
@@ -478,7 +478,7 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                     <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
                         <input type="checkbox" 
                             class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500 cursor-pointer transition-colors"
-                            onchange="toggleSelection('${file.id}', this, true)"
+                            onchange="toggleSelection('${file.id}', this, true, '${displayName}')"
                         >
                     </div>
                     <div>
@@ -538,7 +538,7 @@ function renderProcessedGrid(files, flujosDisponibles = []) {
                     <div class="absolute top-4 right-4 z-10" onclick="event.stopPropagation()">
                         <input type="checkbox" 
                             class="w-5 h-5 rounded-md border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 cursor-pointer transition-colors"
-                            onchange="toggleSelection('${file.id}', this, false)"
+                            onchange="toggleSelection('${file.id}', this, false, '${displayName.replace(/'/g, "\\'")}')"
                         >
                     </div>
 

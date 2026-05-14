@@ -172,8 +172,13 @@ window.renderB2BActiveItems = function() {
             sumPrice += totalItemPrice;
             
             tr.innerHTML = `
-                <td class="p-1 px-2 text-[10px] font-mono text-slate-400 border-r border-slate-800/30">${item.codigo_producto}</td>
-                <td class="p-1 px-2 text-[10px] font-bold text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title="${item.producto_descripcion}">${item.producto_descripcion}</td>
+                <td class="p-1 px-2 text-[10px] font-mono text-slate-400 border-r border-slate-800/30">
+                    <div class="flex items-center gap-1">
+                        ${item.es_promo ? '<span class="bg-emerald-600 text-white px-1 py-0.5 rounded text-[8px] font-bold shadow tracking-widest">PROMO</span>' : ''}
+                        ${item.codigo_producto}
+                    </div>
+                </td>
+                <td class="p-1 px-2 text-[10px] font-bold ${item.es_promo ? 'text-emerald-300' : 'text-slate-200'} whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title="${item.producto_descripcion}">${item.producto_descripcion}</td>
                 <td class="p-1 px-2 text-[10px] text-slate-400 text-right whitespace-nowrap">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})} <span class="uppercase opacity-50 ml-1 whitespace-nowrap">${unitLabel}</span></td>
                 <td class="p-1 bg-emerald-900/10 border-l border-r border-emerald-900/30">
                     <div class="flex items-center justify-center gap-1">
@@ -987,7 +992,8 @@ window.addB2BCatalogItem = function(sysId, initQty = 1) {
         cantidad: initQty,
         unidad_medida: p.unidad || p.unidad_medida || row.unidad || 'Unidad',
         cant_bult: p.cant_bult || row.cant_bult || 1,
-        cant_valor: p.cant_valor || row.cant_valor || 1
+        cant_valor: p.cant_valor || row.cant_valor || 1,
+        es_promo: !!(p.precio_promo || row.precio_promo || p.condicion_promo || row.condicion_promo)
     });
     
     saveB2BCart(cart);

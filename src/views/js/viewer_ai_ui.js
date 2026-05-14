@@ -460,6 +460,29 @@ class ViewerAiUi {
 
             const processChunk = () => {
                 const end = Math.min(i + chunkSize, total);
+                
+                // [NUEVO CORTAFUEGOS DE ECONOMÍA IA - PRE-COMPUTO O(1)]
+                let precomputedDictKeys = null;
+                if (options.onlyAnomalous && pipeline && pipeline.length > 0) {
+                    let combinedDict = {};
+                    pipeline.forEach(r => {
+                        if (r.tipo === 'ast_conditional' && r.logica) {
+                            for (let b of r.logica) {
+                                const cond = b.condicion;
+                                const act = b.accion;
+                                if (cond && cond.operador === 'IN_DICT_KEYS' && typeof cond.valor === 'object' && cond.valor !== null) {
+                                    Object.assign(combinedDict, cond.valor);
+                                } else if (act && act.tipo_accion === 'DICTIONARY_REPLACE' && typeof act.valor === 'object' && act.valor !== null) {
+                                    Object.assign(combinedDict, act.valor);
+                                }
+                            }
+                        }
+                    });
+                    if (Object.keys(combinedDict).length > 0) {
+                        precomputedDictKeys = new Set(Object.keys(combinedDict).map(k => String(k).trim().toLowerCase()));
+                    }
+                }
+
                 for (; i < end; i++) {
                     // [Filtro Estricto de Huérfanos] - Si no tiene Código válido, ignorarlo.
                     if (codigoColId !== null) {
@@ -578,32 +601,13 @@ class ViewerAiUi {
                              if (mutateRs.rejected) {
                                  isResolved = false; // Anomalía estricta (Rojo)
                              } else {
-                                 // Detectar Cache Miss analizando el pipeline
-                                 let libretaDict = null;
-                                 pipeline.forEach(r => {
-                                      if (r.tipo === 'ast_conditional' && r.logica) {
-                                           // [FIX TICKET #034] Escanear TODAS las ramas de la lógica, no solo la posición 0
-                                           for (let b of r.logica) {
-                                               const cond = b.condicion;
-                                               const act = b.accion;
-                                               if (cond && cond.operador === 'IN_DICT_KEYS' && typeof cond.valor === 'object' && cond.valor !== null) {
-                                                   libretaDict = cond.valor; break;
-                                               } else if (act && act.tipo_accion === 'DICTIONARY_REPLACE' && typeof act.valor === 'object' && act.valor !== null) {
-                                                   libretaDict = act.valor; break;
-                                               }
-                                           }
-                                      }
-                                 });
-
-                                 if (libretaDict && val.trim() !== "") {
-                                      // [FIX TICKET #034] Heurística Case-Insensitive para emular comportamiento nativo del AST Parser
+                                 // Detectar Cache Miss usando el Set pre-computado en O(1)
+                                 if (precomputedDictKeys && val.trim() !== "") {
+                                      // Heurística Case-Insensitive O(1) nativa del AST Parser
                                       const valLower = val.trim().toLowerCase();
                                       const outValLower = outVal.toLowerCase();
                                       
-                                      const keyExists = Object.keys(libretaDict).some(k => {
-                                           const kl = String(k).trim().toLowerCase();
-                                           return kl === valLower || kl === outValLower;
-                                      });
+                                      const keyExists = precomputedDictKeys.has(valLower) || precomputedDictKeys.has(outValLower);
                                       
                                       if (!keyExists) {
                                           if (outVal === "" || outVal === val) {

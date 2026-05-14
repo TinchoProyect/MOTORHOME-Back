@@ -54,8 +54,10 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
     if (!modal || !img || !sub) return;
 
     window.currentOcrProviderId = providerId;
-    window.currentOcrFileId = fileId;
+    window.currentOcrFileId = fileId; // Puede ser un String o un Array
     window.currentOcrFileName = fileName;
+    
+    const firstFileId = Array.isArray(fileId) ? fileId[0] : fileId;
 
     // Resetear Grilla
     if (window.ocrGridInstance) {
@@ -109,7 +111,7 @@ window.openVisorOcrListas = async function(fileId, fileName, providerId) {
     }
 
     // 1. Cargar la imagen usando el Proxy (para mostrarla visualmente en el panel izquierdo)
-    const proxyUrl = `${backendUrl}/api/facturas/pdf/${fileId}?name=${encodeURIComponent(fileName)}`;
+    const proxyUrl = `${backendUrl}/api/facturas/pdf/${firstFileId}?name=${encodeURIComponent(fileName)}`;
     img.src = proxyUrl;
     img.style.display = 'block';
     window.resetZoomVisorOcr();

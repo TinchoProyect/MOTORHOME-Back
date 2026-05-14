@@ -27,12 +27,32 @@ window.DashboardActions = (function () {
         }
 
         if (count > 0) {
+            // Verificar si todos los seleccionados son pendientes
+            let allPending = true;
+            if (window.selectedFiles && window.selectedFiles.size > 0) {
+                for (const value of window.selectedFiles.values()) {
+                    if (value.isExtraido) {
+                        allPending = false;
+                        break;
+                    }
+                }
+            }
+
             bar.innerHTML = `
-                <button onclick="window.DashboardActions.openRollbackModal()" 
-                    class="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-full shadow-2xl hover:shadow-red-900/50 transition-all font-bold tracking-wide">
-                    <i data-lucide="trash-2" class="w-5 h-5"></i>
-                    <span class="text-sm">ELIMINAR (${count})</span>
-                </button>
+                <div class="flex gap-4">
+                    <button onclick="window.DashboardActions.openRollbackModal()" 
+                        class="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-full shadow-2xl hover:shadow-red-900/50 transition-all font-bold tracking-wide">
+                        <i data-lucide="trash-2" class="w-5 h-5"></i>
+                        <span class="text-sm">ELIMINAR (${count})</span>
+                    </button>
+                    ${allPending ? `
+                    <button onclick="window.DashboardActions.processBatch()" 
+                        class="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full shadow-2xl hover:shadow-blue-900/50 transition-all font-bold tracking-wide">
+                        <i data-lucide="bot" class="w-5 h-5"></i>
+                        <span class="text-sm">PROCESAR LOTE (${count})</span>
+                    </button>
+                    ` : ''}
+                </div>
             `;
             // Animate In
             setTimeout(() => {
@@ -302,11 +322,73 @@ window.DashboardActions = (function () {
         }
     }
 
+    // 4. Batch Processing
+    function processBatch() {
+        if (!_selectedIds || _selectedIds.length === 0) {
+            _selectedIds = window.selectedFiles ? Array.from(window.selectedFiles.keys()) : [];
+        }
+        if (_selectedIds.length === 0) return;
+
+        const providerId = window.currentActiveProviderId;
+        
+        let hasImage = false;
+        let hasExcel = false;
+        
+        let isPdfBatch = false;
+        
+        if (window.selectedFiles) {
+            window.selectedFiles.forEach((data, id) => {
+                if (data.fileName) {
+                    const lower = data.fileName.toLowerCase();
+                    if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.webp')) {
+                        hasImage = true;
+                    } else if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv') || lower.endsWith('.pdf')) {
+                        hasExcel = true;
+                        if (lower.endsWith('.pdf')) isPdfBatch = true;
+                    }
+                }
+            });
+        }
+        
+        // Si no hay información de nombres (fallback al comportamiento anterior o intentar Excel por defecto si no es explícitamente imagen)
+        if (!hasImage && !hasExcel) {
+             hasExcel = true; // Default fallback to Excel/CSV
+        }
+
+        if (hasImage) {
+            if (window.openVisorOcrListas) {
+                console.log("[DashboardActions] Lanzando procesamiento OCR en lote para:", _selectedIds);
+                window.openVisorOcrListas(_selectedIds, "Lote_Seleccionado", providerId);
+                closeModal();
+                if (window.clearSelection) window.clearSelection();
+            } else {
+                console.error("Módulo viewer_ocr_listas.js no cargado");
+                alert("El módulo de OCR no está disponible.");
+            }
+        } else if (hasExcel) {
+            if (window.openFileViewer) {
+                console.log("[DashboardActions] Lanzando procesamiento ETL en lote para:", _selectedIds);
+                // openFileViewer ahora debe aceptar un arreglo de IDs y Nombres
+                let batchNames = _selectedIds.map(id => {
+                    const data = window.selectedFiles ? window.selectedFiles.get(id) : null;
+                    return data && data.fileName ? data.fileName : (isPdfBatch ? "Lote_Combinado.pdf" : "Lote_Combinado.xlsx");
+                });
+                window.openFileViewer(_selectedIds, batchNames, providerId, null);
+                closeModal();
+                if (window.clearSelection) window.clearSelection();
+            } else {
+                console.error("Módulo viewer_engine.js no cargado");
+                alert("El módulo de visor tabular no está disponible.");
+            }
+        }
+    }
+
     return {
         renderActionBar,
         openRollbackModal,
         closeModal,
-        executeRollback
+        executeRollback,
+        processBatch
     };
 })();
 

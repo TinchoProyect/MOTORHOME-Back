@@ -383,7 +383,12 @@ function renderVirtualTable(originalData) {
     let lastRealRowIndex = cleanedData.length - 1;
     while (lastRealRowIndex >= 0) {
         const row = cleanedData[lastRealRowIndex];
-        const isEmptyRow = !row || row.length === 0 || row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
+        let isEmptyRow = false;
+        if (Array.isArray(row)) {
+            isEmptyRow = row.length === 0 || row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
+        } else if (!row) {
+            isEmptyRow = true;
+        }
         if (!isEmptyRow) break;
         lastRealRowIndex--;
     }
@@ -757,6 +762,20 @@ function renderVirtualTable(originalData) {
 
                 const colWidth = window.currentColWidths && window.currentColWidths[j] ? window.currentColWidths[j] : 150;
                 let cellClass = 'border border-slate-800 p-2 whitespace-nowrap text-slate-400 overflow-hidden text-ellipsis transition-colors duration-150';
+
+                // [FASE 4] Resaltado Visual para Fusión de Promociones
+                const colHeaderName = String(headerRow[dataIdx] || "").toUpperCase();
+                if (colHeaderName === 'PRECIO_PROMO' || colHeaderName === 'CONDICION_PROMO') {
+                    if (cellVal && String(cellVal).trim() !== "") {
+                        cellClass = cellClass.replace('text-slate-400', 'text-emerald-300');
+                        cellClass += ' bg-emerald-900/20 font-bold border-emerald-500/30';
+                        if (colHeaderName === 'PRECIO_PROMO') {
+                            cellVal = `<span class="bg-emerald-600 text-white px-1.5 py-0.5 rounded shadow text-[9px] mr-1 uppercase">PROMO</span> ${cellVal}`;
+                        }
+                    } else {
+                        cellClass += ' bg-slate-900/30 opacity-60';
+                    }
+                }
 
                 // [Ticket #010] Ignorar visualmente si la columna está omitida en PDF
                 const isOmitted = window.isViewerReadOnly && window.pdfOmittedColumns && window.pdfOmittedColumns.includes(dataIdx);
@@ -3076,6 +3095,9 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
                         <button onclick="window.injectCombineHash('${colId}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs shadow transition-transform active:scale-95 flex items-center gap-1.5" title="Convierte todo el texto en un Hash único determinista">
                             <i data-lucide="fingerprint" class="w-3.5 h-3.5"></i> Generar Hash Determinista
                         </button>
+                        <button onclick="window.clearSalvatajeRules('${colId}')" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded font-bold text-xs shadow transition-transform active:scale-95 flex items-center gap-1.5" title="Elimina las reglas de salvataje aplicadas a esta columna">
+                            <i data-lucide="eraser" class="w-3.5 h-3.5"></i> Limpiar Reglas
+                        </button>
                     </div>
                 </div>
                 <div class="text-amber-200/90 text-[13px] leading-relaxed">
@@ -3188,15 +3210,20 @@ window.runUniqueValueAudit = function(colId, colName, viewMode = 'raw') {
                 didOpen: () => { if(window.lucide) window.lucide.createIcons(); }
             }).then((result) => {
                 if (result.isConfirmed) {
-                    if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
-                        window.viewerRuleWorkshop.syncToGlobalState();
+                    // [QA FIX] Persistir estado en RAM y Forzar Pipeline ETL general
+                    if (typeof window.saveSheetState === 'function') {
+                        window.saveSheetState(window.currentSheetName);
                     }
-                    if (typeof window.triggerSafeRender === 'function') {
+                    
+                    if (typeof window.generatePreview === 'function') {
+                        window.generatePreview(true);
+                    } else if (typeof window.triggerSafeRender === 'function') {
                         window.triggerSafeRender();
                     }
+                    
                     Swal.fire({
-                        title: 'Guardado Exitóso',
-                        text: 'Las reglas de resolución han sido inyectadas en el pipeline.',
+                        title: 'Guardado Exitoso',
+                        text: 'La regla de salvataje ha impactado en la matriz.',
                         icon: 'success',
                         background: '#0f172a', color: '#10b981',
                         confirmButtonColor: '#3b82f6',
@@ -3252,9 +3279,9 @@ window.injectCombineNumeric = function(colId) {
                  window.draftPipelines[colId] = { rules: [] };
             }
             
-            const existingDupl = window.draftPipelines[colId].rules.find(r => r.type === 'combine_numeric' && r.source_col_id === targetColId);
+            const existingDupl = window.draftPipelines[colId].rules.find(r => r.type === 'combine_numeric' && r.target_col_id === targetColId);
             if (existingDupl) {
-                Swal.fire({ title: 'Atención', text: 'Esta combinación numérica ya existe.', icon: 'info', background: '#0f172a', color: '#f8fafc' });
+                Swal.fire({ title: 'Atención', text: 'Esta combinación numérica ya existe en el flujo.', icon: 'info', background: '#0f172a', color: '#f8fafc' });
                 return;
             }
             
@@ -3279,8 +3306,12 @@ window.injectCombineNumeric = function(colId) {
                 showConfirmButton: false
             });
             
-            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
-                window.viewerRuleWorkshop.syncToGlobalState();
+            // [QA FIX] Persistir estado en RAM y Forzar Pipeline ETL general
+            if (typeof window.saveSheetState === 'function') {
+                window.saveSheetState(window.currentSheetName);
+            }
+            if (typeof window.generatePreview === 'function') {
+                window.generatePreview(true);
             } else if (typeof window.triggerSafeRender === 'function') {
                 window.triggerSafeRender();
             } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
@@ -3348,8 +3379,12 @@ window.injectCombineHash = function(colId) {
                 timer: 3000
             });
             
-            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
-                window.viewerRuleWorkshop.syncToGlobalState();
+            // [QA FIX] Persistir estado en RAM y Forzar Pipeline ETL general
+            if (typeof window.saveSheetState === 'function') {
+                window.saveSheetState(window.currentSheetName);
+            }
+            if (typeof window.generatePreview === 'function') {
+                window.generatePreview(true);
             } else if (typeof window.triggerSafeRender === 'function') {
                 window.triggerSafeRender();
             } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
@@ -3410,8 +3445,12 @@ window.unifyDuplicates = function(colId, viewMode) {
                 timer: 3000
             });
             
-            if (window.viewerRuleWorkshop && typeof window.viewerRuleWorkshop.syncToGlobalState === 'function') {
-                window.viewerRuleWorkshop.syncToGlobalState();
+            // [QA FIX] Persistir estado en RAM y Forzar Pipeline ETL general
+            if (typeof window.saveSheetState === 'function') {
+                window.saveSheetState(window.currentSheetName);
+            }
+            if (typeof window.generatePreview === 'function') {
+                window.generatePreview(true);
             } else if (typeof window.triggerSafeRender === 'function') {
                 window.triggerSafeRender();
             } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
@@ -3426,4 +3465,46 @@ window.unifyDuplicates = function(colId, viewMode) {
             }, 3500); // 3 seconds for Swal success timer
         }
     });
+};
+
+window.clearSalvatajeRules = function(colId) {
+    if (!window.draftPipelines || !window.draftPipelines[colId] || !window.draftPipelines[colId].rules) return;
+    
+    const initialLen = window.draftPipelines[colId].rules.length;
+    window.draftPipelines[colId].rules = window.draftPipelines[colId].rules.filter(r => 
+        r.type !== 'combine_numeric' && r.tipo !== 'combine_numeric' &&
+        r.type !== 'combine_hash' && r.tipo !== 'combine_hash' &&
+        r.type !== 'remove_duplicates' && r.tipo !== 'remove_duplicates'
+    );
+    
+    if (window.draftPipelines[colId].rules.length < initialLen) {
+        // [QA FIX] Persistir estado en RAM y Forzar Pipeline ETL general
+        if (typeof window.saveSheetState === 'function') {
+            window.saveSheetState(window.currentSheetName);
+        }
+        if (typeof window.generatePreview === 'function') {
+            window.generatePreview(true);
+        } else if (typeof window.triggerSafeRender === 'function') {
+            window.triggerSafeRender();
+        } else if (typeof window.renderVirtualTable === 'function' && window.currentSheetData) {
+            window.renderVirtualTable(window.currentSheetData);
+        }
+        
+        Swal.fire({
+            title: 'Reglas Limpiadas',
+            text: 'Se han eliminado las reglas de salvataje y depuración.',
+            icon: 'success',
+            background: '#0f172a', color: '#10b981',
+            confirmButtonColor: '#3b82f6',
+            timer: 2000
+        });
+        
+        const vCol = window.virtualColumns && window.virtualColumns.find(c => String(c.id) === String(colId));
+        const cName = vCol ? vCol.name : colId;
+        setTimeout(() => {
+            window.runUniqueValueAudit(colId, cName, 'processed');
+        }, 2100);
+    } else {
+        Swal.fire({ title: 'Atención', text: 'No hay reglas de salvataje activas en esta columna.', icon: 'info', background: '#0f172a', color: '#f8fafc' });
+    }
 };

@@ -1391,7 +1391,7 @@ export async function processCacheMiss(encodedPrompt, ruleIdx, processAll = fals
         const payload = {
             column_name: activeContext.colName || "Columna",
             prompt: originalPrompt,
-            samples: uniqueMisses.slice(0, 500),
+            samples: uniqueMisses, // Procesar 100% de los deltas
             require_ast: false,
             literal_mode: isLiteral
         };

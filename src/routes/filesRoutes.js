@@ -10,7 +10,7 @@ const upload = multer({
 });
 
 // POST /api/files/upload (Direct Drive Upload)
-router.post('/upload', upload.single('file'), filesController.uploadDirectFile);
+router.post('/upload', upload.array('files', 10), filesController.uploadDirectFile);
 
 // GET /api/files/list?folderId=...
 router.get('/list', filesController.listFiles);
@@ -21,6 +21,9 @@ router.get('/download/:fileId', filesController.downloadFile);
 // POST /api/files/extract
 console.log("[FilesRoutes] Registering /extract. Handler type:", typeof filesController.processExtraction);
 router.post('/extract', filesController.processExtraction);
+
+// POST /api/files/extract-batch
+router.post('/extract-batch', filesController.processBatchExtraction);
 
 // POST /api/files/confirm
 router.post('/confirm', filesController.confirmExtraction);

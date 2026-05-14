@@ -166,9 +166,15 @@ async function processIngestion(fileId, providerId, dataSnapshot) {
 
         // C. Ejecutar Movimiento
         if (targetFolderId) {
-            await driveService.moveFile(fileId, targetFolderId);
+            const fileIdsToMove = fileId.split(',');
+            for (const singleFileId of fileIdsToMove) {
+                const cleanId = singleFileId.trim();
+                if (cleanId) {
+                    await driveService.moveFile(cleanId, targetFolderId);
+                }
+            }
             moveResult = { moved: true, destination: targetFolderId };
-            console.log("   -> [Drive] 🚚 Archivo MOVIDO exitosamente.");
+            console.log(`   -> [Drive] 🚚 Archivo(s) (${fileIdsToMove.length}) MOVIDO(S) exitosamente.`);
         } else {
             moveResult = { moved: false, reason: "No Target Folder" };
         }

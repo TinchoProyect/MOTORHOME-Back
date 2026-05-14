@@ -141,11 +141,16 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
         const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
         const downloadUrl = `${backendUrl}/api/files/download/${fileId}`;
 
-        const isExcel = fileName.match(/\.(xlsx|xls|csv)$/i);
-        const isPdf = fileName.match(/\.pdf$/i);
-        const isImg = fileName.match(/\.(jpg|jpeg|png)$/i);
+        let primaryName = Array.isArray(fileName) ? fileName[0] : fileName;
+        
+        // Convert to string safely in case it's something else
+        primaryName = String(primaryName || "");
 
-        if (isExcel) {
+        const isExcel = primaryName.match(/\.(xlsx|xls|csv)$/i);
+        const isPdf = primaryName.match(/\.pdf$/i);
+        const isImg = primaryName.match(/\.(jpg|jpeg|png)$/i);
+
+        if (isExcel || (Array.isArray(fileId) && !isPdf)) {
             // [QA-HOTFIX] En modo Pendientes/Lectura, NO renderizar herramientas ETL avanzadas.
             if (window.ViewerUI && window.ViewerUI.toggleTools) {
                 window.ViewerUI.toggleTools(false);
@@ -157,123 +162,189 @@ async function openFileViewer(fileId, fileName, providerId = null, flujoId = nul
                 if (btnReset) btnReset.classList.add('hidden');
             }
 
-            // [V4 Fix] Rule Workshop se auto-inicializa ahora.
+            // Si es un lote (Array de IDs) Excel, delegamos la extracción al Backend
+            if (Array.isArray(fileId)) {
+                console.log("[ViewerEngine] Lote detectado. Solicitando extracciones crudas al backend...");
+                const response = await fetch(`${backendUrl}/api/files/extract-batch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileIds: fileId, providerId: providerId })
+                });
 
-            const response = await fetch(downloadUrl);
-            if (!response.ok) throw new Error("Error descargando archivo.");
-            const arrayBuffer = await response.arrayBuffer();
-            window.currentFileBuffer = arrayBuffer; // [Ticket #019] Exponer arrayBuffer para herramienta geométrica
-            currentFileBuffer = arrayBuffer;
+                if (!response.ok) throw new Error("Error extrayendo lote de archivos.");
+                const result = await response.json();
+                
+                if (!result.success) throw new Error(result.error || "Fallo en extracción de lote.");
 
-            // Worker Init
-            const blob = new Blob([window.WORKER_CODE], { type: 'application/javascript' });
-            viewerWorker = new Worker(URL.createObjectURL(blob));
-
-            const initWatchdog = setTimeout(() => {
-                if (useWorker && !currentWorkbook) {
-                    console.error("🚨 Worker INIT Timeout (7s).");
-                    useWorker = false;
-                    viewerWorker.terminate();
-                    processLocally(workbook, "Hoja1");
+                window.currentExtractions = result.data.raw_extractions || [result.data.full_data];
+                
+                // NO fusionamos a ciegas, cargamos como pestañas múltiples
+                window.currentSheetList = window.currentExtractions.map((_, i) => `Documento ${i+1}`);
+                window.virtualWorkbookCache = {};
+                
+                window.currentExtractions.forEach((matrix, i) => {
+                    window.virtualWorkbookCache[`Documento ${i+1}`] = matrix;
+                });
+                
+                // Inicializar UI
+                renderSheetTabs(window.currentSheetList);
+                if (window.currentSheetList.length > 1) sheetTabs.classList.remove('hidden');
+                excelContainer.classList.remove('hidden');
+                loader.classList.add('hidden');
+                
+                // Renderizar la primera pestaña por defecto
+                loadSheet(window.currentSheetList[0]);
+                
+                // Mostrar Herramienta JOIN
+                if (window.currentSheetList.length > 1 && typeof window.initVisualJoinButton === 'function') {
+                    window.initVisualJoinButton();
                 }
-            }, 7000);
 
-            viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer });
+            } else {
+                // Modo Archivo Único (Flujo Tradicional con Worker)
+                const response = await fetch(downloadUrl);
+                if (!response.ok) throw new Error("Error descargando archivo.");
+                const arrayBuffer = await response.arrayBuffer();
+                window.currentFileBuffer = arrayBuffer; // [Ticket #019] Exponer arrayBuffer para herramienta geométrica
+                currentFileBuffer = arrayBuffer;
 
-            viewerWorker.onerror = (e) => {
-                clearTimeout(initWatchdog);
-                console.error("🚨 Worker Crash:", e);
-                useWorker = false;
-                e.preventDefault();
-                viewerWorker.terminate();
-                processLocally(workbook, currentSheetName);
-            };
+                // Worker Init
+                const blob = new Blob([window.WORKER_CODE], { type: 'application/javascript' });
+                viewerWorker = new Worker(URL.createObjectURL(blob));
 
-            viewerWorker.onmessage = (e) => {
-                clearTimeout(initWatchdog);
-                const { type, payload } = e.data;
-
-                if (type === 'SHEETS_READY') {
-                    const sheetNames = payload;
-                    if (sheetNames.length === 0) throw new Error("Excel vacío.");
-                    window.currentSheetList = sheetNames;
-                    renderSheetTabs(sheetNames);
-                    if (sheetNames.length > 1) sheetTabs.classList.remove('hidden');
-                    excelContainer.classList.remove('hidden');
-                    loadSheet(sheetNames[0]);
-                    loader.classList.add('hidden');
-                } else if (type === 'SHEET_DATA_READY') {
-                    // [V5.19 UX] Filter out phantom empty rows at the bottom of the Excel file
-                    let rawData = payload.data || [];
-                    let lastRealRowIndex = rawData.length - 1;
-
-                    while (lastRealRowIndex >= 0) {
-                        const row = rawData[lastRealRowIndex];
-                        const isEmptyRow = !row || row.length === 0 || row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
-                        if (!isEmptyRow) break;
-                        lastRealRowIndex--;
+                const initWatchdog = setTimeout(() => {
+                    if (useWorker && !currentWorkbook) {
+                        console.error("🚨 Worker INIT Timeout (7s).");
+                        useWorker = false;
+                        viewerWorker.terminate();
+                        processLocally(workbook, "Hoja1");
                     }
+                }, 7000);
 
-                    currentSheetData = rawData.slice(0, lastRealRowIndex + 1);
+                viewerWorker.postMessage({ type: 'INIT_FILE', payload: arrayBuffer });
 
-                    // [Local Override Fix] Inyección de Stamp Determinista de Fila
-                    if (currentSheetData && currentSheetData.length > 0) {
-                        currentSheetData.forEach((row, idx) => {
-                            if (row && typeof row === 'object') row._rowUid = idx;
-                        });
-                    }
-
-                    console.log(`🛑 [VIGÍA FRONTEND] Filas crudas recibidas: ${rawData.length}, Filas efectivas tras limpieza de fantasmas: ${currentSheetData.length}`);
-                    renderVirtualTable(currentSheetData);
-
-                    // [CORRECCIÓN FINAL] INTENTAR CARGAR MEMORIA AUTOMÁTICAMENTE
-                    if (window.loadSavedConfiguration && !window._flujoAlreadyLoaded) {
-                        window.loadSavedConfiguration().then(ok => {
-                            if (ok) {
-                                window._flujoAlreadyLoaded = true;
-                                console.log("🔄 [ViewerEngine] Worker terminó + Configuración aplicada. Repintando...");
-                                renderVirtualTable(currentSheetData);
-                            }
-                        });
-                    }
-
-                } else if (type === 'ERROR') {
-                    console.error("Worker Logical Error:", payload);
+                viewerWorker.onerror = (e) => {
+                    clearTimeout(initWatchdog);
+                    console.error("🚨 Worker Crash:", e);
                     useWorker = false;
+                    e.preventDefault();
                     viewerWorker.terminate();
                     processLocally(workbook, currentSheetName);
-                }
-            };
+                };
+
+                viewerWorker.onmessage = (e) => {
+                    clearTimeout(initWatchdog);
+                    const { type, payload } = e.data;
+
+                    if (type === 'SHEETS_READY') {
+                        const sheetNames = payload;
+                        if (sheetNames.length === 0) throw new Error("Excel vacío.");
+                        window.currentSheetList = sheetNames;
+                        renderSheetTabs(sheetNames);
+                        if (sheetNames.length > 1) sheetTabs.classList.remove('hidden');
+                        excelContainer.classList.remove('hidden');
+                        loadSheet(sheetNames[0]);
+                        loader.classList.add('hidden');
+                    } else if (type === 'SHEET_DATA_READY') {
+                        // [V5.19 UX] Filter out phantom empty rows at the bottom of the Excel file
+                        let rawData = payload.data || [];
+                        let lastRealRowIndex = rawData.length - 1;
+
+                        while (lastRealRowIndex >= 0) {
+                            const row = rawData[lastRealRowIndex];
+                            const isEmptyRow = !row || row.length === 0 || row.every(cell => cell === null || cell === undefined || String(cell).trim() === "");
+                            if (!isEmptyRow) break;
+                            lastRealRowIndex--;
+                        }
+
+                        currentSheetData = rawData.slice(0, lastRealRowIndex + 1);
+
+                        // [Local Override Fix] Inyección de Stamp Determinista de Fila
+                        if (currentSheetData && currentSheetData.length > 0) {
+                            currentSheetData.forEach((row, idx) => {
+                                if (row && typeof row === 'object') row._rowUid = idx;
+                            });
+                        }
+
+                        console.log(`🛑 [VIGÍA FRONTEND] Filas crudas recibidas: ${rawData.length}, Filas efectivas tras limpieza de fantasmas: ${currentSheetData.length}`);
+                        renderVirtualTable(currentSheetData);
+
+                        // [CORRECCIÓN FINAL] INTENTAR CARGAR MEMORIA AUTOMÁTICAMENTE
+                        if (window.loadSavedConfiguration && !window._flujoAlreadyLoaded) {
+                            window.loadSavedConfiguration().then(ok => {
+                                if (ok) {
+                                    window._flujoAlreadyLoaded = true;
+                                    console.log("🔄 [ViewerEngine] Worker terminó + Configuración aplicada. Repintando...");
+                                    renderVirtualTable(currentSheetData);
+                                }
+                            });
+                        }
+
+                    } else if (type === 'ERROR') {
+                        console.error("Worker Logical Error:", payload);
+                        useWorker = false;
+                        viewerWorker.terminate();
+                        processLocally(workbook, currentSheetName);
+                    }
+                };
+            }
         } else if (isPdf) {
-            // [UX REQ] Mostrar siempre el PDF primero y desplegar modo de muestreo interactivo
-            pdfContainer.src = downloadUrl;
-            pdfContainer.classList.remove('hidden');
-            excelContainer.classList.add('hidden');
-            loader.classList.remove('hidden');
-
-            const response = await fetch(downloadUrl);
-            if (!response.ok) throw new Error("Error descargando archivo PDF.");
-            const arrayBuffer = await response.arrayBuffer();
-            window.currentFileBuffer = arrayBuffer; // [Ticket #019] Exponer arrayBuffer para herramienta geométrica
-            
-            // Cargar en memoria el PDF sin tabular aún
-            window.PDFExtractor.loadPdfText(arrayBuffer).then(itemCount => {
-                loader.classList.add('hidden');
-                const panel = document.getElementById('pdfControlsPanel');
-                if(panel && window.isViewerReadOnly) panel.classList.remove('hidden');
-
-                // Cargar plantillas del proveedor (Ticket #006)
-                const provId = window.globalContext?.providerId || window.currentActiveProviderId;
-                if(provId && window.loadPdfTemplates) {
-                    window.loadPdfTemplates(provId);
+            if (Array.isArray(fileId)) {
+                console.log("[ViewerEngine] Lote de PDFs detectado. Iniciando flujo interactivo...");
+                
+                // 1. Ocultar herramientas ETL de momento
+                if (window.ViewerUI && window.ViewerUI.toggleTools) window.ViewerUI.toggleTools(false);
+                
+                // Inicializar lote en memoria
+                window.batchDocuments = fileId.map((id, index) => {
+                    const name = Array.isArray(fileName) ? fileName[index] : `Documento PDF ${index + 1}`;
+                    return { id, name, isPdf: true, isExcel: false };
+                });
+                
+                window.currentSheetList = window.batchDocuments.map(d => d.name);
+                window.virtualWorkbookCache = {}; // Se llenará conforme se tabule
+                
+                renderSheetTabs(window.currentSheetList);
+                if (window.currentSheetList.length > 1) sheetTabs.classList.remove('hidden');
+                
+                // Mostrar Herramienta JOIN
+                if (window.currentSheetList.length > 1 && typeof window.initVisualJoinButton === 'function') {
+                    window.initVisualJoinButton();
                 }
-            }).catch(e => {
-                console.error("PDF Load Error:", e);
-                errContainer.textContent = "Error al leer PDF: " + e.message;
-                errContainer.classList.remove('hidden');
-                loader.classList.add('hidden');
-                pdfContainer.classList.add('hidden');
-            });
+                
+                // Cargar primera pestaña (esto disparará la renderización del visor PDF)
+                loadSheet(window.currentSheetList[0]);
+            } else {
+                // [UX REQ] Mostrar siempre el PDF primero y desplegar modo de muestreo interactivo
+                pdfContainer.src = downloadUrl;
+                pdfContainer.classList.remove('hidden');
+                excelContainer.classList.add('hidden');
+                loader.classList.remove('hidden');
+
+                const response = await fetch(downloadUrl);
+                if (!response.ok) throw new Error("Error descargando archivo PDF.");
+                const arrayBuffer = await response.arrayBuffer();
+                window.currentFileBuffer = arrayBuffer; // [Ticket #019] Exponer arrayBuffer para herramienta geométrica
+                
+                // Cargar en memoria el PDF sin tabular aún
+                window.PDFExtractor.loadPdfText(arrayBuffer).then(itemCount => {
+                    loader.classList.add('hidden');
+                    const panel = document.getElementById('pdfControlsPanel');
+                    if(panel && window.isViewerReadOnly) panel.classList.remove('hidden');
+
+                    // Cargar plantillas del proveedor (Ticket #006)
+                    const provId = window.globalContext?.providerId || window.currentActiveProviderId;
+                    if(provId && window.loadPdfTemplates) {
+                        window.loadPdfTemplates(provId);
+                    }
+                }).catch(e => {
+                    console.error("PDF Load Error:", e);
+                    errContainer.textContent = "Error al leer PDF: " + e.message;
+                    errContainer.classList.remove('hidden');
+                    loader.classList.add('hidden');
+                    pdfContainer.classList.add('hidden');
+                });
+            }
         } else if (isImg) {
             imgEl.src = downloadUrl;
             imgContainer.classList.remove('hidden');
@@ -303,8 +374,58 @@ function loadSheet(sheetName) {
     renderSheetTabs();
 
     const excelContainer = document.getElementById('excelContainer');
+    const pdfContainer = document.getElementById('pdfContainer');
+    const pdfControlsPanel = document.getElementById('pdfControlsPanel');
+    const loader = document.getElementById('viewerLoader');
+    const errContainer = document.getElementById('errorContainer');
+
+    currentSheetData = null;
+
+    // --- BATCH DOCUMENTS AWARENESS (LOTE HÍBRIDO INTERACTIVO) ---
+    if (window.batchDocuments) {
+        const doc = window.batchDocuments.find(d => d.name === sheetName);
+        if (doc && doc.isPdf) {
+            // Si ya está extraído en cache, seguimos el flujo normal (mostrará la grilla)
+            if (!window.virtualWorkbookCache || !window.virtualWorkbookCache[sheetName]) {
+                console.log(`[ViewerEngine] Documento PDF seleccionado: ${sheetName}. Preparando visor...`);
+                if (excelContainer) excelContainer.classList.add('hidden');
+                if (pdfContainer) pdfContainer.classList.remove('hidden');
+                if (loader) loader.classList.remove('hidden');
+                
+                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const downloadUrl = `${backendUrl}/api/files/download/${doc.id}`;
+                
+                if (pdfContainer) pdfContainer.src = downloadUrl;
+                
+                fetch(downloadUrl).then(res => res.arrayBuffer()).then(arrayBuffer => {
+                    window.currentFileBuffer = arrayBuffer;
+                    window.PDFExtractor.loadPdfText(arrayBuffer).then(() => {
+                        if (loader) loader.classList.add('hidden');
+                        if (pdfControlsPanel && window.isViewerReadOnly) pdfControlsPanel.classList.remove('hidden');
+                        
+                        const provId = window.globalContext?.providerId || window.currentActiveProviderId;
+                        if (provId && window.loadPdfTemplates) window.loadPdfTemplates(provId);
+                    });
+                }).catch(e => {
+                    console.error("PDF Load Error:", e);
+                    if (errContainer) {
+                        errContainer.textContent = "Error al leer PDF: " + e.message;
+                        errContainer.classList.remove('hidden');
+                    }
+                    if (loader) loader.classList.add('hidden');
+                });
+                
+                return; // Esperamos interacción manual de Muestreo (Tabular)
+            }
+        }
+    }
+
+    // Asegurarse de que si es Grilla, los controles PDF desaparezcan
+    if (pdfContainer) pdfContainer.classList.add('hidden');
+    if (pdfControlsPanel) pdfControlsPanel.classList.add('hidden');
+
     if (excelContainer) {
-        // [FIX] Ensure container is VISIBLE (resetViewerState might hide it)
+        // [FIX] Ensure container is VISIBLE
         excelContainer.classList.remove('hidden');
 
         excelContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-64 text-blue-400">
@@ -312,8 +433,6 @@ function loadSheet(sheetName) {
             <span class="text-xs font-mono animate-pulse">PROCESANDO...</span>
         </div>`;
     }
-
-    currentSheetData = null;
 
     // 1. Virtual Cache Support (Multi-Sheet DB Recovery)
     if (window.virtualWorkbookCache && window.virtualWorkbookCache[sheetName]) {
@@ -433,7 +552,8 @@ function saveSheetState(sheetName) {
         computedCols: window.computedColumns ? JSON.parse(JSON.stringify(window.computedColumns)) : [],
         columnMapping: window.columnMapping ? JSON.parse(JSON.stringify(window.columnMapping)) : {},
         layoutConfig: window.LayoutManager ? window.LayoutManager.serializeSettings() : {},
-        visibilityConfig: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {}
+        visibilityConfig: window.ViewerVisibilityManager ? window.ViewerVisibilityManager.serializeSettings() : {},
+        pdfOmittedColumns: window.pdfOmittedColumns ? JSON.parse(JSON.stringify(window.pdfOmittedColumns)) : []
     };
 }
 
@@ -446,6 +566,7 @@ function loadSheetState(sheetName) {
     window.currentColWidths = {}; // Global para Drag&Drop Resizer
     window.virtualColumns = []; // Reset V4 Proxy
     window.computedColumns = []; // Reset V5 Computed Cols
+    window.pdfOmittedColumns = []; // Aislar estado de omisiones PDF (Ticket #010 fix)
 
     // Variables legacy reset
     window.columnMapping = {};
@@ -460,6 +581,7 @@ function loadSheetState(sheetName) {
         window.virtualColumns = config.virtualCols || [];
         window.computedColumns = config.computedCols || [];
         window.columnMapping = config.columnMapping || {};
+        window.pdfOmittedColumns = config.pdfOmittedColumns || [];
         
         if (window.LayoutManager && config.layoutConfig) {
             window.LayoutManager.hydrateSettings(config.layoutConfig);
@@ -699,22 +821,39 @@ window.runPdfSampling = function(preserveOmissions = false) {
         const matrix = window.PDFExtractor.applyClustering(config);
         
         window.virtualWorkbookCache = window.virtualWorkbookCache || {};
-        window.virtualWorkbookCache["PDF_Tabulado"] = matrix;
-        if (window.updatePdfUIState) window.updatePdfUIState();
         
-        const sheetNames = ["PDF_Tabulado"];
-        window.currentSheetList = sheetNames;
-        renderSheetTabs(sheetNames);
-        const tabsEl = document.getElementById('sheetTabs');
-        if (sheetNames.length > 1 && tabsEl) tabsEl.classList.remove('hidden');
-        
-        currentSheetName = sheetNames[0]; window.currentSheetName = currentSheetName;
-        currentSheetData = matrix; window.currentSheetData = currentSheetData;
-        if (currentSheetData && currentSheetData.length > 0) {
-            currentSheetData.forEach((row, idx) => {
-                if (row && typeof row === 'object') row._rowUid = idx;
-            });
+        if (window.batchDocuments && window.currentSheetName) {
+            window.virtualWorkbookCache[window.currentSheetName] = matrix;
+            const doc = window.batchDocuments.find(d => d.name === window.currentSheetName);
+            if (doc) doc.extractedData = matrix;
+            
+            // Refrescar tabs por si hay que cambiar estilos
+            renderSheetTabs(window.currentSheetList);
+            
+            currentSheetData = matrix; window.currentSheetData = currentSheetData;
+            if (currentSheetData && currentSheetData.length > 0) {
+                currentSheetData.forEach((row, idx) => {
+                    if (row && typeof row === 'object' && row._rowUid === undefined) row._rowUid = idx;
+                });
+            }
+        } else {
+            window.virtualWorkbookCache["PDF_Tabulado"] = matrix;
+            const sheetNames = ["PDF_Tabulado"];
+            window.currentSheetList = sheetNames;
+            renderSheetTabs(sheetNames);
+            const tabsEl = document.getElementById('sheetTabs');
+            if (sheetNames.length > 1 && tabsEl) tabsEl.classList.remove('hidden');
+            
+            currentSheetName = sheetNames[0]; window.currentSheetName = currentSheetName;
+            currentSheetData = matrix; window.currentSheetData = currentSheetData;
+            if (currentSheetData && currentSheetData.length > 0) {
+                currentSheetData.forEach((row, idx) => {
+                    if (row && typeof row === 'object') row._rowUid = idx;
+                });
+            }
         }
+        
+        if (window.updatePdfUIState) window.updatePdfUIState();
         
         window.virtualColumns = [];
         window.computedColumns = [];
@@ -1270,5 +1409,286 @@ window.savePdfAnchors = function() {
     window.closePdfAnchorModal();
     if (window.runPdfSampling) {
         window.runPdfSampling();
+    }
+};
+
+// ============================================================================
+// VISUAL JOIN (HERRAMIENTA UNIVERSAL DE FUSIÓN DE LOTES)
+// ============================================================================
+
+window.initVisualJoinButton = function() {
+    const btnMap = document.getElementById('btnMappingMode');
+    if (!btnMap) return;
+    const toolbar = btnMap.parentElement;
+    
+    let existingBtn = document.getElementById('btnFuseVisual');
+    if (existingBtn) existingBtn.remove();
+    
+    const btnFuse = document.createElement('button');
+    btnFuse.id = 'btnFuseVisual';
+    btnFuse.className = "flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded shadow text-xs font-semibold tracking-wide transition-colors";
+    btnFuse.innerHTML = `<i data-lucide="combine" class="w-4 h-4"></i> Fusión (JOIN)`;
+    btnFuse.onclick = window.showVisualJoinModal;
+    
+    toolbar.insertBefore(btnFuse, btnMap);
+    if (window.lucide) window.lucide.createIcons();
+};
+
+window.showVisualJoinModal = function() {
+    let modal = document.getElementById('visualJoinModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'visualJoinModal';
+        modal.className = "fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4";
+        document.body.appendChild(modal);
+    }
+    
+    const validDocs = window.currentSheetList.filter(name => name !== 'Matriz Fusionada');
+    const docOptions = validDocs.map((name, i) => {
+        const matrix = window.virtualWorkbookCache[name];
+        const rowCount = matrix ? (matrix.length - 1) : 0;
+        return `<option value="${name}">${name} (${rowCount} filas)</option>`;
+    }).join('');
+    
+    let masterName = validDocs[0];
+    let satName = validDocs.length > 1 ? validDocs[1] : validDocs[0];
+    
+    const getCols = (docName) => {
+        if (!window.virtualWorkbookCache) return '';
+        const matrix = window.virtualWorkbookCache[docName];
+        if (!matrix || matrix.length === 0) return '';
+        return matrix[0].map((h, i) => `<option value="${i}">[Columna ${i+1}] ${h || 'Sin Nombre'}</option>`).join('');
+    };
+
+    modal.innerHTML = `
+        <div class="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-slate-800 bg-slate-800/50 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="combine" class="w-5 h-5 text-indigo-400"></i> Fusión Relacional (JOIN)
+                </h3>
+                <button onclick="document.getElementById('visualJoinModal').classList.add('hidden')" class="text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 flex flex-col gap-6">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">Documento Maestro (Base)</label>
+                        <select id="vjMasterDoc" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" onchange="window.updateVjCols()">
+                            ${docOptions}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">Documento Satélite (Promo)</label>
+                        <select id="vjSatDoc" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" onchange="window.updateVjCols()">
+                            ${docOptions}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">Columna Clave (Maestro)</label>
+                        <select id="vjMasterKey" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-emerald-400 focus:outline-none focus:border-indigo-500">
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">Columna Clave (Satélite)</label>
+                        <select id="vjSatKey" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-emerald-400 focus:outline-none focus:border-indigo-500">
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="p-4 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                    <h4 class="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-3">Inyección de Atributos</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Atributo a Extraer del Satélite (Ej: Precio Promo)</label>
+                            <select id="vjSatVal" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-indigo-200 focus:outline-none focus:border-indigo-500">
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Nombre de la Nueva Columna en el Maestro</label>
+                            <input type="text" id="vjDestName" value="PRECIO_PROMO" class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-slate-800 bg-slate-800/30 flex justify-between items-center">
+                <button onclick="window.removeVisualJoin()" class="px-4 py-2 bg-red-900/50 hover:bg-red-800 text-red-200 text-sm font-medium rounded transition-colors" title="Eliminar Matriz Fusionada actual">❌ Eliminar Fusión</button>
+                <div class="flex gap-3">
+                    <button onclick="document.getElementById('visualJoinModal').classList.add('hidden')" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors">Cancelar</button>
+                    <button onclick="window.executeVisualJoin()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-lg shadow-indigo-900/50 rounded transition-colors flex items-center gap-2">
+                        <i data-lucide="zap" class="w-4 h-4"></i> Ejecutar Fusión
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+    
+    document.getElementById('vjMasterDoc').value = masterName;
+    document.getElementById('vjSatDoc').value = satName;
+    
+    window.updateVjCols = function() {
+        const mName = document.getElementById('vjMasterDoc').value;
+        const sName = document.getElementById('vjSatDoc').value;
+        
+        document.getElementById('vjMasterKey').innerHTML = getCols(mName);
+        
+        const sCols = getCols(sName);
+        document.getElementById('vjSatKey').innerHTML = sCols;
+        document.getElementById('vjSatVal').innerHTML = sCols;
+        
+        setTimeout(() => {
+            const satValSelect = document.getElementById('vjSatVal');
+            for(let opt of satValSelect.options) {
+                if(opt.text.toUpperCase().includes('PRECIO')) {
+                    satValSelect.value = opt.value;
+                    break;
+                }
+            }
+        }, 10);
+    };
+    
+    window.updateVjCols();
+};
+
+window.removeVisualJoin = function() {
+    if (window.currentSheetList.includes("Matriz Fusionada")) {
+        window.currentSheetList = window.currentSheetList.filter(name => name !== "Matriz Fusionada");
+        delete window.virtualWorkbookCache["Matriz Fusionada"];
+        window.renderSheetTabs(window.currentSheetList);
+        if (window.currentSheetName === "Matriz Fusionada") {
+            window.loadSheet(window.currentSheetList[0]);
+        }
+        document.getElementById('visualJoinModal').classList.add('hidden');
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({icon: 'success', title: 'Fusión Eliminada', text: 'Se ha eliminado la Matriz Fusionada de la memoria caché.', background: '#0f172a', color: '#f8fafc', timer: 2000, showConfirmButton: false});
+        }
+    } else {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({icon: 'info', title: 'Sin efecto', text: 'No existe ninguna matriz fusionada activa.', background: '#0f172a', color: '#f8fafc'});
+        }
+    }
+};
+
+window.executeVisualJoin = function() {
+    const mName = document.getElementById('vjMasterDoc').value;
+    const sName = document.getElementById('vjSatDoc').value;
+    
+    if (mName === sName) {
+        if (typeof Swal !== 'undefined') Swal.fire({icon: 'error', title: 'Error Lógico', text: 'El Documento Maestro y el Satélite no pueden ser el mismo.', background: '#0f172a', color: '#f8fafc'});
+        return;
+    }
+    
+    const mKeyIdx = parseInt(document.getElementById('vjMasterKey').value);
+    const sKeyIdx = parseInt(document.getElementById('vjSatKey').value);
+    const sValIdx = parseInt(document.getElementById('vjSatVal').value);
+    const destName = document.getElementById('vjDestName').value.trim() || 'INYECCION';
+    
+    const masterMatrix = window.virtualWorkbookCache[mName];
+    const satMatrix = window.virtualWorkbookCache[sName];
+    
+    if (!masterMatrix || masterMatrix.length < 2 || !satMatrix || satMatrix.length < 2) {
+        if (typeof Swal !== 'undefined') Swal.fire({icon: 'warning', title: 'Datos insuficientes', text: 'Las matrices seleccionadas no tienen datos suficientes o no han sido tabuladas.', background: '#0f172a', color: '#f8fafc'});
+        return;
+    }
+    
+    const masterHeaders = [...masterMatrix[0]];
+    const satHeaders = satMatrix[0];
+    
+    if (!masterHeaders.includes(destName)) masterHeaders.push(destName);
+    const destIdx = masterHeaders.indexOf(destName);
+    
+    const satMap = new Map();
+    // 1. Llenar mapa satélite con limpieza extrema de strings (Punto C) y guardando toda la fila (Punto D)
+    for (let i = 1; i < satMatrix.length; i++) {
+        const row = satMatrix[i];
+        const key = String(row[sKeyIdx] || "").replace(/[\s\uFEFF\xA0]+/g, '').toUpperCase();
+        if (key) {
+            satMap.set(key, row); // Almacenamos la fila completa, no solo el valor
+        }
+    }
+    
+    let matchedCount = 0;
+    const newMatrix = [masterHeaders];
+    
+    // 2. Cruzar con Maestro
+    for (let i = 1; i < masterMatrix.length; i++) {
+        const row = [...masterMatrix[i]];
+        while (row.length < masterHeaders.length) row.push("");
+        
+        const key = String(row[mKeyIdx] || "").replace(/[\s\uFEFF\xA0]+/g, '').toUpperCase();
+        if (key && satMap.has(key)) {
+            const satRow = satMap.get(key);
+            row[destIdx] = satRow[sValIdx]; // Inyectar atributo destino
+            satMap.delete(key);
+            matchedCount++;
+        }
+        newMatrix.push(row);
+    }
+    
+    // 3. Anexar Huérfanos Estructurales (Punto D)
+    const orphans = Array.from(satMap.entries());
+    let nextUid = newMatrix.length; 
+    for (const [key, satRow] of orphans) {
+        let newRow = new Array(masterHeaders.length).fill("");
+        
+        // Alineación estructural por homonimia de cabeceras
+        masterHeaders.forEach((mHead, mIdx) => {
+            if (mHead === destName) return; // Se omite el destino inyectado
+            const sIdx = satHeaders.findIndex(h => h && String(h).toUpperCase() === String(mHead).toUpperCase());
+            if (sIdx > -1 && satRow[sIdx]) {
+                newRow[mIdx] = satRow[sIdx];
+            }
+        });
+        
+        // Forzar la existencia de la clave primaria si no se transfirió automáticamente
+        if (!newRow[mKeyIdx]) newRow[mKeyIdx] = key;
+        
+        // Forzar el atributo inyectado
+        newRow[destIdx] = satRow[sValIdx];
+        
+        // Sello de distinción si existe columna de descripción
+        const descIdx = masterHeaders.findIndex(h => h && (String(h).toUpperCase().includes('DESCRIP') || String(h).toUpperCase().includes('PROD')));
+        if (descIdx > -1 && !newRow[descIdx]) {
+            newRow[descIdx] = "ARTÍCULO SOLO EN PROMO";
+        }
+        
+        newRow._rowUid = nextUid++; // Inyectar _rowUid al huérfano
+        newMatrix.push(newRow);
+    }
+    
+    // Inyectar _rowUid al resto de las filas para sanear el renderizado
+    newMatrix.forEach((row, idx) => {
+        if (row && typeof row === 'object' && row._rowUid === undefined) {
+            row._rowUid = idx;
+        }
+    });
+    
+    document.getElementById('visualJoinModal').classList.add('hidden');
+    
+    window.virtualWorkbookCache["Matriz Fusionada"] = newMatrix;
+    
+    if (!window.currentSheetList.includes("Matriz Fusionada")) {
+        window.currentSheetList.push("Matriz Fusionada");
+    }
+    
+    window.renderSheetTabs(window.currentSheetList);
+    window.loadSheet("Matriz Fusionada");
+    
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            icon: 'success',
+            title: 'Fusión Exitosa',
+            html: `<div class="text-left"><p class="mb-2"><strong>Coincidencias Inyectadas:</strong> ${matchedCount}</p><p><strong>Artículos Huérfanos Anexados:</strong> ${orphans.length}</p></div>`,
+            background: '#0f172a',
+            color: '#f8fafc'
+        });
     }
 };

@@ -445,6 +445,15 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
 
                 html += `
                     <div class="group relative bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800 hover:border-blue-500/30 hover:shadow-blue-900/10 rounded-xl p-4 flex flex-col items-center gap-3 transition-all hover:-translate-y-1 hover:shadow-xl">
+                        <!-- Checkbox Batch Selection (Fase 3: Soporte Multiactivo) -->
+                        <div class="absolute top-2 left-2 z-10" onclick="event.stopPropagation()">
+                            <input type="checkbox" 
+                                class="w-4 h-4 rounded-md border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer transition-colors"
+                                onchange="if(window.toggleSelection) window.toggleSelection('${file.id}', this, false, '${file.name.replace(/'/g, "\\'")}')"
+                                title="Seleccionar para Procesamiento por Lote"
+                            >
+                        </div>
+
                         <!-- External Link (Corner) -->
                         <a href="${file.webViewLink}" target="_blank" class="absolute top-2 right-2 p-1 text-slate-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Abrir en Drive">
                             <i data-lucide="external-link" class="w-3 h-3"></i>
@@ -456,7 +465,7 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
                         </div>
                         
                         <!-- Name -->
-                        <p onclick="${clickAction}" class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors cursor-pointer">${file.name}</p>
+                        <p onclick="${clickAction}" class="text-[10px] text-center text-slate-300 font-medium line-clamp-2 w-full px-1 group-hover:text-white transition-colors cursor-pointer" title="${file.name.replace(/'/g, "\\'")}">${file.name}</p>
                         
                         <!-- Date -->
                         <span class="text-[9px] text-slate-600 font-mono mt-auto mb-2">${new Date(file.modifiedTime).toLocaleDateString()}</span>
@@ -491,16 +500,18 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
 // Carga Estricta de Archivos a Google Drive (Upload Node Pipe)
 // ============================================================================
 window.uploadSelectedFile = async function(event, folderId) {
-    const file = event.target.files[0];
-    if (!file || !folderId) return;
+    const files = event.target.files;
+    if (!files || files.length === 0 || !folderId) return;
 
     // Strict Size Bound Verification Frontend-side
     const maxMB = 50;
-    if (file.size > maxMB * 1024 * 1024) {
-        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Carga DENEGADA', text: `El archivo supera el límite máximo estricto de ${maxMB} MB.`, icon: 'error', background: '#0f172a', color: '#f8fafc' });
-        else alert(`Error: Archivo muy grande. Límite ${maxMB} MB.`);
-        event.target.value = ''; // Reset input
-        return;
+    for (let i = 0; i < files.length; i++) {
+        if (files[i].size > maxMB * 1024 * 1024) {
+            if (typeof Swal !== 'undefined') Swal.fire({ title: 'Carga DENEGADA', text: `Un archivo supera el límite máximo estricto de ${maxMB} MB.`, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+            else alert(`Error: Archivo muy grande. Límite ${maxMB} MB.`);
+            event.target.value = ''; // Reset input
+            return;
+        }
     }
 
     const btn = document.getElementById(`btnNativeUpload_${folderId}`);
@@ -515,7 +526,9 @@ window.uploadSelectedFile = async function(event, folderId) {
 
     // Prepare Multipart FormData
     const formData = new FormData();
-    formData.append('file', file);
+    for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+    }
     formData.append('folderId', folderId);
 
     try {
@@ -531,7 +544,7 @@ window.uploadSelectedFile = async function(event, folderId) {
             throw new Error(data.error || "Fallo en la comunicación con la API.");
         }
 
-        console.log(`[UploadService] Archivo inyectado con éxito: ${data.file.id}`);
+        console.log(`[UploadService] Archivos inyectados con éxito:`, data.files || data.file);
         // Limpiamos el File Input Local por seguridad
         event.target.value = '';
 
@@ -539,7 +552,7 @@ window.uploadSelectedFile = async function(event, folderId) {
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 title: 'Ingesta Exitosa',
-                text: 'El archivo ya se encuentra persistido en Drive.',
+                text: 'Los archivos ya se encuentran persistidos en Drive.',
                 icon: 'success',
                 timer: 2000,
                 background: '#0f172a', color: '#f8fafc',
@@ -906,16 +919,23 @@ async function showSingleSupplier(id) {
     
     <!-- [NEW] Visor Local de Artículos -->
     <div class="mt-6 p-6 bg-slate-900/40 rounded-xl border border-slate-800/50">
-        <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-            <i data-lucide="layout-list" class="w-3 h-3 text-blue-400"></i> Catálogo Activo del Proveedor
-        </h3>
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <i data-lucide="layout-list" class="w-3 h-3 text-blue-400"></i> Catálogo Activo del Proveedor
+            </h3>
+            <div class="relative w-64">
+                <i data-lucide="search" class="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500"></i>
+                <input type="text" id="catalogoSearchInput" onkeyup="window.filterCatalogoActivo()" placeholder="Buscar por SKU o descripción..." class="w-full bg-slate-950/50 border border-slate-700/50 text-slate-300 text-xs rounded-lg pl-9 pr-3 py-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-inner transition-all placeholder-slate-600">
+            </div>
+        </div>
         <div class="overflow-y-auto max-h-[300px] custom-scrollbar rounded-lg border border-slate-800/50 bg-slate-950/30 relative">
-            <table class="w-full text-left border-collapse">
+            <table class="w-full text-left border-collapse" id="catalogoActivoTable">
                 <thead class="sticky top-0 bg-slate-900/90 backdrop-blur border-b border-slate-800 z-10 shadow-sm">
                     <tr>
                         <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">Cód / SKU</th>
                         <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">Descripción</th>
                         <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">P. Neto</th>
+                        <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">P. Promo</th>
                         <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500">Origen</th>
                         <th class="py-2 px-4 text-[10px] uppercase font-bold tracking-widest text-slate-500 text-right">Acciones</th>
                     </tr>
@@ -2100,30 +2120,118 @@ window.loadSupplierArticles = async function(providerId) {
             const localData = data.filter(r => r.proveedor_id === providerId);
             
             if (localData.length === 0) {
-                grid.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-500 text-[11px] italic">No hay artículos cargados para este proveedor.</td></tr>';
+                grid.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-500 text-[11px] italic">No hay artículos cargados para este proveedor.</td></tr>';
                 return;
             }
             
-            let html = '';
+            // [FILTRADO DE VIGENCIA ESTRICTA] - Obtener la última fecha de extracción automática válida
+            let maxTimestamp = 0;
             localData.forEach(r => {
                 const dm = r.datos_maestros || {};
                 const origen = dm._origen || dm.Origen_Sistema || 'Drive / Auto';
                 const isManual = String(origen).toLowerCase().includes('manual');
-                const badge = isManual 
+                // Ignoramos manuales para el calculo del maxTimestamp, ya que no son parte del ciclo automático de ingesta
+                if (!isManual && r.timestamp_extraccion) {
+                    const ts = new Date(r.timestamp_extraccion).getTime();
+                    if (ts > maxTimestamp) maxTimestamp = ts;
+                }
+            });
+            
+            // Función de filtrado para limpiar historiales obsoletos y bajas lógicas
+            const filteredData = localData.filter(r => {
+                const dm = r.datos_maestros || {};
+                // Descartar Bajas explícitas
+                if (dm._estado_delta === 'BAJA') return false;
+                
+                const origen = dm._origen || dm.Origen_Sistema || 'Drive / Auto';
+                const isManual = String(origen).toLowerCase().includes('manual');
+                
+                if (isManual) return true; // Preservar ítems manuales inyectados
+                
+                // Si es automático, exigir que pertenezca a la última ingesta (tolerancia de 1 hora por asincronías)
+                if (r.timestamp_extraccion && maxTimestamp > 0) {
+                    const ts = new Date(r.timestamp_extraccion).getTime();
+                    // Toleramos pequeña diferencia por si el lote tuvo delay
+                    if (maxTimestamp - ts > 3600000) {
+                        return false; 
+                    }
+                }
+                return true;
+            });
+            
+            if (filteredData.length === 0) {
+                grid.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-500 text-[11px] italic">No hay artículos vigentes. Todo el historial es obsoleto o ha sido dado de baja.</td></tr>';
+                return;
+            }
+
+            const formatPrice = (val) => {
+                if (val === undefined || val === null || val === '') return '-';
+                // Convert to string and clean all non-numeric chars except dot and comma
+                let strVal = String(val).replace(/[^\d.,-]/g, '');
+                
+                // Identify decimal separator logically
+                const lastDot = strVal.lastIndexOf('.');
+                const lastComma = strVal.lastIndexOf(',');
+                
+                if (lastDot > -1 && lastComma > -1) {
+                    if (lastComma > lastDot) {
+                        // 1.234,56 -> 1234.56
+                        strVal = strVal.replace(/\./g, '').replace(',', '.');
+                    } else {
+                        // 1,234.56 -> 1234.56
+                        strVal = strVal.replace(/,/g, '');
+                    }
+                } else if (lastComma > -1) {
+                    // 1234,56 -> 1234.56
+                    strVal = strVal.replace(',', '.');
+                }
+                
+                const num = parseFloat(strVal);
+                if (isNaN(num)) return val || '-';
+                return num.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            };
+            
+            let html = '';
+            filteredData.forEach(r => {
+                const dm = r.datos_maestros || {};
+                const origen = dm._origen || dm.Origen_Sistema || 'Drive / Auto';
+                const isManual = String(origen).toLowerCase().includes('manual');
+                
+                // Extraer Delta Badge
+                let badgeHtml = isManual 
                     ? '<span class="px-2 py-0.5 rounded text-[9px] bg-blue-900/30 text-blue-400 border border-blue-500/30 font-bold uppercase tracking-widest"><i data-lucide="user" class="w-2.5 h-2.5 inline pb-0.5"></i> Manual</span>'
                     : '<span class="px-2 py-0.5 rounded text-[9px] bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 font-bold uppercase tracking-widest"><i data-lucide="bot" class="w-2.5 h-2.5 inline pb-0.5"></i> IA</span>';
+                
+                // Inject Delta si fue modificado algorítmicamente en la última extracción
+                if (dm._estado_delta === 'MODIFICADO') {
+                    badgeHtml += ' <span class="ml-1 px-2 py-0.5 rounded text-[9px] bg-amber-900/40 text-amber-400 border border-amber-500/30 font-bold uppercase tracking-widest" title="Precio actualizado respecto a ingesta previa">Delta</span>';
+                }
+                
+                const badge = badgeHtml;
                 
                 const sku = dm.SKU || dm['Código'] || dm.codigo || '';
                 const desc = dm['Descripción'] || dm.descripcion || dm.Producto || 'Sin descripción';
                 const precio = dm.Precio || dm.precio || dm.Precio_Unitario || 0;
+                
+                // Extracción tolerante para la Promoción
+                let precioPromo = '-';
+                for (let key in dm) {
+                    const cleanKey = key.toLowerCase().replace(/_/g, '').replace(/\s/g, '');
+                    if (cleanKey === 'preciopromo' || cleanKey === 'promocion' || cleanKey === 'promo') {
+                        precioPromo = dm[key];
+                        break;
+                    }
+                }
+                
                 const unidad = dm.Unidad || dm.unidad || 'UN';
 
                 const rStr = encodeURIComponent(JSON.stringify({ id: r.id, isManual, proveedor_id: providerId, nombre_proveedor: r.nombre_proveedor, ...dm }));
                 
-                html += `<tr class="hover:bg-slate-800/30 transition-colors">
-                    <td class="py-2 px-4 font-mono text-[11px] text-blue-300">${sku || '-'}</td>
-                    <td class="py-2 px-4 font-medium text-slate-200 truncate max-w-[200px]" title="${desc}">${desc}</td>
-                    <td class="py-2 px-4 font-mono text-emerald-400">${parseFloat(precio).toFixed(2)}</td>
+                html += `<tr class="hover:bg-slate-800/30 transition-colors catalogo-row">
+                    <td class="py-2 px-4 font-mono text-[11px] text-blue-300 catalogo-sku">${sku || '-'}</td>
+                    <td class="py-2 px-4 font-medium text-slate-200 truncate max-w-[200px] catalogo-desc" title="${desc}">${desc}</td>
+                    <td class="py-2 px-4 font-mono text-emerald-400">$${formatPrice(precio)}</td>
+                    <td class="py-2 px-4 font-mono text-fuchsia-400">${precioPromo !== '-' ? '$' + formatPrice(precioPromo) : '-'}</td>
                     <td class="py-2 px-4">${badge}</td>
                     <td class="py-2 px-4 text-right">
                         ${isManual ? 
@@ -2135,10 +2243,44 @@ window.loadSupplierArticles = async function(providerId) {
             });
             grid.innerHTML = html;
             if(window.lucide) lucide.createIcons();
+            
+            // Actualizar cuenta en UI
+            const container = grid.closest('.mt-6');
+            if (container) {
+                const activeHeader = container.querySelector('h3');
+                if (activeHeader && activeHeader.innerHTML.indexOf('(') === -1) {
+                    activeHeader.innerHTML += ` <span class="text-xs text-blue-500 ml-2">(${filteredData.length})</span>`;
+                } else if (activeHeader) {
+                    activeHeader.innerHTML = activeHeader.innerHTML.replace(/\(\d+\)/, `(${filteredData.length})`);
+                }
+            }
+            
         }
     } catch(e) {
         console.error("Error loading articles:", e);
-        grid.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-red-400">Error al cargar datos.</td></tr>';
+        grid.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-red-400">Error al cargar datos.</td></tr>';
+    }
+};
+
+window.filterCatalogoActivo = function() {
+    const input = document.getElementById('catalogoSearchInput');
+    if (!input) return;
+    const filter = input.value.toUpperCase();
+    const table = document.getElementById('catalogoActivoTable');
+    if (!table) return;
+    const rows = table.getElementsByClassName('catalogo-row');
+    
+    for (let i = 0; i < rows.length; i++) {
+        const skuCol = rows[i].getElementsByClassName('catalogo-sku')[0];
+        const descCol = rows[i].getElementsByClassName('catalogo-desc')[0];
+        if (skuCol || descCol) {
+            const txtValue = (skuCol ? skuCol.textContent || skuCol.innerText : '') + ' ' + (descCol ? descCol.textContent || descCol.innerText : '');
+            if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                rows[i].style.display = "";
+            } else {
+                rows[i].style.display = "none";
+            }
+        }       
     }
 };
 

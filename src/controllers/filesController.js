@@ -267,6 +267,96 @@ async function processExtraction(req, res) {
 }
 
 // =============================================================================
+// PROCESS BATCH EXTRACTION (General + Promo)
+// =============================================================================
+async function processBatchExtraction(req, res) {
+    const { fileIds, providerId } = req.body;
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+        return res.status(400).json({ error: "Se requiere un arreglo de fileIds válido." });
+    }
+    if (!providerId) {
+        return res.status(400).json({ error: "No provider ID provided." });
+    }
+
+    console.log(`[FilesController] BATCH EXTRACTION REQUEST for Provider: ${providerId}. Files: ${fileIds.join(', ')}`);
+
+    try {
+        // Delegate to extractionService
+        const result = await extractionService.processBatch(fileIds, providerId);
+
+        if (!result.success) {
+            console.error("[Controller] Batch Extraction Failed:", result.error);
+            return res.status(422).json({
+                success: false,
+                error: result.error || "Error en extracción por lotes",
+                reason: result.reason || "Falló el servicio de extracción"
+            });
+        }
+
+        // Crear registro en proveedor_listas_raw para representar el lote
+        // Tomaremos el ID del primer archivo como identificador principal del lote
+        const mainFileId = fileIds[0];
+        
+        const { data: existingRaw } = await supabase
+            .from('proveedor_listas_raw')
+            .select('id')
+            .eq('archivo_id', mainFileId)
+            .maybeSingle();
+
+        let rawRecord;
+        const loteString = fileIds.join(',');
+
+        if (existingRaw) {
+            console.log(`[FilesController] Actualizando registro RAW de lote existente: ${existingRaw.id}`);
+            const { data: updated, error: updateError } = await supabase
+                .from('proveedor_listas_raw')
+                .update({
+                    status_global: 'READY_TO_REVIEW',
+                    modo_procesamiento: 'LOTE',
+                    // Guardamos la lista de archivos en un campo (si no hay uno específico, podemos usar archivo_id o nombre_archivo)
+                    nombre_archivo: `LOTE: ${fileIds.length} archivos`
+                })
+                .eq('id', existingRaw.id)
+                .select()
+                .single();
+
+            if (updateError) throw updateError;
+            rawRecord = updated;
+        } else {
+            console.log(`[FilesController] Creando NUEVO registro RAW para Lote.`);
+            const { data: inserted, error: insertError } = await supabase
+                .from('proveedor_listas_raw')
+                .insert({
+                    proveedor_id: providerId,
+                    archivo_id: mainFileId, // Guardamos el primero como principal
+                    nombre_archivo: `LOTE: ${fileIds.length} archivos`,
+                    status_global: 'READY_TO_REVIEW',
+                    modo_procesamiento: 'LOTE'
+                })
+                .select()
+                .single();
+
+            if (insertError) throw insertError;
+            rawRecord = inserted;
+        }
+
+        return res.json({
+            success: true,
+            mode: 'LOTE',
+            already_managed: false,
+            data: result.data,
+            raw_id: rawRecord.id,
+            lote_ids: fileIds
+        });
+
+    } catch (error) {
+        console.error("[FilesController] Fatal Error en Batch Process:", error);
+        res.status(500).json({ error: "Error critico en proceso de extraccion de lote: " + error.message });
+    }
+}
+
+// =============================================================================
 // CONFIRM EXTRACTION MAPPING
 // =============================================================================
 // =============================================================================
@@ -1053,7 +1143,8 @@ async function uploadDirectFile(req, res) {
     try {
         console.log("[FilesController] Received upload request via Multer.");
         
-        if (!req.file) {
+        const files = req.files || (req.file ? [req.file] : []);
+        if (files.length === 0) {
             return res.status(400).json({ error: "No se proporcionó ningún archivo." });
         }
         
@@ -1068,26 +1159,31 @@ async function uploadDirectFile(req, res) {
             'text/csv' // .csv
         ];
 
-        // Strict UI Validation matching Backend (Safe Fallback via extension)
-        if (!allowedMimeTypes.includes(req.file.mimetype) && !req.file.originalname.match(/\.(xlsx|xls|csv)$/i)) {
-            console.error(`[FilesController] Upload rejected. Invalid mime: ${req.file.mimetype}`);
-            return res.status(415).json({ error: "Formato de archivo no soportado. Solo se permiten archivos Excel o CSV." });
+        let uploadedFiles = [];
+
+        for (const file of files) {
+            // Strict UI Validation matching Backend (Safe Fallback via extension)
+            if (!allowedMimeTypes.includes(file.mimetype) && !file.originalname.match(/\.(xlsx|xls|csv)$/i)) {
+                console.error(`[FilesController] Upload rejected. Invalid mime: ${file.mimetype}`);
+                return res.status(415).json({ error: "Formato de archivo no soportado. Solo se permiten archivos Excel o CSV." });
+            }
+
+            console.log(`[FilesController] Uploading ${file.originalname} (${file.size} bytes) to folder ${folderId}`);
+            
+            const uploadedFile = await driveService.uploadBufferToFile(
+                file.originalname, 
+                file.mimetype, 
+                file.buffer, 
+                folderId
+            );
+            uploadedFiles.push(uploadedFile);
         }
 
-        console.log(`[FilesController] Uploading ${req.file.originalname} (${req.file.size} bytes) to folder ${folderId}`);
-        
-        const uploadedFile = await driveService.uploadBufferToFile(
-            req.file.originalname, 
-            req.file.mimetype, 
-            req.file.buffer, 
-            folderId
-        );
-
-        res.json({ success: true, file: uploadedFile, message: "Archivo cargado correctamente en Drive." });
+        res.json({ success: true, files: uploadedFiles, message: "Archivos cargados correctamente en Drive." });
 
     } catch (error) {
         console.error("[FilesController] Upload error:", error);
-        res.status(500).json({ error: "Error en servidor al cargar el archivo a Drive. " + error.message });
+        res.status(500).json({ error: "Error en servidor al cargar los archivos a Drive. " + error.message });
     }
 }
 
@@ -1109,5 +1205,6 @@ module.exports = {
     getTemplateConfig,
     deleteTemplateConfig,
     assignFlujoToFile,
-    uploadDirectFile
+    uploadDirectFile,
+    processBatchExtraction
 };

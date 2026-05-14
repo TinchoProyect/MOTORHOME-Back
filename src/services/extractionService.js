@@ -298,7 +298,225 @@ async function processFile(fileId, providerId, options = {}) {
     }
 }
 
+// ============================================================================
+// BATCH EXTRACTION (Lote de Archivos)
+// ============================================================================
+
+async function _extractRawMatrix(fileId, providerId, options = {}) {
+    let { headerIndex = 1 } = options;
+    if (headerIndex < 1) headerIndex = 1;
+
+    const metadata = await driveService.getFileMetadata(fileId);
+    const mimeType = metadata.mimeType;
+    const arrayBuffer = await driveService.getFileContent(fileId);
+    const fileBuffer = toBuffer(arrayBuffer);
+
+    let isDigital = mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv');
+    if (!isDigital) throw new Error("Solo archivos digitales (Excel/CSV) son soportados en extracciones por lotes actualmente.");
+
+    const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    let rawRows = xlsx.utils.sheet_to_json(sheet, { header: 1 });
+
+    if (rawRows.length > 0 && Array.isArray(rawRows[0]) && rawRows[0].length === 1) {
+        const sample = String(rawRows[0][0]);
+        if (sample.includes(';') || sample.includes(',')) {
+            const separator = sample.includes(';') ? ';' : ',';
+            rawRows = rawRows.map(row => {
+                if (Array.isArray(row) && row.length === 1) {
+                    return String(row[0]).split(separator).map(s => s.trim());
+                }
+                return row;
+            });
+        }
+    }
+
+    let validHeaderIndex = -1;
+    if (headerIndex <= 1) {
+        validHeaderIndex = rawRows.findIndex(row => {
+            if (!Array.isArray(row)) return false;
+            const filledCols = row.filter(c => String(c).trim().length > 0).length;
+            return filledCols >= 2;
+        });
+    }
+
+    if (validHeaderIndex > -1) {
+        headerIndex = validHeaderIndex;
+    } else {
+        if (headerIndex < 1) headerIndex = 1;
+    }
+
+    if (rawRows.length > headerIndex) {
+        rawRows = rawRows.slice(headerIndex);
+    } else {
+        throw new Error(`Archivo ${fileId} demasiado corto para procesar.`);
+    }
+
+    let emptyColCounter = 1;
+    const headers = rawRows[0].map((h) => {
+        const val = String(h || "").trim();
+        return val.length > 0 ? val : `Column ${emptyColCounter++}`;
+    });
+
+    const headerHash = fingerprintService.generateHeaderHash(headers);
+    let existingTemplate = await fingerprintService.matchFingerprint(headerHash, providerId);
+
+    const dataStartIndex = 1;
+    const fullData = rawRows.slice(dataStartIndex).map(rowArray => {
+        let obj = {};
+        headers.forEach((header, index) => {
+            obj[header] = rowArray[index] || "";
+        });
+        return obj;
+    });
+
+    return { fileId, fullData, headers, headerHash, existingTemplate, rawRows };
+}
+
+async function processBatch(fileIds, providerId, options = {}) {
+    try {
+        console.log(`[ExtractionService] Procesando Lote de ${fileIds.length} archivos para proveedor ${providerId}...`);
+        
+        let extractions = [];
+        for (const fileId of fileIds) {
+            extractions.push(await _extractRawMatrix(fileId, providerId, options));
+        }
+
+        // Ordenar por cantidad de filas descendente (La más larga es la "General")
+        extractions.sort((a, b) => b.fullData.length - a.fullData.length);
+
+        const mainMatrix = extractions[0];
+        let mergedData = [...mainMatrix.fullData];
+        let mergedHeaders = [...mainMatrix.headers];
+
+        // Identificar columna SKU en la matriz principal
+        let skuColMain = null;
+        if (mainMatrix.existingTemplate && mainMatrix.existingTemplate.reglas_mapeo) {
+            for (const [key, val] of Object.entries(mainMatrix.existingTemplate.reglas_mapeo)) {
+                if (val === 'CÓDIGO (SKU)') { skuColMain = key; break; }
+            }
+        }
+        if (!skuColMain) {
+            skuColMain = mainMatrix.headers.find(h => h.toUpperCase().includes('CODIGO') || h.toUpperCase().includes('SKU') || h.toUpperCase().includes('CÓDIGO') || h.toUpperCase().includes('ARTICULO'));
+        }
+
+        if (!skuColMain) {
+            console.warn("[ExtractionService] No se detectó columna SKU. Se abortará la fusión de datos promocionales.");
+        } else {
+            // Asegurar que existan las columnas de promo
+            if (!mergedHeaders.includes('PRECIO_PROMO')) mergedHeaders.push('PRECIO_PROMO');
+            if (!mergedHeaders.includes('CONDICION_PROMO')) mergedHeaders.push('CONDICION_PROMO');
+
+            for (let i = 1; i < extractions.length; i++) {
+                const promoMatrix = extractions[i];
+                
+                let skuColPromo = null;
+                if (promoMatrix.existingTemplate && promoMatrix.existingTemplate.reglas_mapeo) {
+                    for (const [key, val] of Object.entries(promoMatrix.existingTemplate.reglas_mapeo)) {
+                        if (val === 'CÓDIGO (SKU)') { skuColPromo = key; break; }
+                    }
+                }
+                if (!skuColPromo) {
+                    skuColPromo = promoMatrix.headers.find(h => h.toUpperCase().includes('CODIGO') || h.toUpperCase().includes('SKU') || h.toUpperCase().includes('CÓDIGO') || h.toUpperCase().includes('ARTICULO'));
+                }
+
+                if (!skuColPromo) continue; // Si no hay sku en esta matriz, la ignoramos para la fusión
+
+                let priceColPromo = null;
+                if (promoMatrix.existingTemplate && promoMatrix.existingTemplate.reglas_mapeo) {
+                    for (const [key, val] of Object.entries(promoMatrix.existingTemplate.reglas_mapeo)) {
+                        if (val === 'PRECIO' || val === 'PRECIO_BASE') { priceColPromo = key; break; }
+                    }
+                }
+                if (!priceColPromo) {
+                    priceColPromo = promoMatrix.headers.find(h => h.toUpperCase().includes('PRECIO') || h.toUpperCase().includes('IMPORTE') || h.toUpperCase().includes('COSTO'));
+                }
+
+                if (!priceColPromo) continue;
+
+                // Indexar matriz promo
+                const promoMap = new Map();
+                for (const row of promoMatrix.fullData) {
+                    const sku = String(row[skuColPromo] || "").trim();
+                    if (sku) {
+                        promoMap.set(sku, {
+                            precio: row[priceColPromo],
+                            condicion: row['CONDICION_PROMO'] || row['CONDICION'] || 'PROMO'
+                        });
+                    }
+                }
+
+                // Hacer el JOIN
+                for (let r of mergedData) {
+                    const sku = String(r[skuColMain] || "").trim();
+                    if (sku && promoMap.has(sku)) {
+                        const promoInfo = promoMap.get(sku);
+                        r['PRECIO_PROMO'] = promoInfo.precio;
+                        r['CONDICION_PROMO'] = promoInfo.condicion;
+                        promoMap.delete(sku); // Consumido
+                    } else {
+                        if (r['PRECIO_PROMO'] === undefined) r['PRECIO_PROMO'] = "";
+                        if (r['CONDICION_PROMO'] === undefined) r['CONDICION_PROMO'] = "";
+                    }
+                }
+
+                // Anexar filas promocionales huérfanas
+                for (const [sku, info] of promoMap.entries()) {
+                    let newRow = {};
+                    for (const h of mergedHeaders) newRow[h] = "";
+                    newRow[skuColMain] = sku;
+                    newRow['PRECIO_PROMO'] = info.precio;
+                    newRow['CONDICION_PROMO'] = info.condicion;
+                    newRow['DESCRIPCION'] = "ARTÍCULO SOLO EN PROMO";
+                    mergedData.push(newRow);
+                }
+            }
+        }
+
+        // Convertir la matriz de vuelta a Array of Arrays (como lo espera el frontend)
+        const finalRawRows = [];
+        finalRawRows.push(mergedHeaders);
+        for (const rowObj of mergedData) {
+            const rowArray = [];
+            for (const header of mergedHeaders) {
+                rowArray.push(rowObj[header] || "");
+            }
+            finalRawRows.push(rowArray);
+        }
+
+        const sampleData = finalRawRows.slice(0, 6);
+
+        return {
+            success: true,
+            mode: 'LOTE',
+            data: {
+                headers_detected: mergedHeaders,
+                data_sample: sampleData,
+                full_data: finalRawRows, // DEBE SER ARRAY DE ARRAYS PARA EL FRONTEND
+                raw_extractions: extractions.map(e => {
+                    const matrix = [e.headers];
+                    for(const r of e.fullData) {
+                        const rowArr = [];
+                        e.headers.forEach(h => rowArr.push(r[h] || ""));
+                        matrix.push(rowArr);
+                    }
+                    return matrix;
+                }),
+                suggested_mapping: mainMatrix.existingTemplate ? mainMatrix.existingTemplate.reglas_mapeo : {},
+                confidence_notes: `Fusión de ${fileIds.length} listas. Master: ${mainMatrix.fileId}`
+            }
+        };
+
+    } catch (err) {
+        console.error("[ExtractionService] Batch Error:", err);
+        return { success: false, error: err.message };
+    }
+}
+
 module.exports = {
     checkLegibility,
-    processFile
+    processFile,
+    processBatch
 };

@@ -3208,3 +3208,11 @@ TEXT: {
 --- INTENTO 1 CHUNK 3 ---
 MSG: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent: [503 Service Unavailable] The request timed out. Please try again.
 TEXT: NO_TEXT
+
+--- INTENTO 1 CHUNK 3 ---
+MSG: LLM Laziness Drop: Empaquetó solo 19 de 20 crudos. Dictamen Inválido.
+TEXT: {
+  "25": [40, 42],
+  "1": [41, 43, 44, 45, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59],
+  "5": [46, 47, 48]
+}
