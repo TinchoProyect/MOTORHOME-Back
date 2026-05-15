@@ -6,6 +6,8 @@ let recActiveProviderId = null;
 let recActiveOrderIds = [];
 let recActiveOrderItems = [];
 
+window.currentProviderOrders = []; // ALMACENA PEDIDOS DEL PROVEEDOR
+window.currentRecTab = 'NUEVOS'; // TABS: NUEVOS, PARCIALES
 const API_BASE = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
 
 window.openReceptionModal = async () => {
@@ -28,6 +30,8 @@ const resetReceptionUI = () => {
     recActiveProviderId = null;
     recActiveOrderIds = [];
     recActiveOrderItems = [];
+    window.currentProviderOrders = [];
+    window.currentRecTab = 'NUEVOS';
     
     document.getElementById('recActiveProviderName').innerText = 'Seleccione un Proveedor';
     document.getElementById('recOrderSelectorContainer').style.display = 'none';
@@ -104,6 +108,8 @@ const selectRecProvider = async (providerId, providerName, btnElement) => {
         btnElement.classList.add('bg-blue-600/20', 'border-blue-500/30', 'text-blue-400');
     }
 
+    document.getElementById('recTabsContainer').style.display = 'flex';
+    window.currentRecTab = 'NUEVOS'; // Default to Nuevos tab
     await fetchActiveOrders(providerId);
 };
 
@@ -122,29 +128,71 @@ const fetchActiveOrders = async (providerId) => {
         if (!result.success) throw new Error(result.error);
         
         const orders = result.data || [];
+        window.currentProviderOrders = orders; // Save to memory
         
-        if (orders.length === 0) {
-            checkboxesEl.innerHTML = '<span class="text-xs text-slate-500 italic">No hay pedidos en tránsito</span>';
-            return;
-        }
-
-        checkboxesEl.innerHTML = '';
-        orders.forEach(order => {
-            const dateStr = new Date(order.fecha_emision).toLocaleDateString('es-AR');
-            const idCheckbox = `chk_ped_${order.id}`;
-            const label = document.createElement('label');
-            label.className = "flex items-center gap-1.5 bg-slate-900 border border-slate-700 text-slate-300 text-[10px] px-2 py-1.5 rounded cursor-pointer hover:bg-slate-800 transition-colors select-none has-[:checked]:bg-blue-600/20 has-[:checked]:border-blue-500/50 has-[:checked]:text-blue-400";
-            label.innerHTML = `
-                <input type="checkbox" value="${order.id}" id="${idCheckbox}" class="rec-order-chk w-3 h-3 accent-blue-500 cursor-pointer" onchange="window.toggleReceptionOrder()">
-                <span>${dateStr} - ${order.estado}</span>
-            `;
-            checkboxesEl.appendChild(label);
-        });
+        window.renderRecOrders();
 
     } catch (error) {
         console.error('[RECEPCION] Error al obtener pedidos:', error);
         alert('Error al cargar los pedidos del proveedor.');
     }
+};
+
+window.switchRecTab = (tabName) => {
+    window.currentRecTab = tabName;
+    window.renderRecOrders();
+};
+
+window.renderRecOrders = () => {
+    const checkboxesEl = document.getElementById('recOrderCheckboxes');
+    
+    // UI Styling for tabs
+    const btnNuevos = document.getElementById('btnTabNuevos');
+    const btnParciales = document.getElementById('btnTabParciales');
+    
+    if (window.currentRecTab === 'NUEVOS') {
+        btnNuevos.className = "px-3 py-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded text-[10px] font-bold uppercase transition-colors select-none";
+        btnParciales.className = "px-3 py-1 bg-slate-800 text-slate-500 border border-slate-700 rounded text-[10px] font-bold uppercase hover:bg-slate-700 transition-colors select-none";
+    } else {
+        btnParciales.className = "px-3 py-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded text-[10px] font-bold uppercase transition-colors select-none";
+        btnNuevos.className = "px-3 py-1 bg-slate-800 text-slate-500 border border-slate-700 rounded text-[10px] font-bold uppercase hover:bg-slate-700 transition-colors select-none";
+    }
+
+    if (window.currentProviderOrders.length === 0) {
+        checkboxesEl.innerHTML = '<span class="text-xs text-slate-500 italic">No hay pedidos en tránsito</span>';
+        window.toggleReceptionOrder(); // reset below
+        return;
+    }
+
+    // Filter by Tab
+    let filteredOrders = [];
+    if (window.currentRecTab === 'NUEVOS') {
+        filteredOrders = window.currentProviderOrders.filter(o => !o.estado.toLowerCase().includes('parcial'));
+    } else {
+        filteredOrders = window.currentProviderOrders.filter(o => o.estado.toLowerCase().includes('parcial'));
+    }
+
+    if (filteredOrders.length === 0) {
+        checkboxesEl.innerHTML = `<span class="text-xs text-slate-500 italic">No hay pedidos ${window.currentRecTab === 'NUEVOS' ? 'nuevos' : 'parciales'}</span>`;
+        window.toggleReceptionOrder(); // reset below
+        return;
+    }
+
+    checkboxesEl.innerHTML = '';
+    filteredOrders.forEach(order => {
+        const dateStr = new Date(order.fecha_emision).toLocaleDateString('es-AR');
+        const idCheckbox = `chk_ped_${order.id}`;
+        const label = document.createElement('label');
+        label.className = "flex items-center gap-1.5 bg-slate-900 border border-slate-700 text-slate-300 text-[10px] px-2 py-1.5 rounded cursor-pointer hover:bg-slate-800 transition-colors select-none has-[:checked]:bg-blue-600/20 has-[:checked]:border-blue-500/50 has-[:checked]:text-blue-400";
+        label.innerHTML = `
+            <input type="checkbox" value="${order.id}" id="${idCheckbox}" class="rec-order-chk w-3 h-3 accent-blue-500 cursor-pointer" onchange="window.toggleReceptionOrder()">
+            <span>${dateStr} - ${order.estado}</span>
+        `;
+        checkboxesEl.appendChild(label);
+    });
+    
+    // Always call toggle on render to clear bottom panel if checkboxes changed
+    window.toggleReceptionOrder();
 };
 
 window.toggleReceptionOrder = async () => {
