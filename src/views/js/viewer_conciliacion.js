@@ -390,111 +390,188 @@ window.onConciliacionPedidoChange = async function() {
         if (!data.success) throw new Error(data.error);
 
         window.currentConciliacion.matchReport = data.matchReport;
+        window.currentConciliacion.unmatchedPedidoItems = data.unmatchedPedidoItems || [];
 
         // Render Match
         document.getElementById('concil_empty_state').classList.add('hidden');
         document.getElementById('concil_match_content').classList.remove('hidden');
 
-        const tbody = document.getElementById('concil_match_tbody');
-        tbody.innerHTML = '';
-        
-        let errPrec = 0;
-        let errCant = 0;
-
-        data.matchReport.forEach(row => {
-            const hasFaltante = (row.desvios || []).some(d => d.includes('Faltante'));
-            if (hasFaltante || !row.pedido) errCant++;
-
-            const cantClass = (hasFaltante || !row.pedido) ? 'text-red-400 font-bold bg-red-500/10' : 'text-emerald-400';
-            
-            // Lógica de Semáforo Financiero
-            let priceClass = 'text-emerald-400';
-            let deltaHtml = '<span class="text-slate-500 font-mono text-2xl">-</span>';
-            let statusIcon = '<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto" title="Match Perfecto"></i>';
-            
-            if (row.pedido && row.delta_monto !== undefined) {
-                const deltaMonto = parseFloat(row.delta_monto);
-                const deltaPct = parseFloat(row.delta_porcentaje);
-                
-                const isMarginal = (Math.abs(deltaPct) <= 0.5 || Math.abs(deltaMonto) <= 25.0) && deltaMonto !== 0;
-                
-                if (isMarginal) {
-                    // AMARILLO (Redondeo/Marginal)
-                    priceClass = 'text-amber-400 font-bold bg-amber-500/10';
-                    deltaHtml = `<span class="text-amber-400 font-bold font-mono text-2xl" title="Diferencia Marginal / Redondeo">${deltaMonto > 0 ? '+' : '-'}$${window.formatCurrency ? window.formatCurrency(Math.abs(deltaMonto)) : Math.abs(deltaMonto)} (${deltaPct > 0 ? '+' : ''}${deltaPct}%)</span>`;
-                    statusIcon = '<i data-lucide="check-circle" class="w-4 h-4 text-amber-500 mx-auto" title="Aprobado con Tolerancia"></i>';
-                } else if (deltaMonto > 25.0) {
-                    // ROJO (Sobreprecio)
-                    priceClass = 'text-red-400 font-bold bg-red-500/10';
-                    deltaHtml = `<span class="text-red-400 font-bold font-mono text-2xl" title="Alerta: Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(deltaMonto) : deltaMonto} (+${deltaPct}%)</span>`;
-                    statusIcon = `<div onclick="window.confirmarConciliacion()" class="cursor-pointer hover:scale-125 transition-transform bg-red-500/20 rounded-full p-1 inline-block border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.5)] animate-pulse"><i data-lucide="alert-triangle" class="w-5 h-5 text-red-500 mx-auto" title="Click para gestionar y asentar esta diferencia a favor"></i></div>`;
-                    errPrec++;
-                } else if (deltaMonto < -25.0) {
-                    // VERDE (Ahorro)
-                    priceClass = 'text-emerald-400 font-bold bg-emerald-500/10';
-                    deltaHtml = `<span class="text-emerald-400 font-bold font-mono text-2xl" title="Ahorro: Nos cobran más barato">-$${window.formatCurrency ? window.formatCurrency(Math.abs(deltaMonto)) : Math.abs(deltaMonto)} (${deltaPct}%)</span>`;
-                    statusIcon = '<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto" title="Ahorro Detectado"></i>';
-                } else {
-                    // EXACTO ($0)
-                    priceClass = 'text-emerald-400';
-                    deltaHtml = `<span class="text-emerald-400 font-mono text-2xl">$0.00 (0%)</span>`;
-                }
-            }
-
-            // Si hay faltante, el icono general de la fila también debe ser una alerta roja
-            if (!row.pedido) {
-                statusIcon = '<i data-lucide="x-circle" class="w-4 h-4 text-red-500 mx-auto" title="No hallado en Pedido"></i>';
-            } else if (hasFaltante) {
-                statusIcon = `<div onclick="window.confirmarConciliacion()" class="cursor-pointer hover:scale-125 transition-transform bg-amber-500/20 rounded-full p-1 inline-block border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.5)] animate-pulse"><i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500 mx-auto" title="Faltante físico. Click para gestionar"></i></div>`;
-            }
-
-            let logisticaHtml = '-';
-            if (row.pedido) {
-                const facDesc = row.pedido.factor_conversion > 1 ? ` (x${row.pedido.factor_conversion})` : '';
-                const pCodigo = row.pedido.producto_codigo || row.pedido.codigo || 'S/C';
-                const pDesc = row.pedido.producto_descripcion || row.pedido.descripcion || 'Sin descripción';
-                logisticaHtml = `<span class="text-[10px] text-slate-500 block">${pCodigo}</span><span class="line-clamp-1 text-xs" title="${pDesc}">${pDesc}${facDesc}</span>`;
-            } else {
-                logisticaHtml = `<span class="text-red-400 italic text-xs">No hallado en Pedido</span>`;
-            }
-
-            tbody.innerHTML += `
-                <tr class="hover:bg-slate-800/30">
-                    <td class="px-3 py-2 text-slate-300 leading-tight">${logisticaHtml}</td>
-                    <td class="px-3 py-2 font-mono text-2xl text-center ${cantClass}">${row.recibido}</td>
-                    <td class="px-3 py-2 font-mono text-2xl font-bold text-right ${priceClass}">$${row.pedido ? (window.formatCurrency ? window.formatCurrency(row.pedido.precio_unitario) : row.pedido.precio_unitario) : 0}</td>
-                    <td class="px-3 py-2 text-right">${deltaHtml}</td>
-                    <td class="px-3 py-2 text-center cursor-help">${statusIcon}</td>
-                </tr>
-            `;
-        });
-
-        document.getElementById('concil_desvios_precio').innerText = errPrec;
-        document.getElementById('concil_desvios_cant').innerText = errCant;
-
-        if (window.lucide) window.lucide.createIcons();
-
-        // Habilitar botón de aprobación (HITL SIEMPRE DECIDE)
-        const btn = document.getElementById('btn_aprobar_conciliacion');
-        btn.disabled = false;
-        btn.classList.remove('cursor-not-allowed', 'opacity-50');
-        btn.classList.add('hover:bg-emerald-600', 'hover:text-white', 'hover:border-emerald-500', 'text-emerald-500');
-
-        if (errPrec > 0 || errCant > 0) {
-            btn.innerHTML = '<i data-lucide="alert-triangle" class="w-4 h-4"></i> Aprobar con Desvíos';
-            btn.classList.add('bg-amber-600/20', 'text-amber-500', 'border-amber-500/30');
-            btn.classList.remove('hover:bg-emerald-600');
-            btn.classList.add('hover:bg-amber-600');
-        } else {
-            btn.innerHTML = '<i data-lucide="check-circle" class="w-4 h-4"></i> Confirmar Match Perfecto';
-            btn.className = 'px-4 py-2 bg-emerald-600/20 text-emerald-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white hover:border-emerald-500';
-        }
-        if (window.lucide) window.lucide.createIcons();
+        window.renderMatchReport();
 
     } catch (e) {
         console.error("Error validando pedido:", e);
         Swal.fire('Error de Motor', 'No se pudo procesar el cruce: ' + e.message, 'error');
     }
+};
+
+window.renderMatchReport = function() {
+    const tbody = document.getElementById('concil_match_tbody');
+    tbody.innerHTML = '';
+    
+    let errPrec = 0;
+    let errCant = 0;
+
+    window.currentConciliacion.matchReport.forEach((row, index) => {
+        const hasFaltante = (row.desvios || []).some(d => d.includes('Faltante'));
+        if (hasFaltante || !row.pedido) errCant++;
+
+        const cantClass = (hasFaltante || !row.pedido) ? 'text-red-400 font-bold bg-red-500/10' : 'text-emerald-400';
+        
+        // Lógica de Semáforo Financiero
+        let priceClass = 'text-emerald-400';
+        let deltaHtml = '<span class="text-slate-500 font-mono text-2xl">-</span>';
+        let statusIcon = '<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto" title="Match Perfecto"></i>';
+        
+        if (row.pedido && row.delta_monto !== undefined) {
+            const deltaMonto = parseFloat(row.delta_monto);
+            const deltaPct = parseFloat(row.delta_porcentaje);
+            
+            const isMarginal = (Math.abs(deltaPct) <= 0.5 || Math.abs(deltaMonto) <= 25.0) && deltaMonto !== 0;
+            
+            if (isMarginal) {
+                // AMARILLO (Redondeo/Marginal)
+                priceClass = 'text-amber-400 font-bold bg-amber-500/10';
+                deltaHtml = `<span class="text-amber-400 font-bold font-mono text-2xl" title="Diferencia Marginal / Redondeo">${deltaMonto > 0 ? '+' : '-'}$${window.formatCurrency ? window.formatCurrency(Math.abs(deltaMonto)) : Math.abs(deltaMonto)} (${deltaPct > 0 ? '+' : ''}${deltaPct}%)</span>`;
+                statusIcon = '<i data-lucide="check-circle" class="w-4 h-4 text-amber-500 mx-auto" title="Aprobado con Tolerancia"></i>';
+            } else if (deltaMonto > 25.0) {
+                // ROJO (Sobreprecio)
+                priceClass = 'text-red-400 font-bold bg-red-500/10';
+                deltaHtml = `<span class="text-red-400 font-bold font-mono text-2xl" title="Alerta: Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(deltaMonto) : deltaMonto} (+${deltaPct}%)</span>`;
+                statusIcon = `<div onclick="window.confirmarConciliacion()" class="cursor-pointer hover:scale-125 transition-transform bg-red-500/20 rounded-full p-1 inline-block border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.5)] animate-pulse"><i data-lucide="alert-triangle" class="w-5 h-5 text-red-500 mx-auto" title="Click para gestionar y asentar esta diferencia a favor"></i></div>`;
+                errPrec++;
+            } else if (deltaMonto < -25.0) {
+                // VERDE (Ahorro)
+                priceClass = 'text-emerald-400 font-bold bg-emerald-500/10';
+                deltaHtml = `<span class="text-emerald-400 font-bold font-mono text-2xl" title="Ahorro: Nos cobran más barato">-$${window.formatCurrency ? window.formatCurrency(Math.abs(deltaMonto)) : Math.abs(deltaMonto)} (${deltaPct}%)</span>`;
+                statusIcon = '<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto" title="Ahorro Detectado"></i>';
+            } else {
+                // EXACTO ($0)
+                priceClass = 'text-emerald-400';
+                deltaHtml = `<span class="text-emerald-400 font-mono text-2xl">$0.00 (0%)</span>`;
+            }
+        }
+
+        // Si hay faltante, el icono general de la fila también debe ser una alerta roja
+        if (!row.pedido) {
+            statusIcon = '<i data-lucide="x-circle" class="w-4 h-4 text-red-500 mx-auto" title="No hallado en Pedido"></i>';
+        } else if (hasFaltante) {
+            statusIcon = `<div onclick="window.confirmarConciliacion()" class="cursor-pointer hover:scale-125 transition-transform bg-amber-500/20 rounded-full p-1 inline-block border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.5)] animate-pulse"><i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500 mx-auto" title="Faltante físico. Click para gestionar"></i></div>`;
+        }
+
+        let logisticaHtml = '-';
+        if (row.pedido) {
+            const facDesc = row.pedido.factor_conversion > 1 ? ` (x${row.pedido.factor_conversion})` : '';
+            const pCodigo = row.pedido.producto_codigo || row.pedido.codigo || 'S/C';
+            const pDesc = row.pedido.producto_descripcion || row.pedido.descripcion || 'Sin descripción';
+            logisticaHtml = `<span class="text-[10px] text-slate-500 block">${pCodigo}</span><span class="line-clamp-1 text-xs" title="${pDesc}">${pDesc}${facDesc}</span>`;
+        } else {
+            let options = `<option value="">[Seleccionar Artículo Manualmente]</option>`;
+            if (window.currentConciliacion.unmatchedPedidoItems && window.currentConciliacion.unmatchedPedidoItems.length > 0) {
+                window.currentConciliacion.unmatchedPedidoItems.forEach(u => {
+                    const desc = u.producto_descripcion || u.descripcion || 'Sin descripción';
+                    options += `<option value="${u.id}">${desc}</option>`;
+                });
+            } else {
+                options += `<option disabled>No hay artículos físicos sobrantes</option>`;
+            }
+            logisticaHtml = `<select class="w-full bg-slate-900 border border-slate-700 rounded text-xs text-slate-300 p-1 mt-1 outline-none focus:border-indigo-500 transition-colors cursor-pointer" onchange="window.applyManualMatch(${index}, this.value)">${options}</select>`;
+        }
+
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="px-3 py-2 text-slate-300 leading-tight w-1/3">${logisticaHtml}</td>
+                <td class="px-3 py-2 font-mono text-2xl text-center ${cantClass}">${row.pedido ? row.recibido : '-'}</td>
+                <td class="px-3 py-2 font-mono text-2xl font-bold text-right ${priceClass}">$${row.pedido ? (window.formatCurrency ? window.formatCurrency(row.pedido.precio_unitario) : row.pedido.precio_unitario) : 0}</td>
+                <td class="px-3 py-2 text-right">${deltaHtml}</td>
+                <td class="px-3 py-2 text-center cursor-help">${statusIcon}</td>
+            </tr>
+        `;
+    });
+
+    document.getElementById('concil_desvios_precio').innerText = errPrec;
+    document.getElementById('concil_desvios_cant').innerText = errCant;
+
+    if (window.lucide) window.lucide.createIcons();
+
+    // Habilitar botón de aprobación (HITL SIEMPRE DECIDE)
+    const btn = document.getElementById('btn_aprobar_conciliacion');
+    btn.disabled = false;
+    btn.classList.remove('cursor-not-allowed', 'opacity-50');
+    btn.classList.add('hover:bg-emerald-600', 'hover:text-white', 'hover:border-emerald-500', 'text-emerald-500');
+
+    if (errPrec > 0 || errCant > 0) {
+        btn.innerHTML = '<i data-lucide="alert-triangle" class="w-4 h-4"></i> Aprobar con Desvíos';
+        btn.classList.add('bg-amber-600/20', 'text-amber-500', 'border-amber-500/30');
+        btn.classList.remove('hover:bg-emerald-600');
+        btn.classList.add('hover:bg-amber-600');
+    } else {
+        btn.innerHTML = '<i data-lucide="check-circle" class="w-4 h-4"></i> Confirmar Match Perfecto';
+        btn.className = 'px-4 py-2 bg-emerald-600/20 text-emerald-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white hover:border-emerald-500';
+    }
+    if (window.lucide) window.lucide.createIcons();
+};
+
+window.applyManualMatch = function(rowIndex, pedidoItemId) {
+    if (!pedidoItemId) return; // Si selecciona la opción vacía, ignorar
+    
+    const row = window.currentConciliacion.matchReport[rowIndex];
+    const pedido = window.currentConciliacion.unmatchedPedidoItems.find(p => p.id === pedidoItemId);
+    
+    if (!pedido || !row) return;
+
+    const cantF = parseFloat(row.factura.cantidad || 0);
+    const precioF = parseFloat(row.factura.precio_unitario || 0);
+
+    const cantR = parseFloat(pedido.cantR || 0);
+    const precioP = parseFloat(pedido.valor_unitario_ref || 0);
+    const factorConversion = parseFloat(pedido.factor_conversion || 1);
+
+    // Lógica Matemática Idéntica a Backend
+    let normalizedCantR = cantR;
+    const ratioQty = cantR > 0 ? cantF / cantR : 0;
+    const ratioPrice = precioF > 0 ? precioP / precioF : 0;
+    let isAsymmetricUnit = false;
+    
+    if (ratioQty > 1.2 && ratioPrice > 1.2 && Math.abs(ratioQty - ratioPrice) / ratioPrice < 0.20) {
+        isAsymmetricUnit = true;
+    } else if (factorConversion > 1.1 && ratioQty >= factorConversion * 0.8 && ratioQty <= factorConversion * 1.2) {
+        isAsymmetricUnit = true;
+    }
+
+    if (isAsymmetricUnit) {
+        const factorToUse = factorConversion > 1.1 ? factorConversion : ratioPrice;
+        normalizedCantR = cantR * factorToUse;
+    }
+
+    const cantDelta = cantF - normalizedCantR;
+    const precioDelta = precioF - precioP;
+    
+    const desviosLocales = [];
+    if (cantDelta > 0) desviosLocales.push(`Faltante Físico: Facturado ${cantF}, Recibido ${normalizedCantR}`);
+    else if (cantDelta < 0) desviosLocales.push(`Sobrante Físico: Facturado ${cantF}, Recibido ${normalizedCantR}`);
+
+    if (Math.abs(precioDelta) > 5.0) {
+        desviosLocales.push(`Desvío Precio: Facturado a $${precioF.toFixed(2)} (Pactado Equiv: $${precioP.toFixed(2)})`);
+    }
+
+    row.pedido = { 
+        ...pedido, 
+        precio_unitario: precioP, 
+        factor_conversion: factorConversion 
+    };
+    row.recibido = normalizedCantR; 
+    row.normalizedCantR = normalizedCantR;
+    row.delta_cantidad = cantDelta;
+    row.delta_monto = precioDelta;
+    row.delta_porcentaje = (precioP > 0) ? ((precioDelta / precioP) * 100).toFixed(2) : 0;
+    row.desvios = desviosLocales;
+    row.status = desviosLocales.length > 0 ? 'OBSERVADO_POR_DESVIOS' : 'OK';
+
+    // Eliminar el ítem matcheado del pool de sobrantes para evitar doble asignación
+    window.currentConciliacion.unmatchedPedidoItems = window.currentConciliacion.unmatchedPedidoItems.filter(p => p.id !== pedidoItemId);
+
+    // Re-renderizar la tabla al instante
+    window.renderMatchReport();
 };
 
 window.confirmarConciliacion = async function() {

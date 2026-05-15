@@ -646,6 +646,15 @@ const facturasController = {
                 });
             }
 
+            const unmatchedPedidoItems = pedidoItems.filter(pi => !pi._matched).map(pi => {
+                const matchCodigo = String(pi.producto_codigo || '').trim().toLowerCase();
+                return {
+                    ...pi,
+                    cantR: recibidosMap[pi.id] || 0,
+                    factor_conversion: masterCatalogMap.get(matchCodigo) || 1
+                };
+            });
+
             // 6. Actualizar Factura (SÓLO SI ES HITL CONFIRMADO)
             const finalStatus = totalDesvios > 0 ? 'OBSERVADO_POR_DESVIOS' : 'CONCILIADO_OK';
             
@@ -666,7 +675,7 @@ const facturasController = {
                 updatedFact = uFact;
             }
 
-            return res.json({ success: true, status: finalStatus, matchReport, data: updatedFact });
+            return res.json({ success: true, status: finalStatus, matchReport, unmatchedPedidoItems, data: updatedFact });
 
         } catch (error) {
             console.error("[FacturasController] Error matchFactura:", error);
@@ -904,14 +913,25 @@ const facturasController = {
                 if (!s1 || !s2) return 0;
                 s1 = normalizeString(s1);
                 s2 = normalizeString(s2);
-                const words1 = s1.split(' ').filter(w => w.length > 2);
-                const words2 = s2.split(' ').filter(w => w.length > 2);
+                
+                // Extraemos palabras mayores a 2 caracteres y eliminamos puntuación pegada
+                const extractWords = str => str.replace(/[.,()]/g, '').split(' ').filter(w => w.length > 2);
+                const words1 = extractWords(s1);
+                const words2 = extractWords(s2);
+                
+                if (words1.length === 0 || words2.length === 0) return 0;
+
+                const shortest = words1.length < words2.length ? words1 : words2;
+                const longest = words1.length < words2.length ? words2 : words1;
+
                 let matches = 0;
-                for (const w1 of words1) {
-                    if (words2.some(w2 => w2 === w1 || w2.includes(w1) || w1.includes(w2))) matches++;
+                for (const wShort of shortest) {
+                    if (longest.some(wLong => wLong === wShort || wLong.includes(wShort) || wShort.includes(wLong))) {
+                        matches++;
+                    }
                 }
-                const maxWords = Math.max(words1.length, words2.length);
-                return maxWords === 0 ? 0 : matches / maxWords;
+                
+                return matches / shortest.length;
             }
             
             function applyConciliationRule(proveedorId, pedidoItem, facturaItem, masterFactorConversion, cantidadRecibida, precioPedido) {
@@ -919,23 +939,45 @@ const facturasController = {
                 return null; // Simplificado para que use la heurística general
             }
 
+            console.log("\n================ [VIGÍA DE MATCHING - INICIO] ================");
+            console.log("Total Artículos en Factura Virtual:", virtualFactura.articulos.length);
+            console.log("Total Items Disponibles en Pedidos B2B:", pedidoItems.length);
+
             for (const artFactura of virtualFactura.articulos) {
                 const codigoF = (artFactura.codigo || '').toLowerCase().trim();
                 const descF = (artFactura.descripcion || '').toLowerCase().trim();
                 const cantF = parseFloat(artFactura.cantidad || 0);
                 const precioF = parseFloat(artFactura.precio_unitario || 0);
 
+                console.log(`\n🔹 Evaluando Factura Ítem -> Cód: [${codigoF}] | Desc: [${descF}]`);
+
                 let match = pedidoItems.find(pi => !pi._matched && (pi.producto_codigo || '').toLowerCase().trim() === codigoF && codigoF !== '');
-                if (!match) {
+                
+                if (match) {
+                    console.log(`   ✅ MATCH EXACTO POR CÓDIGO: [${match.producto_codigo}]`);
+                } else {
+                    console.log(`   ⚠️ NO hay match por código. Iniciando Búsqueda Semántica (Fallback)...`);
                     let bestScore = 0; let bestCandidate = null;
                     for (const pi of pedidoItems) {
                         if (pi._matched) continue;
                         const piDesc = (pi.producto_descripcion || '').toLowerCase().trim();
-                        if (piDesc === descF) { bestCandidate = pi; bestScore = 1.0; break; }
+                        if (piDesc === descF) { 
+                            bestCandidate = pi; 
+                            bestScore = 1.0; 
+                            console.log(`      🎯 MATCH EXACTO POR DESCRIPCIÓN: [${piDesc}]`);
+                            break; 
+                        }
                         const score = calculateSimilarityScore(descF, piDesc);
+                        console.log(`      🔎 Comparando: [${descF}] vs [${piDesc}] => Score: ${score.toFixed(2)}`);
                         if (score > bestScore) { bestScore = score; bestCandidate = pi; }
                     }
-                    if (bestScore >= 0.6) match = bestCandidate;
+                    console.log(`   🏆 Mejor Candidato Semántico: [${bestCandidate ? bestCandidate.producto_descripcion : 'NINGUNO'}] (Score Final: ${bestScore.toFixed(2)})`);
+                    if (bestScore >= 0.6) {
+                        match = bestCandidate;
+                        console.log(`   ✅ MATCH SEMÁNTICO ACEPTADO (Score >= 0.6)`);
+                    } else {
+                        console.log(`   ❌ MATCH SEMÁNTICO RECHAZADO (Score < 0.6)`);
+                    }
                 }
 
                 if (!match) {
@@ -989,6 +1031,15 @@ const facturasController = {
                 matchReport.push(rowReport);
             }
 
+            const unmatchedPedidoItems = pedidoItems.filter(pi => !pi._matched).map(pi => {
+                const matchCodigo = String(pi.producto_codigo || '').trim().toLowerCase();
+                return {
+                    ...pi,
+                    cantR: recibidosMap[pi.id] || 0,
+                    factor_conversion: masterCatalogMap.get(matchCodigo) || 1
+                };
+            });
+
             if (req.body.confirm === true) {
                 // Update las facturas
                 const { error: updErr } = await supabase.from('facturas_raw')
@@ -997,7 +1048,7 @@ const facturasController = {
                 if (updErr) throw updErr;
             }
 
-            return res.json({ success: true, matchReport, isMulti: true });
+            return res.json({ success: true, matchReport, unmatchedPedidoItems, isMulti: true });
 
         } catch (error) {
             console.error("[FacturasController] Error matchFacturasMulti:", error);
