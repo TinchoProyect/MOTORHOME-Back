@@ -3,7 +3,7 @@
 
 let recProvidersCache = [];
 let recActiveProviderId = null;
-let recActiveOrderId = null;
+let recActiveOrderIds = [];
 let recActiveOrderItems = [];
 
 const API_BASE = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -26,12 +26,12 @@ window.closeReceptionModal = () => {
 
 const resetReceptionUI = () => {
     recActiveProviderId = null;
-    recActiveOrderId = null;
+    recActiveOrderIds = [];
     recActiveOrderItems = [];
     
     document.getElementById('recActiveProviderName').innerText = 'Seleccione un Proveedor';
     document.getElementById('recOrderSelectorContainer').style.display = 'none';
-    document.getElementById('recOrderSelect').innerHTML = '<option value="">Seleccione un pedido...</option>';
+    document.getElementById('recOrderCheckboxes').innerHTML = '';
     
     document.getElementById('recEmptyState').style.display = 'flex';
     document.getElementById('recItemsTable').style.display = 'none';
@@ -110,9 +110,9 @@ const selectRecProvider = async (providerId, providerName, btnElement) => {
 const fetchActiveOrders = async (providerId) => {
     try {
         const selectContainer = document.getElementById('recOrderSelectorContainer');
-        const selectEl = document.getElementById('recOrderSelect');
+        const checkboxesEl = document.getElementById('recOrderCheckboxes');
         
-        selectEl.innerHTML = '<option value="">Cargando...</option>';
+        checkboxesEl.innerHTML = '<span class="text-xs text-slate-500">Cargando...</span>';
         selectContainer.style.display = 'flex';
 
         const ts = new Date().getTime();
@@ -124,17 +124,21 @@ const fetchActiveOrders = async (providerId) => {
         const orders = result.data || [];
         
         if (orders.length === 0) {
-            selectEl.innerHTML = '<option value="">No hay pedidos en tránsito</option>';
+            checkboxesEl.innerHTML = '<span class="text-xs text-slate-500 italic">No hay pedidos en tránsito</span>';
             return;
         }
 
-        selectEl.innerHTML = '<option value="">Seleccione un pedido...</option>';
+        checkboxesEl.innerHTML = '';
         orders.forEach(order => {
             const dateStr = new Date(order.fecha_emision).toLocaleDateString('es-AR');
-            const opt = document.createElement('option');
-            opt.value = order.id;
-            opt.textContent = `Emisión: ${dateStr} - ${order.estado}`;
-            selectEl.appendChild(opt);
+            const idCheckbox = `chk_ped_${order.id}`;
+            const label = document.createElement('label');
+            label.className = "flex items-center gap-1.5 bg-slate-900 border border-slate-700 text-slate-300 text-[10px] px-2 py-1.5 rounded cursor-pointer hover:bg-slate-800 transition-colors select-none has-[:checked]:bg-blue-600/20 has-[:checked]:border-blue-500/50 has-[:checked]:text-blue-400";
+            label.innerHTML = `
+                <input type="checkbox" value="${order.id}" id="${idCheckbox}" class="rec-order-chk w-3 h-3 accent-blue-500 cursor-pointer" onchange="window.toggleReceptionOrder()">
+                <span>${dateStr} - ${order.estado}</span>
+            `;
+            checkboxesEl.appendChild(label);
         });
 
     } catch (error) {
@@ -143,33 +147,45 @@ const fetchActiveOrders = async (providerId) => {
     }
 };
 
-window.loadReceptionOrder = async (pedidoId) => {
-    if (!pedidoId) {
-        recActiveOrderId = null;
+window.toggleReceptionOrder = async () => {
+    const checkedBoxes = Array.from(document.querySelectorAll('.rec-order-chk:checked'));
+    recActiveOrderIds = checkedBoxes.map(chk => chk.value);
+
+    if (recActiveOrderIds.length === 0) {
         document.getElementById('recEmptyState').style.display = 'flex';
         document.getElementById('recItemsTable').style.display = 'none';
         document.getElementById('recBottomBar').style.display = 'none';
+        recActiveOrderItems = [];
         return;
     }
     
-    recActiveOrderId = pedidoId;
     document.getElementById('recEmptyState').style.display = 'none';
     
     try {
-        const ts = new Date().getTime();
-        const res = await fetch(`${API_BASE}/api/recepcion/pedido/${pedidoId}/items?_t=${ts}`);
-        const result = await res.json();
+        // Fetch items for all selected orders
+        const allItems = [];
+        for (const pedidoId of recActiveOrderIds) {
+            const ts = new Date().getTime();
+            const res = await fetch(`${API_BASE}/api/recepcion/pedido/${pedidoId}/items?_t=${ts}`);
+            const result = await res.json();
+            if (!result.success) throw new Error(result.error);
+            
+            // Add a reference to the pedido_id to each item
+            (result.data || []).forEach(item => {
+                item.origen_pedido_id = pedidoId;
+                allItems.push(item);
+            });
+        }
         
-        if (!result.success) throw new Error(result.error);
-        
-        recActiveOrderItems = result.data || [];
+        recActiveOrderItems = allItems;
         renderRecItems();
         
     } catch (error) {
-        console.error('[RECEPCION] Error al cargar ítems del pedido:', error);
-        alert('Error al cargar el detalle del pedido.');
+        console.error('[RECEPCION] Error al cargar ítems:', error);
+        alert('Error al cargar el detalle de los pedidos seleccionados.');
     }
 };
+
 
 const renderRecItems = () => {
     const tbody = document.getElementById('recItemsBody');
@@ -210,7 +226,7 @@ const renderRecItems = () => {
             <td class="p-3 text-center text-slate-300">${pedida}</td>
             <td class="p-3 text-center text-emerald-400 font-mono">${previa}</td>
             <td class="p-3 text-center">
-                <input type="number" step="0.01" min="0" value="${aRecibirSugerido}" data-item-id="${item.id}" data-esperado="${pedida}"
+                <input type="number" step="0.01" min="0" value="${aRecibirSugerido}" data-item-id="${item.id}" data-pedido-id="${item.origen_pedido_id}" data-esperado="${pedida}"
                     class="rec-qty-input w-24 bg-slate-950 border border-slate-700 text-white text-center rounded px-2 py-1 outline-none focus:border-blue-500">
             </td>
         `;
@@ -219,7 +235,7 @@ const renderRecItems = () => {
 };
 
 window.submitReception = async () => {
-    if (!recActiveOrderId) return;
+    if (!recActiveOrderIds || recActiveOrderIds.length === 0) return;
     
     const remito = document.getElementById('recRemitoInput').value.trim();
     const notas = document.getElementById('recNotasInput').value.trim();
@@ -234,6 +250,7 @@ window.submitReception = async () => {
         
         items_recibidos.push({
             pedido_item_id: inp.getAttribute('data-item-id'),
+            pedido_id: inp.getAttribute('data-pedido-id'),
             cantidad_esperada: Number(inp.getAttribute('data-esperado')),
             cantidad_recibida: val
         });
@@ -251,13 +268,13 @@ window.submitReception = async () => {
 
     try {
         const payload = {
-            pedido_id: recActiveOrderId,
+            pedidos_ids: recActiveOrderIds,
             numero_remito: remito,
             notas: notas,
             items_recibidos: items_recibidos
         };
 
-        const res = await fetch(`${API_BASE}/api/recepcion/registrar`, {
+        const res = await fetch(`${API_BASE}/api/recepcion/registrar-multi`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -287,23 +304,23 @@ window.submitReception = async () => {
             window.loadReceptionProvider(currentProvSelect.value);
         }
         
-        if (result.estado_final === 'Recepción Completa') {
-            // Clear the items view, as it's no longer 'Active'
-            document.getElementById('recItemsTable').style.display = 'none';
-            document.getElementById('recBottomBar').style.display = 'none';
-            
-            const emptyState = document.getElementById('recEmptyState');
-            emptyState.style.display = 'flex';
-            emptyState.innerHTML = `
-                <i data-lucide="check-circle-2" class="w-12 h-12 mb-4 opacity-50 text-emerald-500"></i>
-                <p class="text-sm font-bold tracking-widest uppercase text-emerald-400">Pedido Completado</p>
-                <p class="text-[10px] text-slate-500 mt-2">La logística de esta orden ha finalizado.</p>
-            `;
-            if (window.lucide) window.lucide.createIcons();
-            recActiveOrderId = null;
-        } else {
-            // Reload order detail (now it's Parcial) to allow further inputs
-            window.loadReceptionOrder(recActiveOrderId);
+        // We will assume the transaction was mostly complete or we just reset the UI
+        document.getElementById('recItemsTable').style.display = 'none';
+        document.getElementById('recBottomBar').style.display = 'none';
+        
+        const emptyState = document.getElementById('recEmptyState');
+        emptyState.style.display = 'flex';
+        emptyState.innerHTML = `
+            <i data-lucide="check-circle-2" class="w-12 h-12 mb-4 opacity-50 text-emerald-500"></i>
+            <p class="text-sm font-bold tracking-widest uppercase text-emerald-400">Recepción Procesada</p>
+            <p class="text-[10px] text-slate-500 mt-2">La logística de estos pedidos ha sido registrada.</p>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+        recActiveOrderIds = [];
+        
+        // Reload active orders list
+        if (recActiveProviderId) {
+            await fetchActiveOrders(recActiveProviderId);
         }
 
         // Si la vista principal de Pedidos Activos está abierta de fondo, actualizarla

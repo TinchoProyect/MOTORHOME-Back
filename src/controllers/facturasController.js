@@ -371,9 +371,16 @@ const facturasController = {
 
     matchFactura: async (req, res) => {
         const { id } = req.params; // factura_id
-        const { recepcionId, confirm } = req.body;
+        const { recepcionId, recepcionesIds, confirm } = req.body;
 
-        if (!recepcionId) return res.status(400).json({ error: "Missing recepcionId" });
+        let idsToProcess = [];
+        if (recepcionesIds && Array.isArray(recepcionesIds)) {
+            idsToProcess = recepcionesIds;
+        } else if (recepcionId) {
+            idsToProcess = [recepcionId];
+        }
+
+        if (idsToProcess.length === 0) return res.status(400).json({ error: "Missing recepcionesIds" });
 
         try {
             // 1. Obtener la Factura
@@ -384,39 +391,31 @@ const facturasController = {
                 .single();
             if (errFact || !factura) throw new Error("Factura no encontrada");
 
-            // 2. Obtener la Recepción Física
-            const { data: recepcion, error: errRecCab } = await supabase
+            // 2. Obtener las Recepciones Físicas (Múltiples para Integración)
+            const { data: recepciones, error: errRecCab } = await supabase
                 .from('recepciones_fisicas_cabecera')
                 .select('*')
-                .eq('id', recepcionId)
-                .single();
-            if (errRecCab || !recepcion) throw new Error("Recepción no encontrada");
+                .in('id', idsToProcess);
+            if (errRecCab || !recepciones || recepciones.length === 0) throw new Error("Recepción no encontrada");
 
-            const pedidoId = recepcion.pedido_id;
+            // Extraer los pedidos únicos involucrados
+            const pedidosIdsUnicos = [...new Set(recepciones.map(r => r.pedido_id))];
 
-            // 2b. Obtener el Pedido B2B
-            const { data: pedido, error: errPed } = await supabase
-                .from('pedidos_b2b_cabecera')
-                .select('*')
-                .eq('id', pedidoId)
-                .single();
-            if (errPed || !pedido) throw new Error("Pedido B2B no encontrado");
-
-            // 3. Obtener los Items del Pedido
+            // 3. Obtener los Items de todos los Pedidos B2B Involucrados
             const { data: pedidoItems, error: errPedItems } = await supabase
                 .from('pedidos_b2b_items')
                 .select('*')
-                .eq('pedido_id', pedidoId);
+                .in('pedido_id', pedidosIdsUnicos);
             if (errPedItems) throw errPedItems;
 
-            // 4. Obtener las Recepciones Físicas SOLO de esta recepción
+            // 4. Obtener las Recepciones Físicas de TODOS los remitos en este grupo
             const { data: recepcionesItems, error: errRec } = await supabase
                 .from('recepciones_fisicas_items')
                 .select('pedido_item_id, cantidad_recibida')
-                .eq('recepcion_id', recepcionId);
+                .in('recepcion_id', idsToProcess);
             if (errRec) throw errRec;
 
-            // Agrupar cantidades recibidas (en este remito específico)
+            // Agrupar cantidades recibidas consolidadas
             const recibidosMap = {};
             if (recepcionesItems && recepcionesItems.length > 0) {
                 for (const rec of recepcionesItems) {
@@ -655,7 +654,7 @@ const facturasController = {
                 const { data: uFact, error: updateErr } = await supabase
                     .from('facturas_raw')
                     .update({
-                        pedido_b2b_id: pedidoId,
+                        pedido_b2b_id: pedidosIdsUnicos[0],
                         status_conciliacion: finalStatus,
                         match_report: matchReport
                     })
@@ -677,12 +676,19 @@ const facturasController = {
 
     confirmarMatch: async (req, res) => {
         const { id } = req.params; // Factura ID
-        const { recepcionId } = req.body;
+        const { recepcionId, recepcionesIds } = req.body;
         
-        if (!recepcionId) return res.status(400).json({ error: "Falta recepcionId" });
+        let idsToProcess = [];
+        if (recepcionesIds && Array.isArray(recepcionesIds)) {
+            idsToProcess = recepcionesIds;
+        } else if (recepcionId) {
+            idsToProcess = [recepcionId];
+        }
+
+        if (idsToProcess.length === 0) return res.status(400).json({ error: "Falta recepcionesIds" });
 
         try {
-            console.log(`[FacturasController] Etapa 4: Confirmando Match para Factura ${id} y Recepción ${recepcionId}`);
+            console.log(`[FacturasController] Etapa 4: Confirmando Match para Factura ${id} y Recepciones ${idsToProcess.join(', ')}`);
             
             // 1. Obtener la factura para verificar estado y proveedor
             const { data: factura, error: errFactura } = await supabase
@@ -698,7 +704,7 @@ const facturasController = {
                 // En la migración dice DEFAULT 'PENDIENTE_MATCH'
             }
 
-            // 2. Insertar en cuenta_corriente_proveedores
+            // 2. Insertar en cuenta_corriente_proveedores la Factura principal
             const { data: cc, error: errCC } = await supabase
                 .from('cuenta_corriente_proveedores')
                 .insert([{
@@ -714,11 +720,39 @@ const facturasController = {
                 
             if (errCC) throw errCC;
 
-            // 3. Mutar la recepción física para que desaparezca de pendientes
+            // 2.5. Cargar Diferencia a Favor si el usuario lo solicitó
+            const matchReport = req.body.matchReport || factura.match_report;
+            if (req.body.chargeDifference && matchReport && Array.isArray(matchReport)) {
+                let diferencia = 0;
+                matchReport.forEach(item => {
+                    if (item.delta_monto && parseFloat(item.delta_monto) > 0) {
+                        const cant = parseFloat(item.factura?.cantidad || 0);
+                        diferencia += (parseFloat(item.delta_monto) * cant);
+                    }
+                });
+                
+                // Solo generamos si realmente cobraron de más (diferencia positiva > 1 peso)
+                if (diferencia > 1.0) {
+                    const { error: errAjuste } = await supabase
+                        .from('cuenta_corriente_proveedores')
+                        .insert([{
+                            proveedor_id: factura.proveedor_id,
+                            tipo_movimiento: 'NOTA_DEBITO_INTERNA',
+                            monto_credito: 0,
+                            monto_debito: parseFloat(diferencia.toFixed(2)),
+                            referencia_factura_id: factura.id,
+                            observaciones: `Ajuste a favor por desvíos en conciliación de Factura ${factura.numero_comprobante}`
+                        }]);
+                    if (errAjuste) throw errAjuste;
+                    console.log(`[FacturasController] Se insertó Ajuste a Favor por $${diferencia.toFixed(2)}`);
+                }
+            }
+
+            // 3. Mutar las recepciones físicas para que desaparezcan de pendientes
             const { error: errRec } = await supabase
                 .from('recepciones_fisicas_cabecera')
                 .update({ estado_conciliacion: 'CONCILIADA' })
-                .eq('id', recepcionId);
+                .in('id', idsToProcess);
                 
             if (errRec) throw errRec;
 
@@ -727,7 +761,8 @@ const facturasController = {
                 .from('facturas_raw')
                 .update({
                     status_conciliacion: 'CONCILIADO_OK',
-                    cuenta_corriente_id: cc.id
+                    cuenta_corriente_id: cc.id,
+                    match_report: req.body.matchReport || factura.match_report
                 })
                 .eq('id', id)
                 .select()

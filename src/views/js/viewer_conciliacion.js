@@ -70,30 +70,46 @@ window.openConciliacionModal = async function(facturaId) {
         const sel = document.getElementById('concil_pedido_select');
         sel.innerHTML = '<option value="">-- Buscar Recepciones / Pedidos Ingresados --</option>';
         if (recepciones && recepciones.length > 0) {
+            // Agrupar recepciones por numero_remito (Virtual Grouping)
+            const grouped = {};
             recepciones.forEach(r => {
-                const f = new Date(r.fecha_recepcion).toLocaleDateString();
-                const num = r.numero_remito ? `Remito ${r.numero_remito}` : 'Recepción S/N';
-                
-                let descItems = [];
-                if (r.recepciones_fisicas_items && r.recepciones_fisicas_items.length > 0) {
-                    descItems = r.recepciones_fisicas_items
-                        .map(i => i.pedidos_b2b_items?.producto_descripcion)
-                        .filter(Boolean);
+                const key = r.numero_remito ? `REMITO_${r.numero_remito}` : `ID_${r.id}`;
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        ids: [],
+                        fecha_recepcion: r.fecha_recepcion,
+                        numero_remito: r.numero_remito,
+                        items: []
+                    };
                 }
+                grouped[key].ids.push(r.id);
+                if (r.recepciones_fisicas_items && r.recepciones_fisicas_items.length > 0) {
+                    grouped[key].items.push(...r.recepciones_fisicas_items);
+                }
+            });
+
+            Object.values(grouped).forEach(g => {
+                const f = new Date(g.fecha_recepcion).toLocaleDateString();
+                const num = g.numero_remito ? `Remito ${g.numero_remito}` : 'Recepción S/N';
+                
+                let descItems = g.items
+                    .map(i => i.pedidos_b2b_items?.producto_descripcion)
+                    .filter(Boolean);
                 
                 let snippet = '';
                 let fullTooltip = '';
                 if (descItems.length > 0) {
                     const firstTwo = descItems.slice(0, 2).join(', ');
                     snippet = ` (${firstTwo}${descItems.length > 2 ? '...' : ''})`;
-                    // [TICKET UX] Formato de lista con salto de línea (\n codificado como &#10;)
                     fullTooltip = descItems.map(d => `• ${d}`).join('&#10;');
                 } else {
                     snippet = ' (Sin detalle)';
                     fullTooltip = 'Sin detalle de artículos';
                 }
 
-                sel.innerHTML += `<option value="${r.id}" title="${fullTooltip}">${num} del ${f}${snippet}</option>`;
+                // Guardamos el array de IDs en el value
+                const valStr = JSON.stringify(g.ids);
+                sel.innerHTML += `<option value='${valStr}' title="${fullTooltip}">${num} del ${f}${snippet}</option>`;
             });
         }
 
@@ -121,8 +137,8 @@ window.closeVisorConciliacion = function() {
 };
 
 window.onConciliacionPedidoChange = async function() {
-    const pedidoId = document.getElementById('concil_pedido_select').value;
-    if (!pedidoId) {
+    const recepcionesIdsStr = document.getElementById('concil_pedido_select').value;
+    if (!recepcionesIdsStr) {
         document.getElementById('concil_empty_state').classList.remove('hidden');
         document.getElementById('concil_match_content').classList.add('hidden');
         document.getElementById('btn_aprobar_conciliacion').disabled = true;
@@ -130,14 +146,22 @@ window.onConciliacionPedidoChange = async function() {
         return;
     }
 
-    window.currentConciliacion.pedidoId = pedidoId; // Este pedidoId en realidad guarda el recepcionId ahora
+    let recepcionesIds = [];
+    try {
+        recepcionesIds = JSON.parse(recepcionesIdsStr);
+    } catch (e) {
+        // Fallback for single non-JSON ID
+        recepcionesIds = [recepcionesIdsStr];
+    }
+
+    window.currentConciliacion.recepcionesIds = recepcionesIds; // Actualizado a array
     const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
     
     // Simulate Match
     try {
         const res = await fetch(`${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/match`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ recepcionId: pedidoId, confirm: false })
+            body: JSON.stringify({ recepcionesIds: recepcionesIds, confirm: false })
         });
         const data = await res.json();
         
@@ -181,7 +205,7 @@ window.onConciliacionPedidoChange = async function() {
                     // ROJO (Sobreprecio)
                     priceClass = 'text-red-400 font-bold bg-red-500/10';
                     deltaHtml = `<span class="text-red-400 font-bold font-mono text-2xl" title="Alerta: Nos cobran de más">+$${window.formatCurrency ? window.formatCurrency(deltaMonto) : deltaMonto} (+${deltaPct}%)</span>`;
-                    statusIcon = '<i data-lucide="alert-triangle" class="w-4 h-4 text-red-500 mx-auto" title="Sobreprecio detectado"></i>';
+                    statusIcon = `<div onclick="window.confirmarConciliacion()" class="cursor-pointer hover:scale-125 transition-transform bg-red-500/20 rounded-full p-1 inline-block border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.5)] animate-pulse"><i data-lucide="alert-triangle" class="w-5 h-5 text-red-500 mx-auto" title="Click para gestionar y asentar esta diferencia a favor"></i></div>`;
                     errPrec++;
                 } else if (deltaMonto < -25.0) {
                     // VERDE (Ahorro)
@@ -199,7 +223,7 @@ window.onConciliacionPedidoChange = async function() {
             if (!row.pedido) {
                 statusIcon = '<i data-lucide="x-circle" class="w-4 h-4 text-red-500 mx-auto" title="No hallado en Pedido"></i>';
             } else if (hasFaltante) {
-                statusIcon = '<i data-lucide="alert-triangle" class="w-4 h-4 text-red-500 mx-auto" title="Faltante Físico Detectado"></i>';
+                statusIcon = `<div onclick="window.confirmarConciliacion()" class="cursor-pointer hover:scale-125 transition-transform bg-amber-500/20 rounded-full p-1 inline-block border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.5)] animate-pulse"><i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500 mx-auto" title="Faltante físico. Click para gestionar"></i></div>`;
             }
 
             let logisticaHtml = '-';
@@ -250,6 +274,55 @@ window.onConciliacionPedidoChange = async function() {
 };
 
 window.confirmarConciliacion = async function() {
+    const errPrec = parseInt(document.getElementById('concil_desvios_precio').innerText) || 0;
+    const errCant = parseInt(document.getElementById('concil_desvios_cant').innerText) || 0;
+
+    let chargeDifference = false;
+
+    if (errPrec > 0 || errCant > 0) {
+        let totalDiferencia = 0;
+        if (window.currentConciliacion && window.currentConciliacion.matchReport) {
+            window.currentConciliacion.matchReport.forEach(item => {
+                if (item.delta_monto && parseFloat(item.delta_monto) > 0) {
+                    const cant = parseFloat(item.factura?.cantidad || 0);
+                    totalDiferencia += (parseFloat(item.delta_monto) * cant);
+                }
+            });
+        }
+
+        let textoDiferencia = '';
+        if (totalDiferencia > 0) {
+            textoDiferencia = `Hemos detectado un sobreprecio aproximado de $${window.formatCurrency ? window.formatCurrency(totalDiferencia) : totalDiferencia.toFixed(2)}. `;
+        }
+
+        const result = await Swal.fire({
+            title: 'Desvíos Detectados',
+            text: `${textoDiferencia}¿Desea asentar la diferencia de esta factura a su favor en la cuenta corriente del proveedor?`,
+            icon: 'warning',
+            background: '#0f172a',
+            color: '#f8fafc',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: '<i data-lucide="check-circle" class="w-4 h-4 inline mr-1"></i> Cargar a Mi Favor',
+            denyButtonText: 'Asumir Diferencia',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#059669',
+            denyButtonColor: '#d97706',
+            cancelButtonColor: '#475569',
+            customClass: {
+                confirmButton: 'flex items-center gap-2',
+            }
+        });
+
+        if (result.isDismissed) {
+            return; // Usuario canceló la operación
+        }
+        
+        if (result.isConfirmed) {
+            chargeDifference = true;
+        }
+    }
+
     const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
     
     Swal.fire({
@@ -262,7 +335,11 @@ window.confirmarConciliacion = async function() {
     try {
         const res = await fetch(`${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/confirmar`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ recepcionId: window.currentConciliacion.pedidoId })
+            body: JSON.stringify({ 
+                recepcionesIds: window.currentConciliacion.recepcionesIds,
+                chargeDifference: chargeDifference,
+                matchReport: window.currentConciliacion.matchReport
+            })
         });
         const data = await res.json();
         

@@ -81,6 +81,36 @@ const ProviderConciliationRules = {
         }
         
         return null; // Fallback
+    },
+
+    // ----------------------------------------------------
+    // REGLA: QUERCUS (Asimetría de Precio en Bultos)
+    // ----------------------------------------------------
+    "QUERCUS": (params) => {
+        let { cantF, precioF, cantR, precioP, factorConversion } = params;
+
+        // Quercus factura en bultos cerrados (ej. precio de la caja)
+        // mientras el sistema (y la recepción) computa las cantidades recibidas también en bultos,
+        // pero el precio_pactado original está expresado en Kilos o Unidades base.
+        if (factorConversion > 1.1 && precioP > 0) {
+            const apparentPriceFactor = precioF / precioP;
+            const priceTolerance = factorConversion * 0.25; 
+            
+            if (Math.abs(apparentPriceFactor - factorConversion) <= priceTolerance) {
+                return {
+                    normalizedCantR: cantR, 
+                    normalizedPrecioP: precioP,
+                    
+                    overrideCantF: cantF, 
+                    overridePrecioF: precioF / factorConversion, // Baja el precio facturado al plano base
+                    
+                    ruleApplied: true,
+                    ruleName: "QUERCUS_PRICE_UOM"
+                };
+            }
+        }
+        
+        return null; // Fallback
     }
 };
 
@@ -101,6 +131,8 @@ const applyConciliationRule = (providerKey, matchItem, artFactura, factorConvers
             ruleKey = "PUEBLO_VIEJO";
         } else if (upperKey.includes("BAVOSI") || upperKey === "8929039A-407E-40DD-A399-98D17F647DC4") {
             ruleKey = "BAVOSI";
+        } else if (upperKey.includes("QUERCUS") || upperKey === "69544027-2936-4DF6-B728-CBD171BB1594") {
+            ruleKey = "QUERCUS";
         }
     }
 

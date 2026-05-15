@@ -217,6 +217,108 @@ router.post('/registrar', async (req, res) => {
     }
 });
 
+// POST: Registrar recepción física múltiple (Virtual Grouping)
+router.post('/registrar-multi', async (req, res) => {
+    try {
+        const { pedidos_ids, numero_remito, notas, items_recibidos } = req.body;
+        
+        if (!pedidos_ids || !Array.isArray(pedidos_ids) || pedidos_ids.length === 0 || !items_recibidos || items_recibidos.length === 0) {
+            return res.status(400).json({ success: false, error: 'Datos incompletos.' });
+        }
+
+        const fallbackRemito = numero_remito ? numero_remito : `MULTI-${new Date().getTime()}`;
+
+        let finalStatus = 'Procesado';
+
+        for (const pedido_id of pedidos_ids) {
+            // Filtrar items correspondientes a este pedido
+            const itemsToProcess = items_recibidos.filter(i => i.pedido_id === pedido_id);
+            if (itemsToProcess.length === 0) continue; // Si el usuario no mandó nada de este pedido, lo ignoramos
+
+            // 1. Insertar cabecera para este pedido (Comparten remito)
+            const { data: cabecera, error: errCabecera } = await supabase
+                .from('recepciones_fisicas_cabecera')
+                .insert({
+                    pedido_id,
+                    numero_remito: fallbackRemito,
+                    notas,
+                    estado: 'Calculando...'
+                })
+                .select()
+                .single();
+
+            if (errCabecera) throw errCabecera;
+
+            // 2. Insertar ítems
+            const itemsToInsert = itemsToProcess.map(item => ({
+                recepcion_id: cabecera.id,
+                pedido_item_id: item.pedido_item_id,
+                cantidad_esperada: item.cantidad_esperada,
+                cantidad_recibida: item.cantidad_recibida
+            }));
+
+            const { error: errItems } = await supabase
+                .from('recepciones_fisicas_items')
+                .insert(itemsToInsert);
+
+            if (errItems) throw errItems;
+
+            // 3. Evaluar el estado global de ESTE pedido
+            const { data: allItems } = await supabase
+                .from('pedidos_b2b_items')
+                .select('id, cantidad')
+                .eq('pedido_id', pedido_id);
+
+            const { data: allRecepciones } = await supabase
+                .from('recepciones_fisicas_items')
+                .select('pedido_item_id, cantidad_recibida, recepciones_fisicas_cabecera!inner(estado)')
+                .in('pedido_item_id', allItems.map(i => i.id))
+                .neq('recepciones_fisicas_cabecera.estado', 'Anulada');
+
+            let totalEsperado = 0;
+            let totalRecibido = 0;
+
+            const sumMap = {};
+            allRecepciones.forEach(r => {
+                if(!sumMap[r.pedido_item_id]) sumMap[r.pedido_item_id] = 0;
+                sumMap[r.pedido_item_id] += Number(r.cantidad_recibida);
+            });
+
+            let incompleto = false;
+            allItems.forEach(i => {
+                const esperado = Number(i.cantidad);
+                const recibido = sumMap[i.id] || 0;
+                totalEsperado += esperado;
+                totalRecibido += recibido;
+                
+                if (recibido < esperado) {
+                    incompleto = true;
+                }
+            });
+
+            const nuevoEstado = incompleto ? 'Recepción Parcial' : 'Recepción Completa';
+
+            // 4. Actualizar estado del pedido original
+            await supabase
+                .from('pedidos_b2b_cabecera')
+                .update({ estado: nuevoEstado })
+                .eq('id', pedido_id);
+
+            // 5. Actualizar estado de la cabecera de recepción
+            await supabase
+                .from('recepciones_fisicas_cabecera')
+                .update({ estado: nuevoEstado })
+                .eq('id', cabecera.id);
+        }
+
+        res.json({ success: true, estado_final: finalStatus });
+
+    } catch (err) {
+        console.error('[RECEPCION] Error al registrar recepciones múltiples:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // GET: Obtener historial de recepciones físicas
 router.get('/historial', async (req, res) => {
     try {
