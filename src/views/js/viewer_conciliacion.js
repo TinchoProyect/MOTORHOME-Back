@@ -9,8 +9,187 @@ window.currentConciliacion = {
     matchReport: null
 };
 
-window.openConciliacionModal = async function(facturaId) {
+window.openConciliacionModalMulti = async function(facturasIds) {
+    if (!facturasIds || facturasIds.length === 0) return;
+    if (facturasIds.length === 1) return window.openConciliacionModal(facturasIds[0]);
+
     if (!window.Swal) return;
+
+    try {
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        
+        Swal.fire({
+            title: 'Ensamblando Facturas...',
+            background: '#0f172a', color: '#f8fafc',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        // 1. Obtener todas las facturas via Backend
+        const facPromises = facturasIds.map(id => fetch(`${backendBaseUrl}/api/facturas/${id}`).then(res => res.json()));
+        const facResults = await Promise.all(facPromises);
+        
+        let totalImporte = 0;
+        let mergedArticulos = {};
+        let numeros = [];
+
+        facResults.forEach(res => {
+            if (!res.success) throw new Error(res.error || "No se pudo obtener una factura");
+            const fac = res.data;
+            totalImporte += parseFloat(fac.importe_total || 0);
+            if (fac.numero_comprobante) numeros.push(fac.numero_comprobante);
+
+            (fac.articulos || []).forEach(art => {
+                const key = art.codigo ? String(art.codigo).trim().toLowerCase() : String(art.descripcion).trim().toLowerCase();
+                if (!mergedArticulos[key]) {
+                    mergedArticulos[key] = { ...art, cantidad: 0, subtotal: 0, precio_unitario: parseFloat(art.precio_unitario || 0) };
+                } else {
+                    mergedArticulos[key].cantidad += parseFloat(art.cantidad || 0);
+                    mergedArticulos[key].subtotal += parseFloat(art.subtotal || 0);
+                    mergedArticulos[key].precio_unitario = parseFloat(art.precio_unitario || 0); // simplificacion
+                }
+            });
+        });
+
+        const virtualFactura = {
+            id: facturasIds, // Guardamos el array como ID para la lógica posterior
+            numero_comprobante: numeros.join(' + '),
+            importe_total: totalImporte,
+            fecha_emision: facResults[0].data.fecha_emision,
+            articulos: Object.values(mergedArticulos)
+        };
+
+        window.currentConciliacion.facturaId = facturasIds;
+        window.currentConciliacion.facturaData = virtualFactura;
+        window.currentConciliacion.pedidoId = null;
+        window.currentConciliacion.matchReport = null;
+
+        // 2. Obtener Historial de Recepciones via Backend
+        const pid = window.currentActiveProviderId || window.globalContext?.providerId;
+        const resRec = await fetch(`${backendBaseUrl}/api/recepcion/provider/${pid}`);
+        const recJson = await resRec.json();
+        if (!recJson.success) throw new Error(recJson.error || "No se pudieron obtener las recepciones");
+        const recepciones = recJson.data;
+
+        Swal.close();
+
+        // 3. Renderizar Cuadrante Izquierdo (Múltiples Facturas)
+        document.getElementById('concil_fac_nro').innerText = numeros.join(' + ');
+        const scrollContainer = document.getElementById('concil_left_scroll');
+        scrollContainer.innerHTML = '';
+
+        facResults.forEach((res, index) => {
+            const fac = res.data;
+            let total = window.formatCurrency ? window.formatCurrency(fac.importe_total || 0) : (fac.importe_total || 0);
+            let fecha = fac.fecha_emision ? new Date(fac.fecha_emision).toLocaleDateString() : '-';
+            let num = fac.numero_comprobante || 'S/N';
+            
+            let html = `
+                <div class="mb-6 last:mb-0">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-bold text-slate-300"><i data-lucide="file-text" class="inline w-3 h-3 mr-1 text-slate-500"></i>Factura ${num}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                            <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Importe Total</span>
+                            <span class="font-mono font-bold text-amber-400 text-lg">$ ${total}</span>
+                        </div>
+                        <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                            <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Fecha Emisión</span>
+                            <span class="font-mono text-slate-300 text-sm">${fecha}</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden shadow-inner">
+                        <table class="w-full text-left text-xs text-slate-300 relative">
+                            <thead class="text-[9px] uppercase text-slate-500 bg-slate-900 sticky top-0 shadow-sm border-b border-slate-800">
+                                <tr>
+                                    <th class="px-3 py-2 font-bold">Cód.</th>
+                                    <th class="px-3 py-2 font-bold w-1/2">Descripción</th>
+                                    <th class="px-3 py-2 font-bold text-center">Cant.</th>
+                                    <th class="px-3 py-2 font-bold text-right">P.Unit</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/50">
+            `;
+            
+            const articulos = fac.articulos || [];
+            if (articulos.length === 0) {
+                html += `<tr><td colspan="4" class="p-4 text-center text-slate-500 italic">Sin detalle de artículos extraído.</td></tr>`;
+            } else {
+                articulos.forEach(art => {
+                    let c = window.formatCurrency ? window.formatCurrency(art.cantidad || 0) : (art.cantidad || 0);
+                    let p = window.formatCurrency ? window.formatCurrency(art.precio_unitario || 0) : (art.precio_unitario || 0);
+                    html += `
+                        <tr class="hover:bg-slate-800/30">
+                            <td class="px-3 py-2 font-mono text-xs text-slate-400">${art.codigo || '-'}</td>
+                            <td class="px-3 py-2 text-xs text-slate-300 line-clamp-1" title="${art.descripcion}">${art.descripcion || '-'}</td>
+                            <td class="px-3 py-2 font-mono text-lg text-center text-blue-400 font-bold">${c}</td>
+                            <td class="px-3 py-2 font-mono text-lg font-bold text-right text-slate-200">$${p}</td>
+                        </tr>
+                    `;
+                });
+            }
+            html += `</tbody></table></div></div>`;
+            if (index < facResults.length - 1) {
+                html += `<div class="w-full h-px bg-slate-800 my-6"></div>`;
+            }
+            scrollContainer.innerHTML += html;
+        });
+        if (window.lucide) window.lucide.createIcons();
+
+        // 4. Poblar Selector Derecho
+        const sel = document.getElementById('concil_pedido_select');
+        sel.innerHTML = '<option value="">-- Buscar Recepciones / Pedidos Ingresados --</option>';
+        if (recepciones && recepciones.length > 0) {
+            const grouped = {};
+            recepciones.forEach(r => {
+                const key = r.numero_remito ? `REMITO_${r.numero_remito}` : `ID_${r.id}`;
+                if (!grouped[key]) {
+                    grouped[key] = { ids: [], fecha_recepcion: r.fecha_recepcion, numero_remito: r.numero_remito, items: [] };
+                }
+                grouped[key].ids.push(r.id);
+                if (r.recepciones_fisicas_items && r.recepciones_fisicas_items.length > 0) {
+                    grouped[key].items.push(...r.recepciones_fisicas_items);
+                }
+            });
+
+            Object.values(grouped).forEach(g => {
+                const f = new Date(g.fecha_recepcion).toLocaleDateString();
+                const num = g.numero_remito ? `Remito ${g.numero_remito}` : 'Recepción S/N';
+                let descItems = g.items.map(i => i.pedidos_b2b_items?.producto_descripcion).filter(Boolean);
+                let snippet = '';
+                let fullTooltip = '';
+                if (descItems.length > 0) {
+                    const firstTwo = descItems.slice(0, 2).join(', ');
+                    snippet = ` (${firstTwo}${descItems.length > 2 ? '...' : ''})`;
+                    fullTooltip = descItems.map(d => `• ${d}`).join('&#10;');
+                } else {
+                    snippet = ' (Sin detalle)';
+                    fullTooltip = 'Sin detalle de artículos';
+                }
+                const valStr = JSON.stringify(g.ids);
+                sel.innerHTML += `<option value='${valStr}' title="${fullTooltip}">${num} del ${f}${snippet}</option>`;
+            });
+        }
+
+        // Reset Cuadrante Derecho
+        document.getElementById('concil_empty_state').classList.remove('hidden');
+        document.getElementById('concil_match_content').classList.add('hidden');
+        document.getElementById('btn_aprobar_conciliacion').disabled = true;
+        document.getElementById('btn_aprobar_conciliacion').classList.add('cursor-not-allowed', 'opacity-50');
+
+        // Mostrar Modal
+        const overlay = document.getElementById('visorConciliacionOverlay');
+        overlay.classList.remove('hidden');
+        setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+
+    } catch (e) {
+        console.error("Error abriendo conciliación múltiple:", e);
+        Swal.fire('Error', 'No se pudo inicializar la mesa de conciliación: ' + e.message, 'error');
+    }
+};
+
+window.openConciliacionModal = async function(facturaId) {
 
     try {
         const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
@@ -42,29 +221,63 @@ window.openConciliacionModal = async function(facturaId) {
 
         Swal.close();
 
-        // 3. Renderizar Cuadrante Izquierdo (Factura)
+        // 3. Renderizar Cuadrante Izquierdo (Factura Singular)
         document.getElementById('concil_fac_nro').innerText = factura.numero_comprobante || 'S/N';
-        document.getElementById('concil_fac_total').innerText = '$ ' + (window.formatCurrency ? window.formatCurrency(factura.importe_total) : factura.importe_total);
-        document.getElementById('concil_fac_fecha').innerText = factura.fecha_emision ? new Date(factura.fecha_emision).toLocaleDateString() : '-';
+        const scrollContainer = document.getElementById('concil_left_scroll');
+        scrollContainer.innerHTML = '';
 
-        const facTbody = document.getElementById('concil_fac_articulos');
-        facTbody.innerHTML = '';
-        const articulos = factura.articulos || [];
+        let total = window.formatCurrency ? window.formatCurrency(factura.importe_total || 0) : (factura.importe_total || 0);
+        let fecha = factura.fecha_emision ? new Date(factura.fecha_emision).toLocaleDateString() : '-';
+        let num = factura.numero_comprobante || 'S/N';
         
+        let html = `
+            <div class="mb-6 last:mb-0">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-bold text-slate-300"><i data-lucide="file-text" class="inline w-3 h-3 mr-1 text-slate-500"></i>Factura ${num}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                        <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Importe Total</span>
+                        <span class="font-mono font-bold text-amber-400 text-2xl">$ ${total}</span>
+                    </div>
+                    <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                        <span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-1">Fecha Emisión</span>
+                        <span class="font-mono text-slate-300 text-sm">${fecha}</span>
+                    </div>
+                </div>
+                <div class="bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden shadow-inner">
+                    <table class="w-full text-left text-xs text-slate-300 relative">
+                        <thead class="text-[9px] uppercase text-slate-500 bg-slate-900 sticky top-0 shadow-sm border-b border-slate-800">
+                            <tr>
+                                <th class="px-3 py-2 font-bold">Cód.</th>
+                                <th class="px-3 py-2 font-bold w-1/2">Descripción</th>
+                                <th class="px-3 py-2 font-bold text-center">Cant.</th>
+                                <th class="px-3 py-2 font-bold text-right">P.Unit</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/50">
+        `;
+        
+        const articulos = factura.articulos || [];
         if (articulos.length === 0) {
-            facTbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-500 italic">Sin detalle de artículos extraído.</td></tr>`;
+            html += `<tr><td colspan="4" class="p-4 text-center text-slate-500 italic">Sin detalle de artículos extraído.</td></tr>`;
         } else {
             articulos.forEach(art => {
-                facTbody.innerHTML += `
+                let c = window.formatCurrency ? window.formatCurrency(art.cantidad || 0) : (art.cantidad || 0);
+                let p = window.formatCurrency ? window.formatCurrency(art.precio_unitario || 0) : (art.precio_unitario || 0);
+                html += `
                     <tr class="hover:bg-slate-800/30">
                         <td class="px-3 py-2 font-mono text-xs text-slate-400">${art.codigo || '-'}</td>
                         <td class="px-3 py-2 text-xs text-slate-300 line-clamp-1" title="${art.descripcion}">${art.descripcion || '-'}</td>
-                        <td class="px-3 py-2 font-mono text-2xl text-center text-blue-400 font-bold">${window.formatCurrency ? window.formatCurrency(art.cantidad || 0) : (art.cantidad || 0)}</td>
-                        <td class="px-3 py-2 font-mono text-2xl font-bold text-right text-slate-200">$${window.formatCurrency ? window.formatCurrency(art.precio_unitario || 0) : (art.precio_unitario || 0)}</td>
+                        <td class="px-3 py-2 font-mono text-2xl text-center text-blue-400 font-bold">${c}</td>
+                        <td class="px-3 py-2 font-mono text-2xl font-bold text-right text-slate-200">$${p}</td>
                     </tr>
                 `;
             });
         }
+        html += `</tbody></table></div></div>`;
+        scrollContainer.innerHTML = html;
+        if (window.lucide) window.lucide.createIcons();
 
         // 4. Poblar Selector Derecho
         const sel = document.getElementById('concil_pedido_select');
@@ -159,9 +372,18 @@ window.onConciliacionPedidoChange = async function() {
     
     // Simulate Match
     try {
-        const res = await fetch(`${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/match`, {
+        const isMulti = Array.isArray(window.currentConciliacion.facturaId);
+        const url = isMulti 
+            ? `${backendBaseUrl}/api/facturas/match-multi`
+            : `${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/match`;
+            
+        const bodyPayload = isMulti
+            ? { facturasIds: window.currentConciliacion.facturaId, recepcionesIds: recepcionesIds, confirm: false }
+            : { recepcionesIds: recepcionesIds, confirm: false };
+
+        const res = await fetch(url, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ recepcionesIds: recepcionesIds, confirm: false })
+            body: JSON.stringify(bodyPayload)
         });
         const data = await res.json();
         
@@ -229,7 +451,9 @@ window.onConciliacionPedidoChange = async function() {
             let logisticaHtml = '-';
             if (row.pedido) {
                 const facDesc = row.pedido.factor_conversion > 1 ? ` (x${row.pedido.factor_conversion})` : '';
-                logisticaHtml = `<span class="text-[10px] text-slate-500 block">${row.pedido.codigo}</span><span class="line-clamp-1 text-xs" title="${row.pedido.descripcion}">${row.pedido.descripcion}${facDesc}</span>`;
+                const pCodigo = row.pedido.producto_codigo || row.pedido.codigo || 'S/C';
+                const pDesc = row.pedido.producto_descripcion || row.pedido.descripcion || 'Sin descripción';
+                logisticaHtml = `<span class="text-[10px] text-slate-500 block">${pCodigo}</span><span class="line-clamp-1 text-xs" title="${pDesc}">${pDesc}${facDesc}</span>`;
             } else {
                 logisticaHtml = `<span class="text-red-400 italic text-xs">No hallado en Pedido</span>`;
             }
@@ -329,41 +553,65 @@ window.confirmarConciliacion = async function() {
         title: 'Confirmando...',
         background: '#0f172a', color: '#f8fafc',
         allowOutsideClick: false,
-        didOpen: () => { Swal.showLoading(); }
-    });
+        didOpen: async () => { 
+            Swal.showLoading(); 
+            try {
+                const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const isMulti = Array.isArray(window.currentConciliacion.facturaId);
+                
+                // 1. Confirmar el Match y mutar estado
+                const urlMatch = isMulti
+                    ? `${backendBaseUrl}/api/facturas/match-multi`
+                    : `${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/match`;
+                    
+                const bodyMatch = isMulti
+                    ? { facturasIds: window.currentConciliacion.facturaId, recepcionesIds: window.currentConciliacion.recepcionesIds, confirm: true }
+                    : { recepcionesIds: window.currentConciliacion.recepcionesIds, confirm: true };
 
-    try {
-        const res = await fetch(`${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/confirmar`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ 
-                recepcionesIds: window.currentConciliacion.recepcionesIds,
-                chargeDifference: chargeDifference,
-                matchReport: window.currentConciliacion.matchReport
-            })
-        });
-        const data = await res.json();
-        
-        if (!data.success) throw new Error(data.error);
+                const res1 = await fetch(urlMatch, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyMatch)
+                });
+                const data1 = await res1.json();
+                if (!data1.success) throw new Error(data1.error);
 
-        Swal.fire({
-            icon: 'success',
-            title: 'Conciliación Guardada',
-            text: 'El dictamen del operador ha sido persistido.',
-            background: '#1e293b', color: '#f8fafc',
-            timer: 2000,
-            showConfirmButton: false
-        });
+                // 2. Transaccionar con Cuenta Corriente (Etapa 4 real)
+                const urlConfirm = isMulti
+                    ? `${backendBaseUrl}/api/facturas/confirmar-multi`
+                    : `${backendBaseUrl}/api/facturas/${window.currentConciliacion.facturaId}/confirmar`;
+                    
+                const bodyConfirm = isMulti
+                    ? { facturasIds: window.currentConciliacion.facturaId, recepcionesIds: window.currentConciliacion.recepcionesIds, matchReport: window.currentConciliacion.matchReport, chargeDifference }
+                    : { recepcionesIds: window.currentConciliacion.recepcionesIds, matchReport: window.currentConciliacion.matchReport, chargeDifference };
 
-        window.closeVisorConciliacion();
+                const res2 = await fetch(urlConfirm, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyConfirm)
+                });
+                const data2 = await res2.json();
+                
+                if (!data2.success) throw new Error(data2.error);
 
-        // Refrescar
-        if (window.exploreSupplierFiles && window.currentDriveFolderId) {
-            window.exploreSupplierFiles(window.currentDriveFolderId, 'facturas');
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Conciliación Guardada',
+                    text: 'El dictamen del operador ha sido persistido.',
+                    background: '#1e293b', color: '#f8fafc',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+                window.closeVisorConciliacion();
+
+                // Refrescar
+                if (window.exploreSupplierFiles && window.currentDriveFolderId) {
+                    window.exploreSupplierFiles(window.currentDriveFolderId, 'facturas');
+                }
+            } catch (e) {
+                Swal.fire('Error', 'No se pudo guardar la conciliación: ' + e.message, 'error');
+            }
         }
-
-    } catch (e) {
-        Swal.fire('Error', 'No se pudo guardar la conciliación: ' + e.message, 'error');
-    }
+    });
 };
 
 window.viewFacturaDetails = async function(facturaId) {

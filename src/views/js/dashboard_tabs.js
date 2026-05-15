@@ -7,8 +7,9 @@
 console.log("%c 🗂️ DASHBOARD TABS: READY ", "background: #3b82f6; color: #fff; font-weight: bold; padding: 4px;");
 
 // State
-let dashboardTabState = 'DRIVE'; // 'DRIVE' | 'DB'
-window.selectedFiles = new Map(); // Selection State (Context Aware Map)
+let dashboardTabState = 'DRIVE'; // 'DRIVE' | 'DB' | 'CONCILIADAS'
+window.selectedFiles = new Map(); // Selection State (Context Aware Map para Listas)
+window.selectedFacturas = new Set(); // Selection State para Facturas (Batch Conciliation)
 
 // Selection Logic
 window.toggleSelection = function (id, el, isExtraido = false, fileName = "") {
@@ -26,8 +27,32 @@ window.toggleSelection = function (id, el, isExtraido = false, fileName = "") {
 
 window.clearSelection = function () {
     window.selectedFiles.clear();
+    window.selectedFacturas.clear();
     if (window.DashboardActions) {
         window.DashboardActions.renderActionBar(0);
+    }
+    // Update Factura Batch Button if exists
+    const batchBtn = document.getElementById('btnBatchConciliar');
+    if (batchBtn) {
+        batchBtn.style.display = 'none';
+        batchBtn.querySelector('span').innerText = '0';
+    }
+};
+
+window.toggleFacturaSelection = function(id, el) {
+    if (el.checked) {
+        window.selectedFacturas.add(id);
+    } else {
+        window.selectedFacturas.delete(id);
+    }
+    const batchBtn = document.getElementById('btnBatchConciliar');
+    if (batchBtn) {
+        if (window.selectedFacturas.size > 1) {
+            batchBtn.style.display = 'flex';
+            batchBtn.querySelector('span').innerText = window.selectedFacturas.size;
+        } else {
+            batchBtn.style.display = 'none';
+        }
     }
 };
 
@@ -152,10 +177,16 @@ window.renderFacturasDBGrid = function(allFacturas) {
     if (dashboardTabState === 'CONCILIADAS') {
         html += `<div class="overflow-y-auto custom-scrollbar pr-2 pb-10 pt-2 h-full w-full">`;
     } else {
-        html += `<div class="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 m-2 mt-4 shadow-inner">
+        html += `<div class="w-full flex justify-end mb-2 pr-2 min-h-[36px]">
+                    <button id="btnBatchConciliar" onclick="window.openConciliacionModalMulti(Array.from(window.selectedFacturas))" class="px-4 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white border border-amber-500/50 rounded-lg text-xs font-bold transition-all items-center gap-2 shadow-lg shadow-amber-900/20" style="display: none;">
+                        <i data-lucide="git-merge" class="w-4 h-4 inline-block -mt-0.5 mr-1"></i> Conciliar Lote (<span>0</span>)
+                    </button>
+                 </div>
+                 <div class="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 m-2 mt-0 shadow-inner">
             <table class="w-full text-left text-xs text-slate-300">
                 <thead class="bg-slate-900/80 text-[10px] uppercase font-bold text-slate-500 sticky top-0 shadow-sm border-b border-slate-800">
                     <tr>
+                        <th class="p-4 w-12 text-center"></th>
                         <th class="p-4">Fecha</th>
                         <th class="p-4">Número</th>
                         <th class="p-4 text-right">Importe Total</th>
@@ -223,15 +254,24 @@ window.renderFacturasDBGrid = function(allFacturas) {
                             <p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Importe Asentado</p>
                             <p class="text-lg font-bold font-mono text-emerald-400">$ ${formattedTotal}</p>
                         </div>
-                        <button onclick="window.viewConciliacionReport('${fac.id}')" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-emerald-500/30 shadow-sm flex items-center gap-2">
-                            <i data-lucide="file-search" class="w-3 h-3"></i> Trazabilidad
-                        </button>
+                        <div class="flex flex-col gap-2 items-end">
+                            <button onclick="window.viewConciliacionReport('${fac.id}')" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-emerald-500/30 shadow-sm flex items-center justify-center gap-2 w-full">
+                                <i data-lucide="file-search" class="w-3 h-3"></i> Trazabilidad
+                            </button>
+                            <button onclick="window.deshacerConciliacion('${fac.id}')" class="px-2 py-1 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white rounded text-[9px] font-bold uppercase tracking-wider transition-colors border border-red-500/20 shadow-sm flex items-center justify-center gap-1.5 w-full" title="Deshacer Conciliación y Revertir Finanzas">
+                                <i data-lucide="rotate-ccw" class="w-2.5 h-2.5"></i> Deshacer
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
         } else {
+            const isChecked = window.selectedFacturas && window.selectedFacturas.has(fac.id) ? 'checked' : '';
             html += `
                 <tr class="hover:bg-slate-800/30 transition-colors group">
+                    <td class="p-4 text-center">
+                        <input type="checkbox" class="w-4 h-4 rounded-md border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500 cursor-pointer transition-colors" onchange="window.toggleFacturaSelection('${fac.id}', this)" ${isChecked}>
+                    </td>
                     <td class="p-4 font-mono">${dateStr}</td>
                     <td class="p-4 font-mono font-bold text-white">${fac.numero_comprobante || 'S/N'}</td>
                     <td class="p-4 text-right text-amber-400 font-mono font-bold">$ ${formattedTotal}</td>
@@ -1277,4 +1317,57 @@ window.toggleFlujoFilter = function(flujoId, evtTarget) {
             }
         }
     });
+};
+
+window.deshacerConciliacion = async function(facturaId) {
+    if (!window.Swal) return;
+
+    const result = await Swal.fire({
+        title: '¿Deshacer Conciliación?',
+        text: 'Se eliminará el asiento de la Cuenta Corriente y se liberará la Recepción Logística. Esta factura volverá a estar pendiente.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#475569',
+        confirmButtonText: 'Sí, deshacer',
+        cancelButtonText: 'Cancelar',
+        background: '#1e293b',
+        color: '#f8fafc'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+        Swal.fire({
+            title: 'Revirtiendo...',
+            background: '#0f172a', color: '#f8fafc',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const res = await fetch(`${backendBaseUrl}/api/facturas/${facturaId}/deshacer-conciliacion`, {
+            method: 'POST'
+        });
+        const data = await res.json();
+        
+        if (!data.success) throw new Error(data.error);
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Reversión Exitosa',
+            text: 'La conciliación fue desarmada.',
+            background: '#1e293b', color: '#f8fafc',
+            timer: 2000,
+            showConfirmButton: false
+        });
+
+        // Refrescar
+        if (window.exploreSupplierFiles && window.currentDriveFolderId) {
+            window.exploreSupplierFiles(window.currentDriveFolderId, 'facturas');
+        }
+
+    } catch (error) {
+        Swal.fire('Error', 'No se pudo deshacer: ' + error.message, 'error');
+    }
 };

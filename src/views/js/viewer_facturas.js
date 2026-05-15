@@ -26,10 +26,9 @@ window.resetZoomVisor = function() {
 
 window.openVisorFacturas = async function(fileId, fileName, providerId, webViewLink, btnElement = null) {
     const modal = document.getElementById('visorFacturasModal');
-    const iframe = document.getElementById('iframeFactura');
     const sub = document.getElementById('visorFacturasSub');
     
-    if (!modal || !iframe || !sub) return;
+    if (!modal || !sub) return;
 
     if (btnElement) {
         btnElement.disabled = true;
