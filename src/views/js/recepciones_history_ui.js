@@ -264,14 +264,14 @@ window.viewReceptionDetails = async function(recepcionId, provName, remito) {
         
         if (!result.success) throw new Error(result.error);
         
-        renderReceptionItemsDetail(result.data);
+        renderReceptionItemsDetail(result.data, provName);
     } catch (e) {
         console.error("Error al cargar detalle de recepción:", e);
         document.getElementById('recDetLoader').innerHTML = `<p class="text-red-500 text-sm">Error al cargar los ítems.</p>`;
     }
 }
 
-function renderReceptionItemsDetail(items) {
+function renderReceptionItemsDetail(items, provName) {
     const loader = document.getElementById('recDetLoader');
     if (!loader) return;
     
@@ -290,6 +290,7 @@ function renderReceptionItemsDetail(items) {
                             <th class="w-full p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">Descripción de Mercadería</th>
                             <th class="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-center">Esperado</th>
                             <th class="p-4 text-[10px] font-bold text-emerald-400 uppercase tracking-widest border-b border-emerald-900/50 text-center bg-emerald-900/20 border-l border-emerald-900/30">Físico Recibido</th>
+                            <th class="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 text-center">Trazabilidad</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-800/50">
@@ -316,6 +317,11 @@ function renderReceptionItemsDetail(items) {
                 <td class="p-4 text-sm font-mono text-slate-400 text-center border-l border-slate-800/30">${esperado}</td>
                 <td class="p-4 text-sm font-black text-emerald-400 font-mono text-center bg-emerald-900/10 border-l border-emerald-900/30 shadow-inner">
                     ${iconHtml} ${recibido}
+                </td>
+                <td class="p-4 text-center border-l border-slate-800/30">
+                    <button onclick="window.printZplLabel('${i.id}', '${desc.replace(/'/g, "\\'")}', '${provName.replace(/'/g, "\\'")}', ${recibido})" class="px-3 py-1.5 bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 rounded text-[10px] font-bold uppercase tracking-widest transition-colors inline-flex items-center gap-1" title="Imprimir Etiquetas Zebra (ZPL)">
+                        <i data-lucide="printer" class="w-3 h-3"></i> Imprimir Lote
+                    </button>
                 </td>
             </tr>
         `;
@@ -453,3 +459,39 @@ window.revertirReception = async function(recepcionId) {
         }
     }
 }
+
+// Generador de etiquetas ZPL para la recepción física
+window.printZplLabel = function(itemId, itemName, provName, quantity) {
+    if (!quantity || quantity <= 0) return;
+    
+    // Limpieza básica para evitar romper el ZPL
+    const safeItemName = (itemName || '').substring(0, 30).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const safeProvName = (provName || '').substring(0, 30).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    const cantidadPar = quantity % 2 === 0 ? quantity : quantity + 1;
+    const pairs = Math.ceil(cantidadPar / 2);
+    
+    let zplData = '';
+    for (let i = 0; i < pairs; i++) {
+        zplData += `^XA
+^LH0,0 ^LT0
+^CF0,30 ^FO23,10^FD${safeItemName}^FS
+^CF0,20 ^FO23,45^FD${safeProvName}^FS
+^BY2,2,40 ^FO23,90^BCN,60,Y,N,N ^FD${itemId}^FS
+
+^CF0,30 ^FO443,10^FD${safeItemName}^FS
+^CF0,20 ^FO443,45^FD${safeProvName}^FS
+^BY2,2,40 ^FO443,90^BCN,60,Y,N,N ^FD${itemId}^FS
+^XZ\n`;
+    }
+    
+    const blob = new Blob([zplData], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lotes_recepcion_${itemId.substring(0,6)}.zpl`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};

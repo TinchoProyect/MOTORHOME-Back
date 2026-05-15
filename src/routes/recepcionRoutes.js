@@ -573,4 +573,73 @@ router.post('/revertir', async (req, res) => {
     }
 });
 
+// GET: Trazabilidad (Consulta de Lote por Scanner)
+router.get('/trazabilidad/:loteId', async (req, res) => {
+    try {
+        const { loteId } = req.params;
+        
+        if (!loteId || loteId.length < 5) {
+             return res.status(400).json({ success: false, error: 'ID de lote inválido.' });
+        }
+
+        const { data, error } = await supabase
+            .from('recepciones_fisicas_items')
+            .select(`
+                id,
+                cantidad_recibida,
+                recepciones_fisicas_cabecera (
+                    fecha_recepcion,
+                    numero_remito,
+                    pedido_id,
+                    pedidos_b2b_cabecera (
+                        proveedor_id,
+                        proveedores (nombre)
+                    )
+                ),
+                pedidos_b2b_items (
+                    producto_codigo,
+                    producto_descripcion,
+                    unidad_ref
+                )
+            `)
+            .eq('id', loteId)
+            .single();
+
+        if (error) {
+            // El error PGRST116 es 'No rows found'
+            if (error.code === 'PGRST116') {
+                 return res.json({ success: false, error: 'Lote no encontrado o inexistente.' });
+            }
+            throw error;
+        }
+
+        if (!data) {
+             return res.json({ success: false, error: 'Lote no encontrado.' });
+        }
+
+        // Parse metrics
+        const fechaRecepcion = new Date(data.recepciones_fisicas_cabecera.fecha_recepcion);
+        const hoy = new Date();
+        const diffTime = Math.abs(hoy - fechaRecepcion);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        const traceData = {
+            id_lote: data.id,
+            articulo_codigo: data.pedidos_b2b_items?.producto_codigo || 'N/A',
+            articulo_desc: data.pedidos_b2b_items?.producto_descripcion || 'S/D',
+            proveedor: data.recepciones_fisicas_cabecera?.pedidos_b2b_cabecera?.proveedores?.nombre || 'Desconocido',
+            fecha_exacta: fechaRecepcion.toISOString(),
+            remito: data.recepciones_fisicas_cabecera?.numero_remito || 'S/N',
+            permanencia_dias: diffDays,
+            cantidad_fisica: data.cantidad_recibida,
+            unidad: data.pedidos_b2b_items?.unidad_ref || 'U'
+        };
+
+        res.json({ success: true, data: traceData });
+    } catch (err) {
+        console.error('[RECEPCION] Error en trazabilidad:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;
