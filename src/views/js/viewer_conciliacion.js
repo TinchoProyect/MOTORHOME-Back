@@ -582,26 +582,133 @@ window.confirmarConciliacion = async function() {
 
     if (errPrec > 0 || errCant > 0) {
         let totalDiferencia = 0;
-        if (window.currentConciliacion && window.currentConciliacion.matchReport) {
-            window.currentConciliacion.matchReport.forEach(item => {
-                if (item.delta_monto && parseFloat(item.delta_monto) > 0) {
-                    const cant = parseFloat(item.factura?.cantidad || 0);
-                    totalDiferencia += (parseFloat(item.delta_monto) * cant);
+        let detallesDesvioHTML = '';
+        
+        window.recalcDesvios = function() {
+            let newTotal = 0;
+            const items = document.querySelectorAll('.desvio-item');
+            items.forEach(el => {
+                const delta = parseFloat(el.getAttribute('data-delta'));
+                const input = el.querySelector('.manual-qty-input');
+                const qty = parseFloat(input.value) || 0;
+                const subtotal = delta * qty;
+                newTotal += subtotal;
+                
+                el.querySelector('.subtotal-display').innerText = '+$' + (window.formatCurrency ? window.formatCurrency(subtotal) : subtotal.toFixed(2));
+                
+                const idx = parseInt(el.getAttribute('data-index'));
+                if (window.currentConciliacion.matchReport[idx].factura) {
+                    window.currentConciliacion.matchReport[idx].factura.cantidad_calculada = qty;
                 }
             });
+            
+            const totalEl = document.getElementById('total_diferencia_display');
+            if (totalEl) {
+                totalEl.innerText = '$' + (window.formatCurrency ? window.formatCurrency(newTotal) : newTotal.toFixed(2));
+            }
+        };
+
+        if (window.currentConciliacion && window.currentConciliacion.matchReport) {
+            let itemsHTML = '';
+            window.currentConciliacion.matchReport.forEach((item, index) => {
+                if (item.delta_monto && parseFloat(item.delta_monto) > 0) {
+                    const cant = parseFloat(item.factura?.cantidad || 0);
+                    const factor = parseFloat(item.pedido?.factor_conversion || 1);
+                    const cantTotalRef = cant * factor;
+                    
+                    if (item.factura) item.factura.cantidad_calculada = cantTotalRef;
+                    
+                    const difTotalItem = parseFloat(item.delta_monto) * cantTotalRef;
+                    totalDiferencia += difTotalItem;
+                    
+                    const desc = item.factura?.descripcion || item.pedido?.producto_descripcion || 'Artículo sin descripción';
+                    const pFacturado = window.formatCurrency ? window.formatCurrency(item.factura?.precio_unitario || 0) : parseFloat(item.factura?.precio_unitario || 0).toFixed(2);
+                    const pPactado = window.formatCurrency ? window.formatCurrency(item.pedido?.precio_unitario || 0) : parseFloat(item.pedido?.precio_unitario || 0).toFixed(2);
+                    const dUnitario = window.formatCurrency ? window.formatCurrency(item.delta_monto) : parseFloat(item.delta_monto).toFixed(2);
+                    const dTotal = window.formatCurrency ? window.formatCurrency(difTotalItem) : difTotalItem.toFixed(2);
+                    
+                    const unidadRef = item.pedido?.unidad_ref || 'Kilos';
+                    const pBulto = parseFloat(item.pedido?.precio_unitario || 0) * factor;
+                    const pBultoFmt = window.formatCurrency ? window.formatCurrency(pBulto) : pBulto.toFixed(2);
+                    
+                    itemsHTML += `
+                        <div class="mb-4 p-3 bg-slate-800/80 rounded border border-slate-700/50 text-left text-xs shadow-inner desvio-item" data-index="${index}" data-delta="${item.delta_monto}">
+                            <div class="font-bold text-slate-200 mb-3 border-b border-slate-700/80 pb-1.5 flex items-center">
+                                <i data-lucide="package" class="w-4 h-4 mr-2 text-slate-400"></i> <span class="text-sm tracking-wide">${desc}</span>
+                            </div>
+                            
+                            <!-- Comparativa en dos columnas -->
+                            <div class="grid grid-cols-2 gap-4 mb-3">
+                                <!-- Columna 1: Pactado / Físico -->
+                                <div class="bg-slate-900/40 p-2.5 rounded border border-slate-700/30">
+                                    <div class="text-emerald-400 font-bold mb-2 border-b border-emerald-900/30 pb-1 text-[10px] uppercase tracking-wider flex items-center"><i data-lucide="check-square" class="w-3 h-3 mr-1"></i> Mercadería Pactada</div>
+                                    <div class="flex justify-between py-0.5"><span class="text-slate-500">Precio (${unidadRef}):</span> <span class="text-slate-200 font-medium">$${pPactado}</span></div>
+                                    ${factor !== 1 ? `<div class="flex justify-between py-0.5"><span class="text-slate-500">Precio (Bulto):</span> <span class="text-slate-400">$${pBultoFmt}</span></div>` : ''}
+                                    <div class="flex justify-between py-0.5"><span class="text-slate-500">${unidadRef} por Bulto:</span> <span class="text-slate-200">${factor}</span></div>
+                                </div>
+
+                                <!-- Columna 2: Factura -->
+                                <div class="bg-red-900/10 p-2.5 rounded border border-red-900/20">
+                                    <div class="text-red-400 font-bold mb-2 border-b border-red-900/30 pb-1 text-[10px] uppercase tracking-wider flex items-center"><i data-lucide="file-text" class="w-3 h-3 mr-1"></i> Factura Recibida</div>
+                                    <div class="flex justify-between py-0.5"><span class="text-slate-500">Precio (${unidadRef}):</span> <span class="text-red-400 font-bold">$${pFacturado}</span></div>
+                                    <div class="flex justify-between py-0.5"><span class="text-slate-500">Bultos Facturados:</span> <span class="text-slate-200">${cant}</span></div>
+                                </div>
+                            </div>
+
+                            <!-- Sección de Cálculo y Diferencia -->
+                            <div class="bg-slate-900/80 p-2.5 rounded border border-slate-700/80">
+                                <div class="text-[10px] text-slate-400 uppercase tracking-widest mb-2 font-bold flex items-center"><i data-lucide="calculator" class="w-3 h-3 mr-1"></i> Fórmula de Desvío</div>
+                                
+                                <div class="grid grid-cols-[1fr_auto_1fr_auto_1.2fr] items-center gap-2 text-center">
+                                    <!-- Diferencia Unitaria -->
+                                    <div class="bg-slate-800 rounded p-1.5 border border-slate-700/50">
+                                        <div class="text-slate-500 text-[10px] mb-0.5">Dif. Unitaria</div>
+                                        <div class="text-amber-400 font-bold">+$${dUnitario}</div>
+                                    </div>
+                                    
+                                    <div class="text-slate-500 font-bold">×</div>
+                                    
+                                    <!-- Cantidad Total Editable -->
+                                    <div class="bg-indigo-900/20 border border-indigo-500/30 rounded p-1.5 relative group">
+                                        <div class="text-indigo-300 text-[10px] mb-1">Total ${unidadRef}</div>
+                                        <input type="number" step="0.01" class="manual-qty-input w-full bg-slate-900 border border-slate-600 rounded px-1 py-0.5 text-center text-slate-200 font-bold focus:border-indigo-400 outline-none hover:border-slate-400 transition-colors" value="${cantTotalRef}" onchange="window.recalcDesvios()" onkeyup="window.recalcDesvios()">
+                                        <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-slate-300 text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border border-slate-600">Puede corregir este valor</div>
+                                    </div>
+                                    
+                                    <div class="text-slate-500 font-bold">=</div>
+                                    
+                                    <!-- Subtotal Diferencia -->
+                                    <div class="bg-emerald-900/20 border border-emerald-500/30 rounded p-1.5">
+                                        <div class="text-emerald-500 text-[10px] mb-0.5 uppercase tracking-wider">Sobreprecio</div>
+                                        <div class="text-emerald-400 font-bold text-sm subtotal-display">+$${dTotal}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+            if (itemsHTML) {
+                detallesDesvioHTML = `<div class="max-h-[250px] overflow-y-auto mb-4 pr-1 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800/50" id="desvios_container">${itemsHTML}</div>`;
+            }
         }
 
         let textoDiferencia = '';
         if (totalDiferencia > 0) {
-            textoDiferencia = `Hemos detectado un sobreprecio aproximado de $${window.formatCurrency ? window.formatCurrency(totalDiferencia) : totalDiferencia.toFixed(2)}. `;
+            textoDiferencia = `<p class="mb-4 text-slate-300 text-sm">El sobreprecio exacto calculado es de <strong class="text-red-400 text-lg ml-1" id="total_diferencia_display">$${window.formatCurrency ? window.formatCurrency(totalDiferencia) : totalDiferencia.toFixed(2)}</strong>.</p>`;
         }
 
         const result = await Swal.fire({
             title: 'Desvíos Detectados',
-            text: `${textoDiferencia}¿Desea asentar la diferencia de esta factura a su favor en la cuenta corriente del proveedor?`,
+            html: `
+                ${detallesDesvioHTML}
+                ${textoDiferencia}
+                <p class="text-sm text-slate-400 border-t border-slate-700/50 pt-4 mt-2">¿Desea asentar la diferencia de esta factura a su favor en la cuenta corriente del proveedor?</p>
+            `,
             icon: 'warning',
             background: '#0f172a',
             color: '#f8fafc',
+            width: '42em',
             showCancelButton: true,
             showDenyButton: true,
             confirmButtonText: '<i data-lucide="check-circle" class="w-4 h-4 inline mr-1"></i> Cargar a Mi Favor',
@@ -612,6 +719,10 @@ window.confirmarConciliacion = async function() {
             cancelButtonColor: '#475569',
             customClass: {
                 confirmButton: 'flex items-center gap-2',
+                htmlContainer: 'px-2'
+            },
+            didOpen: () => {
+                if (typeof lucide !== 'undefined') lucide.createIcons();
             }
         });
 

@@ -735,7 +735,7 @@ const facturasController = {
                 let diferencia = 0;
                 matchReport.forEach(item => {
                     if (item.delta_monto && parseFloat(item.delta_monto) > 0) {
-                        const cant = parseFloat(item.factura?.cantidad || 0);
+                        const cant = parseFloat(item.factura?.cantidad_calculada || item.factura?.cantidad || 0);
                         diferencia += (parseFloat(item.delta_monto) * cant);
                     }
                 });
@@ -1087,7 +1087,7 @@ const facturasController = {
                 let diferencia = 0;
                 matchReport.forEach(item => {
                     if (item.delta_monto && parseFloat(item.delta_monto) > 0) {
-                        const cant = parseFloat(item.factura?.cantidad || 0);
+                        const cant = parseFloat(item.factura?.cantidad_calculada || item.factura?.cantidad || 0);
                         diferencia += (parseFloat(item.delta_monto) * cant);
                     }
                 });
@@ -1159,24 +1159,70 @@ const facturasController = {
             // 2. Extraer Recepciones vinculadas
             let recepcionesIds = [];
             if (Array.isArray(factura.match_report) && factura.match_report.length > 0) {
-                if (factura.match_report[0]._meta_recepcionesIds) {
-                    recepcionesIds = factura.match_report[0]._meta_recepcionesIds;
+                // Recorremos todos los elementos del match_report por si el _meta está en otro índice
+                factura.match_report.forEach(item => {
+                    if (item && item._meta_recepcionesIds && Array.isArray(item._meta_recepcionesIds)) {
+                        item._meta_recepcionesIds.forEach(id => {
+                            if (!recepcionesIds.includes(id)) recepcionesIds.push(id);
+                        });
+                    }
+                });
+                
+                // Si no se encontró el meta de forma directa, intentamos buscar por los ítems del pedido (ingeniería inversa)
+                if (recepcionesIds.length === 0) {
+                    const pedidoItemIds = factura.match_report
+                        .filter(item => item && item.pedido && item.pedido.id)
+                        .map(item => item.pedido.id);
+                        
+                    if (pedidoItemIds.length > 0) {
+                        const { data: recItems } = await supabase.from('recepciones_fisicas_items')
+                            .select('recepcion_id')
+                            .in('pedido_item_id', pedidoItemIds);
+                            
+                        if (recItems && recItems.length > 0) {
+                            recItems.forEach(ri => {
+                                if (!recepcionesIds.includes(ri.recepcion_id)) recepcionesIds.push(ri.recepcion_id);
+                            });
+                        }
+                    }
                 }
             }
 
-            // Fallback heurístico para facturas viejas
+            // Fallback heurístico para facturas viejas / incompletas (Aislado por Proveedor de forma estricta)
             if (recepcionesIds.length === 0) {
-                console.log("[VIGÍA] No se encontraron _meta_recepcionesIds, aplicando fallback heurístico...");
-                // Buscar si hay alguna recepcion de ese proveedor que esté CONCILIADA
-                // Esto es peligroso en prod pero funcional para pruebas inmediatas si olvidó el ID
-                const { data: recViejas } = await supabase.from('recepciones_fisicas_cabecera')
+                console.log(`[VIGÍA] No se encontraron recepciones explícitas para la factura ${id}. Aplicando fallback de último recurso por proveedor...`);
+                // Obtener los pedidos B2B del proveedor
+                const { data: pedidosProv } = await supabase.from('pedidos_b2b_cabecera')
                     .select('id')
-                    .eq('estado_conciliacion', 'CONCILIADA')
-                    .order('created_at', { ascending: false })
-                    .limit(1);
-                
-                if (recViejas && recViejas.length > 0) {
-                    recepcionesIds = [recViejas[0].id];
+                    .eq('proveedor_id', factura.proveedor_id);
+
+                if (pedidosProv && pedidosProv.length > 0) {
+                    const idsPedidos = pedidosProv.map(p => p.id);
+                    const { data: recViejas } = await supabase.from('recepciones_fisicas_cabecera')
+                        .select('id, numero_remito')
+                        .in('pedido_id', idsPedidos)
+                        .eq('estado_conciliacion', 'CONCILIADA')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    
+                    if (recViejas && recViejas.length > 0) {
+                        const remito = recViejas[0].numero_remito;
+                        if (remito) {
+                            // Liberar todo el lote (ej. MULTI-12345)
+                            const { data: lote } = await supabase.from('recepciones_fisicas_cabecera')
+                                .select('id')
+                                .in('pedido_id', idsPedidos)
+                                .eq('estado_conciliacion', 'CONCILIADA')
+                                .eq('numero_remito', remito);
+                            recepcionesIds = lote.map(r => r.id);
+                        } else {
+                            recepcionesIds = [recViejas[0].id];
+                        }
+                    } else {
+                        console.warn(`[VIGÍA] No se encontraron recepciones FÍSICAS conciliadas para el proveedor ${factura.proveedor_id}.`);
+                    }
+                } else {
+                    console.warn(`[VIGÍA] Proveedor ${factura.proveedor_id} no tiene pedidos B2B.`);
                 }
             }
 
