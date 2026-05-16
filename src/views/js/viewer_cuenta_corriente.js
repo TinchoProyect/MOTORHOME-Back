@@ -15,9 +15,14 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                         <div class="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
                             <i data-lucide="landmark" class="w-5 h-5 text-amber-500"></i>
                         </div>
-                        <button onclick="window.abrirModalPagoEfectivo('${providerId}', '${providerName.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1">
-                            <i data-lucide="banknote" class="w-3 h-3"></i> Pago Efectivo
-                        </button>
+                        <div class="flex gap-2">
+                            <button onclick="window.imprimirCuentaCorriente('${providerName.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-slate-600/20 hover:bg-slate-600/40 text-slate-300 border border-slate-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1" title="Exportar a PDF / Imprimir Estado de Cuenta">
+                                <i data-lucide="printer" class="w-3 h-3"></i> Imprimir PDF
+                            </button>
+                            <button onclick="window.abrirModalPagoEfectivo('${providerId}', '${providerName.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1">
+                                <i data-lucide="banknote" class="w-3 h-3"></i> Pago Efectivo
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -81,6 +86,8 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                 const data = await res.json();
                 
                 if (!data.success) throw new Error(data.error);
+
+                window.currentCCData = data; // Save globally for PDF printing
 
                 // Render Saldo
                 const formatter = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
@@ -265,4 +272,121 @@ window.abrirModalPagoEfectivo = async function(providerId, providerName) {
             Swal.fire({ icon: 'error', title: 'Error', text: error.message, background: '#0f172a', color: '#f8fafc' });
         }
     }
+};
+
+window.imprimirCuentaCorriente = function(providerName) {
+    if (!window.currentCCData || !window.currentCCData.movimientos) {
+        Swal.fire('Error', 'No hay datos cargados para imprimir.', 'error');
+        return;
+    }
+    
+    const data = window.currentCCData;
+    const formatter = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+    
+    let rowsHtml = '';
+    data.movimientos.forEach(m => {
+        if (m.es_omitido) return; // Excluimos los omitidos del reporte formal
+        
+        const date = new Date(m.fecha_movimiento).toLocaleDateString('es-AR');
+        let fact = m.facturas_raw ? `${m.facturas_raw.tipo_comprobante} ${m.facturas_raw.punto_venta}-${m.facturas_raw.numero_comprobante}` : '-';
+        if (m.observaciones && m.observaciones.includes('Lote')) fact += ' (Lote)';
+        
+        const cred = m.monto_credito > 0 ? formatter.format(m.monto_credito) : '';
+        const deb = m.monto_debito > 0 ? formatter.format(m.monto_debito) : '';
+        
+        rowsHtml += `
+            <tr class="border-b border-gray-200 text-sm hover:bg-gray-50">
+                <td class="py-3 px-2 text-gray-600 font-mono text-xs">${date}</td>
+                <td class="py-3 px-2 font-bold text-gray-800 text-xs">${m.tipo_movimiento}</td>
+                <td class="py-3 px-2 text-gray-600 text-xs">${fact}</td>
+                <td class="py-3 px-2 text-right text-red-600 font-mono">${cred}</td>
+                <td class="py-3 px-2 text-right text-green-600 font-mono">${deb}</td>
+            </tr>
+        `;
+    });
+    
+    if (!rowsHtml) {
+        rowsHtml = `<tr><td colspan="5" class="py-6 text-center text-gray-500 italic">No hay movimientos registrados.</td></tr>`;
+    }
+
+    const printWin = window.open('', '_blank');
+    const html = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>Estado de Cuenta - ${providerName}</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+                @media print {
+                    @page { margin: 15mm; }
+                    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                }
+            </style>
+        </head>
+        <body class="bg-white text-gray-900 p-8 font-sans">
+            <div class="max-w-4xl mx-auto">
+                <div class="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-6">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-900 uppercase tracking-tight">Estado de Cuenta</h1>
+                        <h2 class="text-xl text-gray-600 mt-1 font-semibold">${providerName}</h2>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs text-gray-500 uppercase tracking-widest mb-1">Fecha de Emisión</p>
+                        <p class="font-mono font-bold text-lg">${new Date().toLocaleDateString('es-AR')}</p>
+                    </div>
+                </div>
+                
+                <div class="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-center">
+                    <div>
+                        <p class="text-sm text-gray-500 uppercase tracking-widest font-bold">Saldo Deudor Total</p>
+                        <p class="text-[10px] text-gray-400 mt-1 uppercase tracking-wider">Sujeto a conciliación final por ambas partes</p>
+                    </div>
+                    <div class="text-4xl font-mono font-bold text-gray-900">
+                        ${formatter.format(data.saldoTotal)}
+                    </div>
+                </div>
+                
+                <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wide border-b border-gray-300 pb-2 mb-4 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                    Detalle de Movimientos Financieros
+                </h3>
+                
+                <table class="w-full text-left border-collapse mb-12">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-600 text-[10px] uppercase tracking-wider border-y border-gray-300">
+                            <th class="py-3 px-2 font-bold">Fecha</th>
+                            <th class="py-3 px-2 font-bold">Concepto</th>
+                            <th class="py-3 px-2 font-bold">Comprobante / Ref.</th>
+                            <th class="py-3 px-2 font-bold text-right">Crédito (+)</th>
+                            <th class="py-3 px-2 font-bold text-right">Débito (-)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+                
+                <div class="pt-6 border-t border-gray-300 text-[10px] text-gray-500 text-center max-w-2xl mx-auto">
+                    <p class="font-bold text-gray-600 mb-1">DOCUMENTO GENERADO AUTOMÁTICAMENTE POR SISTEMA DE GESTIÓN LAMDA.</p>
+                    <p>Las "Notas de Débito Internas" reflejadas en este reporte representan diferencias a favor de LAMDA (por devoluciones, sobreprecios o faltantes conciliados) y operan como saldo compensatorio a la espera de la emisión formal de la Nota de Crédito correspondiente por parte de su firma.</p>
+                </div>
+            </div>
+            
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                        // Descomentar si se desea que se cierre automáticamente tras imprimir:
+                        // window.close(); 
+                    }, 500);
+                }
+            </script>
+        </body>
+        </html>
+    `;
+    
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
 };
