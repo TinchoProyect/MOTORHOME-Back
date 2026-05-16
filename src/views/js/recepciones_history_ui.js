@@ -460,9 +460,12 @@ window.revertirReception = async function(recepcionId) {
     }
 }
 
-// Generador de etiquetas ZPL para la recepción física
+// Generador de etiquetas ZPL para la recepción física (Zero Clicks / Zebra Browser Print SDK)
 window.printZplLabel = function(itemId, itemName, provName, quantity) {
     if (!quantity || quantity <= 0) return;
+    
+    // Extracción de Short Hash (Primeros 8 caracteres del UUID)
+    const shortId = itemId.substring(0, 8);
     
     // Limpieza básica para evitar romper el ZPL
     const safeItemName = (itemName || '').substring(0, 30).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -477,21 +480,94 @@ window.printZplLabel = function(itemId, itemName, provName, quantity) {
 ^LH0,0 ^LT0
 ^CF0,30 ^FO23,10^FD${safeItemName}^FS
 ^CF0,20 ^FO23,45^FD${safeProvName}^FS
-^BY2,2,40 ^FO23,90^BCN,60,Y,N,N ^FD${itemId}^FS
+^BY2,2,40 ^FO23,90^BCN,60,Y,N,N ^FD${shortId}^FS
 
 ^CF0,30 ^FO443,10^FD${safeItemName}^FS
 ^CF0,20 ^FO443,45^FD${safeProvName}^FS
-^BY2,2,40 ^FO443,90^BCN,60,Y,N,N ^FD${itemId}^FS
+^BY2,2,40 ^FO443,90^BCN,60,Y,N,N ^FD${shortId}^FS
 ^XZ\n`;
     }
     
-    const blob = new Blob([zplData], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lotes_recepcion_${itemId.substring(0,6)}.zpl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Impresión asíncrona mediante Zebra Browser Print SDK
+    try {
+        if (typeof window.BrowserPrint === 'undefined') {
+            throw new Error("El SDK Zebra Browser Print no se ha cargado. Verifica el archivo js/BrowserPrint.js.");
+        }
+
+        console.log("[ZPL] Solicitando lista de dispositivos locales a Zebra Browser Print...");
+        
+        window.BrowserPrint.getLocalDevices(function(deviceList) {
+            console.log("[ZPL] Lista de dispositivos detectados:", deviceList);
+            
+            let printers = [];
+            if (Array.isArray(deviceList)) {
+                printers = deviceList;
+            } else if (deviceList && deviceList['printer']) {
+                printers = deviceList['printer'];
+            }
+
+            if (printers.length === 0) {
+                return Swal.fire({
+                    icon: 'error',
+                    title: 'Sin Impresoras',
+                    text: 'Browser Print no detectó ninguna impresora instalada en el sistema.',
+                    background: '#0f172a',
+                    color: '#ef4444'
+                });
+            }
+
+            // Buscar impresora Zebra/ZDesigner, sino agarrar la primera o la default
+            let targetDevice = printers.find(p => p.name.toLowerCase().includes('zebra') || p.name.toLowerCase().includes('zdesigner'));
+            if (!targetDevice) {
+                targetDevice = printers[0]; // Fallback a la primera disponible
+            }
+
+            console.log("[ZPL] Impresora seleccionada para enviar trabajo:", targetDevice.name);
+
+            if (targetDevice && targetDevice.connection !== undefined) {
+                targetDevice.send(zplData, function(success) {
+                    console.log("[ZPL] Trabajo enviado exitosamente a", targetDevice.name);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Enviado a Cola',
+                        text: 'Etiquetas despachadas a: ' + targetDevice.name,
+                        background: '#0f172a',
+                        color: '#10b981',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                }, function(error) {
+                    console.error("[ZPL] Error enviando datos a la impresora (" + targetDevice.name + "):", error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Fallo de Impresión',
+                        text: 'Fallo al escribir en [' + targetDevice.name + ']: ' + (error || 'Error desconocido del Spooler'),
+                        background: '#0f172a',
+                        color: '#ef4444'
+                    });
+                });
+            } else {
+                throw new Error("El dispositivo seleccionado no posee una conexión válida.");
+            }
+        }, function(error) {
+            console.error("[ZPL] Error localizando dispositivos:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Servicio Zebra No Detectado',
+                text: 'No se pudo conectar con el motor de impresión local. Asegúrese de que la aplicación Zebra Browser Print esté ejecutándose.',
+                background: '#0f172a',
+                color: '#ef4444'
+            });
+        }, "printer");
+
+    } catch(e) {
+        console.error("[ZPL] Excepción de Motor:", e);
+        Swal.fire({
+            icon: 'error',
+            title: 'Fallo de Motor ZPL',
+            text: e.message,
+            background: '#0f172a',
+            color: '#ef4444'
+        });
+    }
 };

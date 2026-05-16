@@ -602,7 +602,7 @@ router.get('/trazabilidad/:loteId', async (req, res) => {
                     unidad_ref
                 )
             `)
-            .eq('id', loteId)
+            .like('id', loteId + '%')
             .single();
 
         if (error) {
