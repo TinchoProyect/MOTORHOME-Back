@@ -332,10 +332,23 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
         const cred = m.monto_credito > 0 ? formatter.format(m.monto_credito) : '';
         const deb = m.monto_debito > 0 ? formatter.format(m.monto_debito) : '';
         
+        let tipoMovFmt = m.tipo_movimiento;
+        let esTransferencia = false;
+        let esEfectivo = false;
+        
+        if (m.tipo_movimiento === 'PAGO' && m.observaciones && m.observaciones.includes('Ingesta')) {
+            esTransferencia = true;
+            const refCorto = m.referencia_pago_id ? m.referencia_pago_id.substring(0, 8).toUpperCase() : '';
+            tipoMovFmt = `PAGO (TRANSFERENCIA${refCorto ? ' - Ref: ' + refCorto : ''})`;
+        } else if (m.tipo_movimiento === 'PAGO_EFECTIVO' || (m.tipo_movimiento === 'PAGO' && m.observaciones && m.observaciones.includes('Efectivo'))) {
+            esEfectivo = true;
+            tipoMovFmt = 'PAGO (EFECTIVO)';
+        }
+        
         rowsHtml += `
             <tr class="border-b border-gray-200 text-sm ${tipo === 'detallado' ? 'bg-gray-50' : 'hover:bg-gray-50'}">
                 <td class="py-3 px-2 text-gray-600 font-mono text-xs">${date}</td>
-                <td class="py-3 px-2 font-bold text-gray-800 text-xs">${m.tipo_movimiento}</td>
+                <td class="py-3 px-2 font-bold text-gray-800 text-xs">${tipoMovFmt}</td>
                 <td class="py-3 px-2 text-gray-600 text-xs">${fact}</td>
                 <td class="py-3 px-2 text-right text-red-600 font-mono">${cred}</td>
                 <td class="py-3 px-2 text-right text-green-600 font-mono">${deb}</td>
@@ -343,8 +356,9 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
         `;
         
         // --- Lógica del Reporte Detallado ---
-        if (tipo === 'detallado' && m.facturas_raw) {
-            const report = m.facturas_raw.match_report;
+        if (tipo === 'detallado') {
+            if (m.facturas_raw) {
+                const report = m.facturas_raw.match_report;
             const crudos = m.facturas_raw.articulos;
             
             if (m.tipo_movimiento === 'FACTURA') {
@@ -434,6 +448,46 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
                         <tr class="bg-white">
                             <td colspan="5" class="p-0 border-b-2 border-gray-200">
                                 <div class="pl-8 pr-2 py-2 bg-amber-50/30">
+                                    <table class="w-full">
+                                        <tbody>${subItemsHtml}</tbody>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
+            }
+        } else if (esTransferencia || esEfectivo) {
+                let subItemsHtml = '';
+                if (esTransferencia) {
+                    const hashCorto = m.referencia_pago_id ? m.referencia_pago_id.substring(0, 8).toUpperCase() : 'N/A';
+                    subItemsHtml += `
+                        <tr class="text-[10px] text-gray-500 border-b border-blue-100/50 last:border-0">
+                            <td class="py-1.5 px-2 text-right w-8"><span class="bg-blue-100 text-blue-600 rounded px-1">&rdsh;</span></td>
+                            <td class="py-1.5 px-2 font-medium" colspan="2">
+                                <span class="text-blue-600 font-bold uppercase tracking-wider text-[8px] mr-1">Trazabilidad Bancaria:</span>
+                                Ref: ${hashCorto} | Emisor (CUIT): <span class="text-amber-600 font-bold">[A DEFINIR POR LAMDA]</span>
+                            </td>
+                            <td class="py-1.5 px-2 text-right text-gray-400" colspan="2">Origen: Ingesta Automática</td>
+                        </tr>
+                    `;
+                } else if (esEfectivo) {
+                    subItemsHtml += `
+                        <tr class="text-[10px] text-gray-500 border-b border-emerald-100/50 last:border-0">
+                            <td class="py-1.5 px-2 text-right w-8"><span class="bg-emerald-100 text-emerald-600 rounded px-1">&rdsh;</span></td>
+                            <td class="py-1.5 px-2 font-medium" colspan="4">
+                                <span class="text-emerald-600 font-bold uppercase tracking-wider text-[8px] mr-1">Trazabilidad Caja:</span>
+                                Operación manual en efectivo.
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                if (subItemsHtml) {
+                    rowsHtml += `
+                        <tr class="bg-white">
+                            <td colspan="5" class="p-0 border-b-2 border-gray-200">
+                                <div class="pl-8 pr-2 py-2 bg-blue-50/20">
                                     <table class="w-full">
                                         <tbody>${subItemsHtml}</tbody>
                                     </table>
