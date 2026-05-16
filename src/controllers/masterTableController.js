@@ -1071,16 +1071,16 @@ module.exports = {
                 return res.status(400).json({ success: false, error: "Faltan datos obligatorios." });
             }
 
-            // Ticket #013: Autogeneración Determinista de SKU (Adaptado a Data-Driven)
+            // Ticket #013: Autogeneración de SKU (Adaptado a Data-Driven)
             let skuActual = datos_maestros["sku"] || datos_maestros["codigo"] || datos_maestros["código"] || "";
             if (!skuActual || skuActual.trim() === "") {
                 const crypto = require('crypto');
-                const desc = datos_maestros["descripcion"] || datos_maestros["descripción"] || "SINDESCRIPCION";
-                // Hash corto (8 caracteres) basado en UUID y Descripción
-                const hashInput = `${proveedor_id}-${desc.trim().toLowerCase()}`;
-                const hash = crypto.createHash('sha256').update(hashInput).digest('hex').substring(0, 8).toUpperCase();
-                
-                skuActual = `LMD-MAN-${hash}`;
+                // [BUGFIX] Reemplazo de hash determinista por entropía aleatoria.
+                // Al depender de la descripción (que podía no estar mapeada como 'descripcion'), 
+                // se generaba el hash 'SINDESCRIPCION' repetidas veces, provocando colisión y sobrescritura de artículos.
+                // Ahora, un SKU vacío siempre genera un código único garantizando el comportamiento aditivo.
+                const randomHex = crypto.randomBytes(4).toString('hex').toUpperCase();
+                skuActual = `LMD-MAN-${randomHex}`;
                 // Ahora el frontend debe enviarnos la estructura de llaves normalizada, inyectamos en 'codigo'
                 datos_maestros["codigo"] = skuActual;
             }

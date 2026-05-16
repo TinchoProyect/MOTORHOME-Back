@@ -2065,33 +2065,23 @@ window.buildManualEntryForm = async function(prefillData = null) {
 
 window.generateFrontendSku = async function(inputId = 'dyn_codigo') {
     const providerId = document.getElementById('manualEntryProviderId').value;
-    const descInput = document.getElementById('dyn_descripcion') || document.getElementById('dyn_descripción');
-    const desc = descInput ? descInput.value : "SINDESCRIPCION";
-    
     if (!providerId) {
         if(window.Swal) Swal.fire('Error', 'Falta el proveedor actual.', 'error');
         return;
     }
     
-    // Hash SHA-256 en frontend
-    const textToHash = providerId + "-" + desc.trim().toLowerCase();
-    const encoder = new TextEncoder();
-    const data = encoder.encode(textToHash);
-    try {
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0,8).toUpperCase();
-        
-        const generatedSku = "LMD-MAN-" + hashHex;
-        // TICKET #014: Reparación de selector dinámico para la Varita Mágica
-        const skuInput = document.getElementById(inputId);
+    // [BUGFIX] Generación aleatoria segura (Math.random crypto-like) para garantizar comportamiento aditivo
+    // y evitar la sobrescritura de SKUs cuando la descripción era genérica o faltante.
+    const randomHex = Math.random().toString(16).substring(2, 10).toUpperCase();
+    const generatedSku = "LMD-MAN-" + randomHex;
+    
+    const skuInput = document.getElementById(inputId);
+    if (skuInput) {
         skuInput.value = generatedSku;
         
         // Destello visual
         skuInput.classList.add('bg-blue-900/50', 'ring-2', 'ring-blue-500');
         setTimeout(() => skuInput.classList.remove('bg-blue-900/50', 'ring-2', 'ring-blue-500'), 500);
-    } catch(e) {
-        console.error("Crypto error:", e);
     }
 };
 
