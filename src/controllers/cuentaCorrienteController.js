@@ -48,7 +48,8 @@ const cuentaCorrienteController = {
                     )
                 `)
                 .eq('proveedor_id', providerId)
-                .order('fecha_movimiento', { ascending: false });
+                .order('fecha_movimiento', { ascending: false })
+                .order('created_at', { ascending: false });
 
             if (error) throw error;
 

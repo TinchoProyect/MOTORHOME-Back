@@ -335,11 +335,18 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
         let tipoMovFmt = m.tipo_movimiento;
         let esTransferencia = false;
         let esEfectivo = false;
+        let obsCompleta = '';
         
         if (m.tipo_movimiento === 'PAGO' && m.observaciones && m.observaciones.includes('Ingesta')) {
             esTransferencia = true;
-            const refCorto = m.referencia_pago_id ? m.referencia_pago_id.substring(0, 8).toUpperCase() : '';
-            tipoMovFmt = `PAGO (TRANSFERENCIA${refCorto ? ' - Ref: ' + refCorto : ''})`;
+            obsCompleta = m.observaciones.replace('Ingesta Automática Bancaria.', '').replace('Ref:', '').trim();
+            const lineas = obsCompleta.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            let refBreve = '';
+            if (lineas.length > 0) {
+                refBreve = lineas.slice(0, 2).join(' | ');
+                if (refBreve.length > 40) refBreve = refBreve.substring(0, 37) + '...';
+            }
+            tipoMovFmt = `PAGO (TRANSFERENCIA${refBreve ? ' - ' + refBreve : ''})`;
         } else if (m.tipo_movimiento === 'PAGO_EFECTIVO' || (m.tipo_movimiento === 'PAGO' && m.observaciones && m.observaciones.includes('Efectivo'))) {
             esEfectivo = true;
             tipoMovFmt = 'PAGO (EFECTIVO)';
@@ -460,15 +467,15 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
         } else if (esTransferencia || esEfectivo) {
                 let subItemsHtml = '';
                 if (esTransferencia) {
-                    const hashCorto = m.referencia_pago_id ? m.referencia_pago_id.substring(0, 8).toUpperCase() : 'N/A';
                     subItemsHtml += `
                         <tr class="text-[10px] text-gray-500 border-b border-blue-100/50 last:border-0">
-                            <td class="py-1.5 px-2 text-right w-8"><span class="bg-blue-100 text-blue-600 rounded px-1">&rdsh;</span></td>
-                            <td class="py-1.5 px-2 font-medium" colspan="2">
+                            <td class="py-1.5 px-2 text-right w-8 align-top"><span class="bg-blue-100 text-blue-600 rounded px-1">&rdsh;</span></td>
+                            <td class="py-1.5 px-2 font-medium align-top" colspan="2">
                                 <span class="text-blue-600 font-bold uppercase tracking-wider text-[8px] mr-1">Trazabilidad Bancaria:</span>
-                                Ref: ${hashCorto} | Emisor (CUIT): <span class="text-amber-600 font-bold">[A DEFINIR POR LAMDA]</span>
+                                <div class="mt-1 mb-1 p-2 bg-white border border-blue-100 rounded text-gray-700 font-mono text-[9px] whitespace-pre-wrap">${obsCompleta}</div>
+                                Emisor (CUIT): <span class="font-mono text-gray-700 font-bold">23-24892174-9</span>
                             </td>
-                            <td class="py-1.5 px-2 text-right text-gray-400" colspan="2">Origen: Ingesta Automática</td>
+                            <td class="py-1.5 px-2 text-right text-gray-400 align-top" colspan="2">Origen: Ingesta Automática</td>
                         </tr>
                     `;
                 } else if (esEfectivo) {
