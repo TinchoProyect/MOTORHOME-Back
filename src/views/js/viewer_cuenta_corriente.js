@@ -16,7 +16,7 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                             <i data-lucide="landmark" class="w-5 h-5 text-amber-500"></i>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="window.imprimirCuentaCorriente('${providerName.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-slate-600/20 hover:bg-slate-600/40 text-slate-300 border border-slate-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1" title="Exportar a PDF / Imprimir Estado de Cuenta">
+                            <button onclick="window.abrirModalImprimir('${providerName.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-slate-600/20 hover:bg-slate-600/40 text-slate-300 border border-slate-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1" title="Exportar a PDF / Imprimir Estado de Cuenta">
                                 <i data-lucide="printer" class="w-3 h-3"></i> Imprimir PDF
                             </button>
                             <button onclick="window.abrirModalPagoEfectivo('${providerId}', '${providerName.replace(/'/g, "\\'")}')" class="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1">
@@ -274,7 +274,45 @@ window.abrirModalPagoEfectivo = async function(providerId, providerName) {
     }
 };
 
-window.imprimirCuentaCorriente = function(providerName) {
+window.abrirModalImprimir = function(providerName) {
+    Swal.fire({
+        title: 'Seleccione el Tipo de Reporte',
+        html: `
+            <div class="flex flex-col gap-4 mt-4 text-left">
+                <button onclick="window.imprimirCuentaCorriente('${providerName.replace(/'/g, "\\'")}', 'estandar')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl p-4 transition-colors w-full group">
+                    <div class="flex items-start gap-4">
+                        <div class="bg-slate-900/50 p-3 rounded-lg group-hover:scale-110 transition-transform"><i data-lucide="file-text" class="w-6 h-6 text-emerald-400"></i></div>
+                        <div>
+                            <div class="font-bold text-slate-200 text-sm">Reporte Estándar</div>
+                            <div class="text-xs text-slate-400 mt-1 leading-relaxed">Resumen general de movimientos financieros, saldo deudor acumulado y comprobantes emitidos (sin desglose de artículos). Ideal para envíos regulares.</div>
+                        </div>
+                    </div>
+                </button>
+                <button onclick="window.imprimirCuentaCorriente('${providerName.replace(/'/g, "\\'")}', 'detallado')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl p-4 transition-colors w-full group">
+                    <div class="flex items-start gap-4">
+                        <div class="bg-slate-900/50 p-3 rounded-lg group-hover:scale-110 transition-transform"><i data-lucide="file-search" class="w-6 h-6 text-amber-400"></i></div>
+                        <div>
+                            <div class="font-bold text-slate-200 text-sm">Reporte Detallado (Auditoría)</div>
+                            <div class="text-xs text-slate-400 mt-1 leading-relaxed">Trazabilidad jerárquica con desglose artículo por artículo de facturas. Incluye orígenes logísticos de desvíos en notas internas para reclamos precisos.</div>
+                        </div>
+                    </div>
+                </button>
+            </div>
+        `,
+        showConfirmButton: false,
+        showCancelButton: true,
+        cancelButtonText: 'Cancelar',
+        cancelButtonColor: '#475569',
+        background: '#0f172a',
+        color: '#f8fafc',
+        width: '32em',
+        didOpen: () => {
+            if (window.lucide) window.lucide.createIcons();
+        }
+    });
+};
+
+window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
     if (!window.currentCCData || !window.currentCCData.movimientos) {
         Swal.fire('Error', 'No hay datos cargados para imprimir.', 'error');
         return;
@@ -295,7 +333,7 @@ window.imprimirCuentaCorriente = function(providerName) {
         const deb = m.monto_debito > 0 ? formatter.format(m.monto_debito) : '';
         
         rowsHtml += `
-            <tr class="border-b border-gray-200 text-sm hover:bg-gray-50">
+            <tr class="border-b border-gray-200 text-sm ${tipo === 'detallado' ? 'bg-gray-50' : 'hover:bg-gray-50'}">
                 <td class="py-3 px-2 text-gray-600 font-mono text-xs">${date}</td>
                 <td class="py-3 px-2 font-bold text-gray-800 text-xs">${m.tipo_movimiento}</td>
                 <td class="py-3 px-2 text-gray-600 text-xs">${fact}</td>
@@ -303,19 +341,105 @@ window.imprimirCuentaCorriente = function(providerName) {
                 <td class="py-3 px-2 text-right text-green-600 font-mono">${deb}</td>
             </tr>
         `;
+        
+        // --- Lógica del Reporte Detallado ---
+        if (tipo === 'detallado' && m.facturas_raw && m.facturas_raw.match_report && Array.isArray(m.facturas_raw.match_report)) {
+            const report = m.facturas_raw.match_report;
+            
+            if (m.tipo_movimiento === 'FACTURA') {
+                let subItemsHtml = '';
+                report.forEach(rep => {
+                    if (!rep.factura && !rep.pedido) return;
+                    const desc = rep.factura?.descripcion || rep.pedido?.producto_descripcion || 'Artículo sin descripción';
+                    const qty = rep.factura?.cantidad || rep.pedido?.cantidad || 0;
+                    const price = rep.factura?.precio_unitario || rep.pedido?.precio_unitario || 0;
+                    
+                    subItemsHtml += `
+                        <tr class="text-[10px] text-gray-500 border-b border-gray-100 last:border-0">
+                            <td class="py-1.5 px-2 text-right w-8"><span class="bg-gray-200 text-gray-500 rounded px-1">&rdsh;</span></td>
+                            <td class="py-1.5 px-2 font-medium truncate max-w-xs" colspan="2">${desc}</td>
+                            <td class="py-1.5 px-2 text-right text-gray-400">${qty} uds</td>
+                            <td class="py-1.5 px-2 text-right text-gray-400">x ${formatter.format(price)}</td>
+                        </tr>
+                    `;
+                });
+                
+                if (subItemsHtml) {
+                    rowsHtml += `
+                        <tr class="bg-white">
+                            <td colspan="5" class="p-0 border-b-2 border-gray-200">
+                                <div class="pl-8 pr-2 py-2 bg-gray-50/50">
+                                    <table class="w-full">
+                                        <tbody>${subItemsHtml}</tbody>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            if (m.tipo_movimiento === 'NOTA_DEBITO_INTERNA') {
+                const desvios = report.filter(rep => rep.delta_monto && parseFloat(rep.delta_monto) > 0);
+                if (desvios.length > 0) {
+                    let subItemsHtml = '';
+                    let logisticDates = [];
+                    // Extraer fechas de recepción reales buscando en data.recepciones
+                    if (report.length > 0 && report[0]._meta_recepcionesIds && data.recepciones) {
+                        const recIds = report[0]._meta_recepcionesIds;
+                        data.recepciones.forEach(rec => {
+                            if (recIds.includes(rec.id)) {
+                                logisticDates.push(new Date(rec.fecha_recepcion).toLocaleDateString('es-AR'));
+                            }
+                        });
+                    }
+                    const logisticStr = logisticDates.length > 0 ? logisticDates.join(', ') : 'N/A';
+                    
+                    desvios.forEach(rep => {
+                        const desc = rep.factura?.descripcion || rep.pedido?.producto_descripcion || 'Artículo sin descripción';
+                        const deltaUnit = parseFloat(rep.delta_monto);
+                        const qty = rep.factura?.cantidad_calculada || rep.factura?.cantidad || 0;
+                        const sub = deltaUnit * qty;
+                        
+                        subItemsHtml += `
+                            <tr class="text-[10px] text-gray-500 border-b border-amber-100/50 last:border-0">
+                                <td class="py-1.5 px-2 text-right w-8"><span class="bg-amber-100 text-amber-600 rounded px-1">&rdsh;</span></td>
+                                <td class="py-1.5 px-2 font-medium" colspan="2"><span class="text-amber-600 font-bold uppercase tracking-wider text-[8px] mr-1">Origen Desvío:</span> ${desc}</td>
+                                <td class="py-1.5 px-2 text-right text-gray-400">F. Recepción Logística: <span class="font-mono text-gray-600">${logisticStr}</span></td>
+                                <td class="py-1.5 px-2 text-right text-amber-600 font-bold">Ajuste: +${formatter.format(sub)}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    rowsHtml += `
+                        <tr class="bg-white">
+                            <td colspan="5" class="p-0 border-b-2 border-gray-200">
+                                <div class="pl-8 pr-2 py-2 bg-amber-50/30">
+                                    <table class="w-full">
+                                        <tbody>${subItemsHtml}</tbody>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
+            }
+        }
     });
     
     if (!rowsHtml) {
         rowsHtml = `<tr><td colspan="5" class="py-6 text-center text-gray-500 italic">No hay movimientos registrados.</td></tr>`;
     }
 
+    Swal.close();
+    
     const printWin = window.open('', '_blank');
     const html = `
         <!DOCTYPE html>
         <html lang="es">
         <head>
             <meta charset="UTF-8">
-            <title>Estado de Cuenta - ${providerName}</title>
+            <title>${tipo === 'detallado' ? 'Reporte Auditoría' : 'Estado de Cuenta'} - ${providerName}</title>
             <script src="https://cdn.tailwindcss.com"></script>
             <style>
                 @media print {
@@ -328,7 +452,7 @@ window.imprimirCuentaCorriente = function(providerName) {
             <div class="max-w-4xl mx-auto">
                 <div class="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-6">
                     <div>
-                        <h1 class="text-3xl font-bold text-gray-900 uppercase tracking-tight">Estado de Cuenta</h1>
+                        <h1 class="text-3xl font-bold text-gray-900 uppercase tracking-tight">${tipo === 'detallado' ? 'Auditoría Trazabilidad' : 'Estado de Cuenta'}</h1>
                         <h2 class="text-xl text-gray-600 mt-1 font-semibold">${providerName}</h2>
                     </div>
                     <div class="text-right">
