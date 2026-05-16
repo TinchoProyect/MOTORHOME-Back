@@ -252,6 +252,7 @@ window.openConciliacionModal = async function(facturaId) {
                                 <th class="px-3 py-2 font-bold">Cód.</th>
                                 <th class="px-3 py-2 font-bold w-1/2">Descripción</th>
                                 <th class="px-3 py-2 font-bold text-center">Cant.</th>
+                                <th class="px-3 py-2 font-bold text-center">Factor</th>
                                 <th class="px-3 py-2 font-bold text-right">P.Unit</th>
                             </tr>
                         </thead>
@@ -270,6 +271,7 @@ window.openConciliacionModal = async function(facturaId) {
                         <td class="px-3 py-2 font-mono text-xs text-slate-400">${art.codigo || '-'}</td>
                         <td class="px-3 py-2 text-xs text-slate-300 line-clamp-1" title="${art.descripcion}">${art.descripcion || '-'}</td>
                         <td class="px-3 py-2 font-mono text-2xl text-center text-blue-400 font-bold">${c}</td>
+                        <td class="px-3 py-2 font-mono text-lg text-center text-amber-500/80">x${art.factor_conversion || 1}</td>
                         <td class="px-3 py-2 font-mono text-2xl font-bold text-right text-slate-200">$${p}</td>
                     </tr>
                 `;

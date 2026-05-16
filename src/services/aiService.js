@@ -620,8 +620,9 @@ Extrae una lista de objetos JSON bajo la clave "articulos", cada uno con:
 - "codigo": Código interno del producto (si no tiene, devuelve string vacío "").
 - "descripcion": El nombre o descripción literal del artículo.
 - "cantidad": Valor numérico flotante. Si no hay, asume 1.
-- "precio_unitario": El importe unitario como número flotante.
-- "subtotal": El importe total de esa línea (cantidad * precio_unitario), como flotante.
+- "factor_conversion": Equivalencia de kilos/unidades por bulto deducido de la descripción (Ej. "x5", "25 kg" => 5, 25). Si no existe discrepancia matemática o mención explícita, el valor por defecto debe ser 1.
+- "precio_unitario": El importe unitario (precio por kilo o por bulto) como número flotante.
+- "subtotal": El importe total de esa línea (debe cerrar lógicamente como cantidad * factor_conversion * precio_unitario), como flotante.
 
 REGLAS NUMÉRICAS PARA TOTALES (OBLIGATORIO):
 Extrae los importes numéricos. Si no existen, devuelve 0. Deben ser floats válidos.
@@ -660,6 +661,7 @@ ESTRUCTURA JSON REQUERIDA:
       "codigo": "...",
       "descripcion": "...",
       "cantidad": 0.0,
+      "factor_conversion": 1.0,
       "precio_unitario": 0.0,
       "subtotal": 0.0
     }

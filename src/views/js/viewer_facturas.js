@@ -327,6 +327,10 @@ window.renderGridArticulos = function() {
                        data-index="${index}" data-field="cantidad" value="${window.formatCurrency(art.cantidad)}">
             </td>
             <td class="px-4 py-2">
+                <input type="text" class="w-full bg-transparent border border-transparent focus:border-slate-700 rounded px-1 py-1 text-xs outline-none text-center fac-grid-input fac-grid-num font-mono text-amber-500/80" 
+                       data-index="${index}" data-field="factor_conversion" value="${window.formatCurrency(art.factor_conversion || 1)}" title="Factor de equivalencia (Kilos o Unidades por Bulto)">
+            </td>
+            <td class="px-4 py-2">
                 <input type="text" class="w-full bg-transparent border border-transparent focus:border-slate-700 rounded px-1 py-1 text-xs outline-none text-right fac-grid-input fac-grid-num" 
                        data-index="${index}" data-field="precio_unitario" value="${window.formatCurrency(art.precio_unitario)}">
             </td>
@@ -352,10 +356,11 @@ window.renderGridArticulos = function() {
             window.currentArticulos[idx][field] = val;
             
             // Subtotal Dinámico (Tarea 3)
-            if (field === 'cantidad' || field === 'precio_unitario') {
+            if (field === 'cantidad' || field === 'precio_unitario' || field === 'factor_conversion') {
                 const c = window.parseCurrency(window.currentArticulos[idx].cantidad) || 1;
+                const f = window.parseCurrency(window.currentArticulos[idx].factor_conversion) || 1;
                 const p = window.parseCurrency(window.currentArticulos[idx].precio_unitario) || 0;
-                const newSubtotal = c * p;
+                const newSubtotal = c * f * p;
                 window.currentArticulos[idx].subtotal = newSubtotal;
                 
                 const row = e.target.closest('tr');
