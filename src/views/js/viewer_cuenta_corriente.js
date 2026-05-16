@@ -343,26 +343,45 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
         `;
         
         // --- Lógica del Reporte Detallado ---
-        if (tipo === 'detallado' && m.facturas_raw && m.facturas_raw.match_report && Array.isArray(m.facturas_raw.match_report)) {
+        if (tipo === 'detallado' && m.facturas_raw) {
             const report = m.facturas_raw.match_report;
+            const crudos = m.facturas_raw.articulos;
             
             if (m.tipo_movimiento === 'FACTURA') {
                 let subItemsHtml = '';
-                report.forEach(rep => {
-                    if (!rep.factura && !rep.pedido) return;
-                    const desc = rep.factura?.descripcion || rep.pedido?.producto_descripcion || 'Artículo sin descripción';
-                    const qty = rep.factura?.cantidad || rep.pedido?.cantidad || 0;
-                    const price = rep.factura?.precio_unitario || rep.pedido?.precio_unitario || 0;
-                    
-                    subItemsHtml += `
-                        <tr class="text-[10px] text-gray-500 border-b border-gray-100 last:border-0">
-                            <td class="py-1.5 px-2 text-right w-8"><span class="bg-gray-200 text-gray-500 rounded px-1">&rdsh;</span></td>
-                            <td class="py-1.5 px-2 font-medium truncate max-w-xs" colspan="2">${desc}</td>
-                            <td class="py-1.5 px-2 text-right text-gray-400">${qty} uds</td>
-                            <td class="py-1.5 px-2 text-right text-gray-400">x ${formatter.format(price)}</td>
-                        </tr>
-                    `;
-                });
+                
+                if (Array.isArray(report) && report.length > 0) {
+                    report.forEach(rep => {
+                        if (!rep.factura && !rep.pedido) return;
+                        const desc = rep.factura?.descripcion || rep.pedido?.producto_descripcion || 'Artículo sin descripción';
+                        const qty = rep.factura?.cantidad || rep.pedido?.cantidad || 0;
+                        const price = rep.factura?.precio_unitario || rep.pedido?.precio_unitario || 0;
+                        
+                        subItemsHtml += `
+                            <tr class="text-[10px] text-gray-500 border-b border-gray-100 last:border-0">
+                                <td class="py-1.5 px-2 text-right w-8"><span class="bg-gray-200 text-gray-500 rounded px-1">&rdsh;</span></td>
+                                <td class="py-1.5 px-2 font-medium truncate max-w-xs" colspan="2">${desc}</td>
+                                <td class="py-1.5 px-2 text-right text-gray-400">${qty} uds</td>
+                                <td class="py-1.5 px-2 text-right text-gray-400">x ${formatter.format(price)}</td>
+                            </tr>
+                        `;
+                    });
+                } else if (Array.isArray(crudos) && crudos.length > 0) {
+                    crudos.forEach(art => {
+                        const desc = art.descripcion || 'Artículo sin descripción';
+                        const qty = art.cantidad_calculada || art.cantidad || 0;
+                        const price = art.precio_unitario || art.precio_unitario_original || 0;
+                        
+                        subItemsHtml += `
+                            <tr class="text-[10px] text-gray-500 border-b border-gray-100 last:border-0">
+                                <td class="py-1.5 px-2 text-right w-8"><span class="bg-gray-200 text-gray-500 rounded px-1">&rdsh;</span></td>
+                                <td class="py-1.5 px-2 font-medium truncate max-w-xs" colspan="2">${desc} <span class="text-gray-400 font-normal italic">(Sin cruce b2b)</span></td>
+                                <td class="py-1.5 px-2 text-right text-gray-400">${qty} uds</td>
+                                <td class="py-1.5 px-2 text-right text-gray-400">x ${formatter.format(price)}</td>
+                            </tr>
+                        `;
+                    });
+                }
                 
                 if (subItemsHtml) {
                     rowsHtml += `
@@ -379,7 +398,7 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
                 }
             }
             
-            if (m.tipo_movimiento === 'NOTA_DEBITO_INTERNA') {
+            if (m.tipo_movimiento === 'NOTA_DEBITO_INTERNA' && Array.isArray(report)) {
                 const desvios = report.filter(rep => rep.delta_monto && parseFloat(rep.delta_monto) > 0);
                 if (desvios.length > 0) {
                     let subItemsHtml = '';
@@ -449,6 +468,13 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
             </style>
         </head>
         <body class="bg-white text-gray-900 p-8 font-sans">
+            <div class="print:hidden fixed top-6 right-6 flex gap-3">
+                <button onclick="window.close()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded shadow transition-colors text-sm uppercase tracking-wider">Cerrar</button>
+                <button onclick="window.print()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow transition-colors text-sm uppercase tracking-wider flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    Imprimir Documento
+                </button>
+            </div>
             <div class="max-w-4xl mx-auto">
                 <div class="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-6">
                     <div>
@@ -496,16 +522,6 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
                     <p>Las "Notas de Débito Internas" reflejadas en este reporte representan diferencias a favor de LAMDA (por devoluciones, sobreprecios o faltantes conciliados) y operan como saldo compensatorio a la espera de la emisión formal de la Nota de Crédito correspondiente por parte de su firma.</p>
                 </div>
             </div>
-            
-            <script>
-                window.onload = function() {
-                    setTimeout(function() {
-                        window.print();
-                        // Descomentar si se desea que se cierre automáticamente tras imprimir:
-                        // window.close(); 
-                    }, 500);
-                }
-            </script>
         </body>
         </html>
     `;

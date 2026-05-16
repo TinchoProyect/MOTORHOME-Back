@@ -44,7 +44,7 @@ const cuentaCorrienteController = {
                 .select(`
                     *,
                     facturas_raw!referencia_factura_id (
-                        tipo_comprobante, punto_venta, numero_comprobante, match_report
+                        tipo_comprobante, punto_venta, numero_comprobante, match_report, articulos
                     )
                 `)
                 .eq('proveedor_id', providerId)
