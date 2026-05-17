@@ -1060,11 +1060,19 @@ window.viewConciliacionReport = async function(facturaId) {
                 
                 const textOpacity = isSecondary ? 'opacity-60' : 'opacity-100';
                 
+                // Mapeo dinámico de capacidad del bulto (peso neto o cubicaje) mediante el factor de conversión calculado por el backend
+                const capBulto = row.pedido ? (parseFloat(row.pedido.factor_conversion) || parseFloat(row.pedido.cant_valor || row.pedido.cant_bajo_valor || row.pedido['cant.valor']) || 1) : 1;
+                const totalBulto = pactado * capBulto;
+                const subtotal = totalBulto * cant;
+                
                 html += `
                     <tr class="${bgClass} ${textOpacity}">
                         <td class="px-3 py-2 line-clamp-2" title="${desc}">${desc}</td>
                         <td class="px-3 py-2 text-center font-bold text-blue-400">${window.formatCurrency ? window.formatCurrency(cant) : cant}</td>
+                        <td class="px-3 py-2 text-center font-mono text-slate-400">${capBulto}</td>
                         <td class="px-3 py-2 text-right font-mono text-slate-400">$${window.formatCurrency ? window.formatCurrency(pactado) : pactado}</td>
+                        <td class="px-3 py-2 text-right font-mono text-slate-300 bg-slate-800/30">$${window.formatCurrency ? window.formatCurrency(totalBulto) : totalBulto.toFixed(2)}</td>
+                        <td class="px-3 py-2 text-right font-mono text-slate-200 bg-slate-800/50">$${window.formatCurrency ? window.formatCurrency(subtotal) : subtotal.toFixed(2)}</td>
                         <td class="px-3 py-2 text-right font-mono text-slate-200">$${window.formatCurrency ? window.formatCurrency(facturado) : facturado}</td>
                         <td class="px-3 py-2 text-right font-mono font-bold ${isError ? 'text-amber-400' : 'text-emerald-400'}">
                             ${row.delta_monto > 0 ? '+' : ''}$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto}
@@ -1074,7 +1082,7 @@ window.viewConciliacionReport = async function(facturaId) {
                 if (row.desvios && row.desvios.length > 0) {
                     html += `
                         <tr class="${bgClass}">
-                            <td colspan="5" class="px-3 py-1 text-[10px] text-amber-500 italic pb-2 border-none">
+                            <td colspan="8" class="px-3 py-1 text-[10px] text-amber-500 italic pb-2 border-none">
                                 <i data-lucide="alert-triangle" class="w-3 h-3 inline-block mr-1 mb-0.5"></i> ${row.desvios.join(' | ')}
                             </td>
                         </tr>
@@ -1092,13 +1100,16 @@ window.viewConciliacionReport = async function(facturaId) {
                             <tr>
                                 <th class="px-3 py-2 font-bold">Artículo (Documento Actual)</th>
                                 <th class="px-3 py-2 text-center font-bold">Cant.</th>
-                                <th class="px-3 py-2 text-right font-bold">Pactado</th>
+                                <th class="px-3 py-2 text-center font-bold">Cap. Bulto</th>
+                                <th class="px-3 py-2 text-right font-bold">Pactado (Kg/Un)</th>
+                                <th class="px-3 py-2 text-right font-bold">Total Bulto</th>
+                                <th class="px-3 py-2 text-right font-bold">Subtotal</th>
                                 <th class="px-3 py-2 text-right font-bold">Facturado</th>
                                 <th class="px-3 py-2 text-right font-bold">Diferencia</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-800/50">
-                            ${primaryItems.length > 0 ? renderTableRows(primaryItems) : `<tr><td colspan="5" class="px-3 py-4 text-center text-slate-500 italic">No se hallaron artículos directos en la extracción de esta factura.</td></tr>`}
+                            ${primaryItems.length > 0 ? renderTableRows(primaryItems) : `<tr><td colspan="8" class="px-3 py-4 text-center text-slate-500 italic">No se hallaron artículos directos en la extracción de esta factura.</td></tr>`}
                         </tbody>
                     </table>
                 </div>
@@ -1142,7 +1153,7 @@ window.viewConciliacionReport = async function(facturaId) {
                 </div>
             `,
             background: '#1e293b', color: '#f8fafc',
-            width: '850px',
+            width: '1000px',
             confirmButtonColor: '#334155',
             confirmButtonText: 'Cerrar',
             didOpen: () => {
