@@ -893,11 +893,25 @@ window.viewConciliacionReport = async function(facturaId) {
         if (!facJson.success) throw new Error(facJson.error || "No se pudo obtener la factura");
         const factura = facJson.data;
 
+        // 1. Formato Máscara de Factura
+        let numeroFormateado = 'S/N';
+        if (factura.numero_comprobante) {
+            let pt = factura.punto_venta ? String(factura.punto_venta) : '';
+            let num = String(factura.numero_comprobante);
+            if (num.includes('-')) {
+                const parts = num.split('-');
+                pt = parts[0];
+                num = parts[1];
+            }
+            if (!pt) pt = '0';
+            numeroFormateado = `${pt.padStart(4, '0')}-${num.padStart(8, '0')}`;
+        }
+
         if (!factura.match_report || factura.match_report.length === 0) {
             Swal.fire({
                 title: 'Reporte No Estructurado',
                 html: `
-                    <p class="text-sm text-slate-300 mb-4">Esta factura (<strong>${factura.numero_comprobante || 'S/N'}</strong>) fue conciliada, pero no posee un log estructurado del cruce algorítmico (es posible que se haya forzado manualmente o conciliado en una versión anterior).</p>
+                    <p class="text-sm text-slate-300 mb-4">Esta factura (<strong>${numeroFormateado}</strong>) fue conciliada, pero no posee un log estructurado del cruce algorítmico (es posible que se haya forzado manualmente o conciliado en una versión anterior).</p>
                     <button onclick="Swal.close(); setTimeout(() => window.viewFacturaDetails('${factura.id}'), 300)" class="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-600 hover:text-white transition-colors uppercase font-bold text-xs tracking-widest">Ver Detalles de Extracción en su lugar</button>
                 `,
                 icon: 'info',
@@ -908,70 +922,227 @@ window.viewConciliacionReport = async function(facturaId) {
             return;
         }
 
-        let reportHtml = `
-            <div class="mt-4 bg-slate-900 border border-slate-700 rounded-lg overflow-hidden">
-                <div class="max-h-[400px] overflow-y-auto custom-scrollbar">
-                    <table class="w-full text-left text-xs text-slate-300 relative">
-                        <thead class="bg-slate-950 text-[10px] uppercase text-slate-500 sticky top-0 shadow-sm border-b border-slate-700">
-                            <tr>
-                                <th class="px-3 py-2">Artículo</th>
-                                <th class="px-3 py-2 text-center">Cant.</th>
-                                <th class="px-3 py-2 text-right">Pactado</th>
-                                <th class="px-3 py-2 text-right">Facturado</th>
-                                <th class="px-3 py-2 text-right">Delta</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-800/50">
+        // 2. Extracción de IDs Logísticos (N/A fix)
+        let recepcionesIds = [];
+        factura.match_report.forEach(item => {
+            if (item._meta_recepcionesIds && Array.isArray(item._meta_recepcionesIds)) {
+                item._meta_recepcionesIds.forEach(id => {
+                    if (!recepcionesIds.includes(id)) recepcionesIds.push(id);
+                });
+            }
+        });
+        
+        let recLogisticaHtml = '';
+        if (factura.pedido_b2b_id) {
+            recLogisticaHtml = `Pedido B2B #${factura.pedido_b2b_id}`;
+        } else if (recepcionesIds.length > 0) {
+            recLogisticaHtml = recepcionesIds.map(id => `<span class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded border border-slate-600 font-mono text-[10px] shadow-sm">${id.toString().substring(0,8)}</span>`).join(' ');
+        } else {
+            recLogisticaHtml = 'N/A';
+        }
+
+        // 3. Datos Financieros
+        const iva21Val = parseFloat(factura.importe_iva_21 || 0);
+        const iva105Val = parseFloat(factura.importe_iva_105 || 0);
+        const iva27Val = parseFloat(factura.importe_iva_27 || 0);
+        
+        const neto21Val = iva21Val > 0 ? iva21Val / 0.21 : 0;
+        const neto105Val = iva105Val > 0 ? iva105Val / 0.105 : 0;
+        const neto27Val = iva27Val > 0 ? iva27Val / 0.27 : 0;
+        
+        let ivaCount = (iva21Val > 0 ? 1 : 0) + (iva105Val > 0 ? 1 : 0) + (iva27Val > 0 ? 1 : 0);
+        
+        let basesIvaHtml = '';
+        const globalNetoVal = parseFloat(factura.importe_neto_gravado || 0);
+        const globalIvaVal = iva21Val + iva105Val + iva27Val;
+
+        if (ivaCount > 1) {
+            basesIvaHtml = `
+                <div class="flex flex-col gap-1 w-full text-[10px] justify-center h-full">
+                    ${iva21Val > 0 ? `<div class="flex justify-between items-center pb-0.5"><div class="flex flex-col"><span class="text-slate-500 uppercase text-[8px]">Base Imp. 21%</span><span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(neto21Val) : neto21Val.toFixed(2)}</span></div><i data-lucide="arrow-right" class="w-3 h-3 text-slate-600"></i><div class="flex flex-col text-right"><span class="text-slate-500 uppercase text-[8px]">IVA 21%</span><span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(iva21Val) : iva21Val.toFixed(2)}</span></div></div>` : ''}
+                    ${iva105Val > 0 ? `<div class="flex justify-between items-center pb-0.5"><div class="flex flex-col"><span class="text-slate-500 uppercase text-[8px]">Base Imp. 10.5%</span><span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(neto105Val) : neto105Val.toFixed(2)}</span></div><i data-lucide="arrow-right" class="w-3 h-3 text-slate-600"></i><div class="flex flex-col text-right"><span class="text-slate-500 uppercase text-[8px]">IVA 10.5%</span><span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(iva105Val) : iva105Val.toFixed(2)}</span></div></div>` : ''}
+                    ${iva27Val > 0 ? `<div class="flex justify-between items-center pb-0.5"><div class="flex flex-col"><span class="text-slate-500 uppercase text-[8px]">Base Imp. 27%</span><span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(neto27Val) : neto27Val.toFixed(2)}</span></div><i data-lucide="arrow-right" class="w-3 h-3 text-slate-600"></i><div class="flex flex-col text-right"><span class="text-slate-500 uppercase text-[8px]">IVA 27%</span><span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(iva27Val) : iva27Val.toFixed(2)}</span></div></div>` : ''}
+                    <div class="flex justify-between items-center border-t border-slate-700/50 pt-1 mt-0.5">
+                        <div class="flex flex-col">
+                            <span class="text-slate-400 uppercase text-[8px] font-bold">Total Neto Gravado</span>
+                            <span class="font-mono font-bold text-slate-200">$${window.formatCurrency ? window.formatCurrency(globalNetoVal) : globalNetoVal.toFixed(2)}</span>
+                        </div>
+                        <div class="flex flex-col text-right">
+                            <span class="text-slate-400 uppercase text-[8px] font-bold">Total IVA</span>
+                            <span class="font-mono font-bold text-slate-300">$${window.formatCurrency ? window.formatCurrency(globalIvaVal) : globalIvaVal.toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            if (iva21Val > 0) {
+                 basesIvaHtml = `<div class="flex justify-between items-center w-full"><div class="flex flex-col"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">Neto Gravado (21%)</span><span class="font-mono font-bold text-slate-200 text-sm">$${window.formatCurrency ? window.formatCurrency(neto21Val) : neto21Val.toFixed(2)}</span></div><i data-lucide="arrow-right" class="w-4 h-4 text-slate-600 mx-2"></i><div class="flex flex-col text-right"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">IVA (21%)</span><span class="font-mono font-bold text-slate-300 text-sm">$${window.formatCurrency ? window.formatCurrency(iva21Val) : iva21Val.toFixed(2)}</span></div></div>`;
+            } else if (iva105Val > 0) {
+                 basesIvaHtml = `<div class="flex justify-between items-center w-full"><div class="flex flex-col"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">Neto Gravado (10.5%)</span><span class="font-mono font-bold text-slate-200 text-sm">$${window.formatCurrency ? window.formatCurrency(neto105Val) : neto105Val.toFixed(2)}</span></div><i data-lucide="arrow-right" class="w-4 h-4 text-slate-600 mx-2"></i><div class="flex flex-col text-right"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">IVA (10.5%)</span><span class="font-mono font-bold text-slate-300 text-sm">$${window.formatCurrency ? window.formatCurrency(iva105Val) : iva105Val.toFixed(2)}</span></div></div>`;
+            } else if (iva27Val > 0) {
+                 basesIvaHtml = `<div class="flex justify-between items-center w-full"><div class="flex flex-col"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">Neto Gravado (27%)</span><span class="font-mono font-bold text-slate-200 text-sm">$${window.formatCurrency ? window.formatCurrency(neto27Val) : neto27Val.toFixed(2)}</span></div><i data-lucide="arrow-right" class="w-4 h-4 text-slate-600 mx-2"></i><div class="flex flex-col text-right"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">IVA (27%)</span><span class="font-mono font-bold text-slate-300 text-sm">$${window.formatCurrency ? window.formatCurrency(iva27Val) : iva27Val.toFixed(2)}</span></div></div>`;
+            } else {
+                 const baseG = parseFloat(factura.importe_neto_gravado || 0);
+                 basesIvaHtml = `<div class="flex justify-between items-center w-full"><div class="flex flex-col"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">Neto Gravado</span><span class="font-mono font-bold text-slate-200 text-sm">$${window.formatCurrency ? window.formatCurrency(baseG) : baseG.toFixed(2)}</span></div><i data-lucide="arrow-right" class="w-4 h-4 text-slate-600 mx-2"></i><div class="flex flex-col text-right"><span class="text-slate-500 uppercase text-[9px] tracking-wider mb-0.5">Total IVA</span><span class="font-mono font-bold text-slate-300 text-sm">$0.00</span></div></div>`;
+            }
+        }
+        
+        const percepcionIIBBVal = parseFloat(factura.percepciones_iibb || 0);
+        const percepcionIVAVal = parseFloat(factura.percepciones_iva || 0);
+        
+        let retencionesHtml = '';
+        if (percepcionIIBBVal > 0 && percepcionIVAVal > 0) {
+            retencionesHtml = `
+                <div class="flex flex-col gap-1 w-full text-[10px]">
+                    <div class="flex justify-between border-b border-slate-800/50 pb-0.5"><span class="text-slate-500 uppercase">IIBB:</span> <span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(percepcionIIBBVal) : percepcionIIBBVal.toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-500 uppercase">IVA:</span> <span class="font-mono text-slate-300">$${window.formatCurrency ? window.formatCurrency(percepcionIVAVal) : percepcionIVAVal.toFixed(2)}</span></div>
+                </div>
+            `;
+        } else if (percepcionIIBBVal > 0) {
+            retencionesHtml = `<span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Perc. IIBB</span><span class="font-mono font-bold text-slate-300 text-sm">$ ${window.formatCurrency ? window.formatCurrency(percepcionIIBBVal) : percepcionIIBBVal.toFixed(2)}</span>`;
+        } else if (percepcionIVAVal > 0) {
+            retencionesHtml = `<span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Perc. IVA</span><span class="font-mono font-bold text-slate-300 text-sm">$ ${window.formatCurrency ? window.formatCurrency(percepcionIVAVal) : percepcionIVAVal.toFixed(2)}</span>`;
+        } else {
+            retencionesHtml = `<span class="block text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Retenciones</span><span class="font-mono font-bold text-slate-300 text-sm">$ 0.00</span>`;
+        }
+
+        const totalVal = parseFloat(factura.importe_total || 0);
+        const total = window.formatCurrency ? window.formatCurrency(totalVal) : totalVal.toFixed(2);
+
+        let financialHtml = `
+            <div class="grid grid-cols-4 gap-3 mb-4 mt-3">
+                <div class="col-span-2 bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50 shadow-inner flex flex-col justify-center">
+                    ${basesIvaHtml}
+                </div>
+                <div class="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50 shadow-inner flex flex-col justify-center">
+                    ${retencionesHtml}
+                </div>
+                <div class="bg-emerald-900/20 rounded-lg p-2.5 border border-emerald-500/30 shadow-inner flex flex-col justify-center">
+                    <span class="block text-[9px] text-emerald-500/70 uppercase tracking-wider mb-0.5">Total Asentado</span>
+                    <span class="font-mono font-bold text-emerald-400 text-base leading-none">$ ${total}</span>
+                </div>
+            </div>
         `;
 
+        // 4. Disociación de Artículos (Primarios vs Secundarios)
+        const primaryItems = [];
+        const secondaryItems = [];
+        const myArticulos = factura.articulos || [];
+
         factura.match_report.forEach(row => {
-            const isError = row.status !== 'OK';
-            const bgClass = isError ? 'bg-amber-900/10' : 'hover:bg-slate-800/50';
-            const pactado = row.pedido ? row.pedido.precio_unitario : 0;
-            const facturado = row.factura ? row.factura.precio_unitario : 0;
-            const cant = row.recibido || (row.factura ? row.factura.cantidad : 0);
-            const desc = row.factura ? row.factura.descripcion : (row.pedido ? row.pedido.descripcion : '-');
+            const rowDesc = row.factura ? (row.factura.descripcion || '').toLowerCase().trim() : '';
+            const rowCode = row.factura ? (row.factura.codigo || '').toLowerCase().trim() : '';
             
-            reportHtml += `
-                <tr class="${bgClass}">
-                    <td class="px-3 py-2 line-clamp-2" title="${desc}">${desc}</td>
-                    <td class="px-3 py-2 text-center font-bold text-blue-400">${window.formatCurrency ? window.formatCurrency(cant) : cant}</td>
-                    <td class="px-3 py-2 text-right font-mono text-slate-400">$${window.formatCurrency ? window.formatCurrency(pactado) : pactado}</td>
-                    <td class="px-3 py-2 text-right font-mono text-slate-200">$${window.formatCurrency ? window.formatCurrency(facturado) : facturado}</td>
-                    <td class="px-3 py-2 text-right font-mono font-bold ${isError ? 'text-amber-400' : 'text-emerald-400'}">
-                        ${row.delta_monto > 0 ? '+' : ''}$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto}
-                    </td>
-                </tr>
-            `;
-            if (row.desvios && row.desvios.length > 0) {
-                reportHtml += `
-                    <tr class="${bgClass}">
-                        <td colspan="5" class="px-3 py-1 text-[10px] text-amber-500 italic pb-2 border-none">
-                            <i data-lucide="alert-triangle" class="w-3 h-3 inline-block mr-1 mb-0.5"></i> ${row.desvios.join(' | ')}
+            let isMine = false;
+            if (row.factura) {
+                isMine = myArticulos.some(myArt => {
+                    const myDesc = (myArt.descripcion || '').toLowerCase().trim();
+                    const myCode = (myArt.codigo || '').toLowerCase().trim();
+                    if (rowCode && myCode && rowCode === myCode) return true;
+                    if (rowDesc && myDesc && rowDesc === myDesc) return true;
+                    return false;
+                });
+            }
+
+            if (isMine) primaryItems.push(row);
+            else secondaryItems.push(row);
+        });
+
+        const renderTableRows = (items, isSecondary = false) => {
+            let html = '';
+            items.forEach(row => {
+                const isError = row.status !== 'OK';
+                const bgClass = isError ? 'bg-amber-900/10' : 'hover:bg-slate-800/50';
+                const pactado = row.pedido ? row.pedido.precio_unitario : 0;
+                const facturado = row.factura ? row.factura.precio_unitario : 0;
+                const cant = row.recibido || (row.factura ? row.factura.cantidad : 0);
+                const desc = row.factura ? row.factura.descripcion : (row.pedido ? row.pedido.descripcion : '-');
+                
+                const textOpacity = isSecondary ? 'opacity-60' : 'opacity-100';
+                
+                html += `
+                    <tr class="${bgClass} ${textOpacity}">
+                        <td class="px-3 py-2 line-clamp-2" title="${desc}">${desc}</td>
+                        <td class="px-3 py-2 text-center font-bold text-blue-400">${window.formatCurrency ? window.formatCurrency(cant) : cant}</td>
+                        <td class="px-3 py-2 text-right font-mono text-slate-400">$${window.formatCurrency ? window.formatCurrency(pactado) : pactado}</td>
+                        <td class="px-3 py-2 text-right font-mono text-slate-200">$${window.formatCurrency ? window.formatCurrency(facturado) : facturado}</td>
+                        <td class="px-3 py-2 text-right font-mono font-bold ${isError ? 'text-amber-400' : 'text-emerald-400'}">
+                            ${row.delta_monto > 0 ? '+' : ''}$${window.formatCurrency ? window.formatCurrency(row.delta_monto) : row.delta_monto}
                         </td>
                     </tr>
                 `;
-            }
-        });
+                if (row.desvios && row.desvios.length > 0) {
+                    html += `
+                        <tr class="${bgClass}">
+                            <td colspan="5" class="px-3 py-1 text-[10px] text-amber-500 italic pb-2 border-none">
+                                <i data-lucide="alert-triangle" class="w-3 h-3 inline-block mr-1 mb-0.5"></i> ${row.desvios.join(' | ')}
+                            </td>
+                        </tr>
+                    `;
+                }
+            });
+            return html;
+        };
 
-        reportHtml += `
+        let reportHtml = `
+            <div class="mt-4 bg-slate-900/80 border border-slate-700 rounded-lg overflow-hidden shadow-lg shadow-black/20">
+                <div class="max-h-[250px] overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-left text-xs text-slate-300 relative">
+                        <thead class="bg-slate-950 text-[10px] uppercase text-slate-500 sticky top-0 shadow-sm border-b border-slate-700 z-10">
+                            <tr>
+                                <th class="px-3 py-2 font-bold">Artículo (Documento Actual)</th>
+                                <th class="px-3 py-2 text-center font-bold">Cant.</th>
+                                <th class="px-3 py-2 text-right font-bold">Pactado</th>
+                                <th class="px-3 py-2 text-right font-bold">Facturado</th>
+                                <th class="px-3 py-2 text-right font-bold">Diferencia</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/50">
+                            ${primaryItems.length > 0 ? renderTableRows(primaryItems) : `<tr><td colspan="5" class="px-3 py-4 text-center text-slate-500 italic">No se hallaron artículos directos en la extracción de esta factura.</td></tr>`}
                         </tbody>
                     </table>
                 </div>
             </div>
         `;
 
+        if (secondaryItems.length > 0) {
+            reportHtml += `
+                <div class="mt-4 border border-slate-800/80 rounded-lg overflow-hidden bg-slate-900/40">
+                    <div class="bg-slate-900/60 px-3 py-2 border-b border-slate-800/80 flex items-center justify-between">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i data-lucide="layers" class="w-3 h-3 inline mr-1 mb-0.5"></i> Otros Artículos del Lote Logístico</span>
+                        <span class="text-[10px] text-slate-600 font-mono">${secondaryItems.length} ítems omitidos</span>
+                    </div>
+                    <div class="max-h-[150px] overflow-y-auto custom-scrollbar">
+                        <table class="w-full text-left text-xs text-slate-400 relative">
+                            <tbody class="divide-y divide-slate-800/30">
+                                ${renderTableRows(secondaryItems, true)}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
         Swal.fire({
-            title: `Reporte de Cruce - Factura ${factura.numero_comprobante || 'S/N'}`,
+            title: `Reporte de Cruce - Factura ${numeroFormateado}`,
             html: `
                 <div class="text-left text-sm text-slate-300">
-                    <p><strong>Estado:</strong> <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-widest ${factura.status_conciliacion === 'CONCILIADO_OK' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'} uppercase">${factura.status_conciliacion}</span></p>
-                    <p class="mt-2 text-xs text-slate-400 font-mono"><strong>Recepción Logística Vinculada:</strong> ${factura.pedido_b2b_id || 'N/A'}</p>
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <strong>Estado:</strong> <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-widest ${factura.status_conciliacion === 'CONCILIADO_OK' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'} uppercase ml-1">${factura.status_conciliacion}</span>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-slate-400"><strong>Recepción Logística Vinculada:</strong></p>
+                            <div class="mt-1">${recLogisticaHtml}</div>
+                        </div>
+                    </div>
+                    
+                    ${financialHtml}
                     ${reportHtml}
                 </div>
             `,
             background: '#1e293b', color: '#f8fafc',
-            width: '800px',
+            width: '850px',
             confirmButtonColor: '#334155',
             confirmButtonText: 'Cerrar',
             didOpen: () => {
