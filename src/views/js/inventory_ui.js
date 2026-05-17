@@ -176,7 +176,7 @@ function renderInventoryTable(data) {
                 valor = parseVol(mp.cant_valor) || parseVol(masterItem.cant_valor) || 1;
                 
                 precioUnitario = parseFloat(mp.precio || masterItem.precio || 0);
-                let rawIva = mp.iva || masterItem.iva || '21';
+                let rawIva = item.iva_aplicado ?? mp.iva ?? masterItem.iva ?? '21';
                 ivaPorcentaje = parseFloat(String(rawIva).replace('%', '').replace(',', '.')) || 0;
 
                 let rawUnit = (mp.unidad_compra || masterItem.unidad_compra || 'U').trim().toUpperCase();
@@ -340,7 +340,7 @@ function renderInventoryTable(data) {
                 </td>
                 <td class="p-4 text-right border-l border-slate-800/30 font-mono text-slate-400 text-xs relative group/price z-10 hover:z-50">
                     <div class="flex flex-col items-end justify-center transform origin-right transition-all duration-300 group-hover/price:scale-[1.8] group-hover/price:-translate-x-4 group-hover/price:bg-slate-800 group-hover/price:p-3 group-hover/price:rounded-lg group-hover/price:shadow-2xl group-hover/price:border group-hover/price:border-slate-600 cursor-pointer">
-                        <span class="text-[10px] text-slate-500 mb-0.5">$${precioUnitario.toLocaleString('es-AR', {minimumFractionDigits: 2})} / ${abrevUnit}</span>
+                        <span class="text-[10px] text-slate-500 mb-0.5 flex items-center justify-end gap-1">$${precioUnitario.toLocaleString('es-AR', {minimumFractionDigits: 2})} / ${abrevUnit} <span class="text-[8px] font-bold px-1 rounded uppercase tracking-wider ${ivaColor}">IVA ${ivaDisplay}</span></span>
                         <span class="text-xs font-bold text-slate-300">$${precioBulto.toLocaleString('es-AR', {minimumFractionDigits: 2})} <span class="text-[9px] text-slate-500 font-sans ml-1">Caja/Bol</span></span>
                     </div>
                 </td>

@@ -1158,7 +1158,8 @@ window.addB2BCatalogItem = function(sysId, initQty = 1) {
         cant_valor: p.cant_valor || row.cant_valor || 1,
         es_promo: !!(p.precio_promo || row.precio_promo || p.condicion_promo || row.condicion_promo),
         regla: p.regla || row.regla || null,
-        promo: p.promo || row.promo || null
+        promo: p.promo || row.promo || null,
+        iva_aplicado: p.iva || row.iva || 0
     });
     
     saveB2BCart(cart);
@@ -1278,7 +1279,8 @@ window.commitB2BOrder = async function() {
             producto_descripcion: i.producto_descripcion,
             cantidad: i.cantidad,
             valor_unitario_ref: i.precio_unitario,
-            unidad_ref: i.unidad_medida
+            unidad_ref: i.unidad_medida,
+            iva_aplicado: i.iva_aplicado
         }))
     };
     
