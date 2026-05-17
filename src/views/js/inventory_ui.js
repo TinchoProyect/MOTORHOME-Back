@@ -155,6 +155,23 @@ function renderInventoryTable(data) {
     
     if(!container) return;
 
+    // Helper de Formateo Estricto Localizado (AR) - Evita fallas del navegador
+    const formatMoneyAR = (num) => {
+        if (isNaN(num) || num === null) return '0,00';
+        const parts = Number(num).toFixed(2).split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return parts.join(',');
+    };
+
+    const formatQtyAR = (num, maxFrac = 0) => {
+        if (isNaN(num) || num === null) return '0';
+        // Formatea con decimales dinámicos pero maximos
+        let strNum = maxFrac > 0 ? Number(num).toLocaleString('en-US', {maximumFractionDigits: maxFrac, useGrouping: false}) : Number(num).toString();
+        const parts = strNum.split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return parts.join(',');
+    };
+
     // Enriquecimiento y Parseo
     const enrichedData = data.map(item => {
         let proveedor = 'Proveedor Desconocido';
@@ -171,11 +188,27 @@ function renderInventoryTable(data) {
             if (masterItem) {
                 proveedor = masterItem.nombre_proveedor || 'Proveedor Desconocido';
                 const mp = masterItem.datos_maestros || {};
-                const parseVol = (v) => { if(!v) return null; const n = parseFloat(String(v).replace(',', '.').trim()); return isNaN(n)? null : n; };
+                
+                // Helper para parsear de forma segura precios con punto de mil y coma decimal (Ej: "7.402,00" o "7402.00")
+                const parseSafeNumber = (val) => {
+                    if (!val && val !== 0) return null;
+                    if (typeof val === 'number') return val;
+                    let s = String(val).trim();
+                    if (s.includes('.') && s.includes(',')) {
+                        if (s.indexOf('.') < s.lastIndexOf(',')) s = s.replace(/\./g, '').replace(',', '.');
+                        else s = s.replace(/,/g, '');
+                    } else if (s.includes(',')) {
+                        s = s.replace(/\./g, '').replace(',', '.'); // Por si acaso tiene múltiples comas como mil
+                    }
+                    const n = parseFloat(s);
+                    return isNaN(n) ? null : n;
+                };
+
+                const parseVol = (v) => parseSafeNumber(v);
                 bulto = parseVol(mp.cant_bult) || parseVol(masterItem.cant_bult) || 1;
                 valor = parseVol(mp.cant_valor) || parseVol(masterItem.cant_valor) || 1;
                 
-                precioUnitario = parseFloat(mp.precio || masterItem.precio || 0);
+                precioUnitario = parseSafeNumber(mp.precio) ?? parseSafeNumber(masterItem.precio) ?? 0;
                 let rawIva = item.iva_aplicado ?? mp.iva ?? masterItem.iva ?? '21';
                 ivaPorcentaje = parseFloat(String(rawIva).replace('%', '').replace(',', '.')) || 0;
 
@@ -336,19 +369,19 @@ function renderInventoryTable(data) {
                     <div class="text-sm font-bold text-slate-200 truncate max-w-sm" title="${desc}">${desc}</div>
                 </td>
                 <td class="p-4 text-xs font-mono text-slate-500 text-center border-l border-slate-800/30 opacity-80 group-hover:opacity-100 transition-opacity">
-                    ${bulto.toLocaleString('es-AR')} x ${valor.toLocaleString('es-AR')} ${abrevUnit}
+                    ${formatQtyAR(bulto)} x ${formatQtyAR(valor)} ${abrevUnit}
                 </td>
                 <td class="p-4 text-right border-l border-slate-800/30 font-mono text-slate-400 text-xs relative group/price z-10 hover:z-50">
                     <div class="flex flex-col items-end justify-center transform origin-right transition-all duration-300 group-hover/price:scale-[1.8] group-hover/price:-translate-x-4 group-hover/price:bg-slate-800 group-hover/price:p-3 group-hover/price:rounded-lg group-hover/price:shadow-2xl group-hover/price:border group-hover/price:border-slate-600 cursor-pointer">
-                        <span class="text-[10px] text-slate-500 mb-0.5 flex items-center justify-end gap-1">$${precioUnitario.toLocaleString('es-AR', {minimumFractionDigits: 2})} / ${abrevUnit} <span class="text-[8px] font-bold px-1 rounded uppercase tracking-wider ${ivaColor}">IVA ${ivaDisplay}</span></span>
-                        <span class="text-xs font-bold text-slate-300">$${precioBulto.toLocaleString('es-AR', {minimumFractionDigits: 2})} <span class="text-[9px] text-slate-500 font-sans ml-1">Caja/Bol</span></span>
+                        <span class="text-[10px] text-slate-500 mb-0.5 flex items-center justify-end gap-1">$${formatMoneyAR(precioUnitario)} / ${abrevUnit} <span class="text-[8px] font-bold px-1 rounded uppercase tracking-wider ${ivaColor}">IVA ${ivaDisplay}</span></span>
+                        <span class="text-xs font-bold text-slate-300">$${formatMoneyAR(precioBulto)} <span class="text-[9px] text-slate-500 font-sans ml-1">Caja/Bol</span></span>
                     </div>
                 </td>
                 <td class="p-4 text-right ${stockBg} border-l shadow-inner relative group/stock">
                     <div class="flex flex-col items-end justify-center">
-                        <span class="text-lg font-black ${stockColor} font-mono tracking-tighter leading-none mb-1">${stockFisico.toLocaleString('es-AR')} <span class="text-[10px] font-sans font-bold opacity-60">BULTOS</span></span>
-                        <span class="text-xs text-blue-400 uppercase tracking-widest font-bold">${volumenTotal.toLocaleString('es-AR', {maximumFractionDigits: 2})} ${abrevUnit} Netos</span>
-                        <span class="text-[9px] text-slate-500 opacity-0 group-hover/stock:opacity-100 transition-opacity absolute bottom-1 right-4">Valuación: $${valuacionLote.toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
+                        <span class="text-lg font-black ${stockColor} font-mono tracking-tighter leading-none mb-1">${formatQtyAR(stockFisico)} <span class="text-[10px] font-sans font-bold opacity-60">BULTOS</span></span>
+                        <span class="text-xs text-blue-400 uppercase tracking-widest font-bold">${formatQtyAR(volumenTotal, 2)} ${abrevUnit} Netos</span>
+                        <span class="text-[9px] text-slate-500 opacity-0 group-hover/stock:opacity-100 transition-opacity absolute bottom-1 right-4">Valuación: $${formatMoneyAR(valuacionLote)}</span>
                     </div>
                 </td>
             </tr>
