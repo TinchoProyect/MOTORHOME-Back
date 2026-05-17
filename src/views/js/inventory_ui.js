@@ -208,7 +208,9 @@ function renderInventoryTable(data) {
                 bulto = parseVol(mp.cant_bult) || parseVol(masterItem.cant_bult) || 1;
                 valor = parseVol(mp.cant_valor) || parseVol(masterItem.cant_valor) || 1;
                 
-                precioUnitario = parseSafeNumber(mp.precio) ?? parseSafeNumber(masterItem.precio) ?? 0;
+                // Priorizar el precio extraido de la factura y compensado con NC/ND (Ticket #086)
+                precioUnitario = item.precio_unitario_facturado ?? parseSafeNumber(mp.precio) ?? parseSafeNumber(masterItem.precio) ?? 0;
+                
                 let rawIva = item.iva_aplicado ?? mp.iva ?? masterItem.iva ?? '21';
                 ivaPorcentaje = parseFloat(String(rawIva).replace('%', '').replace(',', '.')) || 0;
 
@@ -227,12 +229,12 @@ function renderInventoryTable(data) {
             proveedor,
             bulto, valor, abrevUnit,
             precioUnitario,
-            precioBulto: precioUnitario * valor,
+            precioBulto: precioUnitario * (bulto * valor),
             ivaPorcentaje,
             dateObj: d,
             stockFisico: Number(item.stock_fisico),
             volumenTotal: Number(item.stock_fisico) * bulto * valor,
-            valuacionLote: Number(item.stock_fisico) * (precioUnitario * valor)
+            valuacionLote: Number(item.stock_fisico) * (precioUnitario * (bulto * valor))
         };
     });
 

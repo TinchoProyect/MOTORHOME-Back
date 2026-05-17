@@ -19,7 +19,20 @@ router.get('/stock', async (req, res) => {
             .not('match_report', 'is', null)
             .order('created_at', { ascending: false });
 
+        // Recuperar notas de débito para compensaciones comerciales (Ticket #086)
+        const { data: ccp } = await supabase
+            .from('cuenta_corriente_proveedores')
+            .select('referencia_factura_id, monto_debito')
+            .eq('tipo_movimiento', 'NOTA_DEBITO_INTERNA')
+            .gt('monto_debito', 0);
+            
+        const adjMap = {};
+        if (ccp) {
+            ccp.forEach(r => adjMap[r.referencia_factura_id] = true);
+        }
+
         let skuIvaMap = {};
+        let skuPricingMap = {}; // Mapa para guardar el precio real por unidad/kilo
         let skuConfidence = {}; // Para evitar que un fallback sobrescriba una certeza matemática
         if (facturas) {
             facturas.forEach(f => {
@@ -70,16 +83,41 @@ router.get('/stock', async (req, res) => {
                             skuIvaMap[sku] = inferredIva;
                             skuConfidence[sku] = confidence;
                         }
+
+                        // Extracción de Precio Real y Compensaciones (Ticket #086 / #088)
+                        const hasAdjustment = !!adjMap[f.id];
+                        const factor = p.factor_conversion || 1;
+                        
+                        let precio_kilo = p.precio_unitario || 0; // Fallback
+                        
+                        // Fórmula Universal: Masa Económica (Subtotal) dividida por Masa Física (Kilos Totales Recibidos)
+                        if (m.factura && m.factura.subtotal && m.recibido) {
+                            const total_kilos = m.recibido * factor;
+                            if (total_kilos > 0) {
+                                precio_kilo = parseFloat(m.factura.subtotal) / total_kilos;
+                            }
+                        }
+                        
+                        if (hasAdjustment && m.delta_monto) {
+                            precio_kilo = precio_kilo - parseFloat(m.delta_monto);
+                        }
+                        
+                        if (skuPricingMap[sku] === undefined) {
+                            skuPricingMap[sku] = precio_kilo;
+                        }
                     });
                 }
             });
         }
 
-        // Inyectar el IVA de la factura al lote
+        // Inyectar el IVA y Precio de la factura al lote
         if (data) {
             data.forEach(item => {
                 if (skuIvaMap[item.sku] !== undefined) {
                     item.iva_aplicado = skuIvaMap[item.sku];
+                }
+                if (skuPricingMap[item.sku] !== undefined) {
+                    item.precio_unitario_facturado = skuPricingMap[item.sku];
                 }
             });
         }
