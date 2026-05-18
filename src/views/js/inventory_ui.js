@@ -243,6 +243,9 @@ function renderInventoryTable(data) {
         ? enrichedData.filter(i => i.stockFisico > 0)
         : enrichedData.filter(i => i.stockFisico <= 0);
 
+    // Ocultar registro residual del 10 de Mayo (Ticket #089)
+    filteredData = filteredData.filter(i => i.sku !== 'LMD-MAN-B0B5BF36-OLD');
+
     filteredData.sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
 
     if (statusLabel) statusLabel.innerText = `Catálogo ${isMain ? 'Principal' : 'de Desvíos'}: ${filteredData.length} SKUs listados.`;
@@ -307,8 +310,8 @@ function renderInventoryTable(data) {
             const dd = String(d.getDate()).padStart(2, '0');
             const dayName = days[d.getDay()];
 
-            yearMonth = `${yyyy} - ${months[mm]}`;
-            displayDate = `${dayName}, ${dd} de ${months[mm]} de ${yyyy}`;
+            yearMonth = `${months[mm]} ${yyyy}`;
+            displayDate = `${dayName} ${dd}`;
         }
 
         const groupIdMonth = `g-month-${yearMonth.replace(/\s/g, '')}`;

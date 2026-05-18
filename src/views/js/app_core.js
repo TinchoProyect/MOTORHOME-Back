@@ -350,6 +350,7 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
             // Keep if pending
             if (dbMatch.status === 'PENDIENTE') {
                 f._isPending = true;
+                f._dbId = dbMatch.id;
                 return true;
             }
             return false; // Filter out REVISADO_HITL or CONCILIADO_OK
@@ -422,6 +423,11 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
                         <td class="p-4 font-mono text-[10px] text-slate-500">${new Date(file.modifiedTime).toLocaleDateString()}</td>
                         <td class="p-4 text-center">${statusBadge}</td>
                         <td class="p-4 text-right">
+                            ${isPending && file._dbId ? `
+                            <button onclick="window.purgarExtraccion('${file._dbId}')" class="px-3 py-1.5 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all inline-flex items-center gap-1.5 border border-red-500/30 hover:border-red-500 mr-2" title="Eliminar extracción actual para forzar a la IA a leer de nuevo">
+                                <i data-lucide="trash-2" class="w-3 h-3 pointer-events-none"></i> <span class="pointer-events-none">Purgar</span>
+                            </button>
+                            ` : ''}
                             <button id="btn_ai_${file.id}" onclick="window.openVisorFacturas('${file.id}', '${file.name.replace(/'/g, "\\'")}', window.currentActiveProviderId || window.globalContext?.providerId, '${file.webViewLink}', this)" class="px-4 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all inline-flex items-center gap-1.5 border border-amber-500/30 hover:border-amber-500">
                                 <i data-lucide="bot" class="w-3 h-3 pointer-events-none"></i> <span class="pointer-events-none">Procesar con IA</span>
                             </button>
@@ -493,6 +499,64 @@ function renderFileGrid(files, folderId, contextMode = 'listas', processedDB = [
     // Init Phase 5 Tabs
     if (window.initDashboardTabs) {
         window.initDashboardTabs(contextMode, processedDB);
+    }
+}
+
+// ============================================================================
+// Funciones de Control de Limpieza (Purga Manual de Extracciones Fallidas)
+// ============================================================================
+window.purgarExtraccion = async function(dbId) {
+    if (typeof Swal !== 'undefined') {
+        const result = await Swal.fire({
+            title: '¿Purgar Extracción?',
+            text: "Se eliminarán los datos cacheados de la IA para forzar un re-análisis limpio del documento original.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#1e293b',
+            confirmButtonText: 'Sí, purgar historial',
+            cancelButtonText: 'Cancelar',
+            background: '#0f172a',
+            color: '#f8fafc'
+        });
+        if (!result.isConfirmed) return;
+    } else {
+        if (!confirm("¿Purgar historial de extracción para re-analizar desde cero?")) return;
+    }
+
+    try {
+        const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${backendUrl}/api/facturas/${dbId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.error || "Fallo al purgar extracción.");
+
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Purga Exitosa',
+                text: 'El documento volverá a ser analizado por la IA.',
+                icon: 'success',
+                timer: 2000,
+                background: '#0f172a', color: '#f8fafc',
+                showConfirmButton: false
+            });
+        }
+
+        // Refrescar el contexto actual
+        if (window.currentDriveFolderId) {
+            window.exploreSupplierFiles(window.currentDriveFolderId, 'facturas');
+        }
+        
+    } catch (error) {
+        console.error("[PurgaService] Error: ", error);
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({ title: 'Error', text: error.message, icon: 'error', background: '#0f172a', color: '#f8fafc' });
+        } else {
+            alert("Error al purgar: " + error.message);
+        }
     }
 }
 

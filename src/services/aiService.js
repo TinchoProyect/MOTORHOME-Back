@@ -596,8 +596,8 @@ Tu objeto DEBE contener TODOS los índices numéricos pasados en el DICCIONARIO 
         }
 
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash", 
-            generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 } 
+            model: "gemini-2.5-pro", 
+            generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } 
         });
 
         let systemInstruction = `Eres un auditor fiscal de altísima precisión ("Chofer") especializado en facturación electrónica de Argentina (AFIP).
@@ -682,10 +682,20 @@ ESTRUCTURA JSON REQUERIDA:
             const startTime = performance.now();
             const result = await model.generateContent(prompt);
             const text = result.response.text();
-            console.log(`[AI Service - Facturas] ⏱️ Extracción Completada en ${((performance.now() - startTime) / 1000).toFixed(2)}s`);
+            
+            const finishReason = result.response.candidates?.[0]?.finishReason;
+            console.log(`[AI Service - Facturas] ⏱️ Extracción Completada en ${((performance.now() - startTime) / 1000).toFixed(2)}s. FinishReason: ${finishReason}`);
             
             const extractedText = module.exports.extractJSONFromInference(text);
-            return JSON.parse(extractedText);
+            try {
+                return JSON.parse(extractedText);
+            } catch (parseError) {
+                console.error("[AI Service - Facturas] ❌ Error de Parseo JSON. Texto crudo recibido del LLM:");
+                console.error(text);
+                console.error("[AI Service - Facturas] ❌ Texto extraído (intento de arreglo):");
+                console.error(extractedText);
+                throw parseError;
+            }
         } catch (e) {
             console.error("[AI Service - Facturas] ❌ Error en Inferencia:", e);
             throw new Error("Fallo en la inferencia del Chofer IA: " + e.message);
