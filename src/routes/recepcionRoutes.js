@@ -100,7 +100,7 @@ router.get('/pedido/:pedidoId/items', async (req, res) => {
                                 }
                             }
                         }
-                        factorMap[String(codigo).trim().toLowerCase()] = factor;
+                        factorMap[String(codigo).trim().toLowerCase()] = { factor, cantBult, cantValor };
                     }
                 });
             }
@@ -109,10 +109,13 @@ router.get('/pedido/:pedidoId/items', async (req, res) => {
         // Combinar datos
         const enrichedItems = items.map(item => {
             const cod = String(item.producto_codigo).trim().toLowerCase();
+            const masterInfo = factorMap[cod] || { factor: 1, cantBult: null, cantValor: null };
             return {
                 ...item,
                 cantidad_previa_recibida: historyMap[item.id] || 0,
-                factor_conversion: factorMap[cod] || 1
+                factor_conversion: masterInfo.factor,
+                cant_bult: item.cant_bult !== undefined && item.cant_bult !== null ? item.cant_bult : masterInfo.cantBult,
+                cant_valor: item.cant_valor !== undefined && item.cant_valor !== null ? item.cant_valor : masterInfo.cantValor
             };
         });
 

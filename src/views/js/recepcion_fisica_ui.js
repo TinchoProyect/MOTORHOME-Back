@@ -263,14 +263,23 @@ const renderRecItems = () => {
             statusBadge = '<span class="ml-2 text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">COMPLETO</span>';
         }
 
+        // Usar variables estructuradas traídas desde el backend (heredadas estrictamente de la Tabla Maestra)
+        const bult = (item.cant_bult && !isNaN(item.cant_bult)) ? parseFloat(item.cant_bult) : 1;
+        const val = (item.cant_valor && !isNaN(item.cant_valor)) ? parseFloat(item.cant_valor) : 1;
+
         const formatMoney = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(val);
+        
+        const valorUnitario = item.valor_unitario_ref || 0;
+        // Matemáticas: Precio Bulto = Valor Unitario del Kilo/Gramo * Cantidad de Empaques * Kilos por Empaque
+        const precioBulto = valorUnitario * bult * val;
 
         tr.innerHTML = `
             <td class="p-3 font-mono text-slate-400">${item.producto_codigo}</td>
             <td class="p-3 font-medium text-slate-300">${item.producto_descripcion} ${statusBadge}</td>
             <td class="p-3 text-center text-slate-400 text-xs uppercase tracking-wider">${item.unidad_ref || '-'}</td>
-            <td class="p-3 text-center text-slate-400 font-mono text-xs">${item.factor_conversion > 1 ? `x${item.factor_conversion} KG` : '1.00'}</td>
-            <td class="p-3 text-center text-emerald-400 font-mono text-xs">${formatMoney(item.valor_unitario_ref || 0)}</td>
+            <td class="p-3 text-center text-slate-400 font-mono text-xs whitespace-nowrap">${bult.toLocaleString('es-AR')} x ${val.toLocaleString('es-AR')}</td>
+            <td class="p-3 text-center text-emerald-400 font-mono text-xs">${formatMoney(valorUnitario)}</td>
+            <td class="p-3 text-center text-blue-400 font-mono text-xs bg-blue-900/10 border-x border-blue-900/30">${formatMoney(precioBulto)}</td>
             <td class="p-3 text-center text-slate-300">${pedida}</td>
             <td class="p-3 text-center text-emerald-400 font-mono">${previa}</td>
             <td class="p-3 text-center">
