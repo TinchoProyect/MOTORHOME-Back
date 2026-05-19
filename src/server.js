@@ -31,6 +31,7 @@ app.use('/api/facturas', require('./routes/facturasRoutes'));
 app.use('/api/cuenta-corriente', require('./routes/cuentaCorrienteRoutes'));
 app.use('/api/bancos', require('./routes/bancosRoutes'));
 app.use('/api/config', require('./routes/configRoutes'));
+app.use('/api/cheques', require('./routes/chequesRoutes'));
 
 // Health Check
 app.get('/api/health', (req, res) => {
