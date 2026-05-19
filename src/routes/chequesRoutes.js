@@ -9,5 +9,6 @@ router.post('/ingestar', chequesController.ingestarDrive);
 router.patch('/:id/endosar', chequesController.endosar);
 router.patch('/:id/acreditar', chequesController.acreditar);
 router.patch('/:id/rechazar', chequesController.rechazar);
+router.delete('/purge', chequesController.purge);
 
 module.exports = router;

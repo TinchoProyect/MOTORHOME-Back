@@ -69,7 +69,7 @@ exports.getTodos = async (req, res) => {
         const { data, error } = await supabase
             .from('cheques_cartera')
             .select('*')
-            .order('created_at', { ascending: false });
+            .order('fecha_pago', { ascending: false });
 
         if (error) throw error;
         res.json({ success: true, data });
@@ -149,6 +149,21 @@ exports.rechazar = async (req, res) => {
         res.json({ success: true, data, message: "Cheque devuelto/rechazado" });
     } catch (error) {
         console.error("[ChequesController] Error rechazar:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.purge = async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('cheques_cartera')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+
+        if (error) throw error;
+        res.json({ success: true, message: "Base de datos de cheques vaciada correctamente." });
+    } catch (error) {
+        console.error("[ChequesController] Error purge:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 };

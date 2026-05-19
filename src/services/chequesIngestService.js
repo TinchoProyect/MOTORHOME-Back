@@ -8,7 +8,7 @@ const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function generateHashId(cheque) {
-    const raw = `${cheque.numero_cheque}_${cheque.cuit_librador}_${cheque.fecha_pago}_${cheque.importe}_${cheque.id_cheque_bancario}`;
+    const raw = `${cheque.numero_cheque}_${cheque.librador_cuit}_${cheque.fecha_pago}_${cheque.importe}_${cheque.id_cheque_bancario}`;
     return crypto.createHash('sha256').update(raw).digest('hex');
 }
 
@@ -42,8 +42,8 @@ function parseSpanishDate(dateStr) {
 
 function parseNumeric(numStr) {
     if (!numStr || numStr.trim() === '') return 0;
-    // Remove dots for thousands, replace comma with dot for decimals
-    const cleanStr = numStr.replace(/\./g, '').replace(',', '.');
+    // Remove '$' symbol, dots for thousands, replace comma with dot for decimals
+    const cleanStr = numStr.replace(/\$/g, '').replace(/\./g, '').replace(',', '.').trim();
     const parsed = parseFloat(cleanStr);
     return isNaN(parsed) ? 0 : parsed;
 }
@@ -55,6 +55,9 @@ async function processCSVBuffer(buffer) {
     // Asumimos que la primera línea es el header, pero el CSV de los bancos a veces tiene cabeceras complejas.
     // Para este caso, buscaremos la línea de cabeceras.
     let dataStarted = false;
+    let headerCols = [];
+    let idxRazonSocial = 14;
+    let idxCuitLibrador = 15;
     let chequesToInsert = [];
 
     for (let i = 0; i < lines.length; i++) {
@@ -63,8 +66,15 @@ async function processCSVBuffer(buffer) {
         if (!cols || cols.length < 5) continue;
 
         // Detect header
-        if (!dataStarted && cols.some(c => c.toLowerCase().includes('nº de cheque'))) {
+        if (!dataStarted && cols.some(c => c && c.toLowerCase().includes('nº de cheque'))) {
             dataStarted = true;
+            headerCols = cols.map(c => c ? c.toLowerCase().trim() : '');
+            
+            const foundRazon = headerCols.findIndex(c => c === 'razón social' || c === 'razon social');
+            if (foundRazon !== -1) {
+                idxRazonSocial = foundRazon;
+                idxCuitLibrador = foundRazon + 1; // El CUIT suele estar inmediatamente a la derecha
+            }
             continue;
         }
 
@@ -87,8 +97,8 @@ async function processCSVBuffer(buffer) {
                 id_cheque_bancario: cols[9] || '',
                 cmc7: cols[10] || '',
                 motivo_descripcion: cols[11] || '',
-                librador_razon_social: cols[12] || '', // Emitido a
-                librador_cuit: cols[13] || '', // CUIT
+                librador_razon_social: cols[idxRazonSocial] || '', // Razón Social (Datos del librador)
+                librador_cuit: cols[idxCuitLibrador] || '', // CUIT del librador
                 // Beneficiario Actual (asumimos las columnas subsiguientes si el banco las envía, dejaremos vacío si no las hay para evitar crash)
                 beneficiario_actual_razon_social: cols[19] || '',
                 beneficiario_actual_cuit: cols[20] || '',
@@ -97,6 +107,13 @@ async function processCSVBuffer(buffer) {
                 cant_cesiones: parseInt(cols[22]) || 0,
                 cant_avales: parseInt(cols[23]) || 0,
             };
+
+            const eb = (cheque.estado_bancario || '').trim().toLowerCase();
+            if (eb === 'disponible') cheque.estado_interno = 'EN_CARTERA';
+            else if (eb === 'pagado') cheque.estado_interno = 'ACREDITADO';
+            else if (eb === 'anulado') cheque.estado_interno = 'ANULADO';
+            else if (eb === 'vencido') cheque.estado_interno = 'VENCIDO';
+            else cheque.estado_interno = 'EN_CARTERA'; // Fallback por defecto
 
             cheque.hash_id = generateHashId(cheque);
             if (cheque.fecha_pago) {

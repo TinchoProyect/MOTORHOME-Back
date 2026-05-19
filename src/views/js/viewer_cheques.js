@@ -25,6 +25,11 @@ window.openConsultaCheques = async function() {
                     title="Forzar lectura de archivos en Drive e ingestar nuevos cheques">
                     Sincronizar <i data-lucide="refresh-ccw" class="w-3 h-3"></i>
                 </button>
+                <button onclick="window.purgarCheques()" 
+                    class="px-3 py-2 bg-red-900/20 hover:bg-red-800/40 text-red-500/50 hover:text-red-400 border border-red-900/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 shrink-0"
+                    title="Purgar Base de Datos (Limpiar Basura)">
+                    Purga DB <i data-lucide="trash-2" class="w-3 h-3"></i>
+                </button>
                 <button onclick="window.openConsultaCheques()" class="px-4 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-lg transition-all text-xs font-bold uppercase tracking-wider flex items-center gap-2">
                     <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                     Actualizar
@@ -35,16 +40,18 @@ window.openConsultaCheques = async function() {
         <div class="bg-slate-900 border border-slate-800 rounded-2xl flex flex-col overflow-hidden shadow-xl h-[calc(100vh-140px)] relative">
             
             <div class="p-4 border-b border-slate-800 bg-slate-800/50 flex gap-4">
-                <button onclick="window.loadCheques('EN_CARTERA')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold uppercase focus:ring-2 focus:ring-fuchsia-500">En Cartera</button>
-                <button onclick="window.loadCheques('TODOS')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold uppercase focus:ring-2 focus:ring-fuchsia-500">Histórico Completo</button>
+                <button onclick="window.loadCheques('EN_CARTERA')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold uppercase focus:ring-2 focus:ring-fuchsia-500">En Cartera <span id="count_en_cartera" class="ml-1 bg-fuchsia-900/50 text-fuchsia-300 px-1.5 py-0.5 rounded text-[10px] font-mono hidden"></span></button>
+                <button onclick="window.loadCheques('TODOS')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold uppercase focus:ring-2 focus:ring-fuchsia-500">Histórico Completo <span id="count_todos" class="ml-1 bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-[10px] font-mono hidden"></span></button>
             </div>
+
+            <div id="summaryPanel" class="hidden px-4 py-3 border-b border-slate-800 bg-slate-900/50 flex gap-8"></div>
 
             <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
                 <div class="overflow-x-auto rounded-lg border border-slate-800">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-slate-800/80 border-b border-slate-700">
-                                <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vencimiento</th>
+                                <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ven.</th>
                                 <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nº Cheque / Emisor</th>
                                 <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Importe</th>
                                 <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Estado</th>
@@ -83,6 +90,14 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
 
         const cheques = data.data || [];
 
+        // Actualizar contador
+        const countId = filtro === 'EN_CARTERA' ? 'count_en_cartera' : 'count_todos';
+        const countEl = document.getElementById(countId);
+        if (countEl) {
+            countEl.textContent = cheques.length;
+            countEl.classList.remove('hidden');
+        }
+
         if (cheques.length === 0) {
             grid.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500">No hay cheques ${filtro === 'EN_CARTERA' ? 'en cartera' : 'registrados'}.</td></tr>`;
             return;
@@ -90,26 +105,57 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
 
         let html = '';
         const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+
+        let totalListos = 0;
+        let totalDiferidos = 0;
+        let totalCartera = 0;
 
         cheques.forEach(c => {
             const importeStr = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(c.importe);
+            totalCartera += c.importe || 0;
             
             // Lógica de Vencimiento
             let trCls = 'hover:bg-slate-800/30 transition-colors border-b border-slate-800/50';
             let alertHtml = '';
+            let vencText = c.fecha_vencimiento_calculada || 'N/A';
             
-            if (c.estado_interno === 'EN_CARTERA' && c.fecha_vencimiento_calculada) {
-                const fVenc = new Date(c.fecha_vencimiento_calculada);
-                const diffTime = fVenc - hoy;
+            if (c.fecha_vencimiento_calculada) {
+                const fVenc = new Date(c.fecha_vencimiento_calculada + 'T00:00:00');
+                const diffTime = fVenc.getTime() - hoy.getTime();
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-                if (diffDays <= 7 && diffDays >= 0) {
+                if (diffDays > 15) {
+                    vencText = `<span class="text-slate-400 font-bold">${diffDays}</span>`;
+                } else if (diffDays <= 15 && diffDays >= 7) {
+                    vencText = `<span class="text-orange-400 font-bold">${diffDays}</span>`;
+                } else { // Menos de 7 días (Alerta Crítica)
                     trCls = 'bg-red-900/20 hover:bg-red-900/30 border-b border-red-500/30';
-                    alertHtml = `<i data-lucide="alert-triangle" class="w-4 h-4 text-red-500 inline-block mr-1" title="Vence en ${diffDays} días"></i>`;
-                } else if (diffDays < 0) {
-                    trCls = 'bg-slate-900/50 border-b border-slate-800/50 opacity-60';
-                    alertHtml = `<i data-lucide="clock" class="w-4 h-4 text-slate-500 inline-block mr-1" title="Vencido hace ${Math.abs(diffDays)} días"></i>`;
+                    alertHtml = `<i data-lucide="alert-octagon" class="w-4 h-4 text-red-500 inline-block mr-1" title="Alerta Crítica: Vencimiento Inminente o Excedido"></i>`;
+                    vencText = `<span class="text-red-500 font-black text-[13px]">${diffDays}</span>`;
                 }
+            }
+
+            // Destino de Acreditación
+            let destinoHtml = '';
+            if (c.estado_interno === 'ACREDITADO') {
+                destinoHtml = `<br><span class="text-emerald-500 text-[10px] font-bold mt-1 inline-block"><i data-lucide="building-2" class="w-3 h-3 inline relative -top-[1px]"></i> Acreditado en Cuenta Propia</span>`;
+            } else if (c.estado_interno === 'ENDOSADO') {
+                destinoHtml = `<br><span class="text-blue-500 text-[10px] font-bold mt-1 inline-block"><i data-lucide="user-check" class="w-3 h-3 inline relative -top-[1px]"></i> Endosado a Proveedor</span>`;
+            }
+
+            // Indicador Listo para Cobrar y Acumulación Financiera
+            let listoParaCobrarHtml = '';
+            if (c.fecha_pago) {
+                const fPago = new Date(c.fecha_pago + 'T00:00:00');
+                if (fPago.getTime() <= hoy.getTime()) {
+                    listoParaCobrarHtml = `<i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500 inline-block ml-1 relative -top-[1px]" title="Apto para Cobro / Depósito inmediato"></i>`;
+                    totalListos += c.importe || 0;
+                } else {
+                    totalDiferidos += c.importe || 0;
+                }
+            } else {
+                totalDiferidos += c.importe || 0;
             }
 
             let estadoHtml = `<span class="px-2 py-1 bg-slate-800 rounded text-[10px] font-bold">${c.estado_interno}</span>`;
@@ -117,6 +163,8 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
             if (c.estado_interno === 'ENDOSADO') estadoHtml = `<span class="px-2 py-1 bg-blue-900/30 text-blue-400 border border-blue-500/30 rounded text-[10px] font-bold">ENDOSADO</span>`;
             if (c.estado_interno === 'ACREDITADO') estadoHtml = `<span class="px-2 py-1 bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-bold">ACREDITADO</span>`;
             if (c.estado_interno === 'DEVUELTO') estadoHtml = `<span class="px-2 py-1 bg-red-900/30 text-red-400 border border-red-500/30 rounded text-[10px] font-bold">DEVUELTO</span>`;
+            if (c.estado_interno === 'ANULADO') estadoHtml = `<span class="px-2 py-1 bg-slate-700 text-slate-400 border border-slate-600 rounded text-[10px] font-bold">ANULADO</span>`;
+            if (c.estado_interno === 'VENCIDO') estadoHtml = `<span class="px-2 py-1 bg-orange-900/30 text-orange-400 border border-orange-500/30 rounded text-[10px] font-bold">VENCIDO</span>`;
 
             let btnHtml = '';
             if (c.estado_interno === 'EN_CARTERA') {
@@ -125,14 +173,17 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
                     <button onclick="window.acreditarCheque('${c.id}')" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold transition-colors ml-1">Acreditar</button>
                     <button onclick="window.rechazarCheque('${c.id}')" class="px-2 py-1 bg-slate-700 hover:bg-red-600 text-white rounded text-[10px] font-bold transition-colors ml-1">Rechazar</button>
                 `;
+            } else {
+                btnHtml = `<span class="text-slate-500 text-[10px] italic">Solo Lectura</span>`;
             }
 
             html += `
                 <tr class="${trCls}">
-                    <td class="p-3 font-mono text-slate-400 whitespace-nowrap">${alertHtml} ${c.fecha_vencimiento_calculada || 'N/A'}</td>
+                    <td class="p-3 font-mono text-slate-400 whitespace-nowrap">${alertHtml} ${vencText}</td>
                     <td class="p-3 text-[11px]">
-                        <strong>#${c.numero_cheque}</strong><br>
+                        <strong>#${c.numero_cheque}</strong> ${listoParaCobrarHtml}<br>
                         <span class="text-slate-500">${c.librador_razon_social} (${c.banco_emisor})</span>
+                        ${destinoHtml}
                     </td>
                     <td class="p-3 font-mono font-bold text-right text-fuchsia-300">${importeStr}</td>
                     <td class="p-3 text-center">${estadoHtml}</td>
@@ -142,6 +193,31 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
         });
 
         grid.innerHTML = html;
+
+        // Render Panel de Sumatorias
+        const summaryPanel = document.getElementById('summaryPanel');
+        if (summaryPanel) {
+            if (filtro === 'EN_CARTERA') {
+                summaryPanel.innerHTML = `
+                    <div class="flex flex-col">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold tracking-widest flex items-center gap-1"><i data-lucide="check-circle-2" class="w-3 h-3 text-emerald-500"></i> Listos para Cobrar</span>
+                        <span class="text-emerald-400 font-black text-lg">${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(totalListos)}</span>
+                    </div>
+                    <div class="flex flex-col border-l border-slate-700 pl-8">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold tracking-widest flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3 text-orange-400"></i> Diferidos (Resto)</span>
+                        <span class="text-orange-400 font-black text-lg">${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(totalDiferidos)}</span>
+                    </div>
+                    <div class="flex flex-col border-l border-slate-700 pl-8">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold tracking-widest flex items-center gap-1"><i data-lucide="wallet" class="w-3 h-3 text-fuchsia-500"></i> Total Cartera Activa</span>
+                        <span class="text-fuchsia-400 font-black text-lg">${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(totalCartera)}</span>
+                    </div>
+                `;
+                summaryPanel.classList.remove('hidden');
+            } else {
+                summaryPanel.classList.add('hidden');
+            }
+        }
+
         if (window.lucide) window.lucide.createIcons();
 
     } catch (error) {
@@ -308,4 +384,38 @@ window.ejecutarAccionCheque = async function(id, accion, data) {
     } catch (error) {
         Swal.fire('Error', error.message, 'error');
     }
+};
+
+window.purgarCheques = function() {
+    Swal.fire({
+        title: '¿Purgar Base de Datos?',
+        text: "Esta acción eliminará TODOS los cheques registrados para limpiar la basura. ¿Estás seguro?",
+        icon: 'warning',
+        background: '#0f172a', color: '#f8fafc',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#334155',
+        confirmButtonText: 'Sí, Purgar'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            try {
+                const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const res = await fetch(`${backendBaseUrl}/api/cheques/purge`, {
+                    method: 'DELETE'
+                });
+                const json = await res.json();
+                if (!json.success) throw new Error(json.message);
+                
+                Swal.fire({
+                    toast: true, position: 'bottom-end',
+                    icon: 'success', title: json.message || 'Purga completada',
+                    showConfirmButton: false, timer: 2000,
+                    background: '#0f172a', color: '#f8fafc'
+                });
+                window.loadCheques('EN_CARTERA');
+            } catch (error) {
+                Swal.fire('Error', error.message, 'error');
+            }
+        }
+    });
 };
