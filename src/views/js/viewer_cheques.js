@@ -1,7 +1,10 @@
 // viewer_cheques.js - Satélite de Gestión de Cheques
 console.log("%c 💳 VISOR CHEQUES: READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
+window.chequesSeleccionados = new Map();
+
 window.openConsultaCheques = async function() {
+    window.chequesSeleccionados.clear(); // Reset state
     const mainContent = document.getElementById('reportDisplay');
     if (!mainContent) return;
 
@@ -30,7 +33,10 @@ window.openConsultaCheques = async function() {
                     title="Purgar Base de Datos (Limpiar Basura)">
                     Purga DB <i data-lucide="trash-2" class="w-3 h-3"></i>
                 </button>
-                <button onclick="window.openConsultaCheques()" class="px-4 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-lg transition-all text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                <button id="btnExportarPDF" onclick="window.exportarChequesPDF()" disabled class="px-4 py-2 bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600 hover:text-white rounded-lg transition-all text-xs font-bold uppercase tracking-wider flex items-center gap-2 opacity-50 cursor-not-allowed shrink-0" title="Exportar seleccionados a PDF">
+                    <i data-lucide="file-text" class="w-4 h-4"></i> Exportar
+                </button>
+                <button onclick="window.openConsultaCheques()" class="px-4 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-lg transition-all text-xs font-bold uppercase tracking-wider flex items-center gap-2 shrink-0">
                     <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                     Actualizar
                 </button>
@@ -51,6 +57,7 @@ window.openConsultaCheques = async function() {
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-slate-800/80 border-b border-slate-700">
+                                <th class="p-3 w-10 text-center"><input type="checkbox" id="selectAllCheques" onclick="window.toggleSelectAllCheques(this)" class="w-4 h-4 rounded border-slate-600 bg-slate-900 cursor-pointer accent-fuchsia-500"></th>
                                 <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ven.</th>
                                 <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nº Cheque / Emisor</th>
                                 <th class="p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Importe</th>
@@ -99,7 +106,7 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
         }
 
         if (cheques.length === 0) {
-            grid.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500">No hay cheques ${filtro === 'EN_CARTERA' ? 'en cartera' : 'registrados'}.</td></tr>`;
+            grid.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500">No hay cheques ${filtro === 'EN_CARTERA' ? 'en cartera' : 'registrados'}.</td></tr>`;
             return;
         }
 
@@ -177,8 +184,11 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
                 btnHtml = `<span class="text-slate-500 text-[10px] italic">Solo Lectura</span>`;
             }
 
+            let checkedAttr = window.chequesSeleccionados.has(c.id) ? 'checked' : '';
+            
             html += `
                 <tr class="${trCls}">
+                    <td class="p-3 text-center"><input type="checkbox" value="${c.id}" data-importe="${c.importe}" onchange="window.toggleChequeSelection(this)" class="cheque-checkbox w-4 h-4 rounded border-slate-600 bg-slate-900 cursor-pointer accent-fuchsia-500" ${checkedAttr}></td>
                     <td class="p-3 font-mono text-slate-400 whitespace-nowrap">${alertHtml} ${vencText}</td>
                     <td class="p-3 text-[11px]">
                         <strong>#${c.numero_cheque}</strong> ${listoParaCobrarHtml}<br>
@@ -219,9 +229,145 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
         }
 
         if (window.lucide) window.lucide.createIcons();
+        window.updateExportButton();
 
     } catch (error) {
-        grid.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-red-400">${error.message}</td></tr>`;
+        grid.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-red-400">${error.message}</td></tr>`;
+    }
+};
+
+window.toggleChequeSelection = function(checkbox) {
+    if (checkbox.checked) {
+        window.chequesSeleccionados.set(checkbox.value, parseFloat(checkbox.dataset.importe));
+    } else {
+        window.chequesSeleccionados.delete(checkbox.value);
+    }
+    window.updateExportButton();
+};
+
+window.toggleSelectAllCheques = function(masterCheckbox) {
+    const checkboxes = document.querySelectorAll('.cheque-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = masterCheckbox.checked;
+        if (masterCheckbox.checked) {
+            window.chequesSeleccionados.set(cb.value, parseFloat(cb.dataset.importe));
+        } else {
+            window.chequesSeleccionados.delete(cb.value);
+        }
+    });
+    window.updateExportButton();
+};
+
+window.updateExportButton = function() {
+    const btn = document.getElementById('btnExportarPDF');
+    if (!btn) return;
+    if (window.chequesSeleccionados.size > 0) {
+        let total = 0;
+        window.chequesSeleccionados.forEach(importe => total += importe);
+        const formatTotal = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(total);
+
+        btn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-indigo-600/50', 'text-indigo-300');
+        btn.classList.add('bg-indigo-600', 'text-white');
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="file-text" class="w-4 h-4"></i> Exportar (${window.chequesSeleccionados.size}) <span class="ml-1 text-[10px] bg-indigo-900/50 px-1.5 py-0.5 rounded text-indigo-200 border border-indigo-400/30 font-mono">${formatTotal}</span>`;
+    } else {
+        btn.classList.add('opacity-50', 'cursor-not-allowed', 'bg-indigo-600/50', 'text-indigo-300');
+        btn.classList.remove('bg-indigo-600', 'text-white');
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="file-text" class="w-4 h-4"></i> Exportar`;
+    }
+    if (window.lucide) window.lucide.createIcons();
+};
+
+window.exportarChequesPDF = async function() {
+    if (window.chequesSeleccionados.size === 0) return;
+    
+    const ids = Array.from(window.chequesSeleccionados.keys());
+    let total = 0;
+    window.chequesSeleccionados.forEach(v => total += v);
+    const formatTotal = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(total);
+    
+    try {
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        
+        // Fetch proveedores
+        const pRes = await fetch(`${backendBaseUrl}/api/master-table/proveedores`);
+        const pData = await pRes.json();
+        const proveedores = pData.data || [];
+
+        let options = '<option value="">-- Seleccionar Proveedor Destinatario --</option>';
+        proveedores.forEach(p => {
+            options += `<option value="${p.id}">${p.razon_social} (${p.cuit || 'Sin CUIT'})</option>`;
+        });
+
+        Swal.fire({
+            title: 'Propuesta de Valores',
+            html: `
+                <div class="text-left space-y-4">
+                    <div class="p-3 bg-slate-800 rounded border border-slate-700 text-xs font-mono text-slate-300">
+                        Valores seleccionados: <strong>${ids.length}</strong><br>
+                        Capital del paquete: <strong class="text-fuchsia-400">${formatTotal}</strong>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Destinatario del Informe</label>
+                        <select id="export_prov_id" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 outline-none focus:border-blue-500">
+                            ${options}
+                        </select>
+                    </div>
+                </div>
+            `,
+            background: '#0f172a', color: '#f8fafc',
+            showCancelButton: true,
+            confirmButtonText: 'Generar PDF',
+            confirmButtonColor: '#10b981',
+            cancelButtonColor: '#334155',
+            preConfirm: () => {
+                const provId = document.getElementById('export_prov_id').value;
+                if (!provId) {
+                    Swal.showValidationMessage('Debes seleccionar un proveedor destinatario.');
+                    return false;
+                }
+                return provId;
+            }
+        }).then(async (res) => {
+            if (res.isConfirmed) {
+                const proveedor_id = res.value;
+
+                Swal.fire({
+                    title: 'Generando Reporte PDF...',
+                    html: 'Compilando listado y personalizando membrete...',
+                    background: '#0f172a', color: '#f8fafc',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
+                });
+
+                try {
+                    const response = await fetch(`${backendBaseUrl}/api/cheques/export-pdf`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids, proveedor_id })
+                    });
+
+                    if (!response.ok) throw new Error('Error en la generación del PDF desde el servidor');
+
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Propuesta_Valores_Endoso.pdf';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+
+                    Swal.close();
+                } catch (error) {
+                    Swal.fire('Error', error.message, 'error');
+                }
+            }
+        });
+    } catch (e) {
+        Swal.fire('Error', 'No se pudieron cargar los proveedores', 'error');
     }
 };
 
