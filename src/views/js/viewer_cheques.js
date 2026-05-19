@@ -58,6 +58,7 @@ window.openConsultaCheques = async function() {
             
             <div class="p-4 border-b border-slate-800 bg-slate-800/50 flex gap-4">
                 <button onclick="window.loadCheques('EN_CARTERA')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold uppercase focus:ring-2 focus:ring-fuchsia-500">En Cartera <span id="count_en_cartera" class="ml-1 bg-fuchsia-900/50 text-fuchsia-300 px-1.5 py-0.5 rounded text-[10px] font-mono hidden"></span></button>
+                <button onclick="window.loadCheques('ENDOSADOS')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold uppercase focus:ring-2 focus:ring-fuchsia-500">Endosados <span id="count_endosados" class="ml-1 bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-mono hidden"></span></button>
                 <button onclick="window.loadCheques('TODOS')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold uppercase focus:ring-2 focus:ring-fuchsia-500">Histórico Completo <span id="count_todos" class="ml-1 bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-[10px] font-mono hidden"></span></button>
             </div>
 
@@ -101,7 +102,9 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
 
     try {
         const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
-        const url = filtro === 'TODOS' ? `${backendBaseUrl}/api/cheques/todos` : `${backendBaseUrl}/api/cheques/disponibles`;
+        let url = `${backendBaseUrl}/api/cheques/disponibles`;
+        if (filtro === 'TODOS') url = `${backendBaseUrl}/api/cheques/todos`;
+        else if (filtro === 'ENDOSADOS') url = `${backendBaseUrl}/api/cheques/endosados`;
         
         const response = await fetch(url);
         const data = await response.json();
@@ -111,7 +114,7 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
         const cheques = data.data || [];
 
         // Actualizar contador
-        const countId = filtro === 'EN_CARTERA' ? 'count_en_cartera' : 'count_todos';
+        const countId = filtro === 'EN_CARTERA' ? 'count_en_cartera' : (filtro === 'ENDOSADOS' ? 'count_endosados' : 'count_todos');
         const countEl = document.getElementById(countId);
         if (countEl) {
             countEl.textContent = cheques.length;
@@ -131,7 +134,7 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
         let totalDiferidos = 0;
         let totalCartera = 0;
 
-        cheques.forEach(c => {
+        const renderChequeRow = (c) => {
             const importeStr = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(c.importe);
             totalCartera += c.importe || 0;
             
@@ -201,9 +204,9 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
 
             let checkedAttr = window.chequesSeleccionados.has(c.id) ? 'checked' : '';
             
-            html += `
+            return `
                 <tr class="${trCls}">
-                    <td class="p-3 text-center"><input type="checkbox" value="${c.id}" data-importe="${c.importe}" onchange="window.toggleChequeSelection(this)" class="cheque-checkbox w-4 h-4 rounded border-slate-600 bg-slate-900 cursor-pointer accent-fuchsia-500" ${checkedAttr}></td>
+                    <td class="p-3 text-center w-10"><input type="checkbox" value="${c.id}" data-importe="${c.importe}" data-proveedor-id="${c.proveedor_endosado_id || ''}" onchange="window.toggleChequeSelection(this)" class="cheque-checkbox w-4 h-4 rounded border-slate-600 bg-slate-900 cursor-pointer accent-fuchsia-500" ${checkedAttr}></td>
                     <td class="p-3 font-mono text-slate-400 whitespace-nowrap">${alertHtml} ${vencText}</td>
                     <td class="p-3 text-[11px]">
                         <strong>#${c.numero_cheque}</strong> ${listoParaCobrarHtml}<br>
@@ -211,11 +214,61 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
                         ${destinoHtml}
                     </td>
                     <td class="p-3 font-mono font-bold text-right text-fuchsia-300">${importeStr}</td>
-                    <td class="p-3 text-center">${estadoHtml}</td>
+                    <td class="p-3 text-center w-24">${estadoHtml}</td>
                     <td class="p-3 text-right whitespace-nowrap">${btnHtml}</td>
                 </tr>
             `;
-        });
+        };
+
+        if (filtro === 'ENDOSADOS') {
+            const providerMap = new Map();
+            cheques.forEach(c => {
+                const provId = c.proveedor_endosado_id || 'UNKNOWN';
+                const provName = (c.proveedor_endosado && c.proveedor_endosado.nombre) ? c.proveedor_endosado.nombre : 
+                                ((c.proveedor_endosado && c.proveedor_endosado.afip_razon_social) ? c.proveedor_endosado.afip_razon_social : 'Desconocido');
+                const provCuit = (c.proveedor_endosado && c.proveedor_endosado.cuit) ? c.proveedor_endosado.cuit : 'Sin CUIT';
+                
+                if (!providerMap.has(provId)) {
+                    providerMap.set(provId, { name: provName, cuit: provCuit, cheques: [], total: 0 });
+                }
+                const p = providerMap.get(provId);
+                p.cheques.push(c);
+                p.total += c.importe;
+            });
+            
+            providerMap.forEach((group, provId) => {
+                const totalStr = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(group.total);
+                html += `
+                    <tr>
+                        <td colspan="6" class="p-0 border-b border-slate-700/50">
+                            <details class="group bg-slate-800/40">
+                                <summary class="flex justify-between items-center p-3 bg-slate-800/60 cursor-pointer hover:bg-slate-700/80 transition-colors list-none outline-none focus:bg-slate-700/80">
+                                    <div class="flex items-center gap-2">
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 group-open:rotate-90 transition-transform"></i>
+                                        <span class="font-bold text-slate-200">${group.name}</span>
+                                        <span class="text-[10px] text-slate-500 font-mono tracking-widest bg-slate-900/50 px-1.5 py-0.5 rounded border border-slate-800">CUIT: ${group.cuit}</span>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-900/50 px-2 py-0.5 rounded-full">${group.cheques.length} valores</span>
+                                        <span class="font-black text-blue-400 text-sm tracking-tight">${totalStr}</span>
+                                    </div>
+                                </summary>
+                                <div class="bg-slate-900/30 px-2 py-2">
+                                    <table class="w-full text-left border-collapse">
+                                        <tbody>
+                `;
+                group.cheques.forEach(c => html += renderChequeRow(c));
+                html += `               </tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        </td>
+                    </tr>
+                `;
+            });
+        } else {
+            cheques.forEach(c => html += renderChequeRow(c));
+        }
 
         grid.innerHTML = html;
 
@@ -297,7 +350,7 @@ window.updateExportButton = function() {
 window.exportarChequesPDF = async function() {
     if (window.chequesSeleccionados.size === 0) return;
     
-    const isHistorico = window.currentChequesFilter === 'TODOS';
+    const isHistorico = (window.currentChequesFilter === 'TODOS' || window.currentChequesFilter === 'ENDOSADOS');
     const ids = Array.from(window.chequesSeleccionados.keys());
     let total = 0;
     window.chequesSeleccionados.forEach(v => total += v);
@@ -305,8 +358,37 @@ window.exportarChequesPDF = async function() {
     
     try {
         const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const endpointUrl = isHistorico ? `${backendBaseUrl}/api/cheques/export-pdf-endosados` : `${backendBaseUrl}/api/cheques/export-pdf`;
+
+        // Bypass lógica anti-mezcla si es histórico/endosado
+        if (isHistorico) {
+            let targetProvId = null;
+            let mixedProviders = false;
+            
+            const checkboxes = document.querySelectorAll('.cheque-checkbox:checked');
+            checkboxes.forEach(cb => {
+                const provId = cb.dataset.proveedorId;
+                if (!provId || provId === 'UNKNOWN') mixedProviders = true;
+                else if (!targetProvId) targetProvId = provId;
+                else if (targetProvId !== provId) mixedProviders = true;
+            });
+            
+            if (mixedProviders) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Exportación Interrumpida',
+                    text: 'Para exportar confirmaciones de endosos, debes seleccionar valores asignados a un mismo proveedor. No mezcles múltiples empresas.',
+                    background: '#0f172a', color: '#f8fafc', confirmButtonColor: '#3b82f6'
+                });
+                return;
+            }
+            
+            if (targetProvId && !mixedProviders) {
+                return window.procesarDescargaPDF(ids, targetProvId, isHistorico, endpointUrl);
+            }
+        }
         
-        // Fetch proveedores
+        // Fetch proveedores si requiere Modal
         const pRes = await fetch(`${backendBaseUrl}/api/master-table/proveedores`);
         const pData = await pRes.json();
         const proveedores = pData.data || [];
@@ -318,7 +400,6 @@ window.exportarChequesPDF = async function() {
 
         const modalTitle = isHistorico ? 'Confirmación de Endosos' : 'Propuesta de Valores';
         const labelDestinatario = isHistorico ? 'Endosado a favor de' : 'Destinatario del Informe';
-        const endpointUrl = isHistorico ? `${backendBaseUrl}/api/cheques/export-pdf-endosados` : `${backendBaseUrl}/api/cheques/export-pdf`;
 
         Swal.fire({
             title: modalTitle,
@@ -351,43 +432,45 @@ window.exportarChequesPDF = async function() {
             }
         }).then(async (res) => {
             if (res.isConfirmed) {
-                const proveedor_id = res.value;
-
-                Swal.fire({
-                    title: 'Generando Reporte PDF...',
-                    html: 'Compilando listado y personalizando membrete...',
-                    background: '#0f172a', color: '#f8fafc',
-                    allowOutsideClick: false,
-                    didOpen: () => Swal.showLoading()
-                });
-
-                try {
-                    const response = await fetch(endpointUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ids, proveedor_id })
-                    });
-
-                    if (!response.ok) throw new Error('Error en la generación del PDF desde el servidor');
-
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = isHistorico ? 'Confirmacion_Endosos.pdf' : 'Propuesta_Valores_Endoso.pdf';
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    window.URL.revokeObjectURL(url);
-
-                    Swal.close();
-                } catch (error) {
-                    Swal.fire('Error', error.message, 'error');
-                }
+                window.procesarDescargaPDF(ids, res.value, isHistorico, endpointUrl);
             }
         });
     } catch (e) {
         Swal.fire('Error', 'No se pudieron cargar los proveedores', 'error');
+    }
+};
+
+window.procesarDescargaPDF = async function(ids, proveedor_id, isHistorico, endpointUrl) {
+    Swal.fire({
+        title: 'Generando Reporte PDF...',
+        html: 'Compilando listado y personalizando membrete...',
+        background: '#0f172a', color: '#f8fafc',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+
+    try {
+        const response = await fetch(endpointUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, proveedor_id })
+        });
+
+        if (!response.ok) throw new Error('Error en la generación del PDF desde el servidor');
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = isHistorico ? 'Confirmacion_Endosos.pdf' : 'Propuesta_Valores_Endoso.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
+        Swal.close();
+    } catch (error) {
+        Swal.fire('Error', error.message, 'error');
     }
 };
 

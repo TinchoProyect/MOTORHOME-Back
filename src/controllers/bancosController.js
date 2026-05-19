@@ -211,7 +211,16 @@ const bancosController = {
             if (accion === 'VINCULAR') {
                 if (!proveedor_id) throw new Error("Falta proveedor_id para vincular.");
 
-                // Actualizar a VINCULADO (esto dispara el trigger hacia cuenta corriente)
+                // Obtener datos del movimiento crudo antes de actualizar
+                const { data: rawMov, error: errRaw } = await supabase
+                    .from('pagos_bancarios_raw')
+                    .select('*')
+                    .eq('hash_id', hashId)
+                    .single();
+
+                if (errRaw) throw errRaw;
+
+                // Actualizar a VINCULADO
                 const { error: errUpdate } = await supabase
                     .from('pagos_bancarios_raw')
                     .update({ 
@@ -221,6 +230,22 @@ const bancosController = {
                     .eq('hash_id', hashId);
 
                 if (errUpdate) throw errUpdate;
+
+                // Forzar el impacto en la cuenta corriente (Bypass Trigger de UPDATE faltante)
+                const { error: errCc } = await supabase
+                    .from('cuenta_corriente_proveedores')
+                    .insert({
+                        proveedor_id: proveedor_id,
+                        fecha_movimiento: rawMov.fecha_pago,
+                        tipo_movimiento: 'PAGO',
+                        monto_credito: 0,
+                        monto_debito: rawMov.monto_pago,
+                        referencia_pago_id: hashId,
+                        observaciones: 'Asignación Manual Bancaria. Ref: ' + (rawMov.descripcion_original || 'S/D').trim(),
+                        es_omitido: false
+                    });
+                
+                if (errCc) console.error("[BancosController] Error impactando CC:", errCc);
 
                 // Guardar en memoria si lo solicita
                 if (guardar_memoria && patron_busqueda) {

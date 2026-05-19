@@ -513,13 +513,22 @@ const facturasController = {
                         const piDesc = (pi.producto_descripcion || '').toLowerCase().trim();
                         if (piDesc === descF) {
                             bestCandidate = pi;
-                            bestScore = 1.0;
+                            bestScore = 2.0;
                             break;
                         }
                         
-                        const score = calculateSimilarityScore(descF, piDesc);
+                        let score = calculateSimilarityScore(descF, piDesc);
                         
-                        console.log(`[VIGÍA MATCHMAKING] Comparando: [Factura] "${descF}" vs [Pedido] "${piDesc}" -> Score: ${score}`);
+                        // Heurística Financiera: Si el nombre es razonablemente similar, 
+                        // priorizar un match matemático exacto del precio unitario para romper empates léxicos (Ej: Variante "A" vs "AA")
+                        const piPrice = parseFloat(pi.valor_unitario_ref || 0);
+                        if (score >= 0.5 && piPrice > 0 && precioF > 0) {
+                            if (Math.abs(piPrice - precioF) < 2.0) {
+                                score += 0.5; // Fuerte bonificación (+50%)
+                            }
+                        }
+                        
+                        console.log(`[VIGÍA MATCHMAKING] Comparando: [Factura] "${descF}" vs [Pedido] "${piDesc}" -> Score Base+Precio: ${score.toFixed(2)}`);
                         
                         if (score > bestScore) {
                             bestScore = score;

@@ -32,8 +32,7 @@ router.post('/generar', async (req, res) => {
             producto_descripcion: i.producto_descripcion,
             cantidad: i.cantidad,
             valor_unitario_ref: i.valor_unitario_ref,
-            unidad_ref: i.unidad_ref,
-            iva_aplicado: i.iva_aplicado || 0
+            unidad_ref: i.unidad_ref
         }));
 
         const { error: itemsErr } = await supabase

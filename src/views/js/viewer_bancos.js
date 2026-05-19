@@ -254,19 +254,20 @@ window.loadBancosMovimientos = async function(archivoId) {
             let btnHtml = '';
             let trCls = 'hover:bg-slate-800/30 transition-colors border-b border-slate-800/50';
 
-            if (m.estado === 'PENDIENTE') {
+            if (m.estado === 'PENDIENTE' || m.estado === 'PENDIENTE_HITL') {
                 estadoHtml = `<span class="px-2 py-1 bg-amber-900/30 border border-amber-500/30 text-amber-500 rounded text-[10px] font-bold">REVISIÓN REQUERIDA</span>`;
-                const safeDesc = m.descripcion_original.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const safeDesc = m.descripcion_original.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/(\r\n|\n|\r)/gm, " ");
                 btnHtml = `
-                    <button onclick="window.abrirModalVincular('${m.hash_id}', '${safeDesc}')" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[10px] font-bold transition-colors">Vincular</button>
-                    <button onclick="window.ignorarMovimiento('${m.hash_id}')" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-[10px] font-bold transition-colors ml-1">Ignorar</button>
+                    <button onclick="window.abrirModalVincular('${m.hash_id}', '${safeDesc}')" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[10px] font-bold transition-colors flex items-center gap-1 inline-flex"><i data-lucide="hand" class="w-3 h-3"></i> Asignar Proveedor Manualmente</button>
+                    <button onclick="window.ignorarMovimiento('${m.hash_id}')" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-[10px] font-bold transition-colors ml-1 inline-flex">Ignorar</button>
                 `;
             } else if (m.estado === 'VINCULADO' || m.estado === 'AUTO_VINCULADO') {
                 const provName = m.proveedores ? (m.proveedores.nombre || m.proveedores.afip_razon_social) : 'Proveedor';
+                const labelStatus = (m.estado === 'VINCULADO') ? 'CONCILIADO MANUALMENTE' : 'AUTO VINCULADO';
                 estadoHtml = `
                     <div class="flex items-center gap-1 text-emerald-400">
                         <i data-lucide="check-circle-2" class="w-3 h-3"></i>
-                        <span class="text-[10px] font-bold">${provName}</span>
+                        <span class="text-[10px] font-bold">${labelStatus} - ${provName}</span>
                     </div>
                 `;
                 trCls = 'bg-emerald-900/10 border-b border-slate-800/50';
@@ -308,9 +309,9 @@ window.abrirModalVincular = async function(hashId, descripcionOriginal) {
         const pData = await pRes.json();
         const proveedores = pData.data || [];
 
-        let options = '<option value="">-- Seleccionar Proveedor --</option>';
+        let datalistOptions = '';
         proveedores.forEach(p => {
-            options += `<option value="${p.id}">${p.razon_social} (${p.cuit || 'Sin CUIT'})</option>`;
+            datalistOptions += `<option value="${p.razon_social} (${p.cuit || 'Sin CUIT'})" data-id="${p.id}"></option>`;
         });
 
         Swal.fire({
@@ -322,10 +323,11 @@ window.abrirModalVincular = async function(hashId, descripcionOriginal) {
                     </div>
                     
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Destinatario del Pago</label>
-                        <select id="hitl_prov_id" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 outline-none focus:border-blue-500">
-                            ${options}
-                        </select>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Buscar Destinatario del Pago</label>
+                        <input type="text" id="hitl_prov_search" list="provList" placeholder="🔍 Tipea la razón social o CUIT..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 outline-none focus:border-blue-500 transition-colors" autocomplete="off">
+                        <datalist id="provList">
+                            ${datalistOptions}
+                        </datalist>
                     </div>
 
                     <div class="bg-amber-900/20 border border-amber-500/30 p-3 rounded-lg mt-2">
@@ -350,12 +352,17 @@ window.abrirModalVincular = async function(hashId, descripcionOriginal) {
             confirmButtonColor: '#10b981',
             cancelButtonColor: '#334155',
             preConfirm: () => {
-                const provId = document.getElementById('hitl_prov_id').value;
+                const searchVal = document.getElementById('hitl_prov_search').value;
+                // Escape comillas para el selector CSS por las dudas
+                const safeSearchVal = searchVal.replace(/"/g, '\\"');
+                const opt = document.querySelector(`#provList option[value="${safeSearchVal}"]`);
+                const provId = opt ? opt.getAttribute('data-id') : null;
+
                 const saveMemory = document.getElementById('hitl_save_memory').checked;
                 const pattern = document.getElementById('hitl_memory_pattern').value.trim();
 
                 if (!provId) {
-                    Swal.showValidationMessage('Debes seleccionar un proveedor.');
+                    Swal.showValidationMessage('Debes seleccionar un proveedor válido de la lista.');
                     return false;
                 }
                 if (saveMemory && pattern.length < 3) {

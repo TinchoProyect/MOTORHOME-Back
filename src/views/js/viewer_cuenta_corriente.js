@@ -1,3 +1,10 @@
+window.sanitizeZero = function(val) {
+    if (!val) return 0;
+    const num = parseFloat(val);
+    if (isNaN(num)) return 0;
+    return Math.abs(num) < 0.01 ? 0 : num;
+};
+
 window.openCuentaCorriente = async function(providerId, providerName) {
     const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
 
@@ -91,7 +98,7 @@ window.openCuentaCorriente = async function(providerId, providerName) {
 
                 // Render Saldo
                 const formatter = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
-                document.getElementById('cc_saldo_total').innerText = formatter.format(data.saldoTotal);
+                document.getElementById('cc_saldo_total').innerText = formatter.format(window.sanitizeZero(data.saldoTotal));
                 
                 // Render Movimientos
                 const tbMovs = document.getElementById('cc_tbody_movimientos');
@@ -111,8 +118,8 @@ window.openCuentaCorriente = async function(providerId, providerName) {
                                 <td class="p-2 font-mono text-[10px] text-slate-400">${date}</td>
                                 <td class="p-2 font-bold">${m.tipo_movimiento} ${tagHtml}</td>
                                 <td class="p-2 text-slate-400">${fact}</td>
-                                <td class="p-2 text-right text-red-400 font-mono">${m.monto_credito > 0 ? formatter.format(m.monto_credito) : '-'}</td>
-                                <td class="p-2 text-right text-emerald-400 font-mono">${m.monto_debito > 0 ? formatter.format(m.monto_debito) : '-'}</td>
+                                <td class="p-2 text-right text-red-400 font-mono">${window.sanitizeZero(m.monto_credito) > 0 ? formatter.format(window.sanitizeZero(m.monto_credito)) : '-'}</td>
+                                <td class="p-2 text-right text-emerald-400 font-mono">${window.sanitizeZero(m.monto_debito) > 0 ? formatter.format(window.sanitizeZero(m.monto_debito)) : '-'}</td>
                                 <td class="p-2 text-center">
                                     <button onclick="window.toggleOmitirMovimiento('${m.id}', ${isOmitido}, '${providerId}', '${providerName}')" 
                                             class="p-1 rounded ${isOmitido ? 'text-amber-500 hover:text-amber-400 hover:bg-amber-500/10' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700'}" 
@@ -318,28 +325,161 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
         return;
     }
     
+    // Modal de Parámetros de Exportación
+    Swal.fire({
+        title: 'Parámetros de Exportación',
+        html: `
+            <div class="flex flex-col gap-4 text-left">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Corte de Datos</label>
+                    <div class="flex flex-col gap-2">
+                        <label class="flex items-center gap-2 cursor-pointer p-2 rounded bg-slate-800 border border-slate-700 hover:border-blue-500 transition-colors">
+                            <input type="radio" name="export_range" value="last_zero" checked class="accent-blue-500 w-4 h-4">
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-slate-200">Desde último saldo cero</span>
+                                <span class="text-[10px] text-slate-400 leading-tight">Cálculo dinámico hasta el último cuadre</span>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer p-2 rounded bg-slate-800 border border-slate-700 hover:border-blue-500 transition-colors">
+                            <input type="radio" name="export_range" value="prev_zero" class="accent-blue-500 w-4 h-4">
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-slate-200">Desde el anterior saldo cero</span>
+                                <span class="text-[10px] text-slate-400 leading-tight">Cubre el último ciclo completo de facturación/pago</span>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer p-2 rounded bg-slate-800 border border-slate-700 hover:border-blue-500 transition-colors">
+                            <input type="radio" name="export_range" value="all" class="accent-blue-500 w-4 h-4">
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-slate-200">Histórico Completo</span>
+                                <span class="text-[10px] text-slate-400 leading-tight">Todos los movimientos registrados</span>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer p-2 rounded bg-slate-800 border border-slate-700 hover:border-blue-500 transition-colors">
+                            <input type="radio" name="export_range" value="dates" class="accent-blue-500 w-4 h-4" onchange="document.getElementById('date_range_inputs').classList.toggle('hidden', !this.checked)">
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-slate-200">Rango de Fechas</span>
+                                <span class="text-[10px] text-slate-400 leading-tight">Selección manual de corte cronológico</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div id="date_range_inputs" class="hidden flex gap-4 mt-2">
+                    <div class="flex-1">
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Desde</label>
+                        <input type="date" id="export_date_from" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 outline-none focus:border-blue-500">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Hasta</label>
+                        <input type="date" id="export_date_to" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 outline-none focus:border-blue-500">
+                    </div>
+                </div>
+            </div>
+        `,
+        background: '#0f172a', color: '#f8fafc', width: '32em',
+        showCancelButton: true, confirmButtonText: 'Generar PDF', cancelButtonText: 'Cancelar', confirmButtonColor: '#3b82f6', cancelButtonColor: '#475569',
+        preConfirm: () => {
+            const range = document.querySelector('input[name="export_range"]:checked').value;
+            let dateFrom = null; let dateTo = null;
+            if (range === 'dates') {
+                dateFrom = document.getElementById('export_date_from').value;
+                dateTo = document.getElementById('export_date_to').value;
+                if (!dateFrom || !dateTo) {
+                    Swal.showValidationMessage('Debes seleccionar las fechas de inicio y fin.');
+                    return false;
+                }
+            }
+            return { range, dateFrom, dateTo };
+        }
+    }).then((res) => {
+        if (res.isConfirmed) {
+            window.generarPDFCuentaCorriente(providerName, tipo, res.value);
+        }
+    });
+};
+
+window.generarPDFCuentaCorriente = function(providerName, tipo, config) {
+    const { range, dateFrom, dateTo } = config;
     const data = window.currentCCData;
-    const formatter = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+    let movsToPrint = [...data.movimientos];
     
+    // Filtros de Rango
+    if (range === 'last_zero' || range === 'prev_zero') {
+        let runningBalance = 0;
+        const movementsWithBalance = movsToPrint.map((m, idx) => {
+            if (m.es_omitido) return { ...m, balance: runningBalance, originalIndex: idx };
+            const cred = window.sanitizeZero(m.monto_credito);
+            const deb = window.sanitizeZero(m.monto_debito);
+            runningBalance += (cred - deb);
+            runningBalance = window.sanitizeZero(runningBalance);
+            return { ...m, balance: runningBalance, originalIndex: idx };
+        });
+
+        const zeroIndices = [];
+        for (let i = 0; i < movementsWithBalance.length; i++) {
+            if (movementsWithBalance[i].balance === 0 && !movementsWithBalance[i].es_omitido) {
+                zeroIndices.push(movementsWithBalance[i].originalIndex);
+            }
+        }
+
+        let startIndex = 0;
+        if (range === 'last_zero') {
+            if (zeroIndices.length > 0) {
+                const lastZeroIdx = zeroIndices[zeroIndices.length - 1];
+                if (lastZeroIdx === movsToPrint.length - 1) {
+                    startIndex = lastZeroIdx;
+                } else {
+                    startIndex = lastZeroIdx + 1;
+                }
+            }
+        } else if (range === 'prev_zero') {
+            if (zeroIndices.length >= 2) {
+                const prevZeroIdx = zeroIndices[zeroIndices.length - 2];
+                startIndex = prevZeroIdx + 1;
+            } else {
+                startIndex = 0;
+            }
+        }
+        movsToPrint = movsToPrint.slice(startIndex);
+    } else if (range === 'dates') {
+        const dFrom = new Date(dateFrom + 'T00:00:00').getTime();
+        const dTo = new Date(dateTo + 'T23:59:59').getTime();
+        movsToPrint = movsToPrint.filter(m => {
+            const mTime = new Date(m.fecha_movimiento).getTime();
+            return mTime >= dFrom && mTime <= dTo;
+        });
+    }
+
+    const formatter = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
     let rowsHtml = '';
-    data.movimientos.forEach(m => {
+    
+    movsToPrint.forEach(m => {
         if (m.es_omitido) return; // Excluimos los omitidos del reporte formal
         
         const date = new Date(m.fecha_movimiento).toLocaleDateString('es-AR');
         let fact = m.facturas_raw ? `${m.facturas_raw.tipo_comprobante} ${m.facturas_raw.punto_venta}-${m.facturas_raw.numero_comprobante}` : '-';
         if (m.observaciones && m.observaciones.includes('Lote')) fact += ' (Lote)';
         
-        const cred = m.monto_credito > 0 ? formatter.format(m.monto_credito) : '';
-        const deb = m.monto_debito > 0 ? formatter.format(m.monto_debito) : '';
+        const credVal = window.sanitizeZero(m.monto_credito);
+        const debVal = window.sanitizeZero(m.monto_debito);
+        const cred = credVal > 0 ? formatter.format(credVal) : '';
+        const deb = debVal > 0 ? formatter.format(debVal) : '';
         
         let tipoMovFmt = m.tipo_movimiento;
         let esTransferencia = false;
         let esEfectivo = false;
         let obsCompleta = '';
         
-        if (m.tipo_movimiento === 'PAGO' && m.observaciones && m.observaciones.includes('Ingesta')) {
+        if (m.tipo_movimiento === 'PAGO' && m.observaciones && m.observaciones.toLowerCase().includes('endosado')) {
+            const ref = m.referencia_pago_id || 'S/N';
+            tipoMovFmt = `PAGO CON E-CHEQ Nº ${ref}`;
+        } else if (m.tipo_movimiento === 'PAGO' && m.observaciones && (m.observaciones.includes('Ingesta') || m.observaciones.includes('Asignación Manual'))) {
             esTransferencia = true;
-            obsCompleta = m.observaciones.replace('Ingesta Automática Bancaria.', '').replace('Ref:', '').trim();
+            obsCompleta = m.observaciones
+                .replace('Ingesta Automática Bancaria.', '')
+                .replace('Asignación Manual Bancaria (Retroactiva).', '')
+                .replace('Asignación Manual Bancaria.', '')
+                .replace('Ref:', '')
+                .trim();
             const lineas = obsCompleta.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             let refBreve = '';
             if (lineas.length > 0) {
@@ -467,6 +607,7 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
         } else if (esTransferencia || esEfectivo) {
                 let subItemsHtml = '';
                 if (esTransferencia) {
+                    const esManual = m.observaciones && m.observaciones.includes('Asignación Manual');
                     subItemsHtml += `
                         <tr class="text-[10px] text-gray-500 border-b border-blue-100/50 last:border-0">
                             <td class="py-1.5 px-2 text-right w-8 align-top"><span class="bg-blue-100 text-blue-600 rounded px-1">&rdsh;</span></td>
@@ -475,7 +616,7 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
                                 <div class="mt-1 mb-1 p-2 bg-white border border-blue-100 rounded text-gray-700 font-mono text-[9px] whitespace-pre-wrap">${obsCompleta}</div>
                                 Emisor (CUIT): <span class="font-mono text-gray-700 font-bold">23-24892174-9</span>
                             </td>
-                            <td class="py-1.5 px-2 text-right text-gray-400 align-top" colspan="2">Origen: Ingesta Automática</td>
+                            <td class="py-1.5 px-2 text-right text-gray-400 align-top" colspan="2">Origen: ${esManual ? 'Asignación Manual' : 'Ingesta Automática'}</td>
                         </tr>
                     `;
                 } else if (esEfectivo) {
@@ -554,7 +695,7 @@ window.imprimirCuentaCorriente = function(providerName, tipo = 'estandar') {
                         <p class="text-[10px] text-gray-400 mt-1 uppercase tracking-wider">Sujeto a conciliación final por ambas partes</p>
                     </div>
                     <div class="text-4xl font-mono font-bold text-gray-900">
-                        ${formatter.format(data.saldoTotal)}
+                        ${formatter.format(window.sanitizeZero(data.saldoTotal))}
                     </div>
                 </div>
                 

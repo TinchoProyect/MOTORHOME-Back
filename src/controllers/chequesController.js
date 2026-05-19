@@ -129,6 +129,43 @@ exports.getTodos = async (req, res) => {
     }
 };
 
+exports.getEndosados = async (req, res) => {
+    try {
+        const { data: cheques, error } = await supabase
+            .from('cheques_cartera')
+            .select('*')
+            .eq('estado_interno', 'ENDOSADO')
+            .not('proveedor_endosado_id', 'is', null)
+            .order('fecha_pago', { ascending: false });
+
+        if (error) throw error;
+
+        // Acoplamiento permisivo (Left Join en Memoria)
+        const { data: proveedores } = await supabase
+            .from('proveedores')
+            .select('id, nombre, afip_razon_social, cuit');
+            
+        const provMap = new Map();
+        if (proveedores) {
+            proveedores.forEach(p => provMap.set(p.id, p));
+        }
+
+        const data = cheques.map(c => {
+            if (c.proveedor_endosado_id) {
+                c.proveedor_endosado = provMap.get(c.proveedor_endosado_id) || null;
+            } else {
+                c.proveedor_endosado = null;
+            }
+            return c;
+        });
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error("[ChequesController] Error getEndosados:", error);
+        res.status(500).json({ success: false, message: "Error interno al recuperar los cheques endosados." });
+    }
+};
+
 exports.ingestarDrive = async (req, res) => {
     try {
         const result = await chequesIngestService.startDriveIngestion();
@@ -282,6 +319,11 @@ exports.exportarPDFCheques = async (req, res) => {
                 const fPago = new Date(c.fecha_pago + 'T00:00:00');
                 if (fPago.getTime() <= hoy.getTime()) {
                     estadoLiquidez = '<br><span style="color: #10b981; font-weight: bold; font-size: 10px;">✔ Al cobro</span>';
+                } else {
+                    const dia = String(fPago.getDate()).padStart(2, '0');
+                    const mes = String(fPago.getMonth() + 1).padStart(2, '0');
+                    const anio = String(fPago.getFullYear()).slice(-2);
+                    estadoLiquidez = `<br><span style="color: #f59e0b; font-weight: bold; font-size: 10px;">Dep: ${dia}/${mes}/${anio}</span>`;
                 }
             }
 

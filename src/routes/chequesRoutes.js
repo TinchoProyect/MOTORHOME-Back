@@ -4,6 +4,7 @@ const chequesController = require('../controllers/chequesController');
 
 router.get('/disponibles', chequesController.getDisponibles);
 router.get('/todos', chequesController.getTodos);
+router.get('/endosados', chequesController.getEndosados);
 router.get('/config', chequesController.getConfig);
 router.post('/ingestar', chequesController.ingestarDrive);
 router.post('/ingestar-endosos', chequesController.ingestarEndososDrive);
