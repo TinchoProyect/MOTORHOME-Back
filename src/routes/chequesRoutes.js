@@ -6,10 +6,12 @@ router.get('/disponibles', chequesController.getDisponibles);
 router.get('/todos', chequesController.getTodos);
 router.get('/config', chequesController.getConfig);
 router.post('/ingestar', chequesController.ingestarDrive);
+router.post('/ingestar-endosos', chequesController.ingestarEndososDrive);
 router.patch('/:id/endosar', chequesController.endosar);
 router.patch('/:id/acreditar', chequesController.acreditar);
 router.patch('/:id/rechazar', chequesController.rechazar);
 router.delete('/purge', chequesController.purge);
 router.post('/export-pdf', chequesController.exportarPDFCheques);
+router.post('/export-pdf-endosados', chequesController.exportarPDFEndosados);
 
 module.exports = router;

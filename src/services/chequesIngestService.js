@@ -186,7 +186,164 @@ async function startDriveIngestion() {
     return { message: `Proceso completado. Archivos ingeridos: ${processedCount}`, processed: processedCount };
 }
 
+async function processEndososCSVBuffer(buffer) {
+    const csvText = buffer.toString('utf8');
+    const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
+    
+    let dataStarted = false;
+    let headerCols = [];
+    let processedCount = 0;
+    
+    // Obtener proveedores para cruzar CUIT
+    const { data: proveedores } = await supabase.from('proveedores').select('id, cuit');
+    const provCuitMap = new Map();
+    if (proveedores) {
+        proveedores.forEach(p => {
+            if (p.cuit) {
+                const cleanCuit = p.cuit.replace(/-/g, '').trim();
+                provCuitMap.set(cleanCuit, p.id);
+            }
+        });
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const cols = parseCSVLine(line);
+        if (!cols || cols.length < 5) continue;
+
+        if (!dataStarted && cols.some(c => c && c.toLowerCase().includes('nº de cheque'))) {
+            dataStarted = true;
+            headerCols = cols.map(c => c ? c.toLowerCase().trim() : '');
+            continue;
+        }
+
+        if (dataStarted) {
+            let idxNumCheque = headerCols.findIndex(c => c.includes('nº de cheque') || c.includes('cheque'));
+            let idxCuit = headerCols.findIndex(c => c.includes('cuit') || c.includes('cuil') || c.includes('cdi'));
+            let idxImporte = headerCols.findIndex(c => c.includes('importe') || c.includes('monto'));
+            let idxEstado = headerCols.findIndex(c => c === 'estado');
+
+            if (idxNumCheque === -1) idxNumCheque = 0;
+            if (idxCuit === -1) idxCuit = 2;
+            if (idxImporte === -1) idxImporte = 4;
+            if (idxEstado === -1) idxEstado = 5;
+
+            const numero_cheque = (cols[idxNumCheque] || '').trim();
+            const cuit_raw = cols[idxCuit] || '';
+            const importe = parseNumeric(cols[idxImporte]);
+            const estado_bancario = (cols[idxEstado] || '').trim();
+
+            if (!numero_cheque || importe === 0) continue;
+
+            const cleanCuit = cuit_raw.replace(/-/g, '').trim();
+            const proveedor_id = provCuitMap.get(cleanCuit) || null;
+
+            const { data: chequesData, error: searchError } = await supabase
+                .from('cheques_cartera')
+                .select('*')
+                .eq('numero_cheque', numero_cheque)
+                .eq('importe', importe);
+
+            if (searchError) {
+                console.error("Error searching cheque", searchError);
+                continue;
+            }
+
+            let chequeDB = chequesData && chequesData.length > 0 ? chequesData[0] : null;
+            let nuevoEstadoInterno = 'ENDOSADO';
+            if (estado_bancario.toLowerCase().includes('rechazado') || estado_bancario.toLowerCase().includes('devuelto')) {
+                nuevoEstadoInterno = 'DEVUELTO';
+            }
+
+            if (!chequeDB) {
+                // Escenario A: Histórico (No estaba). Insertar pasivo sin pago.
+                const fallbackCheque = {
+                    numero_cheque,
+                    importe,
+                    estado_interno: nuevoEstadoInterno,
+                    estado_bancario,
+                    proveedor_endosado_id: proveedor_id,
+                    fecha_endoso: new Date().toISOString(),
+                    hash_id: generateHashId({numero_cheque, librador_cuit: 'HISTORICO', fecha_pago: '1900-01-01', importe, id_cheque_bancario: Date.now().toString() + '_' + i})
+                };
+                
+                await supabase.from('cheques_cartera').insert(fallbackCheque);
+                processedCount++;
+            } else {
+                // Escenario B y C: Existe en DB
+                if (chequeDB.estado_interno === 'EN_CARTERA') {
+                    // Escenario B: Activo a pagar. Mutar y registrar en Cuenta Corriente
+                    await supabase.from('cheques_cartera')
+                        .update({ 
+                            estado_interno: nuevoEstadoInterno,
+                            estado_bancario,
+                            proveedor_endosado_id: proveedor_id,
+                            fecha_endoso: new Date().toISOString()
+                        })
+                        .eq('id', chequeDB.id);
+
+                    if (proveedor_id && nuevoEstadoInterno === 'ENDOSADO') {
+                        await supabase.from('cuenta_corriente_proveedores').insert({
+                            proveedor_id,
+                            tipo_movimiento: 'PAGO',
+                            monto_debito: importe,
+                            referencia_pago_id: numero_cheque,
+                            observaciones: `Pago con cheque endosado. Estado Bancario: ${estado_bancario}`
+                        });
+                    }
+                    processedCount++;
+                } else {
+                    // Escenario C: Ya procesado. Solo update estado_bancario.
+                    await supabase.from('cheques_cartera')
+                        .update({ estado_bancario })
+                        .eq('id', chequeDB.id);
+                    processedCount++;
+                }
+            }
+        }
+    }
+
+    return { success: true, message: `Conciliados ${processedCount} endosos (movimientos históricos y activos).`, inserted: processedCount };
+}
+
+async function startEndososIngestion() {
+    console.log("[ChequesIngest] Iniciando ingesta de Endosos desde Drive...");
+    let folderId = process.env.DRIVE_CSV_ENDOSOS_ID;
+    
+    if (!folderId) {
+        const { data } = await supabase
+            .from('configuracion_sistema')
+            .select('valor')
+            .eq('llave', 'drive_endosos_folder_id')
+            .single();
+        if (data && data.valor) {
+            folderId = data.valor;
+        }
+    }
+
+    if (!folderId) {
+        throw new Error("Carpeta de Endosos no configurada. Haz clic en el ícono de 'Drive Endosos' primero para provisionarla.");
+    }
+
+    const files = await driveService.listFiles(folderId, 'text/csv');
+    if (!files || files.length === 0) {
+        return { message: "No hay archivos CSV de endosos pendientes en Drive.", processed: 0 };
+    }
+
+    let processedCount = 0;
+    for (const file of files) {
+        console.log(`[ChequesIngest] Procesando archivo de endosos: ${file.name}`);
+        const buffer = await driveService.downloadFileToBuffer(file.id);
+        await processEndososCSVBuffer(buffer);
+        processedCount++;
+    }
+
+    return { message: `Proceso completado. Archivos de endosos ingeridos: ${processedCount}`, processed: processedCount };
+}
+
 module.exports = {
     startDriveIngestion,
-    processCSVBuffer
+    processCSVBuffer,
+    startEndososIngestion,
+    processEndososCSVBuffer
 };

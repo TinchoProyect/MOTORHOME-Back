@@ -2,6 +2,7 @@
 console.log("%c 💳 VISOR CHEQUES: READY ", "background: #8b5cf6; color: #fff; font-weight: bold; padding: 4px;");
 
 window.chequesSeleccionados = new Map();
+window.currentChequesFilter = 'EN_CARTERA';
 
 window.openConsultaCheques = async function() {
     window.chequesSeleccionados.clear(); // Reset state
@@ -27,6 +28,16 @@ window.openConsultaCheques = async function() {
                     class="px-3 py-2 bg-slate-900/50 hover:bg-slate-800 text-slate-500 hover:text-blue-400 border border-slate-800 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 shrink-0"
                     title="Forzar lectura de archivos en Drive e ingestar nuevos cheques">
                     Sincronizar <i data-lucide="refresh-ccw" class="w-3 h-3"></i>
+                </button>
+                <button onclick="window.abrirCarpetaDriveEndosos()" 
+                    class="px-3 py-2 bg-slate-900/50 hover:bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-800 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 shrink-0"
+                    title="Ver carpeta de endosos en Google Drive">
+                    Drive Endosos <i data-lucide="external-link" class="w-3 h-3"></i>
+                </button>
+                <button onclick="window.ingestarEndososDrive()" 
+                    class="px-3 py-2 bg-slate-900/50 hover:bg-slate-800 text-slate-500 hover:text-blue-400 border border-slate-800 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 shrink-0"
+                    title="Procesar y conciliar CSV de endosos bancarios">
+                    Sync Endosos <i data-lucide="refresh-ccw" class="w-3 h-3"></i>
                 </button>
                 <button onclick="window.purgarCheques()" 
                     class="px-3 py-2 bg-red-900/20 hover:bg-red-800/40 text-red-500/50 hover:text-red-400 border border-red-900/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 shrink-0"
@@ -81,6 +92,8 @@ window.openConsultaCheques = async function() {
 };
 
 window.loadCheques = async function(filtro = 'EN_CARTERA') {
+    window.currentChequesFilter = filtro;
+    window.chequesSeleccionados.clear();
     const grid = document.getElementById('chequesGrid');
     if (!grid) return;
 
@@ -148,7 +161,9 @@ window.loadCheques = async function(filtro = 'EN_CARTERA') {
             if (c.estado_interno === 'ACREDITADO') {
                 destinoHtml = `<br><span class="text-emerald-500 text-[10px] font-bold mt-1 inline-block"><i data-lucide="building-2" class="w-3 h-3 inline relative -top-[1px]"></i> Acreditado en Cuenta Propia</span>`;
             } else if (c.estado_interno === 'ENDOSADO') {
-                destinoHtml = `<br><span class="text-blue-500 text-[10px] font-bold mt-1 inline-block"><i data-lucide="user-check" class="w-3 h-3 inline relative -top-[1px]"></i> Endosado a Proveedor</span>`;
+                const provName = (c.proveedor_endosado && c.proveedor_endosado.nombre) ? c.proveedor_endosado.nombre : 
+                                ((c.proveedor_endosado && c.proveedor_endosado.afip_razon_social) ? c.proveedor_endosado.afip_razon_social : 'Proveedor');
+                destinoHtml = `<br><span class="text-blue-500 text-[10px] font-bold mt-1 inline-block"><i data-lucide="user-check" class="w-3 h-3 inline relative -top-[1px]"></i> Endosado a: ${provName}</span>`;
             }
 
             // Indicador Listo para Cobrar y Acumulación Financiera
@@ -282,6 +297,7 @@ window.updateExportButton = function() {
 window.exportarChequesPDF = async function() {
     if (window.chequesSeleccionados.size === 0) return;
     
+    const isHistorico = window.currentChequesFilter === 'TODOS';
     const ids = Array.from(window.chequesSeleccionados.keys());
     let total = 0;
     window.chequesSeleccionados.forEach(v => total += v);
@@ -300,8 +316,12 @@ window.exportarChequesPDF = async function() {
             options += `<option value="${p.id}">${p.razon_social} (${p.cuit || 'Sin CUIT'})</option>`;
         });
 
+        const modalTitle = isHistorico ? 'Confirmación de Endosos' : 'Propuesta de Valores';
+        const labelDestinatario = isHistorico ? 'Endosado a favor de' : 'Destinatario del Informe';
+        const endpointUrl = isHistorico ? `${backendBaseUrl}/api/cheques/export-pdf-endosados` : `${backendBaseUrl}/api/cheques/export-pdf`;
+
         Swal.fire({
-            title: 'Propuesta de Valores',
+            title: modalTitle,
             html: `
                 <div class="text-left space-y-4">
                     <div class="p-3 bg-slate-800 rounded border border-slate-700 text-xs font-mono text-slate-300">
@@ -309,7 +329,7 @@ window.exportarChequesPDF = async function() {
                         Capital del paquete: <strong class="text-fuchsia-400">${formatTotal}</strong>
                     </div>
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Destinatario del Informe</label>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">${labelDestinatario}</label>
                         <select id="export_prov_id" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 outline-none focus:border-blue-500">
                             ${options}
                         </select>
@@ -342,7 +362,7 @@ window.exportarChequesPDF = async function() {
                 });
 
                 try {
-                    const response = await fetch(`${backendBaseUrl}/api/cheques/export-pdf`, {
+                    const response = await fetch(endpointUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ ids, proveedor_id })
@@ -354,7 +374,7 @@ window.exportarChequesPDF = async function() {
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'Propuesta_Valores_Endoso.pdf';
+                    a.download = isHistorico ? 'Confirmacion_Endosos.pdf' : 'Propuesta_Valores_Endoso.pdf';
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
@@ -415,6 +435,53 @@ window.ingestarChequesDrive = async function() {
 
     } catch (error) {
         Swal.fire('Error de Ingesta', error.message, 'error');
+    }
+};
+
+window.abrirCarpetaDriveEndosos = async function() {
+    try {
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${backendBaseUrl}/api/cheques/config`);
+        const data = await response.json();
+        
+        if (data.success && data.folderEndososId) {
+            window.open(`https://drive.google.com/drive/folders/${data.folderEndososId}`, '_blank');
+        } else {
+            Swal.fire('Atención', 'El ID de la carpeta de Drive (DRIVE_CSV_ENDOSOS_ID) no está configurado en el servidor.', 'warning');
+        }
+    } catch (error) {
+        Swal.fire('Error', 'No se pudo obtener la configuración de Drive.', 'error');
+    }
+};
+
+window.ingestarEndososDrive = async function() {
+    Swal.fire({
+        title: 'Conciliando Endosos...',
+        html: 'Conectando con Google Drive y procesando archivos CSV de endosos bancarios. Actualizando cuenta corriente...',
+        background: '#0f172a', color: '#f8fafc',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+
+    try {
+        const backendBaseUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+        const response = await fetch(`${backendBaseUrl}/api/cheques/ingestar-endosos`, { method: 'POST' });
+        const data = await response.json();
+
+        if (!data.success) throw new Error(data.message);
+
+        Swal.fire({
+            title: 'Conciliación Finalizada',
+            text: data.message,
+            icon: 'success',
+            background: '#0f172a', color: '#f8fafc',
+            confirmButtonColor: '#3b82f6'
+        }).then(() => {
+            window.loadCheques('EN_CARTERA');
+        });
+
+    } catch (error) {
+        Swal.fire('Error de Conciliación', error.message, 'error');
     }
 };
 
