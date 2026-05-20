@@ -50,29 +50,154 @@ class ViewerAiUi {
                 return;
             }
 
-            let htmlList = `<div class="flex flex-col gap-3 mt-4 text-left max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
-            prompts.forEach((p, idx) => {
-                const dateStr = new Date(p.lastUsed).toLocaleDateString();
-                // Escape de comillas para onclick
-                const safePrompt = p.prompt.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                htmlList += `
-                    <div class="group bg-slate-900 border border-slate-700/50 hover:border-indigo-500/50 rounded-lg p-3 transition-colors cursor-pointer relative" onclick="window._vaiSelectPrompt('${safePrompt}', '${p.intent || ''}')">
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">${p.intent || 'General'}</span>
-                            <span class="text-[9px] text-slate-500 font-mono">${dateStr}</span>
-                        </div>
-                        <p class="text-xs text-slate-300 font-mono italic">"${p.prompt}"</p>
-                        <div class="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg pointer-events-none"></div>
+            // Inyectar estado temporal para el renderizador
+            window._vaiState = {
+                prompts: prompts,
+                currentPage: 1,
+                itemsPerPage: 5,
+                searchQuery: "",
+                activeMasterFieldId: this.activeMasterFieldId
+            };
+
+            // Estilos Premium HSL / Glassmorphism
+            const htmlLayout = `
+                <div class="lib-modal-container text-left flex flex-col gap-3">
+                    <style>
+                        .lib-modal-container {
+                            font-family: 'Outfit', 'Inter', sans-serif;
+                        }
+                        .lib-search-input {
+                            background: rgba(15, 23, 42, 0.7);
+                            border: 1px solid rgba(99, 102, 241, 0.3);
+                            color: #f8fafc;
+                            border-radius: 8px;
+                            padding: 10px 14px;
+                            font-size: 0.8rem;
+                            width: 100%;
+                            outline: none;
+                            transition: all 0.2s ease;
+                        }
+                        .lib-search-input:focus {
+                            border-color: rgba(99, 102, 241, 0.8);
+                            box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+                        }
+                        .lib-card {
+                            background: rgba(15, 23, 42, 0.9);
+                            border: 1px solid rgba(255, 255, 255, 0.05);
+                            border-radius: 12px;
+                            padding: 14px;
+                            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                            position: relative;
+                            cursor: pointer;
+                            overflow: hidden;
+                            margin-bottom: 2px;
+                        }
+                        .lib-card:hover {
+                            border-color: rgba(99, 102, 241, 0.4);
+                            transform: translateY(-2px);
+                            background: rgba(30, 41, 59, 0.7);
+                            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+                        }
+                        .lib-chip-intent {
+                            background: rgba(99, 102, 241, 0.15);
+                            color: #a5b4fc;
+                            border: 1px solid rgba(99, 102, 241, 0.3);
+                            border-radius: 4px;
+                            padding: 2px 6px;
+                            font-size: 0.65rem;
+                            font-weight: 700;
+                            text-transform: uppercase;
+                            letter-spacing: 0.05em;
+                        }
+                        .lib-chip-provider {
+                            background: rgba(20, 184, 166, 0.15);
+                            color: #99f6e4;
+                            border: 1px solid rgba(20, 184, 166, 0.3);
+                            border-radius: 4px;
+                            padding: 2px 6px;
+                            font-size: 0.65rem;
+                            font-weight: 700;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 4px;
+                        }
+                        .lib-btn-action {
+                            background: rgba(15, 23, 42, 0.6);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            color: #94a3b8;
+                            border-radius: 6px;
+                            padding: 6px;
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            transition: all 0.2s ease;
+                            cursor: pointer;
+                        }
+                        .lib-btn-action:hover {
+                            background: rgba(99, 102, 241, 0.2);
+                            border-color: rgba(99, 102, 241, 0.5);
+                            color: #ffffff;
+                        }
+                        .lib-btn-action.delete:hover {
+                            background: rgba(239, 68, 68, 0.2);
+                            border-color: rgba(239, 68, 68, 0.5);
+                            color: #ef4444;
+                        }
+                        .lib-page-btn {
+                            background: rgba(30, 41, 59, 0.8);
+                            border: 1px solid rgba(255, 255, 255, 0.05);
+                            color: #94a3b8;
+                            border-radius: 6px;
+                            padding: 6px 12px;
+                            font-size: 0.75rem;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                        }
+                        .lib-page-btn:hover:not(:disabled) {
+                            background: rgba(99, 102, 241, 0.3);
+                            border-color: rgba(99, 102, 241, 0.5);
+                            color: #ffffff;
+                        }
+                        .lib-page-btn:disabled {
+                            opacity: 0.4;
+                            cursor: not-allowed;
+                        }
+                        .custom-scrollbar::-webkit-scrollbar {
+                            width: 6px;
+                        }
+                        .custom-scrollbar::-webkit-scrollbar-track {
+                            background: rgba(15, 23, 42, 0.3);
+                        }
+                        .custom-scrollbar::-webkit-scrollbar-thumb {
+                            background: rgba(99, 102, 241, 0.3);
+                            border-radius: 3px;
+                        }
+                        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                            background: rgba(99, 102, 241, 0.5);
+                        }
+                    </style>
+                    
+                    <div class="flex flex-col gap-1">
+                        <input type="text" id="libSearch" placeholder="Buscar por prompt, función o proveedor..." class="lib-search-input" />
+                        <div id="libCountIndicator" class="text-[10px] text-slate-400 italic mt-1 pl-1"></div>
                     </div>
-                `;
-            });
-            htmlList += `</div>`;
-            
+                    
+                    <div id="libCardsContainer" class="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1"></div>
+                    
+                    <div id="libPagination" class="flex items-center justify-between mt-2 pt-2 border-t border-slate-800"></div>
+                </div>
+            `;
+
             // Función Helper global para la selección
             window._vaiSelectPrompt = (promptText, intentVal) => {
                 const txtArea = document.getElementById('vaiPrompt');
                 if(txtArea) {
                     txtArea.value = promptText;
+                    
+                    // Disparar input event para habilitar dinámicamente los botones de barrido
+                    txtArea.dispatchEvent(new Event('input', { bubbles: true }));
+
                     if (intentVal) {
                         this.selectedIntent = intentVal;
                         // Forzar estilo visual en los chips (simular click)
@@ -90,15 +215,295 @@ class ViewerAiUi {
                 Swal.close();
             };
 
+            // Función Helper global para la eliminación
+            window._vaiDeletePrompt = async (promptText) => {
+                const state = window._vaiState;
+                const result = await Swal.fire({
+                    title: '¿Eliminar Prompt?',
+                    text: 'Se dará de baja definitivamente de la biblioteca de prompts.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#ef4444',
+                    cancelButtonColor: '#475569',
+                    confirmButtonText: 'Sí, eliminar',
+                    cancelButtonText: 'Cancelar',
+                    background: '#0f172a',
+                    color: '#f8fafc'
+                });
+
+                if (result.isConfirmed) {
+                    try {
+                        const resDel = await fetch(`${backendUrl}/api/ai/prompts`, {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                masterFieldId: state.activeMasterFieldId,
+                                prompt: promptText
+                            })
+                        });
+
+                        if (!resDel.ok) throw new Error("Delete failed");
+                        
+                        // Remover localmente para respuesta reactiva inmediata
+                        state.prompts = state.prompts.filter(p => p.prompt.trim().toLowerCase() !== promptText.trim().toLowerCase());
+                        
+                        Swal.fire({
+                            title: 'Eliminado con éxito',
+                            icon: 'success',
+                            background: '#0f172a',
+                            color: '#f8fafc',
+                            timer: 1000,
+                            showConfirmButton: false
+                        });
+
+                        // Rehidratar la biblioteca
+                        setTimeout(() => this.showPromptLibrary(), 1000);
+
+                    } catch (err) {
+                        console.error("Error al borrar prompt:", err);
+                        Swal.fire({ title: 'Error', text: 'No se pudo eliminar el prompt de la librería.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
+                    }
+                }
+            };
+
+            // Función Helper global para la edición
+            window._vaiEditPrompt = async (promptText, currentIntent) => {
+                const state = window._vaiState;
+                const { value: formValues } = await Swal.fire({
+                    title: 'Editar Prompt',
+                    html: `
+                        <div class="text-left font-sans">
+                            <label class="block text-[10px] text-slate-400 font-bold mb-1 tracking-wider">CONTENIDO DEL PROMPT</label>
+                            <textarea id="editPromptText" class="w-full bg-slate-950 border border-slate-700/60 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 font-mono custom-scrollbar resize-y" rows="4">${promptText}</textarea>
+                            
+                            <label class="block text-[10px] text-slate-400 font-bold mt-3 mb-1 tracking-wider">FUNCIÓN / INTENCIÓN</label>
+                            <select id="editPromptIntent" class="w-full bg-slate-950 border border-slate-700/60 rounded-lg p-2 text-xs text-slate-200 outline-none focus:border-indigo-500 font-medium">
+                                <option value="Limpieza Literal (1 a 1)" ${currentIntent.includes('1 a 1') ? 'selected' : ''}>Limpieza Literal (1 a 1)</option>
+                                <option value="Relleno de Vacíos" ${currentIntent.includes('Vacíos') ? 'selected' : ''}>Relleno de Vacíos</option>
+                                <option value="Extracción Específica" ${currentIntent.includes('Específica') ? 'selected' : ''}>Extracción Específica</option>
+                                <option value="Limpieza y Separación" ${currentIntent.includes('Separación') ? 'selected' : ''}>Limpieza y Separación</option>
+                                <option value="Mapeo y Agrupación de Texto" ${currentIntent.includes('Agrupación') ? 'selected' : ''}>Mapeo y Agrupación</option>
+                                <option value="Fusión Semántica Asistida" ${currentIntent.includes('Semántica') ? 'selected' : ''}>Fusión Semántica</option>
+                                <option value="General" ${(!currentIntent || currentIntent === 'General') ? 'selected' : ''}>General</option>
+                            </select>
+                        </div>
+                    `,
+                    focusConfirm: false,
+                    showCancelButton: true,
+                    confirmButtonText: 'Siguiente &raquo;',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#4f46e5',
+                    cancelButtonColor: '#475569',
+                    background: '#0f172a',
+                    color: '#f8fafc',
+                    preConfirm: () => {
+                        const newPrompt = document.getElementById('editPromptText').value.trim();
+                        const newIntent = document.getElementById('editPromptIntent').value;
+                        if (!newPrompt) {
+                            Swal.showValidationMessage('El contenido del prompt no puede estar vacío');
+                            return false;
+                        }
+                        return { newPrompt, newIntent };
+                    }
+                });
+
+                if (formValues) {
+                    const { newPrompt, newIntent } = formValues;
+
+                    // Cuadro de confirmación de sobreescritura vs nueva versión
+                    const optionResult = await Swal.fire({
+                        title: 'Confirmar Guardado',
+                        text: '¿Desea sobreescribir (pisar) la versión anterior en la librería o guardarlo como una nueva versión distinta?',
+                        icon: 'question',
+                        showCancelButton: true,
+                        showDenyButton: true,
+                        confirmButtonText: 'Sobreescribir',
+                        denyButtonText: 'Guardar como Nuevo',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#4f46e5',
+                        denyButtonColor: '#10b981',
+                        cancelButtonColor: '#475569',
+                        background: '#0f172a',
+                        color: '#f8fafc'
+                    });
+
+                    if (optionResult.isDismissed) return;
+
+                    const overwrite = optionResult.isConfirmed; // true = sobreescribir, false (Deny) = nueva versión
+
+                    try {
+                        const resPut = await fetch(`${backendUrl}/api/ai/prompts`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                masterFieldId: state.activeMasterFieldId,
+                                oldPrompt: promptText,
+                                newPrompt: newPrompt,
+                                intent: newIntent,
+                                overwrite: overwrite
+                            })
+                        });
+
+                        if (!resPut.ok) throw new Error("Update failed");
+
+                        Swal.fire({
+                            title: '¡Guardado con éxito!',
+                            text: overwrite ? 'Se actualizó el prompt original.' : 'Se guardó como nueva versión.',
+                            icon: 'success',
+                            background: '#0f172a',
+                            color: '#f8fafc',
+                            timer: 1200,
+                            showConfirmButton: false
+                        });
+
+                        // Rehidratar la biblioteca
+                        setTimeout(() => this.showPromptLibrary(), 1200);
+
+                    } catch (err) {
+                        console.error("Error al actualizar prompt:", err);
+                        Swal.fire({ title: 'Error', text: 'No se pudo editar el prompt.', icon: 'error', background: '#0f172a', color: '#f8fafc' });
+                    }
+                }
+            };
+
+            // Renderizador Dinámico en Caliente (Búsqueda + Paginación)
+            window._vaiFilterAndRender = () => {
+                const state = window._vaiState;
+                const container = document.getElementById('libCardsContainer');
+                const pag = document.getElementById('libPagination');
+                const countIndicator = document.getElementById('libCountIndicator');
+                if (!container) return;
+
+                // 1. Filtrar búsqueda
+                const query = state.searchQuery.toLowerCase().trim();
+                const filtered = state.prompts.filter(p => {
+                    return (p.prompt || "").toLowerCase().includes(query) ||
+                           (p.intent || "").toLowerCase().includes(query) ||
+                           (p.provider || "").toLowerCase().includes(query);
+                });
+
+                // 2. Calcular páginas
+                const total = filtered.length;
+                const totalPages = Math.ceil(total / state.itemsPerPage) || 1;
+                if (state.currentPage > totalPages) state.currentPage = totalPages;
+
+                const startIdx = (state.currentPage - 1) * state.itemsPerPage;
+                const endIdx = Math.min(startIdx + state.itemsPerPage, total);
+                const sliced = filtered.slice(startIdx, endIdx);
+
+                // 3. Conteo visual
+                if (countIndicator) {
+                    if (total === 0) {
+                        countIndicator.innerHTML = `No se encontraron resultados`;
+                    } else {
+                        countIndicator.innerHTML = `Mostrando <span class="text-indigo-400 font-bold font-mono">${startIdx + 1}-${endIdx}</span> de <span class="text-indigo-400 font-bold font-mono">${total}</span> prompts disponibles`;
+                    }
+                }
+
+                // 4. Render de tarjetas
+                if (sliced.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-10 text-slate-500 text-xs italic bg-slate-950/20 border border-dashed border-slate-800 rounded-lg">
+                            Ningún prompt coincide con la búsqueda
+                        </div>
+                    `;
+                    if (pag) pag.innerHTML = "";
+                    return;
+                }
+
+                let html = "";
+                sliced.forEach(p => {
+                    const dateStr = p.lastUsed ? new Date(p.lastUsed).toLocaleDateString() : 'Histórico';
+                    // Sanitización robusta
+                    const safePrompt = p.prompt.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n');
+                    const providerChip = p.provider ? `
+                        <span class="lib-chip-provider" title="Proveedor al que se le aplicó históricamente">
+                            <i data-lucide="truck" class="w-3 h-3 text-teal-400"></i> ${p.provider}
+                        </span>
+                    ` : '';
+
+                    html += `
+                        <div class="lib-card group relative text-left" onclick="if(!event.target.closest('.lib-btn-action')) window._vaiSelectPrompt('${safePrompt}', '${p.intent || ''}')">
+                            <div class="flex items-start justify-between gap-4 mb-1.5 pr-16">
+                                <div class="flex flex-wrap gap-1.5 items-center">
+                                    <span class="lib-chip-intent">${p.intent || 'General'}</span>
+                                    ${providerChip}
+                                </div>
+                                <span class="text-[9px] text-slate-500 font-mono self-start">${dateStr}</span>
+                            </div>
+                            
+                            <p class="text-[11px] text-slate-300 font-mono italic pr-14 break-words whitespace-pre-wrap">"${p.prompt}"</p>
+                            
+                            <!-- Barra de herramientas administrativa -->
+                            <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="lib-btn-action" title="Editar Prompt" onclick="window._vaiEditPrompt('${safePrompt}', '${p.intent || ''}')">
+                                    <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                                </button>
+                                <button class="lib-btn-action delete" title="Eliminar definitivamente" onclick="window._vaiDeletePrompt('${safePrompt}')">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+
+                // 5. Render de Paginación
+                if (pag) {
+                    pag.innerHTML = `
+                        <button class="lib-page-btn" id="libBtnPrev" ${state.currentPage === 1 ? 'disabled' : ''}>
+                            Anterior
+                        </button>
+                        <span class="text-xs text-slate-400 font-mono">Pág. ${state.currentPage} de ${totalPages}</span>
+                        <button class="lib-page-btn" id="libBtnNext" ${state.currentPage === totalPages ? 'disabled' : ''}>
+                            Siguiente
+                        </button>
+                    `;
+
+                    const btnPrev = document.getElementById('libBtnPrev');
+                    const btnNext = document.getElementById('libBtnNext');
+                    if (btnPrev) {
+                        btnPrev.onclick = () => {
+                            if (state.currentPage > 1) {
+                                state.currentPage--;
+                                window._vaiFilterAndRender();
+                            }
+                        };
+                    }
+                    if (btnNext) {
+                        btnNext.onclick = () => {
+                            if (state.currentPage < totalPages) {
+                                state.currentPage++;
+                                window._vaiFilterAndRender();
+                            }
+                        };
+                    }
+                }
+
+                if (window.lucide) window.lucide.createIcons();
+            };
+
             Swal.fire({
-                title: '<span class="text-xl text-indigo-300 font-light">Librería de Prompts</span><br><span class="text-xs text-slate-400">Campo Maestro Destino</span>',
-                html: htmlList,
-                width: '600px',
+                title: '<div class="text-left"><span class="text-lg text-indigo-300 font-light tracking-wide">Biblioteca de Prompts</span><br><span class="text-[10px] text-slate-400 font-mono">Panel Administrativo del Chofer IA</span></div>',
+                html: htmlLayout,
+                width: '640px',
                 background: '#0f172a',
                 color: '#f8fafc',
                 showConfirmButton: false,
                 showCloseButton: true,
-                customClass: { popup: 'border border-indigo-500/30' }
+                customClass: { popup: 'border border-indigo-500/30 rounded-2xl' },
+                didOpen: () => {
+                    const searchInput = document.getElementById('libSearch');
+                    if (searchInput) {
+                        searchInput.focus();
+                        searchInput.addEventListener('input', (e) => {
+                            window._vaiState.searchQuery = e.target.value;
+                            window._vaiState.currentPage = 1; // Resetear a página 1 en cada filtro
+                            window._vaiFilterAndRender();
+                        });
+                    }
+                    window._vaiFilterAndRender();
+                }
             });
 
         } catch (err) {
@@ -432,6 +837,13 @@ class ViewerAiUi {
                 }
             }
 
+            // [TICKET #137] Condicionante de ejecución: en Limpieza 1 a 1, la presencia del SKU es obligatoria.
+            if (this.selectedRoute === 'literal' && codigoColId === null) {
+                console.warn("[Chofer IA] 🛑 Sin columna de SKU/Código mapeada en Limpieza 1 a 1. Cancelando evaluación por regla de negocio.");
+                resolve([]);
+                return;
+            }
+
             const resolveRawLocal = (r, tId) => {
                 let physicalIdx = tId;
                 if (window.computedColumns) {
@@ -454,7 +866,7 @@ class ViewerAiUi {
             let i = 0;
             
             // [VIGÍA DE ESTADÍSTICAS TICKET #021]
-            let stats = { totalRows: total, skippedBySku: 0, skippedByMaster: 0, skippedByEmpty: 0, skippedByRegex: 0, added: 0 };
+            let stats = { totalRows: total, skippedBySku: 0, skippedByMaster: 0, skippedByEmpty: 0, skippedByRegex: 0, skippedByIncremental: 0, added: 0 };
             
             // console.error("🚨 [VIGÍA EXTREMO] extractionDataIdx:", extractionDataIdx);
 
@@ -484,12 +896,25 @@ class ViewerAiUi {
                 }
 
                 for (; i < end; i++) {
-                    // [Filtro Estricto de Huérfanos] - Si no tiene Código válido, ignorarlo.
-                    if (codigoColId !== null) {
+                    // [TICKET #137 - CONDICIONANTE DE SKU MANDATORIO]
+                    if (this.selectedRoute === 'literal') {
+                        if (codigoColId === null) {
+                            stats.skippedBySku++;
+                            continue;
+                        }
                         let skuVal = String(resolveRawLocal(rawRows[i], codigoColId)).trim();
                         if (!skuVal || !/[a-zA-Z0-9]/.test(skuVal)) {
                             stats.skippedBySku++;
                             continue;
+                        }
+                    } else {
+                        // [Filtro Estricto de Huérfanos Legacy]
+                        if (codigoColId !== null) {
+                            let skuVal = String(resolveRawLocal(rawRows[i], codigoColId)).trim();
+                            if (!skuVal || !/[a-zA-Z0-9]/.test(skuVal)) {
+                                stats.skippedBySku++;
+                                continue;
+                            }
                         }
                     }
 
@@ -585,6 +1010,17 @@ class ViewerAiUi {
                         continue;
                     }
                     if (val.trim() && val.trim().length <= 150) this._rawTotalUniqueItems.add(val.trim());
+
+                    // [TICKET #137 - MEMORIA DE ESTADO Y PROCESAMIENTO INCREMENTAL]
+                    if (this.selectedRoute === 'literal' && pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
+                        const mutateRs = window.viewerETL.transformCell(val, pipeline, rawRows[i]);
+                        const targetVal = String(mutateRs.display || mutateRs.result || "").trim();
+                        
+                        if (targetVal !== "" && !mutateRs.rejected) {
+                            stats.skippedByIncremental++;
+                            continue; // SALTO INSTANTÁNEO POR TRADUCCIÓN EXISTENTE
+                        }
+                    }
                     
                     let effectiveVal = val;
                     if (pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {

@@ -320,25 +320,58 @@ const aiController = {
             
             const supabase = require('../config/supabaseClient');
             
-            // 1. Obtener desde el archivo Local Global (Lo actual)
+            // 1. Obtener blacklist local de prompts eliminados
+            let blacklist = [];
+            try {
+                if (fs.existsSync(PROMPT_LIB_PATH)) {
+                    const fileContent = fs.readFileSync(PROMPT_LIB_PATH, 'utf8') || '{}';
+                    const data = JSON.parse(fileContent);
+                    if (data[masterFieldId + "_deleted"]) {
+                        blacklist = data[masterFieldId + "_deleted"].map(p => p.trim().toLowerCase());
+                    }
+                }
+            } catch(e) { console.warn("[AI Controller] Fallo lectura de blacklist", e); }
+
+            // 2. Obtener desde el archivo Local Global (Lo actual)
             let localPrompts = [];
             try {
                 if (fs.existsSync(PROMPT_LIB_PATH)) {
                     const fileContent = fs.readFileSync(PROMPT_LIB_PATH, 'utf8') || '{}';
                     const data = JSON.parse(fileContent);
-                    if (data[masterFieldId]) localPrompts = data[masterFieldId];
+                    if (data[masterFieldId]) {
+                        localPrompts = data[masterFieldId].map(p => ({
+                            ...p,
+                            provider: p.provider || null
+                        }));
+                    }
                 }
             } catch(e) { console.warn("Fallo lectura de json library", e); }
 
-            // 2. Extraer del Historial de Pipeline Global (de todos los proveedores)
+            // 3. Extraer del Historial de Pipeline Global (de todos los proveedores)
             let dbPrompts = [];
             try {
-                const { data: flujos, error } = await supabase.from('flujos_extraccion').select('config_payload');
+                // Generar lookup rápido de proveedores
+                let providersLookup = {};
+                try {
+                    const { data: pList } = await supabase.from('proveedores').select('id, nombre');
+                    if (pList) {
+                        pList.forEach(p => {
+                            providersLookup[p.id] = p.nombre;
+                        });
+                    }
+                } catch (e) {
+                    console.warn("[AI Controller] Error consultando lookup de proveedores:", e);
+                }
+
+                const { data: flujos, error } = await supabase.from('flujos_extraccion').select('config_payload, proveedor_id, fecha_actualizacion');
                 if (error) throw new Error(error.message);
                 if (flujos) {
                     flujos.forEach(flujo => {
                         const parsed = typeof flujo.config_payload === 'string' ? JSON.parse(flujo.config_payload) : flujo.config_payload;
                         if (parsed && typeof parsed === 'object') {
+                            const providerName = providersLookup[flujo.proveedor_id] || null;
+                            const lastUsedVal = flujo.fecha_actualizacion ? new Date(flujo.fecha_actualizacion).getTime() : (Date.now() - 1000);
+
                             const extractPromptsDeeply = (node) => {
                                 if (!node || typeof node !== 'object') return;
                                 
@@ -365,14 +398,16 @@ const aiController = {
                                                     dbPrompts.push({
                                                         prompt: extractedPrompt,
                                                         intent: intentVal,
-                                                        lastUsed: Date.now() - 1000
+                                                        lastUsed: lastUsedVal,
+                                                        provider: providerName
                                                     });
                                                 }
                                             } else if (rule.comment && String(rule.comment).includes("Chofer:")) {
                                                 dbPrompts.push({
                                                     prompt: String(rule.comment).replace("Chofer:", "").trim(),
                                                     intent: "Legacy",
-                                                    lastUsed: Date.now() - 2000
+                                                    lastUsed: lastUsedVal - 1000,
+                                                    provider: providerName
                                                 });
                                             }
                                         });
@@ -393,13 +428,23 @@ const aiController = {
                 }
             } catch(e) { console.error("Error consultando DB de flujos para prompts", e); }
 
-            // 3. Unificar y desduplicar
+            // 4. Unificar, filtrar con blacklist y desduplicar
             const merged = [...localPrompts, ...dbPrompts];
             const uniqueMap = {};
             merged.forEach(p => {
-                const key = (p.prompt||"").trim().toLowerCase();
+                const promptText = (p.prompt||"").trim();
+                const key = promptText.toLowerCase();
+                
+                // Omitir si está en la lista negra (blacklist)
+                if (blacklist.includes(key)) return;
+
                 if (!uniqueMap[key] || uniqueMap[key].lastUsed < p.lastUsed) {
-                    uniqueMap[key] = p;
+                    uniqueMap[key] = {
+                        prompt: promptText,
+                        intent: p.intent || 'General',
+                        lastUsed: p.lastUsed,
+                        provider: p.provider || null
+                    };
                 }
             });
 
@@ -439,8 +484,17 @@ const aiController = {
                 data[masterFieldId] = [];
             }
             
+            const promptText = prompt.trim();
+            const pLower = promptText.toLowerCase();
+
+            // Asegurar remover de la blacklist si se está guardando de nuevo de forma explícita
+            const deletedKey = masterFieldId + "_deleted";
+            if (data[deletedKey]) {
+                data[deletedKey] = data[deletedKey].filter(x => x !== pLower);
+            }
+            
             // Chequear si el prompt ya existe textualmente
-            const existingIdx = data[masterFieldId].findIndex(p => p.prompt.trim().toLowerCase() === prompt.trim().toLowerCase());
+            const existingIdx = data[masterFieldId].findIndex(p => p.prompt.trim().toLowerCase() === pLower);
             
             if (existingIdx !== -1) {
                 // Actualizar timestamp
@@ -449,7 +503,7 @@ const aiController = {
             } else {
                 // Nuevo
                 data[masterFieldId].push({
-                    prompt: prompt.trim(),
+                    prompt: promptText,
                     intent: intent || 'General',
                     lastUsed: Date.now()
                 });
@@ -467,6 +521,122 @@ const aiController = {
         } catch (error) {
             console.error("❌ [AI Controller] Error guardando prompt:", error);
             res.status(500).json({ error: 'Error guardando prompt en librería' });
+        }
+    },
+
+    /**
+     * Elimina lógicamente un prompt de la librería agregándolo a una blacklist.
+     */
+    deletePromptFromLibrary: async (req, res) => {
+        try {
+            const { masterFieldId, prompt } = req.body;
+            if (!masterFieldId || !prompt) {
+                return res.status(400).json({ error: "Faltan datos obligatorios (masterFieldId, prompt)" });
+            }
+
+            ensurePromptLibExists();
+
+            let data = {};
+            if (fs.existsSync(PROMPT_LIB_PATH)) {
+                try {
+                    const content = fs.readFileSync(PROMPT_LIB_PATH, 'utf8');
+                    data = JSON.parse(content || '{}');
+                } catch (e) {
+                    console.warn("[AI Controller] Error leyendo librería:", e);
+                }
+            }
+
+            const deletedKey = masterFieldId + "_deleted";
+            if (!data[deletedKey]) data[deletedKey] = [];
+
+            const pLower = prompt.trim().toLowerCase();
+            if (!data[deletedKey].includes(pLower)) {
+                data[deletedKey].push(pLower);
+            }
+
+            // Quitar de localPrompts si estuviera guardado localmente
+            if (data[masterFieldId]) {
+                data[masterFieldId] = data[masterFieldId].filter(p => p.prompt.trim().toLowerCase() !== pLower);
+            }
+
+            fs.writeFileSync(PROMPT_LIB_PATH, JSON.stringify(data, null, 2));
+            return res.status(200).json({ success: true, status: 'deleted' });
+        } catch (error) {
+            console.error("❌ [AI Controller] Error eliminando prompt:", error);
+            res.status(500).json({ error: 'Error al eliminar prompt de la librería' });
+        }
+    },
+
+    /**
+     * Edita un prompt existente, soportando sobreescritura (blacklist del anterior) o clonado como nueva versión.
+     */
+    editPromptInLibrary: async (req, res) => {
+        try {
+            const { masterFieldId, oldPrompt, newPrompt, intent, overwrite } = req.body;
+            if (!masterFieldId || !oldPrompt || !newPrompt) {
+                return res.status(400).json({ error: "Faltan datos obligatorios (masterFieldId, oldPrompt, newPrompt)" });
+            }
+
+            ensurePromptLibExists();
+
+            let data = {};
+            if (fs.existsSync(PROMPT_LIB_PATH)) {
+                try {
+                    const content = fs.readFileSync(PROMPT_LIB_PATH, 'utf8');
+                    data = JSON.parse(content || '{}');
+                } catch (e) {
+                    console.warn("[AI Controller] Error leyendo librería:", e);
+                }
+            }
+
+            const oldLower = oldPrompt.trim().toLowerCase();
+            const newLower = newPrompt.trim().toLowerCase();
+
+            // Si se seleccionó "Sobreescribir" (overwrite)
+            if (overwrite) {
+                const deletedKey = masterFieldId + "_deleted";
+                if (!data[deletedKey]) data[deletedKey] = [];
+                if (!data[deletedKey].includes(oldLower)) {
+                    data[deletedKey].push(oldLower);
+                }
+                // Remover el anterior de local si existiera
+                if (data[masterFieldId]) {
+                    data[masterFieldId] = data[masterFieldId].filter(p => p.prompt.trim().toLowerCase() !== oldLower);
+                }
+            }
+
+            // Quitar el nuevo prompt de la blacklist (si estuviese) para permitir guardarlo
+            const deletedKey = masterFieldId + "_deleted";
+            if (data[deletedKey]) {
+                data[deletedKey] = data[deletedKey].filter(x => x !== newLower);
+            }
+
+            // Insertar o actualizar el nuevo prompt en localPrompts
+            if (!data[masterFieldId]) data[masterFieldId] = [];
+
+            const existingIdx = data[masterFieldId].findIndex(p => p.prompt.trim().toLowerCase() === newLower);
+            if (existingIdx !== -1) {
+                data[masterFieldId][existingIdx].lastUsed = Date.now();
+                if (intent) data[masterFieldId][existingIdx].intent = intent;
+            } else {
+                data[masterFieldId].push({
+                    prompt: newPrompt.trim(),
+                    intent: intent || 'General',
+                    lastUsed: Date.now()
+                });
+            }
+
+            // Limitar a los últimos 30 por columna
+            if (data[masterFieldId].length > 30) {
+                data[masterFieldId].sort((a, b) => b.lastUsed - a.lastUsed);
+                data[masterFieldId] = data[masterFieldId].slice(0, 30);
+            }
+
+            fs.writeFileSync(PROMPT_LIB_PATH, JSON.stringify(data, null, 2));
+            return res.status(200).json({ success: true, status: 'updated' });
+        } catch (error) {
+            console.error("❌ [AI Controller] Error editando prompt:", error);
+            res.status(500).json({ error: 'Error al editar el prompt de la librería' });
         }
     },
 
