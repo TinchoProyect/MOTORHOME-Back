@@ -1200,7 +1200,8 @@ class ViewerAiUi {
             this._setStatus('Extrayendo Perfil...', 'working');
             
             const incrementalCheckbox = document.getElementById('vaiIncrementalMode');
-            this.incrementalMode = incrementalCheckbox ? incrementalCheckbox.checked : false;
+            // Si el usuario presiona "Generar desde cero" (onlyAnomalous es falso), forzamos bypass completo de Smart Scope
+            this.incrementalMode = (options && options.onlyAnomalous === false) ? false : (incrementalCheckbox ? incrementalCheckbox.checked : false);
             
             // [FIX MERGE LÓGICA] Decisión Dinámica de Operatividad
             this._crystalizeMergeMode = true; // Safe merge por defecto
@@ -1234,6 +1235,23 @@ class ViewerAiUi {
             
             if (uniqueDictionary.length === 0) {
                  if (window.Swal) Swal.close();
+                 if (this.incrementalMode) {
+                     if (window.Swal) {
+                         Swal.fire({
+                             title: 'Smart Scope Completo',
+                             html: 'Todos los registros de la columna ya se encuentran traducidos y válidos.<br><br><span class="text-xs text-slate-400">Si desea re-evaluar todo el documento desde cero, presione "Generar desde cero".</span>',
+                             icon: 'info',
+                             background: '#0f172a', color: '#f8fafc',
+                             confirmButtonColor: '#4f46e5'
+                         });
+                     } else {
+                         alert("Todos los registros de la columna ya se encuentran traducidos y válidos bajo este Smart Scope.");
+                     }
+                     this.btnEl.disabled = false;
+                     if (this.btnAnomaliesEl) this.btnAnomaliesEl.disabled = false;
+                     this._setStatus('Sin cambios pendientes', 'info');
+                     return;
+                 }
                  throw new Error("La columna carece de datos parseables bajo este contexto.");
             }
             
