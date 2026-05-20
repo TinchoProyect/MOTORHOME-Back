@@ -199,14 +199,26 @@ function renderReceptionHistoryCards(data) {
                         </div>
 
                         <div class="flex items-center gap-2">
-                            ${!isAnulada ? `
-                            <button onclick="window.anularReception('${rec.id}')" class="px-3 py-2 bg-amber-600/10 text-amber-400 hover:bg-amber-600 hover:text-white border border-amber-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Anular esta Recepción (Soft Delete)">
-                                <i data-lucide="ban" class="w-4 h-4"></i> Anular
+                            ${!isAnulada ? (
+                                rec.estado_conciliacion === 'CONCILIADA' ? `
+                                <button onclick="window.anularReception('${rec.id}', 'CONCILIADA')" class="px-3 py-2 bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Bloqueado: Recepción Conciliada">
+                                    <i data-lucide="lock" class="w-4 h-4"></i> Anular
+                                </button>
+                                ` : `
+                                <button onclick="window.anularReception('${rec.id}', '${rec.estado_conciliacion || ''}')" class="px-3 py-2 bg-amber-600/10 text-amber-400 hover:bg-amber-600 hover:text-white border border-amber-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Anular esta Recepción (Soft Delete)">
+                                    <i data-lucide="ban" class="w-4 h-4"></i> Anular
+                                </button>
+                                `
+                            ) : ''}
+                            ${rec.estado_conciliacion === 'CONCILIADA' ? `
+                            <button onclick="window.revertirReception('${rec.id}', 'CONCILIADA')" class="px-3 py-2 bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Bloqueado: Recepción Conciliada">
+                                <i data-lucide="lock" class="w-4 h-4"></i> Revertir
                             </button>
-                            ` : ''}
-                            <button onclick="window.revertirReception('${rec.id}')" class="px-3 py-2 bg-red-600/10 text-red-400 hover:bg-red-700 hover:text-white border border-red-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Revertir y Eliminar Físicamente">
+                            ` : `
+                            <button onclick="window.revertirReception('${rec.id}', '${rec.estado_conciliacion || ''}')" class="px-3 py-2 bg-red-600/10 text-red-400 hover:bg-red-700 hover:text-white border border-red-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Revertir y Eliminar Físicamente">
                                 <i data-lucide="undo-2" class="w-4 h-4"></i> Revertir
                             </button>
+                            `}
                             <button onclick="window.viewReceptionDetails('${rec.id}', '${provName}', '${remito}')" class="px-3 py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1" title="Ver Detalle de Ítems">
                                 <i data-lucide="list-checks" class="w-4 h-4"></i> Ver Ítems
                             </button>
@@ -338,7 +350,29 @@ function renderReceptionItemsDetail(items, provName) {
     if (window.lucide) window.lucide.createIcons();
 }
 
-window.anularReception = async function(recepcionId) {
+window.anularReception = async function(recepcionId, estadoConciliacion) {
+    if (estadoConciliacion === 'CONCILIADA') {
+        Swal.fire({
+            icon: 'error',
+            title: 'OPERACIÓN BLOQUEADA',
+            html: `<div class="text-left text-xs space-y-2">
+                <p>No se puede <strong>anular</strong> una recepción física que ya se encuentra <strong>conciliada</strong> con una factura en el sistema.</p>
+                <p class="text-amber-400 font-bold">Instrucciones para el Operador:</p>
+                <ol class="list-decimal pl-4 space-y-1">
+                    <li>Vaya al módulo de <strong>Proveedores &rarr; Facturas &rarr; Conciliadas</strong>.</li>
+                    <li>Identifique la factura asociada a este ingreso físico.</li>
+                    <li>Ejecute la acción de <strong>desconciliación</strong> (degradar estado).</li>
+                    <li>Una vez desconciliada y liberada la recepción física, vuelva aquí para anularla si lo desea.</li>
+                </ol>
+            </div>`,
+            confirmButtonColor: '#6366f1',
+            confirmButtonText: 'Entendido',
+            background: '#0f172a',
+            color: '#f8fafc'
+        });
+        return;
+    }
+
     if (!window.Swal) {
         alert("SweetAlert2 no está cargado.");
         return;
@@ -402,7 +436,29 @@ window.anularReception = async function(recepcionId) {
     }
 }
 
-window.revertirReception = async function(recepcionId) {
+window.revertirReception = async function(recepcionId, estadoConciliacion) {
+    if (estadoConciliacion === 'CONCILIADA') {
+        Swal.fire({
+            icon: 'error',
+            title: 'OPERACIÓN BLOQUEADA',
+            html: `<div class="text-left text-xs space-y-2">
+                <p>No se puede <strong>revertir físicamente</strong> una recepción que ya se encuentra <strong>conciliada</strong> con una factura en el sistema.</p>
+                <p class="text-amber-400 font-bold">Instrucciones para el Operador:</p>
+                <ol class="list-decimal pl-4 space-y-1">
+                    <li>Vaya al módulo de <strong>Proveedores &rarr; Facturas &rarr; Conciliadas</strong>.</li>
+                    <li>Identifique la factura asociada a este ingreso físico.</li>
+                    <li>Ejecute la acción de <strong>desconciliación</strong> (degradar estado).</li>
+                    <li>Una vez desconciliada y liberada la recepción física, vuelva aquí para revertirla si lo desea.</li>
+                </ol>
+            </div>`,
+            confirmButtonColor: '#6366f1',
+            confirmButtonText: 'Entendido',
+            background: '#0f172a',
+            color: '#f8fafc'
+        });
+        return;
+    }
+
     if (!window.Swal) {
         alert("SweetAlert2 no está cargado.");
         return;

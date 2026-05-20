@@ -428,6 +428,15 @@ router.post('/anular', async (req, res) => {
             .single();
 
         if (errGet) throw errGet;
+
+        // [GUARDIA DE INTEGRIDAD] No permitir anular si la recepción física ya está conciliada con una factura
+        if (recepcion.estado_conciliacion === 'CONCILIADA') {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No se puede anular una recepción física que ya se encuentra conciliada con una factura. Primero debe deshacer la conciliación desde la solapa de Facturas.' 
+            });
+        }
+
         if (recepcion.estado === 'Anulada') {
             return res.status(400).json({ success: false, error: 'La recepción ya se encuentra anulada.' });
         }
@@ -509,6 +518,14 @@ router.post('/revertir', async (req, res) => {
 
         if (errGet || !recepcion) {
             return res.status(400).json({ success: false, error: 'Recepción no encontrada.' });
+        }
+
+        // [GUARDIA DE INTEGRIDAD] No permitir revertir si la recepción física ya está conciliada con una factura
+        if (recepcion.estado_conciliacion === 'CONCILIADA') {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No se puede revertir una recepción física que ya se encuentra conciliada con una factura. Primero debe deshacer la conciliación desde la solapa de Facturas.' 
+            });
         }
 
         const pedido_id = recepcion.pedido_id;

@@ -6,10 +6,33 @@ const key = env.match(/SUPABASE_KEY=(.*)/)[1];
 const supabase = createClient(url, key);
 
 async function run() {
-  const { data, error } = await supabase.from('vw_inventario_consolidado').select('*').limit(1);
-  console.log('view:', data);
+  // 1. Search for any invoice matching '272619' anywhere
+  const { data: allInvoices, error: errAllInv } = await supabase
+    .from('facturas_raw')
+    .select('*, proveedores(nombre)')
+    .eq('proveedor_id', '5515e04d-248d-416c-8cb2-d36e006d549d');
+  console.log('--- VILLARES INVOICES ---');
+  console.log(JSON.stringify(allInvoices, null, 2), errAllInv);
 
-  const { data: d2, error: e2 } = await supabase.from('recepciones_fisicas_items').select('*, pedidos_b2b_items(*, facturas_raw(*))').limit(1);
-  console.log('recepciones_fisicas_items:', JSON.stringify(d2, null, 2), e2);
+  // 2. Search for any B2B order for Villares (5515e04d-248d-416c-8cb2-d36e006d549d)
+  const villaresId = '5515e04d-248d-416c-8cb2-d36e006d549d';
+  const { data: orders, error: errOrders } = await supabase
+    .from('pedidos_b2b_cabecera')
+    .select('*')
+    .eq('proveedor_id', villaresId);
+  console.log('\n--- VILLARES B2B ORDERS ---');
+  console.log(orders, errOrders);
+
+  if (orders && orders.length > 0) {
+    // 3. Search for physical receptions for these orders
+    const { data: receptions, error: errRecs } = await supabase
+      .from('recepciones_fisicas_cabecera')
+      .select('*')
+      .in('pedido_id', orders.map(o => o.id));
+    console.log('\n--- VILLARES PHYSICAL RECEPTIONS ---');
+    console.log(receptions, errRecs);
+  }
 }
 run();
+
+

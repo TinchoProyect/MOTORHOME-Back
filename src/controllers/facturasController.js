@@ -1235,12 +1235,54 @@ const facturasController = {
                 }
             }
 
-            // 3. Eliminar Asientos Financieros
+            // [NOTA ARQUITECTÓNICA] Solución de Integridad: Rollback Atómico de Grupos de Conciliación N:1
+            // Cuando una factura pertenece a un lote conciliado de forma múltiple (compartiendo recepciones físicas),
+            // el rollback sobre una de ellas debe arrastrar atómicamente a todas sus facturas hermanas ("siblings")
+            // de modo que todas regresen a PENDIENTE_MATCH y el stock físico se libere limpiamente.
+            
+            const facturasEnGrupo = [factura];
+
+            if (recepcionesIds.length > 0) {
+                // Obtener todas las facturas del proveedor que estén conciliadas
+                const { data: otherInvoices, error: errOthers } = await supabase
+                    .from('facturas_raw')
+                    .select('*')
+                    .eq('proveedor_id', factura.proveedor_id)
+                    .in('status_conciliacion', ['CONCILIADA', 'CONCILIADO_OK']);
+
+                if (!errOthers && otherInvoices && otherInvoices.length > 0) {
+                    for (const other of otherInvoices) {
+                        if (other.id === factura.id) continue;
+
+                        let otherRecIds = [];
+                        if (Array.isArray(other.match_report) && other.match_report.length > 0) {
+                            other.match_report.forEach(item => {
+                                if (item && item._meta_recepcionesIds && Array.isArray(item._meta_recepcionesIds)) {
+                                    item._meta_recepcionesIds.forEach(rid => {
+                                        if (!otherRecIds.includes(rid)) otherRecIds.push(rid);
+                                    });
+                                }
+                            });
+                        }
+
+                        // Si hay intersección de recepciones, pertenecen al mismo lote
+                        const tieneInterseccion = otherRecIds.some(rid => recepcionesIds.includes(rid));
+                        if (tieneInterseccion) {
+                            facturasEnGrupo.push(other);
+                        }
+                    }
+                }
+            }
+
+            const facturasEnGrupoIds = facturasEnGrupo.map(f => f.id);
+            console.log(`[VIGÍA] Desconciliando atómicamente grupo de ${facturasEnGrupo.length} facturas: ${facturasEnGrupoIds.join(', ')}`);
+
+            // 3. Eliminar Asientos Financieros para todo el grupo
             // Al borrar todos los de esa referencia, se borran tanto FACTURA como NOTA_DEBITO_INTERNA (sobreprecios)
             const { error: errDeleteCC } = await supabase
                 .from('cuenta_corriente_proveedores')
                 .delete()
-                .eq('referencia_factura_id', id);
+                .in('referencia_factura_id', facturasEnGrupoIds);
 
             if (errDeleteCC) throw errDeleteCC;
 
@@ -1253,7 +1295,7 @@ const facturasController = {
                 if (errRec) throw errRec;
             }
 
-            // 5. Restablecer Factura
+            // 5. Restablecer Facturas del grupo a PENDIENTE_MATCH
             const { error: updateErr } = await supabase
                 .from('facturas_raw')
                 .update({
@@ -1261,11 +1303,15 @@ const facturasController = {
                     cuenta_corriente_id: null,
                     match_report: null
                 })
-                .eq('id', id);
+                .in('id', facturasEnGrupoIds);
 
             if (updateErr) throw updateErr;
 
-            return res.json({ success: true, message: "Conciliación revertida exitosamente." });
+            let msg = "Conciliación revertida exitosamente.";
+            if (facturasEnGrupo.length > 1) {
+                msg = `Conciliación del lote de ${facturasEnGrupo.length} facturas revertida exitosamente de forma atómica.`;
+            }
+            return res.json({ success: true, message: msg });
 
         } catch (error) {
             console.error("[FacturasController] Error en deshacerConciliacion:", error);
