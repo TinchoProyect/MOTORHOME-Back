@@ -1,5 +1,13 @@
 const supabase = require('../config/supabaseClient');
 
+// Caché en memoria para optimización de latencia en Checkout/Catálogo B2B (Ticket #131)
+let operativaRecordsCache = null;
+
+function clearOperativaCache() {
+    console.log("[MasterTableController] 🧹 Caché de registros de la tabla maestra operativa invalidada.");
+    operativaRecordsCache = null;
+}
+
 // GET /api/master-table/dictionary
 async function getMasterFields(req, res) {
     try {
@@ -404,6 +412,7 @@ async function deleteCategory(req, res) {
 
 
 module.exports = {
+    clearOperativaCache,
     getMasterFields,
     getActiveProvidersCount,
     getProveedores,
@@ -671,6 +680,7 @@ module.exports = {
                 .update({ status_global: 'EXTRAIDO' })
                 .eq('id', archivo_id);
             
+            clearOperativaCache();
             return res.json({ success: true, message: "Extracción exitosa." });
         } catch(e) {
             console.error("[MasterTableController] extractToMasterTable error:", e);
@@ -728,6 +738,7 @@ module.exports = {
                      writtenPayloads = upsertData;
                  }
             }
+            clearOperativaCache();
             return res.json({ success: true, message: "Reasignación aplicada.", count: itemIds.length, upserted: writtenPayloads });
         } catch(e) { console.error(e); return res.status(500).json({ success: false, error: e.message }); }
     },
@@ -755,6 +766,7 @@ module.exports = {
                  const { error: upsertErr } = await supabase.from('tabla_maestra_operativa').upsert(payloads);
                  if (upsertErr) throw upsertErr;
             }
+            clearOperativaCache();
             return res.json({ success: true, message: "Actualización genérica aplicada.", count: itemIds.length });
         } catch(e) { console.error(e); return res.status(500).json({ success: false, error: e.message }); }
     },
@@ -811,6 +823,7 @@ module.exports = {
                      console.log("[QA-AUDIT] UPSERT Result:", JSON.stringify(writtenPayloads, null, 2));
                  }
             }
+            clearOperativaCache();
             return res.json({ success: true, message: "Unidad aplicada.", count: itemIds.length, upserted: writtenPayloads });
         } catch(e) { console.error(e); return res.status(500).json({ success: false, error: e.message }); }
     },
@@ -840,7 +853,8 @@ module.exports = {
             await supabase.from('proveedor_listas_raw')
                 .update({ status_global: 'CONFIRMED' })
                 .eq('id', archivoId);
-                
+            
+            clearOperativaCache();
             return res.json({ success: true, message: "Extracción revertida con éxito." });
         } catch(e) {
             console.error("[MasterTableController] revertExtraction error:", e);
@@ -849,6 +863,10 @@ module.exports = {
     },
     getOperativaRecords: async (req, res) => {
         try {
+            if (operativaRecordsCache) {
+                console.log("[MasterTableController] ⚡ Sirviendo registros de tabla maestra operativa desde CACHÉ.");
+                return res.json({ success: true, data: operativaRecordsCache });
+            }
             const supabase = require('../config/supabaseClient');
             
             // [VINCULACIÓN ESTRUCTURAL] Ahora hacemos query incluyendo maestro_rubros y categorias_proveedores
@@ -972,6 +990,8 @@ module.exports = {
                 return outRow;
             });
             
+            operativaRecordsCache = mappedData;
+            console.log("[MasterTableController] 💾 Caché de registros de la tabla maestra operativa almacenada.");
             return res.json({ success: true, data: mappedData });
         } catch(e) {
             console.error("[MasterTableController] getOperativaRecords error:", e);
@@ -1134,6 +1154,7 @@ module.exports = {
             const { data, error } = await supabase.from('tabla_maestra_operativa').upsert([payload]).select().single();
             if (error) throw error;
 
+            clearOperativaCache();
             return res.json({ success: true, data, message: "Ingreso manual registrado." });
         } catch (e) {
             console.error("[MasterTableController] insertManualRecord error:", e);
@@ -1171,6 +1192,7 @@ module.exports = {
 
             if (delError) throw delError;
 
+            clearOperativaCache();
             return res.json({ success: true, message: "Registro manual eliminado." });
         } catch (e) {
             console.error("[MasterTableController] deleteManualRecord error:", e);

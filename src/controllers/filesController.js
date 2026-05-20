@@ -948,6 +948,16 @@ async function rollbackFiles(req, res) {
             }
         }
 
+        // Invalidar la caché de registros operativos ante rollback o desvinculación (Ticket #131)
+        try {
+            const { clearOperativaCache } = require('./masterTableController');
+            if (typeof clearOperativaCache === 'function') {
+                clearOperativaCache();
+            }
+        } catch (err) {
+            console.error("[Rollback Cache Clear] Falló al invalidar la caché:", err);
+        }
+
         res.json({
             success: true,
             results: results

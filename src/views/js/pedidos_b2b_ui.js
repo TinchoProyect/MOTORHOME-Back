@@ -25,9 +25,84 @@ function parseUnitScale(unitStr) {
     return bult * val;
 }
 
+// Funciones de resolución robusta (Fuzzy Getters) para precios promocionales y condiciones de promoción.
+// Estas funciones buscan de forma insensible a mayúsculas/minúsculas entre varias posibles claves.
+function getFuzzyPromoPrice(p, row) {
+    const targets = [p, row];
+    const priceKeys = [
+        'precio_promo', 'precio_promocional', 'preciopromo', 'preciopromocional', 
+        'promo', 'precio_promocion', 'preciopromocion', 'precio_referencia_promocional'
+    ];
+    for (const t of targets) {
+        if (!t) continue;
+        // Búsqueda de coincidencia exacta primero
+        for (const key of priceKeys) {
+            if (t[key] !== undefined && t[key] !== null && String(t[key]).trim() !== '') {
+                const val = sanitizeLatAmPrice(t[key]);
+                if (val > 0) return val;
+            }
+        }
+        // Búsqueda insensible a mayúsculas/minúsculas en las claves del objeto
+        const tKeys = Object.keys(t);
+        for (const key of priceKeys) {
+            const matchedKey = tKeys.find(tk => tk.toLowerCase() === key.toLowerCase());
+            if (matchedKey && t[matchedKey] !== undefined && t[matchedKey] !== null && String(t[matchedKey]).trim() !== '') {
+                const val = sanitizeLatAmPrice(t[matchedKey]);
+                if (val > 0) return val;
+            }
+        }
+    }
+    return 0;
+}
+
+function getFuzzyPromoRule(p, row) {
+    const targets = [p, row];
+    const ruleKeys = [
+        'regla', 'regla_promo', 'reglapromo', 'condicion', 'condicion_promo', 'condicionpromo', 
+        'condicion_promocional', 'condicionpromocional'
+    ];
+    for (const t of targets) {
+        if (!t) continue;
+        // Búsqueda de coincidencia exacta primero
+        for (const key of ruleKeys) {
+            if (t[key] !== undefined && t[key] !== null && String(t[key]).trim() !== '') {
+                return String(t[key]).trim();
+            }
+        }
+        // Búsqueda insensible a mayúsculas/minúsculas en las claves del objeto
+        const tKeys = Object.keys(t);
+        for (const key of ruleKeys) {
+            const matchedKey = tKeys.find(tk => tk.toLowerCase() === key.toLowerCase());
+            if (matchedKey && t[matchedKey] !== undefined && t[matchedKey] !== null && String(t[matchedKey]).trim() !== '') {
+                return String(t[matchedKey]).trim();
+            }
+        }
+    }
+    return null;
+}
+
 // pedidos_b2b_ui.js
 
 window.activeB2BProvider = null;
+
+// Helper interactivo para desplegar de manera determinista el calendario nativo (Ticket #132)
+window.triggerB2BDatePicker = function() {
+    const input = document.getElementById('b2bArrivalDate');
+    if (input) {
+        try {
+            if (typeof input.showPicker === 'function') {
+                input.showPicker();
+            } else {
+                input.focus();
+                input.click();
+            }
+        } catch (e) {
+            console.warn("[DatePicker] showPicker no soportado o bloqueado en este entorno:", e);
+            input.focus();
+            input.click();
+        }
+    }
+};
 
 window.openB2BCheckout = async function() {
     const modal = document.getElementById('b2bCheckoutModal');
@@ -36,10 +111,51 @@ window.openB2BCheckout = async function() {
         if (window.lucide) window.lucide.createIcons();
         window.renderB2BProviders();
         
+        // CONFIGURACIÓN DE INTERACCIÓN LOGÍSTICA DEL CALENDARIO (Ticket #132)
+        const dateInput = document.getElementById('b2bArrivalDate');
+        if (dateInput) {
+            const dateIconContainer = dateInput.parentElement ? dateInput.parentElement.firstElementChild : null;
+            
+            // Transmutación de contenedor del icono en botón táctil e interactivo premium
+            if (dateIconContainer && dateIconContainer !== dateInput) {
+                dateIconContainer.style.cursor = 'pointer';
+                dateIconContainer.classList.add('hover:bg-slate-700', 'transition-colors');
+                dateIconContainer.title = "Abrir Calendario de Entrega";
+                dateIconContainer.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.triggerB2BDatePicker();
+                };
+            }
+            
+            // Gatillo al hacer clic directo sobre el campo
+            dateInput.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                window.triggerB2BDatePicker();
+            };
+            
+            // Gatillo al hacer foco en el selector
+            dateInput.onfocus = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                window.triggerB2BDatePicker();
+            };
+            
+            // Persistencia reactiva del cambio de fecha por proveedor
+            dateInput.onchange = function() {
+                const currentPid = window.activeB2BProvider;
+                if (currentPid) {
+                    localStorage.setItem(`lamda_b2b_date_${currentPid}`, dateInput.value);
+                }
+            };
+        }
+        
         // EVALUACIÓN ON-LOAD (Desacople de Catálogo): Carga maestra en background para alimentar Reactividad
         if (!window._rawLamdaData) {
             try {
-                const res = await fetch('/api/master-table/operativa');
+                const backendUrl = (typeof CONFIG !== 'undefined' && CONFIG.BACKEND_URL) ? CONFIG.BACKEND_URL : 'http://localhost:5655';
+                const res = await fetch(`${backendUrl}/api/master-table/operativa`);
                 if (res.ok) {
                     const opJson = await res.json();
                     window._rawLamdaData = opJson.data;
@@ -79,6 +195,16 @@ function getB2BCart() {
 function saveB2BCart(cart) {
     localStorage.setItem('lamda_b2b_cart', JSON.stringify(cart));
 }
+
+window.toggleB2BPromo = function(id) {
+    const cart = getB2BCart();
+    const item = cart.find(x => x._system_id === id);
+    if(item) {
+        item.usar_promo = !item.usar_promo;
+        saveB2BCart(cart);
+        window.renderB2BActiveItems();
+    }
+};
 
 window.renderB2BProviders = function() {
     let cart = [];
@@ -156,6 +282,13 @@ window.renderB2BActiveItems = function() {
     
     if(!pid) return;
     
+    // Restaurar reactivamente la Fecha de Entrega guardada para este proveedor (Ticket #132)
+    const savedDate = localStorage.getItem(`lamda_b2b_date_${pid}`);
+    const dateInput = document.getElementById('b2bArrivalDate');
+    if (dateInput) {
+        dateInput.value = savedDate || '';
+    }
+    
     const activeItems = cart.filter(x => String(x.proveedor_id) === String(pid));
     
     if(activeItems.length > 0) {
@@ -175,54 +308,44 @@ window.renderB2BActiveItems = function() {
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-800/30 border-b border-slate-800/50";
             
-            let priceRef = sanitizeLatAmPrice(item.precio_unitario) || 0;
-            const qty = parseInt(item.cantidad) || 1;
-            let isPromoApplied = false;
-            
-            // Remediación de Amnesia (Backward Compatibility para ítems oxidados en LocalStorage)
+            // Remediación de Amnesia (Compatibilidad hacia atrás con Fuzzy Getters tolerante a nulos e indefinidos)
             let reglaToUse = item.regla;
             let promoToUse = item.promo;
-            if (reglaToUse === undefined && window._rawLamdaData) {
+            if ((reglaToUse === undefined || reglaToUse === null || promoToUse === undefined || promoToUse === null || promoToUse === 0) && window._rawLamdaData) {
                 const masterRow = window._rawLamdaData.find(r => String(r.id) === String(item._system_id) || String(r._system_id) === String(item._system_id));
-                if (masterRow && masterRow.datos_maestros) {
-                    reglaToUse = masterRow.datos_maestros.regla || masterRow.regla || null;
-                    promoToUse = masterRow.datos_maestros.promo || masterRow.promo || null;
-                    // Auto-sanar el objeto temporalmente en memoria (se persistirá en la próxima modificación de cantidad)
-                    item.regla = reglaToUse;
-                    item.promo = promoToUse;
+                if (masterRow) {
+                    const mp = masterRow.datos_maestros || {};
+                    const resolvedRegla = getFuzzyPromoRule(mp, masterRow);
+                    const resolvedPromo = getFuzzyPromoPrice(mp, masterRow);
+                    if (reglaToUse === undefined || reglaToUse === null) {
+                        reglaToUse = resolvedRegla;
+                        item.regla = reglaToUse;
+                    }
+                    if (promoToUse === undefined || promoToUse === null || promoToUse === 0) {
+                        promoToUse = resolvedPromo;
+                        item.promo = promoToUse;
+                    }
                 }
+            }
+
+            const standardPrice = sanitizeLatAmPrice(item.precio_unitario) || 0;
+            const promoPrice = sanitizeLatAmPrice(promoToUse) || 0;
+            const hasPromo = promoPrice > 0;
+            
+            let priceRef = standardPrice;
+            let isPromoApplied = false;
+            let isManualApplied = false;
+            
+            // Priorización del Valor Soberano sobre cualquier otra lógica (Ticket #131)
+            if (item.usar_precio_manual && item.precio_manual !== undefined && item.precio_manual !== null) {
+                priceRef = sanitizeLatAmPrice(item.precio_manual) || 0;
+                isManualApplied = true;
+            } else if (item.usar_promo && hasPromo) {
+                priceRef = promoPrice;
+                isPromoApplied = true;
             }
             
-            // Evaluador Reactivo Promocional
-            if (reglaToUse && String(reglaToUse).trim() !== '') {
-                console.log(`\n=======================================\n🛡️ [VIGÍA DEPURADOR B2B / GATILLO PROMOCIONAL]\n- SKU: ${item.codigo_producto}\n- Cantidad Tipeada: ${qty}\n- Regla Cruda (reglaToUse): "${reglaToUse}"\n- Promo Cruda (promoToUse): "${promoToUse}"`);
-                const match = String(reglaToUse).match(/CANTIDAD:\s*(\d+)/i);
-                if (match) {
-                    const threshold = parseInt(match[1]);
-                    console.log(`- Regla Parseada Exitosamente. Umbral Exigido: ${threshold} unidades.`);
-                    if (!isNaN(threshold)) {
-                        if (qty >= threshold) {
-                            console.log(`- ✅ CONDICIÓN SUPERADA (Cantidad ${qty} >= Umbral ${threshold}). Intentando extraer Precio Promo...`);
-                            const promoPrice = sanitizeLatAmPrice(promoToUse);
-                            console.log(`- Precio Promo Saneado: ${promoPrice}`);
-                            if (promoPrice > 0) {
-                                priceRef = promoPrice;
-                                isPromoApplied = true;
-                                console.log(`- 🎯 GATILLO ACCIONADO: Precio de Referencia sustituido exitosamente a $${priceRef}`);
-                            } else {
-                                console.warn(`- ⚠️ FALLO DE GATILLO: El precio promo saneado es 0 o inválido. No se aplicará la promoción.`);
-                            }
-                        } else {
-                            console.log(`- ❌ CONDICIÓN NO SUPERADA (Cantidad ${qty} < Umbral ${threshold}). Se mantiene precio base.`);
-                        }
-                    } else {
-                        console.warn(`- ⚠️ FALLO DE PARSEO: Umbral extraído no es un número válido (NaN).`);
-                    }
-                } else {
-                    console.warn(`- ⚠️ FALLO DE REGEX: La regla no contiene el patrón esperado 'CANTIDAD:[numero]'.`);
-                }
-                console.log(`=======================================\n`);
-            }
+            const qty = parseInt(item.cantidad) || 1;
             
             const bult = sanitizeLatAmPrice(item.cant_bult) || 1;
             const val = sanitizeLatAmPrice(item.cant_valor) || 1;
@@ -237,22 +360,35 @@ window.renderB2BActiveItems = function() {
             sumPrice += totalItemPrice;
             
             let htmlPriceCol = '';
-            if (isPromoApplied) {
-                const oldPrice = sanitizeLatAmPrice(item.precio_unitario) || 0;
+            if (isManualApplied) {
+                htmlPriceCol = `
+                    <div class="flex flex-col text-right">
+                        <span class="text-amber-400 font-black magnifier-number">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                        <span class="text-[7px] text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1 py-[1px] rounded font-bold uppercase w-fit ml-auto">MANUAL</span>
+                    </div>
+                    <span class="uppercase opacity-50 ml-1 whitespace-nowrap text-slate-400 flex items-end mb-0.5">${unitLabel}</span>
+                `;
+            } else if (isPromoApplied) {
+                const oldPrice = standardPrice;
                 htmlPriceCol = `
                     <div class="flex flex-col text-right">
                         <span class="text-slate-500 line-through text-[8px] opacity-70 leading-none mb-0.5">$${oldPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>
-                        <span class="text-emerald-400 font-bold leading-none">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                        <span class="text-emerald-400 font-bold leading-none magnifier-number">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>
                     </div>
                     <span class="uppercase opacity-50 ml-1 whitespace-nowrap text-slate-400 flex items-end mb-0.5">${unitLabel}</span>
                 `;
             } else {
-                htmlPriceCol = `<span class="text-slate-400">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span class="uppercase opacity-50 ml-1 whitespace-nowrap text-slate-400">${unitLabel}</span>`;
+                htmlPriceCol = `<span class="text-slate-400 magnifier-number">$${priceRef.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span> <span class="uppercase opacity-50 ml-1 whitespace-nowrap text-slate-400">${unitLabel}</span>`;
             }
 
-            const htmlTotalPriceCol = isPromoApplied 
-                ? `<div class="flex items-center justify-end gap-1"><span class="bg-emerald-600/20 text-emerald-400 px-1 py-[1px] rounded text-[7px] uppercase font-bold border border-emerald-500/30">PROMO</span> <span class="text-emerald-400">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>`
-                : `<span class="text-purple-400">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>`;
+            let htmlTotalPriceCol = '';
+            if (isManualApplied) {
+                htmlTotalPriceCol = `<div class="flex items-center justify-end gap-1"><span class="bg-amber-600/20 text-amber-400 px-1 py-[1px] rounded text-[7px] uppercase font-bold border border-amber-500/30">MANUAL</span> <span class="text-amber-400 font-bold magnifier-number">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>`;
+            } else if (isPromoApplied) {
+                htmlTotalPriceCol = `<div class="flex items-center justify-end gap-1"><span class="bg-emerald-600/20 text-emerald-400 px-1 py-[1px] rounded text-[7px] uppercase font-bold border border-emerald-500/30">PROMO</span> <span class="text-emerald-400 font-bold magnifier-number">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>`;
+            } else {
+                htmlTotalPriceCol = `<span class="text-purple-400 font-bold magnifier-number">$${totalItemPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>`;
+            }
             
             tr.innerHTML = `
                 <td class="p-1 px-2 text-[10px] font-mono text-slate-400 border-r border-slate-800/30">
@@ -261,8 +397,25 @@ window.renderB2BActiveItems = function() {
                         ${item.codigo_producto}
                     </div>
                 </td>
-                <td class="p-1 px-2 text-[10px] font-bold ${item.es_promo ? 'text-emerald-300' : 'text-slate-200'} whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title="${item.producto_descripcion}">${item.producto_descripcion}</td>
-                <td class="p-1 px-2 text-[10px] text-right whitespace-nowrap"><div class="flex justify-end h-full items-center">${htmlPriceCol}</div></td>
+                <td class="p-1 px-2 text-[10px] border-r border-slate-800/30 max-w-[220px]">
+                    <div class="font-bold ${isPromoApplied ? 'text-emerald-300' : (isManualApplied ? 'text-amber-300' : 'text-slate-200')} truncate" title="${item.producto_descripcion}">${item.producto_descripcion}</div>
+                    ${hasPromo ? `
+                    <div class="flex items-center gap-1.5 mt-0.5">
+                        <span class="bg-emerald-500/20 text-emerald-400 px-1.5 py-[2px] rounded-[3px] text-[7px] uppercase font-extrabold border border-emerald-500/30 tracking-wider">⚡ PROMO DISPONIBLE</span>
+                        <label class="relative inline-flex items-center cursor-pointer select-none">
+                            <input type="checkbox" onchange="window.toggleB2BPromo('${item._system_id}')" ${item.usar_promo ? 'checked' : ''} class="sr-only peer" ${isManualApplied ? 'disabled' : ''}>
+                            <div class="relative w-6 h-3.5 bg-slate-800 peer-checked:bg-emerald-600/90 peer-disabled:opacity-40 rounded-full transition-colors after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-slate-400 peer-checked:after:bg-emerald-100 after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:after:translate-x-2.5 shadow-inner border border-slate-700/50"></div>
+                        </label>
+                    </div>
+                    ` : ''}
+                </td>
+                <td id="b2bPriceCell_${item._system_id}" 
+                    ondblclick="window.enterB2BManualPriceEdit('${item._system_id}', event)" 
+                    oncontextmenu="window.enterB2BManualPriceEdit('${item._system_id}', event); return false;" 
+                    class="p-1 px-2 text-[10px] text-right whitespace-nowrap cursor-pointer hover:bg-slate-700/20 transition-all select-none border-r border-slate-800/30"
+                    title="Doble clic o clic derecho para editar precio manualmente">
+                    <div class="flex justify-end h-full items-center">${htmlPriceCol}</div>
+                </td>
                 <td class="p-1 bg-emerald-900/10 border-l border-r border-emerald-900/30">
                     <div class="flex items-center justify-center gap-1">
                         <button onclick="window.updateB2BQty('${item._system_id}', -1)" class="w-5 h-5 rounded bg-slate-800 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">-</button>
@@ -273,7 +426,7 @@ window.renderB2BActiveItems = function() {
                         </button>
                     </div>
                 </td>
-                <td class="p-1 px-2 text-[10px] font-bold text-blue-400 text-center bg-blue-900/10 border-r border-slate-800/30">${isKgOrLts ? totalItemKg.toFixed(2) + ' Kg/Lt' : '--'}</td>
+                <td class="p-1 px-2 text-[10px] font-bold text-blue-400 text-center bg-blue-900/10 border-r border-slate-800/30">${isKgOrLts ? '<span class="magnifier-number">' + totalItemKg.toFixed(2) + '</span> Kg/Lt' : '--'}</td>
                 <td class="p-1 px-2 text-[11px] font-bold text-right bg-purple-900/10">${htmlTotalPriceCol}</td>
             `;
             tbody.appendChild(tr);
@@ -283,7 +436,8 @@ window.renderB2BActiveItems = function() {
         if (b2bTotalKg) b2bTotalKg.innerText = sumKg > 0 ? sumKg.toFixed(2) + ' Kg/Lt' : '--';
         const b2bTotalPrice = document.getElementById('b2bTotalPrice');
         if (b2bTotalPrice) b2bTotalPrice.innerText = '$' + sumPrice.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2});
-
+        
+        if(window.lucide) window.lucide.createIcons();
     } else {
         if (emptyState) emptyState.classList.remove('hidden');
         if (tbody) tbody.innerHTML = '';
@@ -376,6 +530,13 @@ window.emptyB2BOrder = function() {
         
         // Destruimos la sesión del Order ID atada a este proveedor
         localStorage.removeItem(`lamda_b2b_order_id_${providerId}`);
+        
+        // Destruimos la fecha logística guardada para este proveedor (Ticket #132)
+        localStorage.removeItem(`lamda_b2b_date_${providerId}`);
+        const dateInput = document.getElementById('b2bArrivalDate');
+        if (dateInput && String(window.activeB2BProvider) === String(providerId)) {
+            dateInput.value = '';
+        }
         
         // Update Panel Superior
         window.renderB2BProviders();
@@ -514,29 +675,26 @@ window.generateB2BPdf = async function(forensicPid = null, forensicPName = null,
         const qty = parseInt(i.cantidad) || 1;
         let isPromoApplied = false;
         
-        let reglaToUse = i.regla;
         let promoToUse = i.promo;
-        if (reglaToUse === undefined && window._rawLamdaData) {
+        if ((promoToUse === undefined || promoToUse === null || promoToUse === 0) && window._rawLamdaData) {
             const masterRow = window._rawLamdaData.find(r => String(r.id) === String(i._system_id) || String(r._system_id) === String(i._system_id));
-            if (masterRow && masterRow.datos_maestros) {
-                reglaToUse = masterRow.datos_maestros.regla || masterRow.regla || null;
-                promoToUse = masterRow.datos_maestros.promo || masterRow.promo || null;
-                i.regla = reglaToUse;
+            if (masterRow) {
+                const mp = masterRow.datos_maestros || {};
+                promoToUse = getFuzzyPromoPrice(mp, masterRow);
                 i.promo = promoToUse;
             }
         }
         
-        if (reglaToUse && String(reglaToUse).trim() !== '') {
-            const match = String(reglaToUse).match(/CANTIDAD:\s*(\d+)/i);
-            if (match) {
-                const threshold = parseInt(match[1]);
-                if (!isNaN(threshold) && qty >= threshold) {
-                    const promoPrice = sanitizeLatAmPrice(promoToUse);
-                    if (promoPrice > 0) {
-                        price = promoPrice;
-                        isPromoApplied = true;
-                    }
-                }
+        // Jerarquía de precios: Valor Soberano priorizado (Ticket #131)
+        let isManualApplied = false;
+        if (i.usar_precio_manual && i.precio_manual !== undefined && i.precio_manual !== null) {
+            price = sanitizeLatAmPrice(i.precio_manual) || 0;
+            isManualApplied = true;
+        } else if (i.usar_promo) {
+            const promoPrice = sanitizeLatAmPrice(promoToUse);
+            if (promoPrice > 0) {
+                price = promoPrice;
+                isPromoApplied = true;
             }
         }
         
@@ -821,29 +979,26 @@ window.sendB2BWhatsApp = async function() {
         let price = sanitizeLatAmPrice(i.precio_unitario) || 0;
         let isPromoApplied = false;
         
-        let reglaToUse = i.regla;
         let promoToUse = i.promo;
-        if (reglaToUse === undefined && window._rawLamdaData) {
+        if ((promoToUse === undefined || promoToUse === null || promoToUse === 0) && window._rawLamdaData) {
             const masterRow = window._rawLamdaData.find(r => String(r.id) === String(i._system_id) || String(r._system_id) === String(i._system_id));
-            if (masterRow && masterRow.datos_maestros) {
-                reglaToUse = masterRow.datos_maestros.regla || masterRow.regla || null;
-                promoToUse = masterRow.datos_maestros.promo || masterRow.promo || null;
-                i.regla = reglaToUse;
+            if (masterRow) {
+                const mp = masterRow.datos_maestros || {};
+                promoToUse = getFuzzyPromoPrice(mp, masterRow);
                 i.promo = promoToUse;
             }
         }
         
-        if (reglaToUse && String(reglaToUse).trim() !== '') {
-            const match = String(reglaToUse).match(/CANTIDAD:\s*(\d+)/i);
-            if (match) {
-                const threshold = parseInt(match[1]);
-                if (!isNaN(threshold) && qty >= threshold) {
-                    const promoPrice = sanitizeLatAmPrice(promoToUse);
-                    if (promoPrice > 0) {
-                        price = promoPrice;
-                        isPromoApplied = true;
-                    }
-                }
+        // Jerarquía de precios: Valor Soberano priorizado (Ticket #131)
+        let isManualApplied = false;
+        if (i.usar_precio_manual && i.precio_manual !== undefined && i.precio_manual !== null) {
+            price = sanitizeLatAmPrice(i.precio_manual) || 0;
+            isManualApplied = true;
+        } else if (i.usar_promo) {
+            const promoPrice = sanitizeLatAmPrice(promoToUse);
+            if (promoPrice > 0) {
+                price = promoPrice;
+                isPromoApplied = true;
             }
         }
         
@@ -1056,8 +1211,8 @@ window.renderB2BCatalog = function(searchTerm = '') {
             const uni = p.unidad || p.unidad_medida || item.unidad || item.unidad_medida || 'Unidad';
             const prc = sanitizeLatAmPrice(p.precio || item.precio) || 0;
             
-            const regla = p.regla || item.regla || null;
-            const promo = p.promo || item.promo || null;
+            const regla = getFuzzyPromoRule(p, item);
+            const promo = getFuzzyPromoPrice(p, item);
             
             let actionHtml = '';
             if (isAdded) {
@@ -1079,18 +1234,36 @@ window.renderB2BCatalog = function(searchTerm = '') {
                                 </div>`;
             }
 
+            // Inyectar indicador preventivo en la descripción del catálogo interactivo (Ticket #131)
+            let descHtml = desc;
+            if (promo > 0) {
+                const promoFormatted = promo.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+                descHtml = `<div class="flex flex-col gap-0.5">
+                                <span class="truncate" title="${desc}">${desc}</span>
+                                <span class="bg-fuchsia-600/30 border border-fuchsia-500/50 text-fuchsia-400 px-1 py-[2px] rounded shadow text-[8px] uppercase font-black tracking-wider w-fit" title="Promo Vigente: ${regla || 'Descuento activo'}">⚡ PROMO $${promoFormatted}</span>
+                            </div>`;
+            }
+
+            // Diseñar fila de precio con visualización de precio estándar y promo combinados con tooltip interactivo.
             let finalPriceHtml = `$${prc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}`;
             if (regla && String(regla).trim() !== '') {
                 const match = String(regla).match(/CANTIDAD:\s*(\d+)/i);
                 const cant = match ? match[1] : '?';
-                const promoVal = promo || 'N/A';
-                const tooltipText = `Promoción: Llevando ${cant} unidades o más -> Precio: $ ${promoVal}`;
-                finalPriceHtml = `<div class="group relative inline-block w-full cursor-help text-right" title="${tooltipText}">
-                                      ${finalPriceHtml}
-                                      <div class="absolute bottom-full right-0 mb-1 hidden group-hover:block w-max max-w-xs bg-indigo-950 border border-indigo-500/50 text-indigo-200 text-[9px] p-1.5 rounded shadow-xl z-50 whitespace-nowrap text-left">
-                                          <span class="text-fuchsia-400 font-bold">⚡ Promo:</span> \u2265 <span class="text-white font-bold">${cant}</span> u. -> Precio: <span class="text-emerald-400 font-bold">$ ${promoVal}</span>
-                                      </div>
-                                  </div>`;
+                const promoVal = promo ? `$${promo.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}` : 'N/A';
+                const tooltipText = `Promoción: Llevando ${cant} unidades o más -> Precio: ${promoVal}`;
+                
+                finalPriceHtml = `
+                <div class="group relative inline-block w-full cursor-help text-right" title="${tooltipText}">
+                    <div class="flex flex-col items-end leading-none gap-0.5">
+                        <span class="text-slate-400 line-through text-[9px] font-medium">$${prc.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                        <span class="text-fuchsia-400 font-extrabold text-[10px]">⚡ ${promoVal}</span>
+                    </div>
+                    <div class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block w-max max-w-xs bg-slate-900 border border-fuchsia-500/50 text-slate-200 text-[9px] p-2 rounded shadow-2xl z-50 whitespace-nowrap text-left leading-normal font-sans shadow-fuchsia-500/10">
+                        <div class="text-fuchsia-400 font-extrabold uppercase tracking-wide border-b border-fuchsia-500/20 pb-0.5 mb-1.5 flex items-center gap-1">⚡ Regla Promocional</div>
+                        <div class="mb-0.5">Cantidad Mínima: <span class="text-white font-extrabold">${cant}</span> u.</div>
+                        <div>Precio Oferta: <span class="text-emerald-400 font-extrabold">${promoVal}</span></div>
+                    </div>
+                </div>`;
             }
             
             tr.innerHTML = `
@@ -1100,8 +1273,8 @@ window.renderB2BCatalog = function(searchTerm = '') {
                 <td class="p-1.5 text-[10px] font-mono text-slate-400 border-b border-slate-800/50">
                     ${finalCodHtml}
                 </td>
-                <td class="p-1.5 text-[10px] font-bold text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px] border-b border-slate-800/50" title="${desc}">
-                    ${desc}
+                <td class="p-1.5 text-[10px] font-bold text-slate-200 whitespace-nowrap border-b border-slate-800/50 max-w-[150px]">
+                    ${descHtml}
                 </td>
                 <td class="p-1.5 text-[10px] font-bold text-slate-400 text-center border-b border-slate-800/50">
                     ${uni}
@@ -1125,6 +1298,84 @@ window.renderB2BCatalog = function(searchTerm = '') {
 window.filterB2BCatalog = function() {
     const val = document.getElementById('b2bCatalogSearch').value;
     window.renderB2BCatalog(val);
+};
+
+// ==========================================
+// MÓDULO: SOBRESCRITURA DE PRECIO MANUAL ("VALOR SOBERANO") - TICKET #131
+// ==========================================
+window.enterB2BManualPriceEdit = function(id, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const cell = document.getElementById(`b2bPriceCell_${id}`);
+    if (!cell || cell.querySelector('input')) return; // Ya está en modo edición
+    
+    const cart = getB2BCart();
+    const item = cart.find(x => x._system_id === id);
+    if (!item) return;
+    
+    // Determinar valor inicial del input respetando la jerarquía
+    let currentVal = item.precio_unitario;
+    if (item.usar_precio_manual && item.precio_manual !== null && item.precio_manual !== undefined) {
+        currentVal = item.precio_manual;
+    } else if (item.usar_promo && item.promo) {
+        currentVal = item.promo;
+    }
+    
+    // Crear el elemento input con estilos premium en color dorado y efecto neón
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = '0.01';
+    input.min = '0';
+    input.value = currentVal;
+    input.className = "w-20 bg-slate-950 border border-amber-500 text-right text-amber-400 font-bold px-1.5 py-0.5 outline-none text-[10px] rounded focus:border-amber-400 focus:ring-1 focus:ring-amber-400 hide-arrows select-all shadow-[0_0_8px_rgba(245,158,11,0.2)]";
+    
+    // Al perder el foco se consolida el cambio
+    input.onblur = function() {
+        window.saveB2BManualPrice(id, input.value);
+    };
+    
+    // Captura de teclas para confirmación (Enter) o cancelación (Escape)
+    input.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            window.saveB2BManualPrice(id, input.value);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            window.renderB2BActiveItems(); // Cancela y restaura la fila
+        }
+    };
+    
+    cell.innerHTML = '';
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+};
+
+window.saveB2BManualPrice = function(id, value) {
+    const cart = getB2BCart();
+    const item = cart.find(x => x._system_id === id);
+    if (item) {
+        const cleanedValue = value !== null && value !== undefined ? String(value).trim() : '';
+        if (cleanedValue === '') {
+            // Remoción de precio manual si el input se vacía por completo (revierte al original)
+            item.usar_precio_manual = false;
+            item.precio_manual = null;
+        } else {
+            const parsed = parseFloat(cleanedValue);
+            if (!isNaN(parsed) && parsed >= 0) {
+                item.usar_precio_manual = true;
+                item.precio_manual = parsed;
+            } else {
+                // Entrada no válida: cancelar cambios sin alterar el modelo
+                window.renderB2BActiveItems();
+                return;
+            }
+        }
+        saveB2BCart(cart);
+        window.renderB2BActiveItems();
+    }
 };
 
 window.addB2BCatalogItemRow = function(sysId) {
@@ -1156,10 +1407,13 @@ window.addB2BCatalogItem = function(sysId, initQty = 1) {
         unidad_medida: p.unidad || p.unidad_medida || row.unidad || 'Unidad',
         cant_bult: p.cant_bult || row.cant_bult || 1,
         cant_valor: p.cant_valor || row.cant_valor || 1,
-        es_promo: !!(p.precio_promo || row.precio_promo || p.condicion_promo || row.condicion_promo),
-        regla: p.regla || row.regla || null,
-        promo: p.promo || row.promo || null,
-        iva_aplicado: p.iva || row.iva || 0
+        es_promo: !!(getFuzzyPromoPrice(p, row) > 0 || getFuzzyPromoRule(p, row)),
+        regla: getFuzzyPromoRule(p, row),
+        promo: getFuzzyPromoPrice(p, row) || null,
+        iva_aplicado: p.iva || row.iva || 0,
+        usar_promo: false,
+        usar_precio_manual: false,
+        precio_manual: null
     });
     
     saveB2BCart(cart);
@@ -1274,14 +1528,26 @@ window.commitB2BOrder = async function() {
         proveedor_id: pid,
         tipo_documento: docType,
         fecha_recepcion_estimada: estDate,
-        items: activeItems.map(i => ({ 
-            producto_codigo: i.codigo_producto, 
-            producto_descripcion: i.producto_descripcion,
-            cantidad: i.cantidad,
-            valor_unitario_ref: i.precio_unitario,
-            unidad_ref: i.unidad_medida,
-            iva_aplicado: i.iva_aplicado
-        }))
+        items: activeItems.map(i => {
+            let price = sanitizeLatAmPrice(i.precio_unitario) || 0;
+            // Jerarquía de precios: Valor Soberano priorizado (Ticket #131)
+            if (i.usar_precio_manual && i.precio_manual !== undefined && i.precio_manual !== null) {
+                price = sanitizeLatAmPrice(i.precio_manual) || 0;
+            } else if (i.usar_promo) {
+                const promoPrice = sanitizeLatAmPrice(i.promo);
+                if (promoPrice > 0) {
+                    price = promoPrice;
+                }
+            }
+            return { 
+                producto_codigo: i.codigo_producto, 
+                producto_descripcion: i.producto_descripcion,
+                cantidad: i.cantidad,
+                valor_unitario_ref: price,
+                unidad_ref: i.unidad_medida,
+                iva_aplicado: i.iva_aplicado
+            };
+        })
     };
     
     try {
@@ -1309,6 +1575,11 @@ window.commitB2BOrder = async function() {
             let fullCart = getB2BCart();
             fullCart = fullCart.filter(x => String(x.proveedor_id) !== String(pid));
             saveB2BCart(fullCart);
+            
+            // Limpiar fecha persistida e input tras transacción exitosa (Ticket #132)
+            localStorage.removeItem(`lamda_b2b_date_${pid}`);
+            const dateInput = document.getElementById('b2bArrivalDate');
+            if (dateInput) dateInput.value = '';
             
             // Cerrar escritorio de Operaciones B2B
             window.closeB2BCheckout();
