@@ -1143,6 +1143,13 @@ function openSupplierModal(isEdit = false) {
     modal.classList.remove('hidden');
     // loadDriveFolders deprecated in favor of auto-provisioning
 
+    // [TICKET #134] Habilitar explícitamente el CUIT para edición en ambos modos (Alta y Edición)
+    const cuitInput = document.getElementById('supplierCuitInput');
+    if (cuitInput) {
+        cuitInput.readOnly = false;
+        cuitInput.disabled = false;
+    }
+
     if (!isEdit) {
         // Modo Alta
         editingSupplierId = null;
