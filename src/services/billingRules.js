@@ -44,6 +44,39 @@ const roundToTwo = (num) => {
 
 const ProviderBillingRules = {
     // ----------------------------------------------------
+    // REGLA: BILLARES/VILLARES (Cálculo de Subtotales por Kilo / Factor)
+    // ----------------------------------------------------
+    // ID de proveedor en Supabase: 5515e04d-248d-416c-8cb2-d36e006d549d
+    // CUIT de proveedor sin guiones: 30537853014
+    "5515e04d-248d-416c-8cb2-d36e006d549d": (extractedJson) => {
+        if (extractedJson.articulos && extractedJson.articulos.length > 0) {
+            extractedJson.articulos = extractedJson.articulos.map(art => {
+                const cant = parseSafeFloat(art.cantidad || 1);
+                const puOriginal = parseSafeFloat(art.precio_unitario || 0);
+                const factor = parseSafeFloat(art.factor_conversion || 1);
+                
+                // [DIRECTIVA DETERMINISTA] Fórmula obligatoria del Ticket #136:
+                // Subtotal = Cantidad * Factor de Conversión (Kilos) * Precio Unitario
+                const subtotalCalculado = cant * factor * puOriginal;
+
+                return {
+                    ...art,
+                    precio_unitario_original: puOriginal,
+                    precio_unitario: puOriginal, // Para Billares, el PU es el valor neto por kilogramo
+                    factor_conversion: factor,
+                    subtotal: roundToTwo(subtotalCalculado),
+                    cantidad: cant
+                };
+            });
+        }
+        return extractedJson;
+    },
+    "30537853014": (extractedJson) => {
+        // Redireccionar al handler principal de Villares usando la misma función
+        return ProviderBillingRules["5515e04d-248d-416c-8cb2-d36e006d549d"](extractedJson);
+    },
+
+    // ----------------------------------------------------
     // REGLA: BABOSI (Porcentaje de Bonificación)
     // ----------------------------------------------------
     "906a5e12-c2b6-4191-be0b-ebaa53aed91b": (extractedJson) => { // SUSTITUIR POR ID REAL LUEGO, O USAR CUIT
