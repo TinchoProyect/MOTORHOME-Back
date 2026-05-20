@@ -1012,7 +1012,7 @@ class ViewerAiUi {
                     if (val.trim() && val.trim().length <= 150) this._rawTotalUniqueItems.add(val.trim());
 
                     // [TICKET #137 - MEMORIA DE ESTADO Y PROCESAMIENTO INCREMENTAL]
-                    if (this.selectedRoute === 'literal' && pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
+                    if (this.selectedRoute === 'literal' && this.incrementalMode && pipeline && pipeline.length > 0 && typeof window.viewerETL !== 'undefined') {
                         const mutateRs = window.viewerETL.transformCell(val, pipeline, rawRows[i]);
                         const targetVal = String(mutateRs.display || mutateRs.result || "").trim();
                         

@@ -96,5 +96,21 @@
       "intent": "Mapeo y Agrupación de Texto",
       "lastUsed": 1778729998873
     }
+  ],
+  "col_test_crud_prompts": [
+    {
+      "prompt": "Prompt de prueba de integracion unitaria CRUD 1779308895439",
+      "intent": "Limpieza Literal (1 a 1)",
+      "lastUsed": 1779308895444
+    },
+    {
+      "prompt": "Prompt de prueba de integracion unitaria CRUD 1779308923049 - Variante",
+      "intent": "Relleno de Vacíos",
+      "lastUsed": 1779308924403
+    }
+  ],
+  "col_test_crud_prompts_deleted": [
+    "prompt de prueba de integracion unitaria crud 1779308923049",
+    "prompt de prueba de integracion unitaria crud 1779308923049 - sobreescrito"
   ]
 }
