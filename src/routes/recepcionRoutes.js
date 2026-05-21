@@ -598,11 +598,45 @@ router.get('/trazabilidad/:loteId', async (req, res) => {
     try {
         const { loteId } = req.params;
         
-        if (!loteId || loteId.length < 5) {
-             return res.status(400).json({ success: false, error: 'ID de lote inválido.' });
+        // Validar formato básico y longitud
+        if (!loteId || loteId.trim().length < 5) {
+             return res.status(400).json({ success: false, error: 'ID de lote inválido. Debe tener al menos 5 caracteres.' });
         }
 
-        const { data, error } = await supabase
+        // Limpieza de caracteres: solo caracteres hexadecimales permitidos para UUID
+        const clean = loteId.toLowerCase().replace(/[^0-9a-f]/g, '');
+        if (clean.length < 5) {
+            return res.status(400).json({ success: false, error: 'ID de lote inválido. Caracteres no hexadecimales detectados o insuficientes.' });
+        }
+
+        const isFullUuid = (clean.length === 32);
+
+        // Si es un UUID completo, formatear correctamente. Si es código corto, calcular rangos.
+        let formattedUuid = loteId;
+        let lowerRange = null;
+        let upperRange = null;
+
+        const toUuidStr = (str) => {
+            return [
+                str.substring(0, 8),
+                str.substring(8, 12),
+                str.substring(12, 16),
+                str.substring(16, 20),
+                str.substring(20, 32)
+            ].join('-');
+        };
+
+        if (isFullUuid) {
+            formattedUuid = toUuidStr(clean);
+        } else {
+            const padLower = clean.padEnd(32, '0');
+            const padUpper = clean.padEnd(32, 'f');
+            lowerRange = toUuidStr(padLower);
+            upperRange = toUuidStr(padUpper);
+        }
+
+        // Construir la consulta de forma determinista para evitar errores de casteo en UUID de Postgres
+        let query = supabase
             .from('recepciones_fisicas_items')
             .select(`
                 id,
@@ -621,21 +655,30 @@ router.get('/trazabilidad/:loteId', async (req, res) => {
                     producto_descripcion,
                     unidad_ref
                 )
-            `)
-            .like('id', loteId + '%')
-            .single();
+            `);
+
+        if (isFullUuid) {
+            // Consulta exacta para UUID completo
+            query = query.eq('id', formattedUuid);
+        } else {
+            // Consulta por rango lexicográfico compatible e index-friendly para código corto
+            query = query.gte('id', lowerRange).lte('id', upperRange);
+        }
+
+        const { data: results, error } = await query;
 
         if (error) {
-            // El error PGRST116 es 'No rows found'
-            if (error.code === 'PGRST116') {
-                 return res.json({ success: false, error: 'Lote no encontrado o inexistente.' });
-            }
+            console.error('[RECEPCION] Error en consulta de base de datos:', error);
             throw error;
         }
 
-        if (!data) {
-             return res.json({ success: false, error: 'Lote no encontrado.' });
+        // Si la lista de resultados está vacía, no se encontró el lote
+        if (!results || results.length === 0) {
+             return res.json({ success: false, error: 'Lote no encontrado o inexistente.' });
         }
+
+        // Tomamos el primer registro coincidente (compatibilidad hacia atrás)
+        const data = results[0];
 
         // Parse metrics
         const fechaRecepcion = new Date(data.recepciones_fisicas_cabecera.fecha_recepcion);
