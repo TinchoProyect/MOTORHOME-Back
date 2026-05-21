@@ -7,8 +7,8 @@
     },
     {
       "prompt": "Eres un procesador de datos determinista de la plataforma LAMDA. Tu única tarea es analizar una cadena de texto (descripción de un artículo de inventario) y extraer estrictamente la \"cantidad de bultos\" (el multiplicador físico de la presentación).\n\nReglas lógicas de extracción (Orden de prioridad):\n\nPatrón Explícito (A * B / A x B / A por B): Busca patrones donde haya un número multiplicando a otro (separados por \"*\", \"x\" o la palabra \"por\" en el medio). Debes extraer ÚNICAMENTE el número de la izquierda (A).\n\nLógica: Si dice \"6 * 3 kg\", la cantidad es 6. Si dice \"48 por 70\", la cantidad es 48. Si dice \"10 por 22,68\", la cantidad es 10.\n\nPatrón Implícito / Granel (Omisión del multiplicador): Si el texto menciona una presentación o peso directo precedido por un separador suelto (ej: \"por 25\", \"x 5\") o simplemente indica un peso aislado (\"25 kg\", \"22,68 kg\") SIN un multiplicador a su izquierda, debes deducir lógicamente que se trata de un bulto único por omisión del proveedor. En estos casos, extrae ÚNICAMENTE el número 1.\n\nAusencia de datos: Si la celda está completamente vacía, o si el texto no contiene ninguna referencia a empaque, multiplicador o peso, devuelve la celda vacía.\n\nFormato de Salida: Devuelve EXCLUSIVAMENTE un número entero. No devuelvas texto adicional, ni unidades de medida, ni explicaciones.\n\nEjemplos de procesamiento esperado:\n\nEntrada: Ananá en rodajas cumaná 6 * 3 kg -> Salida: 6\n\nEntrada: Tomate perita 48 por 70 -> Salida: 48\n\nEntrada: Cacao dulce 10 por 1 kg -> Salida: 10\n\nEntrada: Almendra repelada 1 por 22,68 -> Salida: 1\n\nEntrada: Harina de almendras por 25 -> Salida: 1\n\nEntrada: Harina de caju x 5 -> Salida: 1\n\nEntrada: Castañas de caju 25 kg -> Salida: 1",
-      "intent": "General",
-      "lastUsed": 1778506174707
+      "intent": "Generativo",
+      "lastUsed": 1779333129453
     }
   ],
   "CANT_VALOR": [
@@ -19,8 +19,8 @@
     },
     {
       "prompt": "Eres un procesador de datos determinista de la plataforma LAMDA. Tu única tarea es analizar una cadena de texto (descripción de un artículo de inventario) y extraer estrictamente la \"cantidad de valor o peso del bulto\" (el contenido individual de la presentación, ignorando la cantidad de cajas/bultos y las unidades de medida).\n\nReglas lógicas de extracción (Orden de prioridad):\n\nPatrón Explícito (A * B / A x B / A por B): Busca patrones donde haya un multiplicador. Debes extraer ÚNICAMENTE el valor numérico de la DERECHA (B). Ignora el número de la izquierda.\n\nLógica: Si dice \"6 * 3 kg\", el valor a extraer es 3. Si dice \"48 por 70\", es 70. Si dice \"10 por 22,68\", es 22,68.\n\nPatrón Implícito / Granel (por B, x B, o solo B): Si el texto menciona una presentación sin multiplicador a la izquierda (ej: \"por 25\", \"x 5\", \"25 kg\"), debes extraer ÚNICAMENTE ese valor numérico central (B).\n\nLimpieza Numérica (Cero Texto): Elimina absolutamente todas las unidades de medida (kg, gr, g, ml, lts) y palabras sueltas. Devuelve EXCLUSIVAMENTE el número.\n\nDecimales: Respeta el formato original del número. Si trae coma (ej: 22,68 o 2,840), devuélvelo exactamente igual, con la coma.\n\nAusencia de datos: Si la celda está completamente vacía, o si no hay ninguna referencia a peso o presentación, devuelve la celda vacía.\n\nEjemplos de procesamiento esperado:\n\nEntrada: Ananá en rodajas cumaná 6 * 3 kg -> Salida: 3\n\nEntrada: Tomate perita 48 por 70 -> Salida: 70\n\nEntrada: Champiñones laminados cumaná 6 * 2,840 kg -> Salida: 2,840\n\nEntrada: Almendra repelada partida 1 por 22,68 -> Salida: 22,68\n\nEntrada: Harina de almendras por 25 -> Salida: 25\n\nEntrada: Harina de caju x 5 -> Salida: 5\n\nEntrada: Castañas de caju 25 kg -> Salida: 25",
-      "intent": "General",
-      "lastUsed": 1778506206692
+      "intent": "Generativo",
+      "lastUsed": 1779334924486
     }
   ],
   "UNIDAD": [
@@ -31,8 +31,8 @@
     },
     {
       "prompt": "Eres un procesador de datos determinista de la plataforma LAMDA. Tu única tarea es analizar una cadena de texto (descripción de un artículo de inventario), detectar la unidad de medida física (peso o volumen) y devolverla normalizada en singular.\n\nReglas lógicas de extracción y normalización:\n\nDetección de Unidades Físicas Válidas: Busca únicamente referencias a peso o volumen.\n\nDiccionario de Normalización Estricto: Si encuentras alguna de las siguientes variaciones, debes devolver EXACTAMENTE la palabra clave en singular, con la primera letra en mayúscula:\n\nSi detectas: kg, kilo, kilos, kilogramo, kilogramos -> Devuelve: Kilogramo\n\nSi detectas: g, gr, gr., grs, gramo, gramos -> Devuelve: Gramo\n\nSi detectas: l, lt, lts, litro, litros -> Devuelve: Litro\n\nSi detectas: ml, mililitro, mililitros -> Devuelve: Mililitro\n\nSi detectas: cc, cm3, centímetros cúbicos -> Devuelve: Centímetro cúbico\n\nExclusiones Absolutas (Ignorar Envases): NO extraigas tipos de envase, ni unidades de conteo comercial. Ignora palabras como: unidad, cápsula, cápsulas, caja, lata, frasco, bolsa, bulto.\n\nAusencia de Unidad (Vacío): Si el texto no contiene ninguna unidad de medida física explícita de la lista anterior (por ejemplo, si solo dice \"por 25\" sin indicar si son kilos o gramos), o si la celda está vacía, DEBES devolver la celda completamente vacía.\n\nFormato de Salida: Devuelve EXCLUSIVAMENTE la palabra clave normalizada. Ningún otro texto, número ni puntuación.\n\nEjemplos de procesamiento esperado:\n\nEntrada: Ananá en rodajas cumaná 6 * 3 kg -> Salida: Kilogramo\n\nEntrada: Tomate perita 48 por 70 gr. -> Salida: Gramo\n\nEntrada: Esencia de vainilla 100 ml -> Salida: Mililitro\n\nEntrada: Azafrán español x 10 cápsulas -> Salida: (vacío)\n\nEntrada: Harina de almendras por 25 -> Salida: (vacío)\n\nEntrada: Castañas de caju 25 kg -> Salida: Kilogramo\n\nEntrada: Vino tinto 1 Lt -> Salida: Litro",
-      "intent": "General",
-      "lastUsed": 1778506242245
+      "intent": "Generativo",
+      "lastUsed": 1779365258987
     }
   ],
   "PAÍS DE ORIGEN": [
@@ -69,8 +69,8 @@
     },
     {
       "prompt": "Eres un procesador de datos determinista de la plataforma LAMDA. Tu única tarea es analizar una cadena de texto y extraer exclusivamente el TIPO DE ENVASE físico o formato de empaque. Reglas estrictas de extracción: OBJETIVO (QUÉ EXTRAER): Identificar palabras que definan el contenedor o formato físico del producto. Ejemplos válidos: caja, paquete, sobre, lata, frasco, sachet, bolsa, cápsula, estuche, bidón, fardo, unidad, display, tubo, pote, botella. REGLA DE EXCLUSIÓN (QUÉ IGNORAR): IGNORAR ABSOLUTAMENTE todas las unidades de medida de peso o volumen (kg, gr, gramos, ml, lts, litros, cc). IGNORAR números, multiplicadores (ej: 6x3) y calibres. IGNORAR el nombre del producto, descripciones y marcas comerciales. SALIDA: Devuelve ÚNICAMENTE el nombre del tipo de envase detectado, normalizado en letras minúsculas y en singular (ej: si dice \"cajas\", devuelve \"caja\"). MÚLTIPLES ENVASES: Si detectas un envase primario y uno secundario (ej: \"caja x 10 sobres\"), devuelve ambos separados por una barra (ej: caja/sobre). VALOR NULO (AGRUPAMIENTO CERO): Si en la cadena de texto no existe ninguna mención explícita a un tipo de envase o contenedor, tu directiva innegociable es devolver la celda vacía. No inventes ni asumas el envase, permitiendo que el sistema agrupe correctamente estos casos sin valor detectado. Ejemplos de procesamiento esperado: Entrada: Caja x 10 sobres té verde Cumaná -> Salida: caja/sobre Entrada: Lata duraznos 800 gr -> Salida: lata Entrada: Pimienta negra frasco 50g -> Salida: frasco Entrada: Almendras repeladas W4 10kg -> Salida: Entrada: Café en cápsulas display x 12 unidades -> Salida: display/cápsula/unidad",
-      "intent": "General",
-      "lastUsed": 1778713474904
+      "intent": "Mapeo y Agrupación de Texto",
+      "lastUsed": 1779336162456
     }
   ],
   "DESCUENTO": [

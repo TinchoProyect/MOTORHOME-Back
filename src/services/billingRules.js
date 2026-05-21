@@ -77,37 +77,42 @@ const ProviderBillingRules = {
     },
 
     // ----------------------------------------------------
-    // REGLA: BABOSI (Porcentaje de Bonificación)
+    // REGLA: BAVOSI / BABOSI (Soporte Pasivo UOM-Aware)
     // ----------------------------------------------------
-    "906a5e12-c2b6-4191-be0b-ebaa53aed91b": (extractedJson) => { // SUSTITUIR POR ID REAL LUEGO, O USAR CUIT
-        const bonificacionPct = parseSafeFloat(extractedJson.bonificacion_porcentaje || 0);
-        
+    // ID de proveedor en Supabase: 8929039a-407e-40dd-a399-98d17f647dc4
+    // CUIT de proveedor sin guiones: 30716631899
+    "8929039a-407e-40dd-a399-98d17f647dc4": (extractedJson) => {
         if (extractedJson.articulos && extractedJson.articulos.length > 0) {
             extractedJson.articulos = extractedJson.articulos.map(art => {
                 const cant = parseSafeFloat(art.cantidad || 1);
-                const subtotalBrutoFila = parseSafeFloat(art.subtotal || 0);
-                
-                // Si la IA no extrajo subtotal, lo inferimos de cantidad * precio
-                let subtotalBase = subtotalBrutoFila;
-                if (subtotalBase === 0) {
-                    subtotalBase = cant * parseSafeFloat(art.precio_unitario || 0);
-                }
+                const factor = parseSafeFloat(art.factor_conversion || 1);
+                const puOriginal = parseSafeFloat(art.precio_unitario || 0);
 
-                // Fórmula Babosi: [Subtotal Fila * (1 - Bonificacion%)] / Cantidad
-                const factorBonificacion = 1 - (bonificacionPct / 100);
-                const subtotalNeto = subtotalBase * factorBonificacion;
-                const puNeto = cant > 0 ? (subtotalNeto / cant) : 0;
+                // [SOPORTE PASIVO UOM-AWARE]
+                // Respetamos de forma soberana el precio unitario extraído por la IA (ya por kilo).
+                // Calculamos el subtotal de línea multiplicando Cantidad * Factor * Precio Unitario.
+                const subtotalCalculado = cant * factor * puOriginal;
 
                 return {
                     ...art,
-                    precio_unitario_original: parseSafeFloat(art.precio_unitario || 0),
-                    precio_unitario: roundToTwo(puNeto),
-                    subtotal: roundToTwo(subtotalNeto),
+                    precio_unitario_original: puOriginal,
+                    precio_unitario: puOriginal, // Mantenemos el precio por kilo
+                    factor_conversion: factor,
+                    subtotal: roundToTwo(subtotalCalculado),
                     cantidad: cant
                 };
             });
         }
         return extractedJson;
+    },
+    "30716631899": (extractedJson) => {
+        return ProviderBillingRules["8929039a-407e-40dd-a399-98d17f647dc4"](extractedJson);
+    },
+    "30629646708": (extractedJson) => {
+        return ProviderBillingRules["8929039a-407e-40dd-a399-98d17f647dc4"](extractedJson);
+    },
+    "BABOSI": (extractedJson) => {
+        return ProviderBillingRules["8929039a-407e-40dd-a399-98d17f647dc4"](extractedJson);
     },
 
     // ----------------------------------------------------
@@ -165,7 +170,7 @@ const applyBillingRule = (providerId, providerCuit, extractedJson) => {
     let ruleKey = "DEFAULT";
     
     // Opcional: Si sabemos el CUIT de Babosi lo ponemos aquí
-    if (cuitEmisor === '30716631899' || (extractedJson.cuit_emisor && extractedJson.cuit_emisor.includes('Babosi'))) {
+    if (cuitEmisor === '30716631899' || cuitEmisor === '30629646708' || (extractedJson.cuit_emisor && (extractedJson.cuit_emisor.toLowerCase().includes('babosi') || extractedJson.cuit_emisor.toLowerCase().includes('bavosi')))) {
         ruleKey = "BABOSI"; // No tenemos el CUIT real a mano, pero podemos mapearlo por nombre de proveedor en base de datos.
     }
     
